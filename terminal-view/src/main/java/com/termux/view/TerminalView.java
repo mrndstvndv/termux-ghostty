@@ -47,6 +47,7 @@ import com.termux.terminal.TerminalConstants;
 import com.termux.terminal.TerminalContent;
 import com.termux.terminal.ViewportLinkSnapshot;
 import com.termux.terminal.TerminalSession;
+import com.termux.view.accessibility.TerminalAccessibilityDelegate;
 import com.termux.view.textselection.TextSelectionCursorController;
 
 /** View displaying and interacting with a {@link TerminalSession}. */
@@ -307,6 +308,7 @@ public final class TerminalView extends View {
         mScroller = new Scroller(context);
         AccessibilityManager am = (AccessibilityManager) context.getSystemService(Context.ACCESSIBILITY_SERVICE);
         mAccessibilityEnabled = am.isEnabled();
+        setAccessibilityDelegate(new TerminalAccessibilityDelegate(this));
     }
 
 
@@ -1569,7 +1571,7 @@ public final class TerminalView extends View {
         return mTermSession;
     }
 
-    private CharSequence getText() {
+    public CharSequence getText() {
         if (!hasActiveTerminalBackend()) return "";
 
         String selectedText = mTermSession.getSelectedText(0, mTopRow, mTermSession.getColumns(), mTopRow + mTermSession.getRows());

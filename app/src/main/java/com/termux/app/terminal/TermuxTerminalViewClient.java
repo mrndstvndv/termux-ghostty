@@ -6,6 +6,7 @@ import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
 import android.media.AudioManager;
+import android.os.Build;
 import android.os.Environment;
 import android.text.TextUtils;
 import android.view.Gravity;
@@ -33,6 +34,7 @@ import com.termux.shared.models.ReportInfo;
 import com.termux.app.models.UserAction;
 import com.termux.app.terminal.io.KeyboardShortcut;
 import com.termux.shared.termux.settings.properties.TermuxPropertyConstants;
+import com.termux.shared.termux.settings.preferences.TermuxPreferenceConstants.TERMUX_APP;
 import com.termux.shared.data.DataUtils;
 import com.termux.shared.logger.Logger;
 import com.termux.shared.markdown.MarkdownUtils;
@@ -200,10 +202,15 @@ public class TermuxTerminalViewClient extends TermuxTerminalViewClientBase {
 
         if (!term.isMouseTrackingActive() && !e.isFromSource(InputDevice.SOURCE_MOUSE)) {
             if (!KeyboardUtils.areDisableSoftKeyboardFlagsSet(mActivity))
-                KeyboardUtils.showSoftKeyboard(mActivity, mActivity.getTerminalView());
+                showSoftKeyboardAndRemember();
             else
                 Logger.logVerbose(LOG_TAG, "Not showing soft keyboard onSingleTapUp since its disabled");
         }
+    }
+
+    @Override
+    public void onSoftKeyboardDismissed() {
+        hideSoftKeyboardAndRemember();
     }
 
     @Override
@@ -534,35 +541,49 @@ public class TermuxTerminalViewClient extends TermuxTerminalViewClientBase {
             if (!KeyboardUtils.areDisableSoftKeyboardFlagsSet(mActivity)) {
                 Logger.logVerbose(LOG_TAG, "Disabling soft keyboard on toggle");
                 mActivity.getPreferences().setSoftKeyboardEnabled(false);
+                hideSoftKeyboardAndRemember();
                 KeyboardUtils.disableSoftKeyboard(mActivity, mActivity.getTerminalView());
-            } else {
-                // Show with a delay, otherwise pressing keyboard toggle won't show the keyboard after
-                // switching back from another app if keyboard was previously disabled by user.
-                // Also request focus, since it wouldn't have been requested at startup by
-                // setSoftKeyboardState if keyboard was disabled. #2112
-                Logger.logVerbose(LOG_TAG, "Enabling soft keyboard on toggle");
-                mActivity.getPreferences().setSoftKeyboardEnabled(true);
-                KeyboardUtils.clearDisableSoftKeyboardFlags(mActivity);
-                if(mShowSoftKeyboardWithDelayOnce) {
-                    mShowSoftKeyboardWithDelayOnce = false;
-                    mActivity.getTerminalView().postDelayed(getShowSoftKeyboardRunnable(), 500);
-                    mActivity.getTerminalView().requestFocus();
-                } else
-                    KeyboardUtils.showSoftKeyboard(mActivity, mActivity.getTerminalView());
+                return;
             }
+
+            // Show with a delay, otherwise pressing keyboard toggle won't show the keyboard after
+            // switching back from another app if keyboard was previously disabled by user.
+            // Also request focus, since it wouldn't have been requested at startup by
+            // setSoftKeyboardState if keyboard was disabled. #2112
+            Logger.logVerbose(LOG_TAG, "Enabling soft keyboard on toggle");
+            mActivity.getPreferences().setSoftKeyboardEnabled(true);
+            mActivity.getTerminalView().requestFocus();
+            if (mShowSoftKeyboardWithDelayOnce) {
+                mShowSoftKeyboardWithDelayOnce = false;
+                showSoftKeyboardAndRemember(true, 500);
+                return;
+            }
+
+            showSoftKeyboardAndRemember();
+            return;
         }
+
         // If soft keyboard toggle behaviour is show/hide
-        else {
-            // If soft keyboard is disabled by user for Termux
-            if (!mActivity.getPreferences().isSoftKeyboardEnabled()) {
-                Logger.logVerbose(LOG_TAG, "Maintaining disabled soft keyboard on toggle");
-                KeyboardUtils.disableSoftKeyboard(mActivity, mActivity.getTerminalView());
-            } else {
-                Logger.logVerbose(LOG_TAG, "Showing/Hiding soft keyboard on toggle");
-                KeyboardUtils.clearDisableSoftKeyboardFlags(mActivity);
-                KeyboardUtils.toggleSoftKeyboard(mActivity);
-            }
+        if (!mActivity.getPreferences().isSoftKeyboardEnabled()) {
+            Logger.logVerbose(LOG_TAG, "Maintaining disabled soft keyboard on toggle");
+            disableSoftKeyboardByPolicy();
+            return;
         }
+
+        Logger.logVerbose(LOG_TAG, "Showing/Hiding soft keyboard on toggle");
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            if (KeyboardUtils.isSoftKeyboardVisible(mActivity)) {
+                hideSoftKeyboardAndRemember();
+                return;
+            }
+
+            mActivity.getTerminalView().requestFocus();
+            showSoftKeyboardAndRemember();
+            return;
+        }
+
+        KeyboardUtils.clearDisableSoftKeyboardFlags(mActivity);
+        KeyboardUtils.toggleSoftKeyboard(mActivity);
     }
 
     public void setSoftKeyboardState(boolean isStartup, boolean isReloadTermuxProperties) {
@@ -580,7 +601,7 @@ public class TermuxTerminalViewClient extends TermuxTerminalViewClientBase {
             mActivity.getPreferences().isSoftKeyboardEnabled(),
             mActivity.getPreferences().isSoftKeyboardEnabledOnlyIfNoHardware())) {
             Logger.logVerbose(LOG_TAG, "Maintaining disabled soft keyboard");
-            KeyboardUtils.disableSoftKeyboard(mActivity, mActivity.getTerminalView());
+            disableSoftKeyboardByPolicy();
             mActivity.getTerminalView().requestFocus();
             noShowKeyboard = true;
             // Delay is only required if onCreate() is called like when Termux app is exited with
@@ -595,13 +616,16 @@ public class TermuxTerminalViewClient extends TermuxTerminalViewClientBase {
             // Clear any previous flags to disable soft keyboard in case setting updated
             KeyboardUtils.clearDisableSoftKeyboardFlags(mActivity);
 
+            if (restoreRememberedSoftKeyboardState()) {
+                noShowKeyboard = true;
+            }
             // If soft keyboard is to be hidden on startup
-            if (isStartup && mActivity.getProperties().shouldSoftKeyboardBeHiddenOnStartup()) {
+            else if (isStartup && mActivity.getProperties().shouldSoftKeyboardBeHiddenOnStartup()) {
                 Logger.logVerbose(LOG_TAG, "Hiding soft keyboard on startup");
                 // Required to keep keyboard hidden when Termux app is switched back from another app
                 KeyboardUtils.setSoftKeyboardAlwaysHiddenFlags(mActivity);
 
-                KeyboardUtils.hideSoftKeyboard(mActivity, mActivity.getTerminalView());
+                hideSoftKeyboardAndRemember();
                 mActivity.getTerminalView().requestFocus();
                 noShowKeyboard = true;
                 // Required to keep keyboard hidden on app startup
@@ -620,11 +644,15 @@ public class TermuxTerminalViewClient extends TermuxTerminalViewClientBase {
 
                 if (hasFocus || textInputViewHasFocus) {
                     if (mShowSoftKeyboardIgnoreOnce) {
-                        mShowSoftKeyboardIgnoreOnce = false; return;
+                        mShowSoftKeyboardIgnoreOnce = false;
+                        return;
                     }
                     Logger.logVerbose(LOG_TAG, "Showing soft keyboard on focus change");
+                    rememberSoftKeyboardState(TERMUX_APP.VALUE_LAST_SOFT_KEYBOARD_STATE_VISIBLE);
                 } else {
                     Logger.logVerbose(LOG_TAG, "Hiding soft keyboard on focus change");
+                    if (mActivity.hasWindowFocus())
+                        rememberSoftKeyboardState(TERMUX_APP.VALUE_LAST_SOFT_KEYBOARD_STATE_HIDDEN);
                 }
 
                 KeyboardUtils.setSoftKeyboardVisibility(getShowSoftKeyboardRunnable(), mActivity, mActivity.getTerminalView(), hasFocus || textInputViewHasFocus);
@@ -641,14 +669,75 @@ public class TermuxTerminalViewClient extends TermuxTerminalViewClientBase {
             // will also show keyboard even if it was closed before opening url. #2111
             Logger.logVerbose(LOG_TAG, "Requesting TerminalView focus and showing soft keyboard");
             mActivity.getTerminalView().requestFocus();
-            mActivity.getTerminalView().postDelayed(getShowSoftKeyboardRunnable(), 300);
+            showSoftKeyboardAndRemember(true);
         }
+    }
+
+    private void showSoftKeyboardAndRemember() {
+        showSoftKeyboardAndRemember(false);
+    }
+
+    private void showSoftKeyboardAndRemember(boolean withDelay) {
+        showSoftKeyboardAndRemember(withDelay, 300);
+    }
+
+    private void showSoftKeyboardAndRemember(boolean withDelay, long delayInMillis) {
+        KeyboardUtils.clearDisableSoftKeyboardFlags(mActivity);
+        if (!withDelay) {
+            getShowSoftKeyboardRunnable().run();
+            return;
+        }
+
+        mActivity.getTerminalView().postDelayed(getShowSoftKeyboardRunnable(), delayInMillis);
+    }
+
+    private void hideSoftKeyboardAndRemember() {
+        mActivity.getTerminalView().removeCallbacks(getShowSoftKeyboardRunnable());
+        KeyboardUtils.hideSoftKeyboard(mActivity, mActivity.getTerminalView());
+        rememberSoftKeyboardState(TERMUX_APP.VALUE_LAST_SOFT_KEYBOARD_STATE_HIDDEN);
+    }
+
+    private void disableSoftKeyboardByPolicy() {
+        mActivity.getTerminalView().removeCallbacks(getShowSoftKeyboardRunnable());
+        KeyboardUtils.disableSoftKeyboard(mActivity, mActivity.getTerminalView());
+    }
+
+    private boolean restoreRememberedSoftKeyboardState() {
+        if (!mActivity.getProperties().shouldRememberSoftKeyboardState()) return false;
+
+        String lastSoftKeyboardState = mActivity.getPreferences().getLastSoftKeyboardState();
+        if (TERMUX_APP.VALUE_LAST_SOFT_KEYBOARD_STATE_UNKNOWN.equals(lastSoftKeyboardState)) return false;
+
+        if (TERMUX_APP.VALUE_LAST_SOFT_KEYBOARD_STATE_VISIBLE.equals(lastSoftKeyboardState)) {
+            Logger.logVerbose(LOG_TAG, "Restoring remembered visible soft keyboard state");
+            mActivity.getTerminalView().requestFocus();
+            showSoftKeyboardAndRemember(true);
+            return true;
+        }
+
+        Logger.logVerbose(LOG_TAG, "Restoring remembered hidden soft keyboard state");
+        KeyboardUtils.setSoftKeyboardAlwaysHiddenFlags(mActivity);
+        hideSoftKeyboardAndRemember();
+        mActivity.getTerminalView().requestFocus();
+        mShowSoftKeyboardIgnoreOnce = true;
+        return true;
+    }
+
+    private void rememberSoftKeyboardState(String state) {
+        if (!mActivity.getProperties().shouldRememberSoftKeyboardState()) return;
+        mActivity.getPreferences().setLastSoftKeyboardState(state);
     }
 
     private Runnable getShowSoftKeyboardRunnable() {
         if (mShowSoftKeyboardRunnable == null) {
             mShowSoftKeyboardRunnable = () -> {
+                if (KeyboardUtils.areDisableSoftKeyboardFlagsSet(mActivity)) {
+                    Logger.logVerbose(LOG_TAG, "Not showing soft keyboard since it is disabled");
+                    return;
+                }
+
                 KeyboardUtils.showSoftKeyboard(mActivity, mActivity.getTerminalView());
+                rememberSoftKeyboardState(TERMUX_APP.VALUE_LAST_SOFT_KEYBOARD_STATE_VISIBLE);
             };
         }
         return mShowSoftKeyboardRunnable;

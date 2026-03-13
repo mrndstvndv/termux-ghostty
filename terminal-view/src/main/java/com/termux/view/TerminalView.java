@@ -651,7 +651,9 @@ public final class TerminalView extends View {
             if (isSelectingText()) {
                 stopTextSelectionMode();
                 return true;
-            } else if (mClient.shouldBackButtonBeMappedToEscape()) {
+            }
+
+            if (mClient.shouldBackButtonBeMappedToEscape()) {
                 // Intercept back button to treat it as escape:
                 switch (event.getAction()) {
                     case KeyEvent.ACTION_DOWN:
@@ -660,6 +662,9 @@ public final class TerminalView extends View {
                         return onKeyUp(keyCode, event);
                 }
             }
+
+            if (event.getAction() == KeyEvent.ACTION_UP)
+                mClient.onSoftKeyboardDismissed();
         } else if (mClient.shouldUseCtrlSpaceWorkaround() &&
                    keyCode == KeyEvent.KEYCODE_SPACE && event.isCtrlPressed()) {
             /* ctrl+space does not work on some ROMs without this workaround.

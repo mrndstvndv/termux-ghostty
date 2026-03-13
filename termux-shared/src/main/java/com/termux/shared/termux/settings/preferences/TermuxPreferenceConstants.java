@@ -1,7 +1,7 @@
 package com.termux.shared.termux.settings.preferences;
 
 /*
- * Version: v0.16.0
+ * Version: v0.17.0
  *
  * Changelog
  *
@@ -69,6 +69,10 @@ package com.termux.shared.termux.settings.preferences;
  * - 0.16.0 (2022-06-11)
  *      - Added following to `TERMUX_APP`:
  *          `KEY_APP_SHELL_NUMBER_SINCE_BOOT` and `KEY_TERMINAL_SESSION_NUMBER_SINCE_BOOT`.
+ *
+ * - 0.17.0 (2026-03-13)
+ *      - Added following to `TERMUX_APP`:
+ *          `KEY_LAST_SOFT_KEYBOARD_STATE` and `DEFAULT_VALUE_KEY_LAST_SOFT_KEYBOARD_STATE`.
  */
 
 import com.termux.shared.shell.command.ExecutionCommand;
@@ -116,6 +120,15 @@ public final class TermuxPreferenceConstants {
          */
         public static final String KEY_SOFT_KEYBOARD_ENABLED_ONLY_IF_NO_HARDWARE = "soft_keyboard_enabled_only_if_no_hardware";
         public static final boolean DEFAULT_VALUE_KEY_SOFT_KEYBOARD_ENABLED_ONLY_IF_NO_HARDWARE = false;
+
+        /**
+         * Defines the key for the last remembered soft keyboard state.
+         */
+        public static final String KEY_LAST_SOFT_KEYBOARD_STATE = "last_soft_keyboard_state";
+        public static final String VALUE_LAST_SOFT_KEYBOARD_STATE_VISIBLE = "visible";
+        public static final String VALUE_LAST_SOFT_KEYBOARD_STATE_HIDDEN = "hidden";
+        public static final String VALUE_LAST_SOFT_KEYBOARD_STATE_UNKNOWN = "unknown";
+        public static final String DEFAULT_VALUE_KEY_LAST_SOFT_KEYBOARD_STATE = VALUE_LAST_SOFT_KEYBOARD_STATE_UNKNOWN;
 
 
         /**

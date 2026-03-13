@@ -85,6 +85,10 @@ public class TermuxTerminalViewClientBase implements TerminalViewClient {
     }
 
     @Override
+    public void onSoftKeyboardDismissed() {
+    }
+
+    @Override
     public void onEmulatorSet() {
 
     }

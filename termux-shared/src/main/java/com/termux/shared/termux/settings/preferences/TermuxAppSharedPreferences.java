@@ -110,6 +110,28 @@ public class TermuxAppSharedPreferences extends AppSharedPreferences {
         SharedPreferenceUtils.setBoolean(mSharedPreferences, TERMUX_APP.KEY_SOFT_KEYBOARD_ENABLED_ONLY_IF_NO_HARDWARE, value, false);
     }
 
+    public String getLastSoftKeyboardState() {
+        return sanitizeLastSoftKeyboardState(SharedPreferenceUtils.getString(mSharedPreferences,
+            TERMUX_APP.KEY_LAST_SOFT_KEYBOARD_STATE,
+            TERMUX_APP.DEFAULT_VALUE_KEY_LAST_SOFT_KEYBOARD_STATE,
+            true));
+    }
+
+    public void setLastSoftKeyboardState(String value) {
+        SharedPreferenceUtils.setString(mSharedPreferences, TERMUX_APP.KEY_LAST_SOFT_KEYBOARD_STATE,
+            sanitizeLastSoftKeyboardState(value), false);
+    }
+
+    public void clearLastSoftKeyboardState() {
+        setLastSoftKeyboardState(TERMUX_APP.VALUE_LAST_SOFT_KEYBOARD_STATE_UNKNOWN);
+    }
+
+    private String sanitizeLastSoftKeyboardState(String value) {
+        if (TERMUX_APP.VALUE_LAST_SOFT_KEYBOARD_STATE_VISIBLE.equals(value)) return value;
+        if (TERMUX_APP.VALUE_LAST_SOFT_KEYBOARD_STATE_HIDDEN.equals(value)) return value;
+        return TERMUX_APP.VALUE_LAST_SOFT_KEYBOARD_STATE_UNKNOWN;
+    }
+
 
 
     public boolean shouldKeepScreenOn() {

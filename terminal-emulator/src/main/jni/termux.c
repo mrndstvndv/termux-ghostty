@@ -1,3 +1,4 @@
+#include <android/log.h>
 #include <dirent.h>
 #include <fcntl.h>
 #include <jni.h>
@@ -11,12 +12,17 @@
 #include <unistd.h>
 
 #define TERMUX_UNUSED(x) x __attribute__((__unused__))
+#define TERMUX_NATIVE_LOG_TAG "TermuxNative"
+#define TERMUX_NATIVE_LOG_DEBUG(...) __android_log_print(ANDROID_LOG_DEBUG, TERMUX_NATIVE_LOG_TAG, __VA_ARGS__)
+#define TERMUX_NATIVE_LOG_WARN(...) __android_log_print(ANDROID_LOG_WARN, TERMUX_NATIVE_LOG_TAG, __VA_ARGS__)
+#define TERMUX_NATIVE_LOG_ERROR(...) __android_log_print(ANDROID_LOG_ERROR, TERMUX_NATIVE_LOG_TAG, __VA_ARGS__)
 #ifdef __APPLE__
 # define LACKS_PTSNAME_R
 #endif
 
 static int throw_runtime_exception(JNIEnv* env, char const* message)
 {
+    TERMUX_NATIVE_LOG_ERROR("runtime exception: %s", message);
     jclass exClass = (*env)->FindClass(env, "java/lang/RuntimeException");
     (*env)->ThrowNew(env, exClass, message);
     return -1;
@@ -35,6 +41,8 @@ static int create_subprocess(JNIEnv* env,
 {
     int ptm = open("/dev/ptmx", O_RDWR | O_CLOEXEC);
     if (ptm < 0) return throw_runtime_exception(env, "Cannot open /dev/ptmx");
+
+    TERMUX_NATIVE_LOG_DEBUG("create_subprocess cmd=%s cwd=%s rows=%d cols=%d", cmd, cwd, rows, columns);
 
 #ifdef LACKS_PTSNAME_R
     char* devname;
@@ -67,6 +75,7 @@ static int create_subprocess(JNIEnv* env,
         return throw_runtime_exception(env, "Fork failed");
     } else if (pid > 0) {
         *pProcessId = (int) pid;
+        TERMUX_NATIVE_LOG_DEBUG("create_subprocess parent pid=%d ptm=%d", pid, ptm);
         return ptm;
     } else {
         // Clear signals which the Android java process may have blocked:
@@ -203,11 +212,16 @@ JNIEXPORT jint JNICALL Java_com_termux_terminal_JNI_waitFor(JNIEnv* TERMUX_UNUSE
     int status;
     waitpid(pid, &status, 0);
     if (WIFEXITED(status)) {
-        return WEXITSTATUS(status);
+        int exit_code = WEXITSTATUS(status);
+        TERMUX_NATIVE_LOG_DEBUG("waitFor pid=%d exit=%d", pid, exit_code);
+        return exit_code;
     } else if (WIFSIGNALED(status)) {
-        return -WTERMSIG(status);
+        int signal_code = WTERMSIG(status);
+        TERMUX_NATIVE_LOG_WARN("waitFor pid=%d signal=%d", pid, signal_code);
+        return -signal_code;
     } else {
         // Should never happen - waitpid(2) says "One of the first three macros will evaluate to a non-zero (true) value".
+        TERMUX_NATIVE_LOG_WARN("waitFor pid=%d returned unexpected status=%d", pid, status);
         return 0;
     }
 }

@@ -16,6 +16,7 @@ import android.text.Editable;
 import android.text.InputType;
 import android.text.TextUtils;
 import android.util.AttributeSet;
+import android.util.Log;
 import android.view.ActionMode;
 import android.view.HapticFeedbackConstants;
 import android.view.InputDevice;
@@ -37,7 +38,12 @@ import android.widget.Scroller;
 import androidx.annotation.Nullable;
 import androidx.annotation.RequiresApi;
 
+import com.termux.terminal.FrameDelta;
+import com.termux.terminal.JavaTerminalContentAdapter;
 import com.termux.terminal.KeyHandler;
+import com.termux.terminal.RenderFrameCache;
+import com.termux.terminal.ScreenSnapshot;
+import com.termux.terminal.TerminalContent;
 import com.termux.terminal.TerminalEmulator;
 import com.termux.terminal.TerminalSession;
 import com.termux.view.textselection.TextSelectionCursorController;
@@ -52,6 +58,10 @@ public final class TerminalView extends View {
     public TerminalSession mTermSession;
     /** Our terminal emulator whose session is {@link #mTermSession}. */
     public TerminalEmulator mEmulator;
+
+    private final JavaTerminalContentAdapter mTerminalContent = new JavaTerminalContentAdapter();
+    private final ScreenSnapshot mScreenSnapshot = new ScreenSnapshot();
+    private final RenderFrameCache mGhosttyRenderFrameCache = new RenderFrameCache();
 
     public TerminalRenderer mRenderer;
 
@@ -124,6 +134,37 @@ public final class TerminalView extends View {
     private String[] mAutoFillHints = new String[0];
 
     private final boolean mAccessibilityEnabled;
+    private static final String GHOSTTY_PERF_LOG_TAG = "TermuxGhostty";
+    private static final int GHOSTTY_PERF_LOG_INTERVAL_FRAMES = 120;
+    private static final long GHOSTTY_SLOW_FRAME_APPLY_NANOS = 4_000_000L;
+    private static final long GHOSTTY_SLOW_DRAW_NANOS = 8_000_000L;
+    private static final long GHOSTTY_ACCESSIBILITY_REFRESH_INTERVAL_MILLIS = 250;
+
+    private long mGhosttyFrameApplyCount;
+    private long mGhosttyFrameApplyTotalNanos;
+    private long mGhosttyDrawCount;
+    private long mGhosttyDrawTotalNanos;
+    private long mAccessibilityRefreshCount;
+    private long mAccessibilityRefreshTotalNanos;
+    private long mLastAccessibilityRefreshUptimeMillis;
+    private boolean mAccessibilityRefreshPending;
+    private final Runnable mAccessibilityContentDescriptionRefreshRunnable = new Runnable() {
+        @Override
+        public void run() {
+            mAccessibilityRefreshPending = false;
+            if (!mAccessibilityEnabled || !hasActiveTerminalBackend()) {
+                return;
+            }
+
+            boolean ghosttyBackend = mTermSession != null && mTermSession.isUsingGhosttyBackend();
+            long refreshStartNanos = ghosttyBackend ? SystemClock.elapsedRealtimeNanos() : 0L;
+            setContentDescription(getText());
+            if (ghosttyBackend) {
+                recordAccessibilityRefresh(SystemClock.elapsedRealtimeNanos() - refreshStartNanos);
+            }
+            mLastAccessibilityRefreshUptimeMillis = SystemClock.uptimeMillis();
+        }
+    };
 
     /** The {@link KeyEvent} is generated from a virtual keyboard, like manually with the {@link KeyEvent#KeyEvent(int, int)} constructor. */
     public final static int KEY_EVENT_SOURCE_VIRTUAL_KEYBOARD = KeyCharacterMap.VIRTUAL_KEYBOARD; // -1
@@ -142,7 +183,7 @@ public final class TerminalView extends View {
             @Override
             public boolean onUp(MotionEvent event) {
                 mScrollRemainder = 0.0f;
-                if (mEmulator != null && mEmulator.isMouseTrackingActive() && !event.isFromSource(InputDevice.SOURCE_MOUSE) && !isSelectingText() && !scrolledWithFinger) {
+                if (hasActiveTerminalBackend() && mTermSession.isMouseTrackingActive() && !event.isFromSource(InputDevice.SOURCE_MOUSE) && !isSelectingText() && !scrolledWithFinger) {
                     // Quick event processing when mouse tracking is active - do not wait for check of double tapping
                     // for zooming.
                     sendMouseEventCode(event, TerminalEmulator.MOUSE_LEFT_BUTTON, true);
@@ -155,7 +196,7 @@ public final class TerminalView extends View {
 
             @Override
             public boolean onSingleTapUp(MotionEvent event) {
-                if (mEmulator == null) return true;
+                if (!hasActiveTerminalBackend()) return true;
 
                 if (isSelectingText()) {
                     stopTextSelectionMode();
@@ -168,8 +209,8 @@ public final class TerminalView extends View {
 
             @Override
             public boolean onScroll(MotionEvent e, float distanceX, float distanceY) {
-                if (mEmulator == null) return true;
-                if (mEmulator.isMouseTrackingActive() && e.isFromSource(InputDevice.SOURCE_MOUSE)) {
+                if (!hasActiveTerminalBackend()) return true;
+                if (mTermSession.isMouseTrackingActive() && e.isFromSource(InputDevice.SOURCE_MOUSE)) {
                     // If moving with mouse pointer while pressing button, report that instead of scroll.
                     // This means that we never report moving with button press-events for touch input,
                     // since we cannot just start sending these events without a starting press event,
@@ -187,7 +228,7 @@ public final class TerminalView extends View {
 
             @Override
             public boolean onScale(float focusX, float focusY, float scale) {
-                if (mEmulator == null || isSelectingText()) return true;
+                if (!hasActiveTerminalBackend() || isSelectingText()) return true;
                 mScaleFactor *= scale;
                 mScaleFactor = mClient.onScale(mScaleFactor);
                 return true;
@@ -195,16 +236,17 @@ public final class TerminalView extends View {
 
             @Override
             public boolean onFling(final MotionEvent e2, float velocityX, float velocityY) {
-                if (mEmulator == null) return true;
+                if (!hasActiveTerminalBackend()) return true;
                 // Do not start scrolling until last fling has been taken care of:
                 if (!mScroller.isFinished()) return true;
 
-                final boolean mouseTrackingAtStartOfFling = mEmulator.isMouseTrackingActive();
+                final boolean mouseTrackingAtStartOfFling = mTermSession.isMouseTrackingActive();
                 float SCALE = 0.25f;
                 if (mouseTrackingAtStartOfFling) {
-                    mScroller.fling(0, 0, 0, -(int) (velocityY * SCALE), 0, 0, -mEmulator.mRows / 2, mEmulator.mRows / 2);
+                    int rows = mTermSession.getRows();
+                    mScroller.fling(0, 0, 0, -(int) (velocityY * SCALE), 0, 0, -rows / 2, rows / 2);
                 } else {
-                    mScroller.fling(0, mTopRow, 0, -(int) (velocityY * SCALE), 0, 0, -mEmulator.getScreen().getActiveTranscriptRows(), 0);
+                    mScroller.fling(0, mTopRow, 0, -(int) (velocityY * SCALE), 0, 0, -mTermSession.getActiveTranscriptRows(), 0);
                 }
 
                 post(new Runnable() {
@@ -212,7 +254,7 @@ public final class TerminalView extends View {
 
                     @Override
                     public void run() {
-                        if (mouseTrackingAtStartOfFling != mEmulator.isMouseTrackingActive()) {
+                        if (mouseTrackingAtStartOfFling != mTermSession.isMouseTrackingActive()) {
                             mScroller.abortAnimation();
                             return;
                         }
@@ -292,10 +334,15 @@ public final class TerminalView extends View {
         mTopRow = 0;
 
         mTermSession = session;
-        mEmulator = null;
+        mEmulator = mTermSession.getEmulator();
         mCombiningAccent = 0;
+        mGhosttyRenderFrameCache.reset();
 
         updateSize();
+        if (mTermSession.isUsingGhosttyBackend()) {
+            mTermSession.requestGhosttyFullSnapshotRefresh();
+        }
+        onScreenUpdated();
 
         // Wait with enabling the scrollbar until we have a terminal to get scroll position from.
         setVerticalScrollBarEnabled(true);
@@ -357,7 +404,7 @@ public final class TerminalView extends View {
                 }
                 super.commitText(text, newCursorPosition);
 
-                if (mEmulator == null) return true;
+                if (!hasActiveTerminalBackend()) return true;
 
                 Editable content = getEditable();
                 sendTextToTerminal(content);
@@ -437,40 +484,57 @@ public final class TerminalView extends View {
 
     @Override
     protected int computeVerticalScrollRange() {
-        return mEmulator == null ? 1 : mEmulator.getScreen().getActiveRows();
+        return hasActiveTerminalBackend() ? mTermSession.getActiveRows() : 1;
     }
 
     @Override
     protected int computeVerticalScrollExtent() {
-        return mEmulator == null ? 1 : mEmulator.mRows;
+        return hasActiveTerminalBackend() ? mTermSession.getRows() : 1;
     }
 
     @Override
     protected int computeVerticalScrollOffset() {
-        return mEmulator == null ? 1 : mEmulator.getScreen().getActiveRows() + mTopRow - mEmulator.mRows;
+        if (!hasActiveTerminalBackend()) return 1;
+
+        return mTermSession.getActiveRows() + mTopRow - mTermSession.getRows();
+    }
+
+    public void onFrameAvailable() {
+        applyScreenUpdate(false);
     }
 
     public void onScreenUpdated() {
-        onScreenUpdated(false);
+        applyScreenUpdate(false);
     }
 
     public void onScreenUpdated(boolean skipScrolling) {
-        if (mEmulator == null) return;
+        applyScreenUpdate(skipScrolling);
+    }
 
-        int rowsInHistory = mEmulator.getScreen().getActiveTranscriptRows();
+    private void applyScreenUpdate(boolean skipScrolling) {
+        if (!hasActiveTerminalBackend()) return;
+
+        boolean ghosttyBackend = mTermSession.isUsingGhosttyBackend();
+        long frameApplyStartNanos = ghosttyBackend ? SystemClock.elapsedRealtimeNanos() : 0L;
+        FrameDelta ghosttyFrameDelta = ghosttyBackend ? mTermSession.getGhosttyPublishedFrameDelta() : null;
+        if (shouldPreserveViewportScroll(ghosttyFrameDelta)) {
+            skipScrolling = true;
+        }
+
+        int rowsInHistory = mTermSession.getActiveTranscriptRows();
         if (mTopRow < -rowsInHistory) mTopRow = -rowsInHistory;
 
-        if (isSelectingText() || mEmulator.isAutoScrollDisabled()) {
+        if (isSelectingText() || mTermSession.isAutoScrollDisabled()) {
 
             // Do not scroll when selecting text.
-            int rowShift = mEmulator.getScrollCounter();
+            int rowShift = mTermSession.getScrollCounter();
             if (-mTopRow + rowShift > rowsInHistory) {
                 // .. unless we're hitting the end of history transcript, in which
                 // case we abort text selection and scroll to end.
                 if (isSelectingText())
                     stopTextSelectionMode();
 
-                if (mEmulator.isAutoScrollDisabled()) {
+                if (mTermSession.isAutoScrollDisabled()) {
                     mTopRow = -rowsInHistory;
                     skipScrolling = true;
                 }
@@ -492,10 +556,110 @@ public final class TerminalView extends View {
             mTopRow = 0;
         }
 
-        mEmulator.clearScrollCounter();
+        mTermSession.clearScrollCounter();
+
+        if (ghosttyBackend) {
+            mTermSession.setGhosttyTopRow(mTopRow);
+            applyLatestGhosttyFrameDelta(ghosttyFrameDelta);
+        }
 
         invalidate();
-        if (mAccessibilityEnabled) setContentDescription(getText());
+        scheduleAccessibilityContentDescriptionRefresh();
+
+        if (ghosttyBackend) {
+            recordGhosttyFrameApply(SystemClock.elapsedRealtimeNanos() - frameApplyStartNanos);
+        }
+    }
+
+    private void applyLatestGhosttyFrameDelta(@Nullable FrameDelta frameDelta) {
+        if (!hasActiveTerminalBackend() || !mTermSession.isUsingGhosttyBackend()) {
+            return;
+        }
+
+        if (frameDelta == null) {
+            return;
+        }
+
+        boolean applied = mGhosttyRenderFrameCache.apply(frameDelta);
+        if (applied || mGhosttyRenderFrameCache.isInitialized()) {
+            return;
+        }
+
+        mTermSession.requestGhosttyFullSnapshotRefresh();
+    }
+
+    private static boolean shouldPreserveViewportScroll(@Nullable FrameDelta frameDelta) {
+        if (frameDelta == null) {
+            return false;
+        }
+
+        return frameDelta.getReasonFlags() == FrameDelta.REASON_VIEWPORT_SCROLL;
+    }
+
+    private void scheduleAccessibilityContentDescriptionRefresh() {
+        if (!mAccessibilityEnabled) {
+            return;
+        }
+        if (mAccessibilityRefreshPending) {
+            return;
+        }
+
+        long now = SystemClock.uptimeMillis();
+        long delay = Math.max(0L,
+            (mLastAccessibilityRefreshUptimeMillis + GHOSTTY_ACCESSIBILITY_REFRESH_INTERVAL_MILLIS) - now);
+        mAccessibilityRefreshPending = true;
+        postDelayed(mAccessibilityContentDescriptionRefreshRunnable, delay);
+    }
+
+    private void recordGhosttyFrameApply(long durationNanos) {
+        mGhosttyFrameApplyCount++;
+        mGhosttyFrameApplyTotalNanos += durationNanos;
+        logGhosttyPerfIfNeeded("Frame apply", durationNanos, mGhosttyFrameApplyCount,
+            mGhosttyFrameApplyTotalNanos / mGhosttyFrameApplyCount, GHOSTTY_SLOW_FRAME_APPLY_NANOS);
+    }
+
+    private void recordGhosttyDraw(long durationNanos) {
+        mGhosttyDrawCount++;
+        mGhosttyDrawTotalNanos += durationNanos;
+        logGhosttyPerfIfNeeded("onDraw", durationNanos, mGhosttyDrawCount,
+            mGhosttyDrawTotalNanos / mGhosttyDrawCount, GHOSTTY_SLOW_DRAW_NANOS);
+    }
+
+    private void recordAccessibilityRefresh(long durationNanos) {
+        mAccessibilityRefreshCount++;
+        mAccessibilityRefreshTotalNanos += durationNanos;
+        logGhosttyPerfIfNeeded("Accessibility refresh", durationNanos, mAccessibilityRefreshCount,
+            mAccessibilityRefreshTotalNanos / mAccessibilityRefreshCount, GHOSTTY_SLOW_DRAW_NANOS);
+    }
+
+    private void logGhosttyPerfIfNeeded(String stage, long durationNanos, long count, long averageNanos,
+                                        long slowThresholdNanos) {
+        boolean slow = durationNanos >= slowThresholdNanos;
+        boolean periodic = isGhosttyPerfLoggingEnabled() && (count % GHOSTTY_PERF_LOG_INTERVAL_FRAMES) == 0;
+        if (!slow && !periodic) {
+            return;
+        }
+
+        String message = stage + " perf session=" + (mTermSession == null ? "none" : mTermSession.mHandle)
+            + " count=" + count
+            + " topRow=" + mTopRow
+            + " durationMs=" + formatDurationMillis(durationNanos)
+            + " avgMs=" + formatDurationMillis(averageNanos);
+        if (slow) {
+            Log.w(GHOSTTY_PERF_LOG_TAG, message);
+            return;
+        }
+
+        Log.d(GHOSTTY_PERF_LOG_TAG, message);
+    }
+
+    private static boolean isGhosttyPerfLoggingEnabled() {
+        return com.termux.emulator.BuildConfig.TERMUX_GHOSTTY_DEBUG_LOG
+            || Log.isLoggable(GHOSTTY_PERF_LOG_TAG, Log.DEBUG);
+    }
+
+    private static String formatDurationMillis(long durationNanos) {
+        return Double.toString(durationNanos / 1_000_000.0d);
     }
 
     /** This must be called by the hosting activity in {@link Activity#onContextMenuClosed(Menu)}
@@ -567,31 +731,44 @@ public final class TerminalView extends View {
                 mMouseScrollStartY = y;
             }
         }
-        mEmulator.sendMouseEvent(button, x, y, pressed);
+        mTermSession.sendMouseEvent(button, x, y, pressed);
     }
 
     /** Perform a scroll, either from dragging the screen or by scrolling a mouse wheel. */
     void doScroll(MotionEvent event, int rowsDown) {
         boolean up = rowsDown < 0;
         int amount = Math.abs(rowsDown);
-        for (int i = 0; i < amount; i++) {
-            if (mEmulator.isMouseTrackingActive()) {
-                sendMouseEventCode(event, up ? TerminalEmulator.MOUSE_WHEELUP_BUTTON : TerminalEmulator.MOUSE_WHEELDOWN_BUTTON, true);
-            } else if (mEmulator.isAlternateBufferActive()) {
-                // Send up and down key events for scrolling, which is what some terminals do to make scroll work in
-                // e.g. less, which shifts to the alt screen without mouse handling.
-                handleKeyCode(up ? KeyEvent.KEYCODE_DPAD_UP : KeyEvent.KEYCODE_DPAD_DOWN, 0);
-            } else {
-                mTopRow = Math.min(0, Math.max(-(mEmulator.getScreen().getActiveTranscriptRows()), mTopRow + (up ? -1 : 1)));
-                if (!awakenScrollBars()) invalidate();
+        if (!mTermSession.isMouseTrackingActive() && !mTermSession.isAlternateBufferActive()) {
+            int previousTopRow = mTopRow;
+            int rowDelta = up ? -amount : amount;
+            mTopRow = Math.min(0, Math.max(-mTermSession.getActiveTranscriptRows(), mTopRow + rowDelta));
+            if (mTopRow == previousTopRow) {
+                return;
             }
+
+            if (mTermSession.isUsingGhosttyBackend()) {
+                mTermSession.setGhosttyTopRow(mTopRow);
+            }
+            if (!awakenScrollBars()) invalidate();
+            return;
+        }
+
+        for (int i = 0; i < amount; i++) {
+            if (mTermSession.isMouseTrackingActive()) {
+                sendMouseEventCode(event, up ? TerminalEmulator.MOUSE_WHEELUP_BUTTON : TerminalEmulator.MOUSE_WHEELDOWN_BUTTON, true);
+                continue;
+            }
+
+            // Send up and down key events for scrolling, which is what some terminals do to make scroll work in
+            // e.g. less, which shifts to the alt screen without mouse handling.
+            handleKeyCode(up ? KeyEvent.KEYCODE_DPAD_UP : KeyEvent.KEYCODE_DPAD_DOWN, 0);
         }
     }
 
     /** Overriding {@link View#onGenericMotionEvent(MotionEvent)}. */
     @Override
     public boolean onGenericMotionEvent(MotionEvent event) {
-        if (mEmulator != null && event.isFromSource(InputDevice.SOURCE_MOUSE) && event.getAction() == MotionEvent.ACTION_SCROLL) {
+        if (hasActiveTerminalBackend() && event.isFromSource(InputDevice.SOURCE_MOUSE) && event.getAction() == MotionEvent.ACTION_SCROLL) {
             // Handle mouse wheel scrolling.
             boolean up = event.getAxisValue(MotionEvent.AXIS_VSCROLL) > 0.0f;
             doScroll(event, up ? -3 : 3);
@@ -604,7 +781,7 @@ public final class TerminalView extends View {
     @Override
     @TargetApi(23)
     public boolean onTouchEvent(MotionEvent event) {
-        if (mEmulator == null) return true;
+        if (!hasActiveTerminalBackend()) return true;
         final int action = event.getAction();
 
         if (isSelectingText()) {
@@ -622,10 +799,10 @@ public final class TerminalView extends View {
                     ClipData.Item clipItem = clipData.getItemAt(0);
                     if (clipItem != null) {
                         CharSequence text = clipItem.coerceToText(getContext());
-                        if (!TextUtils.isEmpty(text)) mEmulator.paste(text.toString());
+                        if (!TextUtils.isEmpty(text)) mTermSession.paste(text.toString());
                     }
                 }
-            } else if (mEmulator.isMouseTrackingActive()) { // BUTTON_PRIMARY.
+            } else if (mTermSession.isMouseTrackingActive()) { // BUTTON_PRIMARY.
                 switch (event.getAction()) {
                     case MotionEvent.ACTION_DOWN:
                     case MotionEvent.ACTION_UP:
@@ -774,7 +951,7 @@ public final class TerminalView extends View {
     public boolean onKeyDown(int keyCode, KeyEvent event) {
         if (TERMINAL_VIEW_KEY_LOGGING_ENABLED)
             mClient.logInfo(LOG_TAG, "onKeyDown(keyCode=" + keyCode + ", isSystem()=" + event.isSystem() + ", event=" + event + ")");
-        if (mEmulator == null) return true;
+        if (!hasActiveTerminalBackend()) return true;
         if (isSelectingText()) {
             stopTextSelectionMode();
         }
@@ -857,8 +1034,8 @@ public final class TerminalView extends View {
         if (mTermSession == null) return;
 
         // Ensure cursor is shown when a key is pressed down like long hold on (arrow) keys
-        if (mEmulator != null)
-            mEmulator.setCursorBlinkState(true);
+        if (hasActiveTerminalBackend())
+            mTermSession.setCursorBlinkState(true);
 
         final boolean controlDown = controlDownFromEvent || mClient.readControlKey();
         final boolean altDown = leftAltDownFromEvent || mClient.readAltKey();
@@ -916,14 +1093,13 @@ public final class TerminalView extends View {
     /** Input the specified keyCode if applicable and return if the input was consumed. */
     public boolean handleKeyCode(int keyCode, int keyMod) {
         // Ensure cursor is shown when a key is pressed down like long hold on (arrow) keys
-        if (mEmulator != null)
-            mEmulator.setCursorBlinkState(true);
+        if (hasActiveTerminalBackend())
+            mTermSession.setCursorBlinkState(true);
 
         if (handleKeyCodeAction(keyCode, keyMod))
             return true;
 
-        TerminalEmulator term = mTermSession.getEmulator();
-        String code = KeyHandler.getCode(keyCode, keyMod, term.isCursorKeysApplicationMode(), term.isKeypadApplicationMode());
+        String code = KeyHandler.getCode(keyCode, keyMod, mTermSession.isCursorKeysApplicationMode(), mTermSession.isKeypadApplicationMode());
         if (code == null) return false;
         mTermSession.write(code);
         return true;
@@ -940,7 +1116,8 @@ public final class TerminalView extends View {
                 if (shiftDown) {
                     long time = SystemClock.uptimeMillis();
                     MotionEvent motionEvent = MotionEvent.obtain(time, time, MotionEvent.ACTION_DOWN, 0, 0, 0);
-                    doScroll(motionEvent, keyCode == KeyEvent.KEYCODE_PAGE_UP ? -mEmulator.mRows : mEmulator.mRows);
+                    int rows = mTermSession.getRows();
+                    doScroll(motionEvent, keyCode == KeyEvent.KEYCODE_PAGE_UP ? -rows : rows);
                     motionEvent.recycle();
                     return true;
                 }
@@ -963,7 +1140,7 @@ public final class TerminalView extends View {
 
         // Do not return for KEYCODE_BACK and send it to the client since user may be trying
         // to exit the activity.
-        if (mEmulator == null && keyCode != KeyEvent.KEYCODE_BACK) return true;
+        if (!hasActiveTerminalBackend() && keyCode != KeyEvent.KEYCODE_BACK) return true;
 
         if (mClient.onKeyUp(keyCode, event)) {
             invalidate();
@@ -995,14 +1172,11 @@ public final class TerminalView extends View {
         int newColumns = Math.max(4, (int) (viewWidth / mRenderer.mFontWidth));
         int newRows = Math.max(4, (viewHeight - mRenderer.mFontLineSpacingAndAscent) / mRenderer.mFontLineSpacing);
 
-        if (mEmulator == null || (newColumns != mEmulator.mColumns || newRows != mEmulator.mRows)) {
+        if (!hasActiveTerminalBackend()
+            || newColumns != mTermSession.getColumns() || newRows != mTermSession.getRows()) {
             mTermSession.updateSize(newColumns, newRows, (int) mRenderer.getFontWidth(), mRenderer.getFontLineSpacing());
             mEmulator = mTermSession.getEmulator();
             mClient.onEmulatorSet();
-
-            // Update mTerminalCursorBlinkerRunnable inner class mEmulator on session change
-            if (mTerminalCursorBlinkerRunnable != null)
-                mTerminalCursorBlinkerRunnable.setEmulator(mEmulator);
 
             mTopRow = 0;
             scrollTo(0, 0);
@@ -1012,7 +1186,10 @@ public final class TerminalView extends View {
 
     @Override
     protected void onDraw(Canvas canvas) {
-        if (mEmulator == null) {
+        boolean ghosttyBackend = hasActiveTerminalBackend() && mTermSession.isUsingGhosttyBackend();
+        long drawStartNanos = ghosttyBackend ? SystemClock.elapsedRealtimeNanos() : 0L;
+
+        if (!hasActiveTerminalBackend()) {
             canvas.drawColor(0XFF000000);
         } else {
             // render the terminal view and highlight any selected text
@@ -1021,10 +1198,25 @@ public final class TerminalView extends View {
                 mTextSelectionCursorController.getSelectors(sel);
             }
 
-            mRenderer.render(mEmulator, canvas, mTopRow, sel[0], sel[1], sel[2], sel[3]);
+            if (ghosttyBackend) {
+                ScreenSnapshot renderSnapshot = mGhosttyRenderFrameCache.getSnapshotForRender(
+                    mTermSession.isGhosttyCursorBlinkingEnabled(),
+                    mTermSession.getGhosttyCursorBlinkState());
+                if (renderSnapshot != null) {
+                    mRenderer.render(renderSnapshot, canvas, sel[0], sel[1], sel[2], sel[3]);
+                } else {
+                    canvas.drawColor(0XFF000000);
+                }
+            } else {
+                mRenderer.render(getTerminalContent(), mScreenSnapshot, canvas, mTopRow, sel[0], sel[1], sel[2], sel[3]);
+            }
 
             // render the text selection handles
             renderTextSelection();
+        }
+
+        if (ghosttyBackend) {
+            recordGhosttyDraw(SystemClock.elapsedRealtimeNanos() - drawStartNanos);
         }
     }
 
@@ -1033,7 +1225,10 @@ public final class TerminalView extends View {
     }
 
     private CharSequence getText() {
-        return mEmulator.getScreen().getSelectedText(0, mTopRow, mEmulator.mColumns, mTopRow + mEmulator.mRows);
+        if (!hasActiveTerminalBackend()) return "";
+
+        String selectedText = mTermSession.getSelectedText(0, mTopRow, mTermSession.getColumns(), mTopRow + mTermSession.getRows());
+        return selectedText == null ? "" : selectedText;
     }
 
     public int getCursorX(float x) {
@@ -1045,8 +1240,8 @@ public final class TerminalView extends View {
     }
 
     public int getPointX(int cx) {
-        if (cx > mEmulator.mColumns) {
-            cx = mEmulator.mColumns;
+        if (cx > mTermSession.getColumns()) {
+            cx = mTermSession.getColumns();
         }
         return Math.round(cx * mRenderer.mFontWidth);
     }
@@ -1272,16 +1467,16 @@ public final class TerminalView extends View {
         // Stop any existing cursor blinker callbacks
         stopTerminalCursorBlinker();
 
-        if (mEmulator == null) return;
+        if (!hasActiveTerminalBackend()) return;
 
-        mEmulator.setCursorBlinkingEnabled(false);
+        mTermSession.setCursorBlinkingEnabled(false);
 
         if (start) {
             // If cursor blinker is not enabled or is not valid
             if (mTerminalCursorBlinkerRate < TERMINAL_CURSOR_BLINK_RATE_MIN || mTerminalCursorBlinkerRate > TERMINAL_CURSOR_BLINK_RATE_MAX)
                 return;
             // If cursor blinder is to be started only if cursor is enabled
-            else if (startOnlyIfCursorEnabled && ! mEmulator.isCursorEnabled()) {
+            else if (startOnlyIfCursorEnabled && !mTermSession.isCursorEnabled()) {
                 if (TERMINAL_VIEW_KEY_LOGGING_ENABLED)
                     mClient.logVerbose(LOG_TAG, "Ignoring call to start cursor blinker since cursor is not enabled");
                 return;
@@ -1292,8 +1487,8 @@ public final class TerminalView extends View {
                 mClient.logVerbose(LOG_TAG, "Starting cursor blinker with the blink rate " + mTerminalCursorBlinkerRate);
             if (mTerminalCursorBlinkerHandler == null)
                 mTerminalCursorBlinkerHandler = new Handler(Looper.getMainLooper());
-            mTerminalCursorBlinkerRunnable = new TerminalCursorBlinkerRunnable(mEmulator, mTerminalCursorBlinkerRate);
-            mEmulator.setCursorBlinkingEnabled(true);
+            mTerminalCursorBlinkerRunnable = new TerminalCursorBlinkerRunnable(mTerminalCursorBlinkerRate);
+            mTermSession.setCursorBlinkingEnabled(true);
             mTerminalCursorBlinkerRunnable.run();
         }
     }
@@ -1311,31 +1506,23 @@ public final class TerminalView extends View {
 
     private class TerminalCursorBlinkerRunnable implements Runnable {
 
-        private TerminalEmulator mEmulator;
         private final int mBlinkRate;
 
         // Initialize with false so that initial blink state is visible after toggling
         boolean mCursorVisible = false;
 
-        public TerminalCursorBlinkerRunnable(TerminalEmulator emulator, int blinkRate) {
-            mEmulator = emulator;
+        public TerminalCursorBlinkerRunnable(int blinkRate) {
             mBlinkRate = blinkRate;
-        }
-
-        public void setEmulator(TerminalEmulator emulator) {
-            mEmulator = emulator;
         }
 
         public void run() {
             try {
-                if (mEmulator != null) {
-                    // Toggle the blink state and then invalidate() the view so
-                    // that onDraw() is called, which then calls TerminalRenderer.render()
-                    // which checks with TerminalEmulator.shouldCursorBeVisible() to decide whether
-                    // to draw the cursor or not
+                if (hasActiveTerminalBackend()) {
+                    // Toggle the blink state and invalidate(). Ghostty applies the transient
+                    // blink visibility to the UI-owned render cache before draw, while the
+                    // legacy Java backend picks it up during snapshot fill.
                     mCursorVisible = !mCursorVisible;
-                    //mClient.logVerbose(LOG_TAG, "Toggling cursor blink state to " + mCursorVisible);
-                    mEmulator.setCursorBlinkState(mCursorVisible);
+                    mTermSession.setCursorBlinkState(mCursorVisible);
                     invalidate();
                 }
             } finally {
@@ -1390,6 +1577,22 @@ public final class TerminalView extends View {
             return mTextSelectionCursorController.getSelectedText();
         else
             return null;
+    }
+
+    public TerminalContent getTerminalContent() {
+        if (mTermSession != null) {
+            TerminalContent terminalContent = mTermSession.getTerminalContent();
+            if (terminalContent != null) {
+                return terminalContent;
+            }
+        }
+
+        mTerminalContent.setTerminalEmulator(mEmulator);
+        return mTerminalContent;
+    }
+
+    private boolean hasActiveTerminalBackend() {
+        return mTermSession != null && mTermSession.hasActiveTerminalBackend();
     }
 
     /** Get the selected text stored before "MORE" button was pressed on the context menu. */
@@ -1447,6 +1650,8 @@ public final class TerminalView extends View {
     @Override
     protected void onDetachedFromWindow() {
         super.onDetachedFromWindow();
+        removeCallbacks(mAccessibilityContentDescriptionRefreshRunnable);
+        mAccessibilityRefreshPending = false;
 
         if (mTextSelectionCursorController != null) {
             // Might solve the following exception

@@ -26,6 +26,12 @@ android {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            buildConfigField "boolean", "TERMUX_GHOSTTY_DEBUG_LOG", "false"
+        }
+
+        debug {
+            minifyEnabled false
+            buildConfigField "boolean", "TERMUX_GHOSTTY_DEBUG_LOG", "true"
         }
     }
 
@@ -33,6 +39,19 @@ android {
         ndkBuild {
             path "src/main/jni/Android.mk"
         }
+    }
+
+    sourceSets {
+        debug {
+            jniLibs.srcDir("$buildDir/generated/zigJniLibs/debug/jni")
+        }
+        release {
+            jniLibs.srcDir("$buildDir/generated/zigJniLibs/release/jni")
+        }
+    }
+
+    buildFeatures {
+        buildConfig true
     }
 
     compileOptions {
@@ -50,6 +69,119 @@ android {
             withJavadocJar()
             allVariants()
         }
+    }
+}
+
+def termuxGhosttyAbis = [
+    [abi: 'arm64-v8a', taskSuffix: 'Arm64V8a', target: 'aarch64-linux-android'],
+    [abi: 'armeabi-v7a', taskSuffix: 'ArmeabiV7a', target: 'arm-linux-androideabi'],
+    [abi: 'x86_64', taskSuffix: 'X86_64', target: 'x86_64-linux-android'],
+    [abi: 'x86', taskSuffix: 'X86', target: 'x86-linux-android'],
+]
+
+def termuxGhosttyVariants = [
+    [name: 'debug', taskSuffix: 'Debug', optimize: 'ReleaseSmall', logEnabled: 'true'],
+    [name: 'release', taskSuffix: 'Release', optimize: 'ReleaseSmall', logEnabled: 'false'],
+]
+
+def termuxGhosttyZigProjectDir = file('src/main/zig')
+def termuxGhosttyInputs = fileTree(termuxGhosttyZigProjectDir) {
+    exclude '.zig-cache/**'
+    exclude '.zig-out/**'
+    exclude 'zig-cache/**'
+    exclude 'zig-out/**'
+}
+
+def resolveTermuxGhosttyZigExecutable = {
+    def configuredExecutable = project.findProperty('termuxGhosttyZigExecutable') ?: System.getenv('ZIG_EXECUTABLE')
+    return configuredExecutable ?: 'zig'
+}
+
+def resolveTermuxGhosttyNdkHome = {
+    def envNdkHome = System.getenv('ANDROID_NDK_HOME')
+    if (envNdkHome) return envNdkHome
+
+    def sdkRoot = System.getenv('ANDROID_SDK_ROOT') ?: System.getenv('ANDROID_HOME')
+    if (sdkRoot) {
+        def ndkFromSdk = new File(sdkRoot, "ndk/${android.ndkVersion}")
+        if (ndkFromSdk.isDirectory()) return ndkFromSdk.absolutePath
+    }
+
+    if (android.ndkDirectory != null && android.ndkDirectory.isDirectory()) {
+        return android.ndkDirectory.absolutePath
+    }
+
+    throw new GradleException("Android NDK ${android.ndkVersion} not found. Run inside `nix develop` or set ANDROID_NDK_HOME.")
+}
+
+def resolveTermuxGhosttyOptimize = { variantConfig ->
+    def variantProperty = project.findProperty("termuxGhostty${variantConfig.taskSuffix}Optimize")
+    def sharedProperty = project.findProperty('termuxGhosttyOptimize')
+    return variantProperty ?: sharedProperty ?: variantConfig.optimize
+}
+
+def resolveTermuxGhosttyLogEnabled = { variantConfig ->
+    def variantProperty = project.findProperty("termuxGhostty${variantConfig.taskSuffix}LogEnabled")
+    def sharedProperty = project.findProperty('termuxGhosttyLogEnabled')
+    return variantProperty ?: sharedProperty ?: variantConfig.logEnabled
+}
+
+def buildTermuxGhosttyVariantTasks = [:]
+termuxGhosttyVariants.each { variantConfig ->
+    def abiTasks = termuxGhosttyAbis.collect { abiConfig ->
+        tasks.register("buildTermuxGhostty${variantConfig.taskSuffix}${abiConfig.taskSuffix}", Exec) {
+            def installDir = file("$buildDir/intermediates/zigInstall/${variantConfig.name}/${abiConfig.abi}")
+            def abiJniDir = file("$buildDir/generated/zigJniLibs/${variantConfig.name}/jni/${abiConfig.abi}")
+            def stagedLibrary = new File(abiJniDir, 'libtermux-ghostty.so')
+
+            group = 'build'
+            description = "Build libtermux-ghostty.so for ${variantConfig.name}/${abiConfig.abi}"
+            workingDir termuxGhosttyZigProjectDir
+            executable resolveTermuxGhosttyZigExecutable()
+            args 'build',
+                "-Dtarget=${abiConfig.target}",
+                "-Doptimize=${resolveTermuxGhosttyOptimize(variantConfig)}",
+                "-Dghostty-log=${resolveTermuxGhosttyLogEnabled(variantConfig)}",
+                '--prefix', installDir.absolutePath
+
+            inputs.files(termuxGhosttyInputs)
+            outputs.file(stagedLibrary)
+
+            doFirst {
+                installDir.mkdirs()
+                abiJniDir.mkdirs()
+                environment 'ANDROID_NDK_HOME', resolveTermuxGhosttyNdkHome()
+            }
+
+            doLast {
+                copy {
+                    from new File(installDir, 'lib/libtermux-ghostty.so')
+                    into abiJniDir
+                }
+            }
+        }
+    }
+
+    buildTermuxGhosttyVariantTasks[variantConfig.name] = tasks.register("buildTermuxGhostty${variantConfig.taskSuffix}Jni") {
+        group = 'build'
+        description = "Build libtermux-ghostty.so for the ${variantConfig.name} Android variant"
+        dependsOn(abiTasks)
+    }
+}
+
+tasks.register('buildTermuxGhosttyJni') {
+    group = 'build'
+    description = 'Build libtermux-ghostty.so for debug and release Android variants'
+    dependsOn(buildTermuxGhosttyVariantTasks.values())
+}
+
+afterEvaluate {
+    tasks.named('preDebugBuild').configure {
+        dependsOn(buildTermuxGhosttyVariantTasks.debug)
+    }
+
+    tasks.named('preReleaseBuild').configure {
+        dependsOn(buildTermuxGhosttyVariantTasks.release)
     }
 }
 

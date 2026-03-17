@@ -95,6 +95,8 @@ android {
 
         debug {
             signingConfig signingConfigs.debug
+            debuggable true
+            jniDebuggable true
         }
     }
 

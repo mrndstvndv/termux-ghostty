@@ -12,6 +12,8 @@ public interface TerminalSessionClient {
 
     void onTextChanged(@NonNull TerminalSession changedSession);
 
+    void onFrameAvailable(@NonNull TerminalSession changedSession);
+
     void onTitleChanged(@NonNull TerminalSession changedSession);
 
     void onSessionFinished(@NonNull TerminalSession finishedSession);

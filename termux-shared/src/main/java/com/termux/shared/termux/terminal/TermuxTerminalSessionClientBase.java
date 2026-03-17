@@ -17,6 +17,10 @@ public class TermuxTerminalSessionClientBase implements TerminalSessionClient {
     }
 
     @Override
+    public void onFrameAvailable(@NonNull TerminalSession changedSession) {
+    }
+
+    @Override
     public void onTitleChanged(@NonNull TerminalSession updatedSession) {
     }
 

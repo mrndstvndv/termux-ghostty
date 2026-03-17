@@ -1,0 +1,50 @@
+#ifndef TERMUX_GHOSTTY_H
+#define TERMUX_GHOSTTY_H
+
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#define TERMUX_GHOSTTY_APPEND_RESULT_SCREEN_CHANGED (1u << 0)
+#define TERMUX_GHOSTTY_APPEND_RESULT_CURSOR_CHANGED (1u << 1)
+#define TERMUX_GHOSTTY_APPEND_RESULT_TITLE_CHANGED (1u << 2)
+#define TERMUX_GHOSTTY_APPEND_RESULT_BELL (1u << 3)
+#define TERMUX_GHOSTTY_APPEND_RESULT_CLIPBOARD_COPY (1u << 4)
+#define TERMUX_GHOSTTY_APPEND_RESULT_COLORS_CHANGED (1u << 5)
+#define TERMUX_GHOSTTY_APPEND_RESULT_REPLY_BYTES_AVAILABLE (1u << 6)
+
+#define TERMUX_GHOSTTY_MODE_CURSOR_KEYS_APPLICATION (1u << 0)
+#define TERMUX_GHOSTTY_MODE_KEYPAD_APPLICATION (1u << 1)
+#define TERMUX_GHOSTTY_MODE_MOUSE_TRACKING (1u << 2)
+#define TERMUX_GHOSTTY_MODE_BRACKETED_PASTE (1u << 3)
+
+typedef struct termux_ghostty_session termux_ghostty_session;
+
+termux_ghostty_session* termux_ghostty_session_create(int32_t columns, int32_t rows, int32_t transcript_rows);
+void termux_ghostty_session_destroy(termux_ghostty_session* session);
+void termux_ghostty_session_reset(termux_ghostty_session* session);
+int32_t termux_ghostty_session_resize(termux_ghostty_session* session, int32_t columns, int32_t rows);
+uint32_t termux_ghostty_session_append(termux_ghostty_session* session, const uint8_t* data, size_t len);
+size_t termux_ghostty_session_drain_pending_output(termux_ghostty_session* session, uint8_t* buffer, size_t capacity);
+int32_t termux_ghostty_session_fill_snapshot(termux_ghostty_session* session, int32_t top_row, uint8_t* buffer, size_t capacity);
+int32_t termux_ghostty_session_get_columns(const termux_ghostty_session* session);
+int32_t termux_ghostty_session_get_rows(const termux_ghostty_session* session);
+int32_t termux_ghostty_session_get_active_rows(const termux_ghostty_session* session);
+int32_t termux_ghostty_session_get_active_transcript_rows(const termux_ghostty_session* session);
+uint32_t termux_ghostty_session_get_mode_bits(const termux_ghostty_session* session);
+int32_t termux_ghostty_session_get_cursor_row(const termux_ghostty_session* session);
+int32_t termux_ghostty_session_get_cursor_col(const termux_ghostty_session* session);
+int32_t termux_ghostty_session_get_cursor_style(const termux_ghostty_session* session);
+bool termux_ghostty_session_is_cursor_visible(const termux_ghostty_session* session);
+bool termux_ghostty_session_is_reverse_video(const termux_ghostty_session* session);
+bool termux_ghostty_session_is_alternate_buffer_active(const termux_ghostty_session* session);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif

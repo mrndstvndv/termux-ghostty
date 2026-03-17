@@ -30,7 +30,6 @@ import com.termux.shared.logger.Logger;
 import com.termux.terminal.TerminalColors;
 import com.termux.terminal.TerminalSession;
 import com.termux.terminal.TerminalSessionClient;
-import com.termux.terminal.TextStyle;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -122,6 +121,13 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
     }
 
     @Override
+    public void onFrameAvailable(@NonNull TerminalSession changedSession) {
+        if (!mActivity.isVisible()) return;
+
+        if (mActivity.getCurrentSession() == changedSession) mActivity.getTerminalView().onFrameAvailable();
+    }
+
+    @Override
     public void onTitleChanged(@NonNull TerminalSession updatedSession) {
         if (!mActivity.isVisible()) return;
 
@@ -192,8 +198,8 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
         if (!mActivity.isVisible()) return;
 
         String text = ShareUtils.getTextStringFromClipboardIfSet(mActivity, true);
-        if (text != null)
-            mActivity.getTerminalView().mEmulator.paste(text);
+        if (text != null && mActivity.getCurrentSession() != null)
+            mActivity.getCurrentSession().paste(text);
     }
 
     @Override
@@ -520,8 +526,8 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
     public void updateBackgroundColor() {
         if (!mActivity.isVisible()) return;
         TerminalSession session = mActivity.getCurrentSession();
-        if (session != null && session.getEmulator() != null) {
-            mActivity.getWindow().getDecorView().setBackgroundColor(session.getEmulator().mColors.mCurrentColors[TextStyle.COLOR_INDEX_BACKGROUND]);
+        if (session != null && session.hasActiveTerminalBackend()) {
+            mActivity.getWindow().getDecorView().setBackgroundColor(session.getBackgroundColor());
         }
     }
 

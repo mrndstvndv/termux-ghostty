@@ -37,3 +37,7 @@ local.properties
 .swp
 ehthumbs.db
 Thumbs.db
+
+# Zig build output
+terminal-emulator/src/main/zig/zig-out/
+terminal-emulator/src/main/zig/.zig-cache/

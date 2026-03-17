@@ -11,27 +11,60 @@ import androidx.annotation.Nullable;
  */
 public final class RenderFrameCache {
 
+    public enum ApplyResult {
+        APPLIED(false),
+        IGNORED_OLDER_OR_DUPLICATE(false),
+        REJECTED_UNINITIALIZED_PARTIAL(true),
+        REJECTED_SEQUENCE_GAP(true),
+        REJECTED_PARTIAL_REQUIRING_FULL_REBUILD(true);
+
+        private final boolean mRequiresFullRefresh;
+
+        ApplyResult(boolean requiresFullRefresh) {
+            mRequiresFullRefresh = requiresFullRefresh;
+        }
+
+        public boolean requiresFullRefresh() {
+            return mRequiresFullRefresh;
+        }
+    }
+
     private final ScreenSnapshot mSnapshot = new ScreenSnapshot();
     private long mAppliedFrameSequence = -1;
     private boolean mInitialized;
     private boolean mLoggedMissingInitialFullRebuild;
+    private boolean mLoggedPartialRequiringFullRebuild;
 
-    public boolean apply(FrameDelta frameDelta) {
+    /**
+     * Partial Ghostty frame deltas are only valid when the UI cache has contiguous sequence
+     * history. If one or more frames were missed, the cache must be rebuilt from a fresh backend
+     * snapshot instead of trying to guess the missing state from transport data.
+     */
+    public ApplyResult apply(FrameDelta frameDelta) {
         if (frameDelta == null) {
             throw new IllegalArgumentException("frameDelta must not be null");
         }
         if (frameDelta.getFrameSequence() <= mAppliedFrameSequence) {
-            return false;
+            return ApplyResult.IGNORED_OLDER_OR_DUPLICATE;
         }
 
         ScreenSnapshot transportSnapshot = frameDelta.getTransportSnapshot();
         if (!mInitialized && !frameDelta.isFullRebuild()) {
             logDroppedPartialBeforeInitialization(frameDelta);
-            return false;
+            return ApplyResult.REJECTED_UNINITIALIZED_PARTIAL;
+        }
+        if (hasSequenceGap(frameDelta)) {
+            return ApplyResult.REJECTED_SEQUENCE_GAP;
         }
 
         int topRowDelta = transportSnapshot.getTopRow() - mSnapshot.getTopRow();
-        if (shouldFullRebuild(transportSnapshot, frameDelta, topRowDelta)) {
+        boolean requiresFullRebuild = shouldFullRebuild(transportSnapshot, frameDelta, topRowDelta);
+        if (requiresFullRebuild && !frameDelta.isFullRebuild()) {
+            logDroppedPartialRequiringFullRebuild(frameDelta, topRowDelta);
+            return ApplyResult.REJECTED_PARTIAL_REQUIRING_FULL_REBUILD;
+        }
+
+        if (requiresFullRebuild) {
             mSnapshot.copyFrom(transportSnapshot);
         } else {
             if (topRowDelta != 0) {
@@ -45,13 +78,15 @@ public final class RenderFrameCache {
 
         mInitialized = true;
         mLoggedMissingInitialFullRebuild = false;
+        mLoggedPartialRequiringFullRebuild = false;
         mAppliedFrameSequence = frameDelta.getFrameSequence();
-        return true;
+        return ApplyResult.APPLIED;
     }
 
     public void reset() {
         mInitialized = false;
         mLoggedMissingInitialFullRebuild = false;
+        mLoggedPartialRequiringFullRebuild = false;
         mAppliedFrameSequence = -1;
     }
 
@@ -89,6 +124,17 @@ public final class RenderFrameCache {
         return topRowDelta != 0 && transportSnapshot.getDirtyRowCount() == 0;
     }
 
+    private boolean hasSequenceGap(FrameDelta frameDelta) {
+        if (!mInitialized) {
+            return false;
+        }
+        if (frameDelta.isFullRebuild()) {
+            return false;
+        }
+
+        return frameDelta.getFrameSequence() != mAppliedFrameSequence + 1;
+    }
+
     private void shiftRows(int topRowDelta, int rows) {
         if (topRowDelta == 0) {
             return;
@@ -119,5 +165,23 @@ public final class RenderFrameCache {
             + " columns=" + frameDelta.getColumns()
             + " dirtyRows=" + frameDelta.getDirtyRowCount());
         mLoggedMissingInitialFullRebuild = true;
+    }
+
+    private void logDroppedPartialRequiringFullRebuild(FrameDelta frameDelta, int topRowDelta) {
+        if (mLoggedPartialRequiringFullRebuild) {
+            return;
+        }
+
+        GhosttyLog.warn("Dropping partial Ghostty frame that requires full rebuild"
+            + " frame=" + frameDelta.getFrameSequence()
+            + " cachedTopRow=" + mSnapshot.getTopRow()
+            + " cachedRows=" + mSnapshot.getRows()
+            + " cachedColumns=" + mSnapshot.getColumns()
+            + " nextTopRow=" + frameDelta.getTopRow()
+            + " nextRows=" + frameDelta.getRows()
+            + " nextColumns=" + frameDelta.getColumns()
+            + " topRowDelta=" + topRowDelta
+            + " dirtyRows=" + frameDelta.getDirtyRowCount());
+        mLoggedPartialRequiringFullRebuild = true;
     }
 }

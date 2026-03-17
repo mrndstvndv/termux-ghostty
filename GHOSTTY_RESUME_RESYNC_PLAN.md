@@ -138,13 +138,13 @@ This likely means:
 ## Concrete code targets
 
 ### `terminal-emulator/src/main/java/com/termux/terminal/RenderFrameCache.java`
-- [ ] Add explicit continuity validation for partial frames.
-- [ ] Distinguish failure reasons:
-  - [ ] uninitialized cache + partial frame
-  - [ ] sequence gap on partial frame
-  - [ ] older or duplicate frame
-- [ ] Keep full rebuild frames always acceptable.
-- [ ] Keep cache reset cheap and explicit.
+- [x] Add explicit continuity validation for partial frames.
+- [x] Distinguish failure reasons:
+  - [x] uninitialized cache + partial frame
+  - [x] sequence gap on partial frame
+  - [x] older or duplicate frame
+- [x] Keep full rebuild frames always acceptable.
+- [x] Keep cache reset cheap and explicit.
 
 Implementation notes:
 - current `mAppliedFrameSequence` already exists
@@ -152,10 +152,10 @@ Implementation notes:
 - do not silently accept `frameSequence > lastApplied + 1` for partial frames
 
 ### `terminal-view/src/main/java/com/termux/view/TerminalView.java`
-- [ ] Update `applyLatestGhosttyFrameDelta()` to respond to continuity failures.
-- [ ] Request `mTermSession.requestGhosttyFullSnapshotRefresh()` on unrecoverable partial frames.
-- [ ] Add a small guard so repeated failed applications do not trigger endless duplicate refresh requests.
-- [ ] Clear that guard once a valid full rebuild lands.
+- [x] Update `applyLatestGhosttyFrameDelta()` to respond to continuity failures.
+- [x] Request `mTermSession.requestGhosttyFullSnapshotRefresh()` on unrecoverable partial frames.
+- [x] Add a small guard so repeated failed applications do not trigger endless duplicate refresh requests.
+- [x] Clear that guard once a valid full rebuild lands.
 
 Implementation notes:
 - a bool or last-requested-frame marker is enough
@@ -176,21 +176,21 @@ Implementation notes:
 ## Implementation checklist
 
 ### A. Lock the invariant down
-- [ ] Write down the continuity invariant in code comments near `RenderFrameCache`.
-- [ ] Make it clear that worker-published transport snapshots are not directly renderable source of truth.
-- [ ] Make it clear that partial deltas require contiguous sequence history.
+- [x] Write down the continuity invariant in code comments near `RenderFrameCache`.
+- [x] Make it clear that worker-published transport snapshots are not directly renderable source of truth.
+- [x] Make it clear that partial deltas require contiguous sequence history.
 
 ### B. `RenderFrameCache` behavior
-- [ ] Extend `apply(...)` so partial deltas with a sequence gap are rejected.
-- [ ] Preserve existing older/duplicate frame rejection.
-- [ ] Preserve full rebuild acceptance.
-- [ ] Make failure reason observable by caller.
+- [x] Extend `apply(...)` so partial deltas with a sequence gap are rejected.
+- [x] Preserve existing older/duplicate frame rejection.
+- [x] Preserve full rebuild acceptance.
+- [x] Make failure reason observable by caller.
 
 ### C. `TerminalView` recovery
-- [ ] Teach `applyLatestGhosttyFrameDelta()` to request a full snapshot on continuity failure.
-- [ ] Deduplicate repeated refresh requests.
-- [ ] Reset dedupe state after successful full rebuild.
-- [ ] Keep fallback behavior minimal and local.
+- [x] Teach `applyLatestGhosttyFrameDelta()` to request a full snapshot on continuity failure.
+- [x] Deduplicate repeated refresh requests.
+- [x] Reset dedupe state after successful full rebuild.
+- [x] Keep fallback behavior minimal and local.
 
 ### D. Foreground/session attach safety net
 - [ ] Evaluate whether `onStart()` should request a full snapshot for current Ghostty session.

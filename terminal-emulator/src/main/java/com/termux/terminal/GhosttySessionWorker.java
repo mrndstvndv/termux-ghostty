@@ -218,6 +218,7 @@ final class GhosttySessionWorker extends Thread {
 
         addPendingFrameReason(FrameDelta.REASON_RESIZE);
         mContent.resize(columns, rows);
+        mContent.requestFullSnapshotRefresh();
         updateCachedState();
         mSnapshotDirty.set(true);
         scheduleSnapshotBuild(false);
@@ -226,6 +227,7 @@ final class GhosttySessionWorker extends Thread {
     private void handleReset() {
         addPendingFrameReason(FrameDelta.REASON_RESET);
         mContent.reset();
+        mContent.requestFullSnapshotRefresh();
         updateCachedState();
         mSnapshotDirty.set(true);
         scheduleSnapshotBuild(false);

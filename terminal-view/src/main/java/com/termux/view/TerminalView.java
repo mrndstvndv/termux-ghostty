@@ -62,6 +62,7 @@ public final class TerminalView extends View {
     private final JavaTerminalContentAdapter mTerminalContent = new JavaTerminalContentAdapter();
     private final ScreenSnapshot mScreenSnapshot = new ScreenSnapshot();
     private final RenderFrameCache mGhosttyRenderFrameCache = new RenderFrameCache();
+    private long mGhosttyFullSnapshotRefreshRequestedForFrameSequence = -1;
 
     public TerminalRenderer mRenderer;
 
@@ -337,10 +338,11 @@ public final class TerminalView extends View {
         mEmulator = mTermSession.getEmulator();
         mCombiningAccent = 0;
         mGhosttyRenderFrameCache.reset();
+        mGhosttyFullSnapshotRefreshRequestedForFrameSequence = -1;
 
         updateSize();
         if (mTermSession.isUsingGhosttyBackend()) {
-            mTermSession.requestGhosttyFullSnapshotRefresh();
+            requestGhosttyFullSnapshotRefresh(-1);
         }
         onScreenUpdated();
 
@@ -580,11 +582,29 @@ public final class TerminalView extends View {
             return;
         }
 
-        boolean applied = mGhosttyRenderFrameCache.apply(frameDelta);
-        if (applied || mGhosttyRenderFrameCache.isInitialized()) {
+        RenderFrameCache.ApplyResult applyResult = mGhosttyRenderFrameCache.apply(frameDelta);
+        if (applyResult == RenderFrameCache.ApplyResult.APPLIED) {
+            if (frameDelta.isFullRebuild()) {
+                mGhosttyFullSnapshotRefreshRequestedForFrameSequence = -1;
+            }
+            return;
+        }
+        if (!applyResult.requiresFullRefresh()) {
             return;
         }
 
+        requestGhosttyFullSnapshotRefresh(frameDelta.getFrameSequence());
+    }
+
+    private void requestGhosttyFullSnapshotRefresh(long frameSequence) {
+        if (!hasActiveTerminalBackend() || !mTermSession.isUsingGhosttyBackend()) {
+            return;
+        }
+        if (frameSequence <= mGhosttyFullSnapshotRefreshRequestedForFrameSequence) {
+            return;
+        }
+
+        mGhosttyFullSnapshotRefreshRequestedForFrameSequence = frameSequence;
         mTermSession.requestGhosttyFullSnapshotRefresh();
     }
 

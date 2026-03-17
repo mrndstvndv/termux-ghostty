@@ -96,15 +96,33 @@ public class TextSelectionCursorController implements CursorController {
         mSelY1 = mSelY2 = columnAndRow[1];
 
         TerminalContent terminalContent = terminalView.getTerminalContent();
-        if (!" ".equals(terminalContent.getSelectedText(mSelX1, mSelY1, mSelX1, mSelY1))) {
-            // Selecting something other than whitespace. Expand to word.
-            while (mSelX1 > 0 && !"".equals(terminalContent.getSelectedText(mSelX1 - 1, mSelY1, mSelX1 - 1, mSelY1))) {
-                mSelX1--;
-            }
-            while (mSelX2 < terminalContent.getColumns() - 1 && !"".equals(terminalContent.getSelectedText(mSelX2 + 1, mSelY1, mSelX2 + 1, mSelY1))) {
-                mSelX2++;
-            }
+        if (isWhitespaceCell(terminalContent, mSelX1, mSelY1)) {
+            return;
         }
+
+        while (mSelX1 > 0 && !isWhitespaceCell(terminalContent, mSelX1 - 1, mSelY1)) {
+            mSelX1--;
+        }
+        while (mSelX2 < terminalContent.getColumns() - 1 && !isWhitespaceCell(terminalContent, mSelX2 + 1, mSelY1)) {
+            mSelX2++;
+        }
+    }
+
+    private boolean isWhitespaceCell(TerminalContent terminalContent, int column, int row) {
+        String cellText = terminalContent.getSelectedText(column, row, column, row);
+        if (TextUtils.isEmpty(cellText)) {
+            return true;
+        }
+
+        for (int index = 0; index < cellText.length(); ) {
+            int codePoint = cellText.codePointAt(index);
+            if (!Character.isWhitespace(codePoint)) {
+                return false;
+            }
+            index += Character.charCount(codePoint);
+        }
+
+        return true;
     }
     
     public void setActionModeCallBacks() {

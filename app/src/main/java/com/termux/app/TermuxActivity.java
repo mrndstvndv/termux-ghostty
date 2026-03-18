@@ -183,6 +183,8 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
     private static final int CONTEXT_MENU_AUTOFILL_PASSWORD = 2;
     private static final int CONTEXT_MENU_RESET_TERMINAL_ID = 3;
     private static final int CONTEXT_MENU_KILL_PROCESS_ID = 4;
+    private static final int CONTEXT_MENU_BUBBLE_SESSION_ID = 12;
+    private static final int CONTEXT_MENU_UNBUBBLE_SESSION_ID = 13;
     private static final int CONTEXT_MENU_STYLING_ID = 5;
     private static final int CONTEXT_MENU_TOGGLE_KEEP_SCREEN_ON = 6;
     private static final int CONTEXT_MENU_HELP_ID = 7;
@@ -323,6 +325,22 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
     }
 
     @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+
+        Logger.logDebug(LOG_TAG, "onNewIntent");
+        setIntent(intent);
+
+        if (mIsInvalidState) return;
+        if (mTermuxService == null) return;
+
+        if (handleLaunchIntent(intent, true)) return;
+        if (mTermuxService.isTermuxSessionsEmpty()) return;
+
+        mTermuxTerminalSessionActivityClient.setCurrentSession(mTermuxTerminalSessionActivityClient.getCurrentStoredSessionOrLast());
+    }
+
+    @Override
     protected void onStop() {
         super.onStop();
 
@@ -412,17 +430,8 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
                 // The service connected while not in foreground - just bail out.
                 finishActivityIfNotFinishing();
             }
-        } else {
-            // If termux was started from launcher "New session" shortcut and activity is recreated,
-            // then the original intent will be re-delivered, resulting in a new session being re-added
-            // each time.
-            if (!mIsActivityRecreated && intent != null && Intent.ACTION_RUN.equals(intent.getAction())) {
-                // Android 7.1 app shortcut from res/xml/shortcuts.xml.
-                boolean isFailSafe = intent.getBooleanExtra(TERMUX_ACTIVITY.EXTRA_FAILSAFE_SESSION, false);
-                mTermuxTerminalSessionActivityClient.addNewSession(isFailSafe, null);
-            } else {
-                mTermuxTerminalSessionActivityClient.setCurrentSession(mTermuxTerminalSessionActivityClient.getCurrentStoredSessionOrLast());
-            }
+        } else if (!handleLaunchIntent(intent, !mIsActivityRecreated)) {
+            mTermuxTerminalSessionActivityClient.setCurrentSession(mTermuxTerminalSessionActivityClient.getCurrentStoredSessionOrLast());
         }
 
         // Update the {@link TerminalSession} and {@link TerminalEmulator} clients.
@@ -435,6 +444,28 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
 
         // Respect being stopped from the {@link TermuxService} notification action.
         finishActivityIfNotFinishing();
+    }
+
+    private boolean handleLaunchIntent(@Nullable Intent intent, boolean allowNewSessionShortcut) {
+        if (intent == null) return false;
+        if (mTermuxService == null) return false;
+        if (mTermuxTerminalSessionActivityClient == null) return false;
+
+        String requestedSessionHandle = intent.getStringExtra(TERMUX_ACTIVITY.EXTRA_SESSION_HANDLE);
+        if (requestedSessionHandle != null) {
+            TerminalSession requestedSession = mTermuxService.getTerminalSessionForHandle(requestedSessionHandle);
+            if (requestedSession != null) {
+                mTermuxTerminalSessionActivityClient.setCurrentSession(requestedSession);
+                return true;
+            }
+        }
+
+        if (!allowNewSessionShortcut) return false;
+        if (!Intent.ACTION_RUN.equals(intent.getAction())) return false;
+
+        boolean isFailSafe = intent.getBooleanExtra(TERMUX_ACTIVITY.EXTRA_FAILSAFE_SESSION, false);
+        mTermuxTerminalSessionActivityClient.addNewSession(isFailSafe, null);
+        return true;
     }
 
 
@@ -643,6 +674,12 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
             menu.add(Menu.NONE, CONTEXT_MENU_AUTOFILL_PASSWORD, Menu.NONE, R.string.action_autofill_password);
         menu.add(Menu.NONE, CONTEXT_MENU_RESET_TERMINAL_ID, Menu.NONE, R.string.action_reset_terminal);
         menu.add(Menu.NONE, CONTEXT_MENU_KILL_PROCESS_ID, Menu.NONE, getResources().getString(R.string.action_kill_process, getCurrentSession().getPid())).setEnabled(currentSession.isRunning());
+        if (mTermuxService != null && mTermuxService.canBubbleSessions()) {
+            if (mTermuxService.isSessionBubbled(currentSession.mHandle))
+                menu.add(Menu.NONE, CONTEXT_MENU_UNBUBBLE_SESSION_ID, Menu.NONE, R.string.action_unbubble_session);
+            else
+                menu.add(Menu.NONE, CONTEXT_MENU_BUBBLE_SESSION_ID, Menu.NONE, R.string.action_bubble_session).setEnabled(currentSession.isRunning());
+        }
         menu.add(Menu.NONE, CONTEXT_MENU_STYLING_ID, Menu.NONE, R.string.action_style_terminal);
         menu.add(Menu.NONE, CONTEXT_MENU_TOGGLE_KEEP_SCREEN_ON, Menu.NONE, R.string.action_toggle_keep_screen_on).setCheckable(true).setChecked(mPreferences.shouldKeepScreenOn());
         menu.add(Menu.NONE, CONTEXT_MENU_HELP_ID, Menu.NONE, R.string.action_open_help);
@@ -682,6 +719,14 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
                 return true;
             case CONTEXT_MENU_KILL_PROCESS_ID:
                 showKillSessionDialog(session);
+                return true;
+            case CONTEXT_MENU_BUBBLE_SESSION_ID:
+                if (mTermuxService != null)
+                    mTermuxService.bubbleSession(session, true);
+                return true;
+            case CONTEXT_MENU_UNBUBBLE_SESSION_ID:
+                if (mTermuxService != null)
+                    mTermuxService.unbubbleSession(session);
                 return true;
             case CONTEXT_MENU_STYLING_ID:
                 showStylingDialog();
@@ -1004,9 +1049,19 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         ActivityUtils.startActivity(context, newInstance(context));
     }
 
+    public static void startTermuxActivity(@NonNull final Context context, @Nullable String sessionHandle) {
+        ActivityUtils.startActivity(context, newInstance(context, sessionHandle));
+    }
+
     public static Intent newInstance(@NonNull final Context context) {
+        return newInstance(context, null);
+    }
+
+    public static Intent newInstance(@NonNull final Context context, @Nullable String sessionHandle) {
         Intent intent = new Intent(context, TermuxActivity.class);
         intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        if (sessionHandle != null)
+            intent.putExtra(TERMUX_ACTIVITY.EXTRA_SESSION_HANDLE, sessionHandle);
         return intent;
     }
 

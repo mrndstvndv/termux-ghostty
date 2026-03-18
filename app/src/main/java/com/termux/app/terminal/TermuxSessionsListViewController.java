@@ -1,6 +1,7 @@
 package com.termux.app.terminal;
 
 import android.annotation.SuppressLint;
+import android.app.AlertDialog;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Typeface;
@@ -25,6 +26,7 @@ import com.termux.shared.theme.NightMode;
 import com.termux.shared.theme.ThemeUtils;
 import com.termux.terminal.TerminalSession;
 
+import java.util.ArrayList;
 import java.util.List;
 
 public class TermuxSessionsListViewController extends ArrayAdapter<TermuxSession> implements AdapterView.OnItemClickListener, AdapterView.OnItemLongClickListener {
@@ -53,7 +55,7 @@ public class TermuxSessionsListViewController extends ArrayAdapter<TermuxSession
 
         TerminalSession sessionAtRow = getItem(position).getTerminalSession();
         if (sessionAtRow == null) {
-            sessionTitleView.setText("null session");
+            sessionTitleView.setText(R.string.label_terminal_session_null);
             return sessionRowView;
         }
 
@@ -101,8 +103,31 @@ public class TermuxSessionsListViewController extends ArrayAdapter<TermuxSession
 
     @Override
     public boolean onItemLongClick(AdapterView<?> parent, View view, int position, long id) {
-        final TermuxSession selectedSession = getItem(position);
-        mActivity.getTermuxTerminalSessionClient().renameSession(selectedSession.getTerminalSession());
+        TermuxSession selectedSession = getItem(position);
+        if (selectedSession == null) return true;
+
+        TerminalSession terminalSession = selectedSession.getTerminalSession();
+        if (terminalSession == null) return true;
+
+        List<CharSequence> actionLabels = new ArrayList<>();
+        List<Runnable> actionHandlers = new ArrayList<>();
+
+        actionLabels.add(mActivity.getString(R.string.action_rename_session));
+        actionHandlers.add(() -> mActivity.getTermuxTerminalSessionClient().renameSession(terminalSession));
+
+        if (mActivity.getTermuxService() != null && mActivity.getTermuxService().canBubbleSessions()) {
+            if (mActivity.getTermuxService().isSessionBubbled(terminalSession.mHandle)) {
+                actionLabels.add(mActivity.getString(R.string.action_unbubble_session));
+                actionHandlers.add(() -> mActivity.getTermuxService().unbubbleSession(terminalSession));
+            } else if (terminalSession.isRunning()) {
+                actionLabels.add(mActivity.getString(R.string.action_bubble_session));
+                actionHandlers.add(() -> mActivity.getTermuxService().bubbleSession(terminalSession, true));
+            }
+        }
+
+        new AlertDialog.Builder(mActivity)
+            .setItems(actionLabels.toArray(new CharSequence[0]), (dialog, which) -> actionHandlers.get(which).run())
+            .show();
         return true;
     }
 

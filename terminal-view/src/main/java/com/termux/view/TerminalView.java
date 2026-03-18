@@ -1472,7 +1472,7 @@ public final class TerminalView extends View {
     public void updateSize() {
         int viewWidth = getWidth();
         int viewHeight = getHeight();
-        if (viewWidth == 0 || viewHeight == 0 || mTermSession == null) return;
+        if (viewWidth == 0 || viewHeight == 0 || mTermSession == null || mRenderer == null) return;
 
         int cellWidthPixels = getGhosttyCellWidthPixels();
         int cellHeightPixels = getGhosttyCellHeightPixels();

@@ -96,9 +96,16 @@ public class NotificationUtils {
      *                   posted to this channel are.
      */
     public static void setupNotificationChannel(final Context context, final String channelId, final CharSequence channelName, final int importance) {
+        setupNotificationChannel(context, channelId, channelName, importance, false);
+    }
+
+    public static void setupNotificationChannel(final Context context, final String channelId, final CharSequence channelName,
+                                                final int importance, final boolean allowBubbles) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
 
         NotificationChannel channel = new NotificationChannel(channelId, channelName, importance);
+        if (allowBubbles && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
+            channel.setAllowBubbles(true);
 
         NotificationManager notificationManager = getNotificationManager(context);
         if (notificationManager != null)

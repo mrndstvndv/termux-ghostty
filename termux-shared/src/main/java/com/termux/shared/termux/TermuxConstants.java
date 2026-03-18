@@ -865,6 +865,13 @@ public final class TermuxConstants {
     /** Termux app notification channel name used for crash reports */
     public static final String TERMUX_CRASH_REPORTS_NOTIFICATION_CHANNEL_NAME = TermuxConstants.TERMUX_APP_NAME + " Crash Reports";
 
+    /** Termux app notification channel id used for terminal session bubbles. */
+    public static final String TERMUX_APP_SESSION_BUBBLE_NOTIFICATION_CHANNEL_ID = "termux_session_bubble_notification_channel";
+    /** Termux app notification channel name used for terminal session bubbles. */
+    public static final String TERMUX_APP_SESSION_BUBBLE_NOTIFICATION_CHANNEL_NAME = TermuxConstants.TERMUX_APP_NAME + " Session Bubbles";
+    /** Base notification id used for terminal session bubble notifications. */
+    public static final int TERMUX_APP_SESSION_BUBBLE_NOTIFICATION_ID_BASE = 2000;
+
 
     /** Termux app notification channel id used by {@link TERMUX_FLOAT_APP.TERMUX_FLOAT_SERVICE} */
     public static final String TERMUX_FLOAT_APP_NOTIFICATION_CHANNEL_ID = "termux_float_notification_channel";
@@ -945,6 +952,9 @@ public final class TermuxConstants {
             /** Intent extra for if termux failsafe session needs to be started and is used by {@link TERMUX_ACTIVITY} and {@link TERMUX_SERVICE#ACTION_STOP_SERVICE} */
             public static final String EXTRA_FAILSAFE_SESSION = TermuxConstants.TERMUX_PACKAGE_NAME + ".app.failsafe_session"; // Default: "com.termux.app.failsafe_session"
 
+            /** Intent extra for the exact terminal session handle that should be opened. */
+            public static final String EXTRA_SESSION_HANDLE = TermuxConstants.TERMUX_PACKAGE_NAME + ".app.session_handle"; // Default: "com.termux.app.session_handle"
+
 
             /** Intent action to make termux app notify user that a crash happened. */
             public static final String ACTION_NOTIFY_APP_CRASH = TermuxConstants.TERMUX_PACKAGE_NAME + ".app.notify_app_crash"; // Default: "com.termux.app.notify_app_crash"
@@ -997,6 +1007,9 @@ public final class TermuxConstants {
 
             /** Intent action to execute command with TERMUX_SERVICE */
             public static final String ACTION_SERVICE_EXECUTE = TERMUX_PACKAGE_NAME + ".service_execute"; // Default: "com.termux.service_execute"
+
+            /** Intent action to clear bubble state for a session when its bubble is dismissed. */
+            public static final String ACTION_UNBUBBLE_SESSION = TERMUX_PACKAGE_NAME + ".service_unbubble_session"; // Default: "com.termux.service_unbubble_session"
 
             /** Uri scheme for paths sent via intent to TERMUX_SERVICE */
             public static final String URI_SCHEME_SERVICE_EXECUTE = TERMUX_PACKAGE_NAME + ".file"; // Default: "com.termux.file"

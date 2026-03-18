@@ -48,11 +48,18 @@
     <string name="msg_max_terminals_reached">Close down existing ones before creating new.</string>
 
     <string name="title_rename_session">Set session name</string>
+    <string name="action_rename_session">Rename session</string>
     <string name="action_rename_session_confirm">Set</string>
     <string name="title_create_named_session">New named session</string>
     <string name="action_create_named_session_confirm">Create</string>
 
     <string name="action_toggle_soft_keyboard">Keyboard</string>
+    <string name="action_bubble_session">Bubble session</string>
+    <string name="action_unbubble_session">Unbubble</string>
+    <string name="action_open_in_full_termux">Open in Termux</string>
+    <string name="action_close_session">Close</string>
+    <string name="label_terminal_session_shell">shell</string>
+    <string name="label_terminal_session_null">null session</string>
 
     <string name="msg_enabling_terminal_toolbar">Enabling Terminal Toolbar</string>
     <string name="msg_disabling_terminal_toolbar">Disabling Terminal Toolbar</string>
@@ -100,6 +107,7 @@
     <string name="notification_action_exit">Exit</string>
     <string name="notification_action_wake_lock">Acquire wakelock</string>
     <string name="notification_action_wake_unlock">Release wakelock</string>
+    <string name="notification_text_terminal_session">Terminal session</string>
 
 
 
@@ -107,6 +115,8 @@
     <string name="error_display_over_other_apps_permission_not_granted_to_start_terminal">&TERMUX_APP_NAME; requires
         \"Display over other apps\" permission to start terminal sessions from background on Android >= 10.
         Grants it from Settings -> Apps -> &TERMUX_APP_NAME; -> Advanced</string>
+    <string name="error_termux_bubbles_not_supported">Terminal bubbles require Android 11 or newer.</string>
+    <string name="error_termux_session_not_found">The requested terminal session is no longer available.</string>
     <string name="error_termux_service_invalid_execution_command_runner">Invalid execution command runner to TermuxService: `%1$s`</string>
     <string name="error_termux_service_unsupported_execution_command_runner">Unsupported execution command runner to TermuxService: `%1$s`</string>
     <string name="error_termux_service_unsupported_execution_command_shell_create_mode">Unsupported execution command shell create mode to TermuxService: `%1$s`</string>

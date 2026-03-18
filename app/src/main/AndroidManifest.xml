@@ -89,6 +89,17 @@
         </activity-alias>
 
         <activity
+            android:name=".app.BubbleSessionActivity"
+            android:allowEmbedded="true"
+            android:documentLaunchMode="always"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:launchMode="standard"
+            android:resizeableActivity="true"
+            android:theme="@style/Theme.TermuxActivity.DayNight.NoActionBar"
+            tools:targetApi="n" />
+
+        <activity
             android:name=".app.activities.HelpActivity"
             android:exported="false"
             android:label="@string/application_name"

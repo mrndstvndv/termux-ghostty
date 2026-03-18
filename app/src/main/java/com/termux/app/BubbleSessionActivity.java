@@ -110,6 +110,7 @@ public final class BubbleSessionActivity extends AppCompatActivity implements Se
         if (mIsInvalidState) return;
 
         mTerminalSessionClient.onResume();
+        mTerminalViewClient.setSoftKeyboardState();
         updateSessionTitle();
     }
 

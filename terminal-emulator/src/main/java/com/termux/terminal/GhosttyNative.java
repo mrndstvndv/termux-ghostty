@@ -45,13 +45,30 @@ final class GhosttyNative {
         return LIBRARY_LOADED;
     }
 
-    static native long nativeCreate(int columns, int rows, int transcriptRows);
+    static native long nativeCreate(int columns, int rows, int transcriptRows, int cellWidthPixels, int cellHeightPixels);
 
     static native void nativeDestroy(long nativeHandle);
 
     static native void nativeReset(long nativeHandle);
 
-    static native int nativeResize(long nativeHandle, int columns, int rows);
+    static native int nativeResize(long nativeHandle, int columns, int rows, int cellWidthPixels, int cellHeightPixels);
+
+    static native int nativeQueueMouseEvent(
+        long nativeHandle,
+        int action,
+        int button,
+        int modifiers,
+        float surfaceX,
+        float surfaceY,
+        int screenWidthPx,
+        int screenHeightPx,
+        int cellWidthPx,
+        int cellHeightPx,
+        int paddingTopPx,
+        int paddingRightPx,
+        int paddingBottomPx,
+        int paddingLeftPx
+    );
 
     static native int nativeAppend(long nativeHandle, byte[] data, int offset, int length);
 

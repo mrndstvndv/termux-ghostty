@@ -106,6 +106,8 @@ public final class TerminalSession extends TerminalOutput {
     volatile boolean mGhosttyCursorBlinkState = true;
     volatile int mColumns;
     volatile int mRows;
+    volatile int mCellWidthPixels;
+    volatile int mCellHeightPixels;
     @Nullable
     private String mTitle;
 
@@ -142,12 +144,14 @@ public final class TerminalSession extends TerminalOutput {
 
         this.mColumns = columns;
         this.mRows = rows;
+        this.mCellWidthPixels = cellWidthPixels;
+        this.mCellHeightPixels = cellHeightPixels;
         this.mLastKnownActiveRows = rows;
 
         JNI.setPtyWindowSize(mTerminalFileDescriptor, rows, columns, cellWidthPixels, cellHeightPixels);
         if (mGhosttySessionWorker != null) {
-            GhosttyLog.debug("Enqueuing Ghostty resize pid=" + mShellPid + " columns=" + columns + " rows=" + rows);
-            mGhosttySessionWorker.resize(columns, rows);
+            GhosttyLog.debug("Enqueuing Ghostty resize pid=" + mShellPid + " columns=" + columns + " rows=" + rows + " cellWidth=" + cellWidthPixels + " cellHeight=" + cellHeightPixels);
+            mGhosttySessionWorker.resize(columns, rows, cellWidthPixels, cellHeightPixels);
             return;
         }
 
@@ -177,13 +181,15 @@ public final class TerminalSession extends TerminalOutput {
 
         this.mColumns = columns;
         this.mRows = rows;
+        this.mCellWidthPixels = cellWidthPixels;
+        this.mCellHeightPixels = cellHeightPixels;
         this.mLastKnownActiveRows = rows;
 
         if (requestedGhosttyBackend) {
             try {
-                mGhosttyTerminalContent = new GhosttyTerminalContent(columns, rows, resolveTranscriptRows());
+                mGhosttyTerminalContent = new GhosttyTerminalContent(columns, rows, resolveTranscriptRows(), cellWidthPixels, cellHeightPixels);
                 mLastKnownGhosttyTranscriptRows = mGhosttyTerminalContent.getActiveTranscriptRows();
-                mGhosttySessionWorker = new GhosttySessionWorker(this, mGhosttyTerminalContent, mProcessToTerminalIOQueue, mMainThreadHandler);
+                mGhosttySessionWorker = new GhosttySessionWorker(this, mGhosttyTerminalContent, mProcessToTerminalIOQueue, mMainThreadHandler, cellWidthPixels, cellHeightPixels);
                 mGhosttySessionWorker.start();
                 mEmulator = null;
                 mJavaTerminalContentAdapter.setTerminalEmulator(null);
@@ -337,6 +343,14 @@ public final class TerminalSession extends TerminalOutput {
         return mColumns;
     }
 
+    public int getCellWidthPixels() {
+        return mCellWidthPixels;
+    }
+
+    public int getCellHeightPixels() {
+        return mCellHeightPixels;
+    }
+
     public int getCursorRow() {
         if (mGhosttySessionWorker != null) {
             return mGhosttyCursorRow;
@@ -420,32 +434,21 @@ public final class TerminalSession extends TerminalOutput {
     }
 
     public void sendMouseEvent(int mouseButton, int column, int row, boolean pressed) {
-        if (mGhosttyTerminalContent == null) {
-            if (mEmulator != null) {
-                mEmulator.sendMouseEvent(mouseButton, column, row, pressed);
-            }
+        if (mGhosttyTerminalContent != null) {
             return;
         }
 
-        int clampedColumn = Math.max(1, Math.min(column, mColumns));
-        int clampedRow = Math.max(1, Math.min(row, mRows));
-        boolean isMouseTrackingActive = (mGhosttyModeBits & GhosttyNative.MODE_MOUSE_TRACKING) != 0;
-        if (mouseButton == TerminalEmulator.MOUSE_LEFT_BUTTON_MOVED && !isMouseTrackingActive) {
+        if (mEmulator != null) {
+            mEmulator.sendMouseEvent(mouseButton, column, row, pressed);
+        }
+    }
+
+    public void sendGhosttyMouseEvent(GhosttyMouseEvent event) {
+        if (mGhosttySessionWorker == null) {
             return;
         }
 
-        boolean isMouseProtocolSgr = (mGhosttyModeBits & GhosttyNative.MODE_MOUSE_PROTOCOL_SGR) != 0;
-        if (isMouseProtocolSgr) {
-            write(String.format("\033[<%d;%d;%d" + (pressed ? 'M' : 'm'), mouseButton, clampedColumn, clampedRow));
-            return;
-        }
-
-        int encodedButton = pressed ? mouseButton : 3;
-        if (clampedColumn > 255 - 32 || clampedRow > 255 - 32) {
-            return;
-        }
-        byte[] data = {'\033', '[', 'M', (byte) (32 + encodedButton), (byte) (32 + clampedColumn), (byte) (32 + clampedRow)};
-        write(data, 0, data.length);
+        mGhosttySessionWorker.sendMouseEvent(event);
     }
 
     public void paste(String text) {

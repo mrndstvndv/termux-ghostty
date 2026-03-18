@@ -117,6 +117,32 @@ public final class GhosttyTerminalContent implements TerminalContent, AutoClosea
         return GhosttyNative.nativeConsumeClipboardText(requireNativeHandle());
     }
 
+    @Nullable
+    public synchronized String consumePendingNotificationTitle() {
+        return GhosttyNative.nativeConsumeNotificationTitle(requireNativeHandle());
+    }
+
+    @Nullable
+    public synchronized String consumePendingNotificationBody() {
+        return GhosttyNative.nativeConsumeNotificationBody(requireNativeHandle());
+    }
+
+    public synchronized int getProgressState() {
+        return GhosttyNative.nativeGetProgressState(requireNativeHandle());
+    }
+
+    public synchronized int getProgressValue() {
+        return GhosttyNative.nativeGetProgressValue(requireNativeHandle());
+    }
+
+    public synchronized long getProgressGeneration() {
+        return GhosttyNative.nativeGetProgressGeneration(requireNativeHandle());
+    }
+
+    public synchronized void clearProgress() {
+        GhosttyNative.nativeClearProgress(requireNativeHandle());
+    }
+
     public synchronized boolean isCursorKeysApplicationMode() {
         return (getModeBits() & GhosttyNative.MODE_CURSOR_KEYS_APPLICATION) != 0;
     }

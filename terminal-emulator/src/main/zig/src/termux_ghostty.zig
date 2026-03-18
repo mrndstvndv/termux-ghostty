@@ -10,12 +10,22 @@ pub const append_result_bell: u32 = 1 << 3;
 pub const append_result_clipboard_copy: u32 = 1 << 4;
 pub const append_result_colors_changed: u32 = 1 << 5;
 pub const append_result_reply_bytes_available: u32 = 1 << 6;
+pub const append_result_desktop_notification: u32 = 1 << 7;
+pub const append_result_progress: u32 = 1 << 8;
 
 pub const mode_cursor_keys_application: u32 = 1 << 0;
 pub const mode_keypad_application: u32 = 1 << 1;
 pub const mode_mouse_tracking: u32 = 1 << 2;
 pub const mode_bracketed_paste: u32 = 1 << 3;
 pub const mode_mouse_protocol_sgr: u32 = 1 << 4;
+
+const ProgressState = enum(i32) {
+    none = 0,
+    set = 1,
+    @"error" = 2,
+    indeterminate = 3,
+    pause = 4,
+};
 
 const text_style_bold: u16 = 1 << 0;
 const text_style_italic: u16 = 1 << 1;
@@ -115,6 +125,8 @@ pub const Session = struct {
     pending_output: std.ArrayListUnmanaged(u8) = .empty,
     pending_title: std.ArrayListUnmanaged(u8) = .empty,
     pending_clipboard: std.ArrayListUnmanaged(u8) = .empty,
+    pending_notification_title: std.ArrayListUnmanaged(u8) = .empty,
+    pending_notification_body: std.ArrayListUnmanaged(u8) = .empty,
     scratch_utf16: std.ArrayListUnmanaged(u16) = .empty,
     scratch_cell_starts: std.ArrayListUnmanaged(i32) = .empty,
     scratch_cell_lengths: std.ArrayListUnmanaged(u16) = .empty,
@@ -122,6 +134,10 @@ pub const Session = struct {
     scratch_cell_styles: std.ArrayListUnmanaged(u64) = .empty,
     colors_changed: bool = false,
     bell_pending: bool = false,
+    progress_state: ProgressState = .none,
+    progress_value: i32 = -1,
+    progress_generation: u64 = 0,
+    progress_changed: bool = false,
     viewport_top_row: i32 = 0,
     render_state_needs_update: bool = true,
     serialized_metadata_valid: bool = false,
@@ -146,6 +162,8 @@ pub const Session = struct {
         self.pending_output.deinit(self.alloc);
         self.pending_title.deinit(self.alloc);
         self.pending_clipboard.deinit(self.alloc);
+        self.pending_notification_title.deinit(self.alloc);
+        self.pending_notification_body.deinit(self.alloc);
         self.scratch_utf16.deinit(self.alloc);
         self.scratch_cell_starts.deinit(self.alloc);
         self.scratch_cell_lengths.deinit(self.alloc);
@@ -157,8 +175,11 @@ pub const Session = struct {
         self.pending_output.clearRetainingCapacity();
         self.pending_title.clearRetainingCapacity();
         self.pending_clipboard.clearRetainingCapacity();
+        self.clearPendingNotification();
+        self.clearProgress();
         self.colors_changed = false;
         self.bell_pending = false;
+        self.progress_changed = false;
         self.mouse_pressed_buttons = 0;
         self.mouse_last_cell = .{ .x = 0, .y = 0 };
         self.mouse_last_cell_valid = false;
@@ -591,6 +612,11 @@ pub const Session = struct {
         }
     }
 
+    fn clearPendingNotification(self: *Session) void {
+        self.pending_notification_title.clearRetainingCapacity();
+        self.pending_notification_body.clearRetainingCapacity();
+    }
+
     fn replacePendingTitle(self: *Session, title: []const u8) !void {
         self.pending_title.clearRetainingCapacity();
         try self.pending_title.appendSlice(self.alloc, title);
@@ -601,6 +627,33 @@ pub const Session = struct {
         self.pending_clipboard.clearRetainingCapacity();
         try self.pending_clipboard.appendSlice(self.alloc, text);
         ghostty_log.debug("core queued clipboard bytes={}", .{ text.len });
+    }
+
+    fn replacePendingNotification(self: *Session, title: []const u8, body: []const u8) !void {
+        self.clearPendingNotification();
+        try self.pending_notification_title.appendSlice(self.alloc, title);
+        try self.pending_notification_body.appendSlice(self.alloc, body);
+        ghostty_log.debug("core queued desktop notification titleBytes={} bodyBytes={}", .{ title.len, body.len });
+    }
+
+    fn setProgress(self: *Session, state: ProgressState, progress: ?u8) void {
+        self.progress_state = state;
+        self.progress_value = if (progress) |value| value else -1;
+        self.progress_generation +%= 1;
+        self.progress_changed = true;
+        ghostty_log.debug("core progress state={} value={} generation={}", .{ @intFromEnum(state), self.progress_value, self.progress_generation });
+    }
+
+    fn clearProgress(self: *Session) void {
+        if (self.progress_state == .none and self.progress_value == -1) {
+            return;
+        }
+
+        self.progress_state = .none;
+        self.progress_value = -1;
+        self.progress_generation +%= 1;
+        self.progress_changed = true;
+        ghostty_log.debug("core progress cleared generation={}", .{ self.progress_generation });
     }
 
     fn consumeOwnedUtf8(buffer: *std.ArrayListUnmanaged(u8), alloc: std.mem.Allocator) ?[:0]u8 {
@@ -620,6 +673,14 @@ pub const Session = struct {
 
     fn consumeClipboard(self: *Session) ?[:0]u8 {
         return consumeOwnedUtf8(&self.pending_clipboard, self.alloc);
+    }
+
+    fn consumeNotificationTitle(self: *Session) ?[:0]u8 {
+        return consumeOwnedUtf8(&self.pending_notification_title, self.alloc);
+    }
+
+    fn consumeNotificationBody(self: *Session) ?[:0]u8 {
+        return consumeOwnedUtf8(&self.pending_notification_body, self.alloc);
     }
 
     fn copyOwnedUtf8(alloc: std.mem.Allocator, text: [:0]const u8) ?[:0]u8 {
@@ -885,8 +946,8 @@ const Handler = struct {
             .decaln => try self.session.terminal.decaln(),
             .window_title => try self.session.replacePendingTitle(value.title),
             .report_pwd => {},
-            .show_desktop_notification => {},
-            .progress_report => {},
+            .show_desktop_notification => try self.session.replacePendingNotification(value.title, value.body),
+            .progress_report => self.progressReport(value),
             .start_hyperlink => try self.session.terminal.screens.active.startHyperlink(value.uri, value.id),
             .clipboard_contents => try self.clipboardContents(value.kind, value.data),
             .mouse_shape => self.session.terminal.mouse_shape = value,
@@ -1097,6 +1158,16 @@ const Handler = struct {
         try self.session.replacePendingClipboard(decoded);
     }
 
+    fn progressReport(self: *Handler, value: ghostty.osc.Command.ProgressReport) void {
+        switch (value.state) {
+            .remove => self.session.clearProgress(),
+            .set => self.session.setProgress(.set, value.progress),
+            .@"error" => self.session.setProgress(.@"error", value.progress),
+            .indeterminate => self.session.setProgress(.indeterminate, value.progress),
+            .pause => self.session.setProgress(.pause, value.progress),
+        }
+    }
+
     fn colorOperation(
         self: *Handler,
         op: ghostty.osc.color.Operation,
@@ -1247,6 +1318,8 @@ pub export fn termux_ghostty_session_create(
     session.pending_output = .empty;
     session.pending_title = .empty;
     session.pending_clipboard = .empty;
+    session.pending_notification_title = .empty;
+    session.pending_notification_body = .empty;
     session.scratch_utf16 = .empty;
     session.scratch_cell_starts = .empty;
     session.scratch_cell_lengths = .empty;
@@ -1254,6 +1327,10 @@ pub export fn termux_ghostty_session_create(
     session.scratch_cell_styles = .empty;
     session.colors_changed = false;
     session.bell_pending = false;
+    session.progress_state = .none;
+    session.progress_value = -1;
+    session.progress_generation = 0;
+    session.progress_changed = false;
     session.viewport_top_row = 0;
     session.render_state_needs_update = true;
     session.serialized_metadata_valid = false;
@@ -1432,6 +1509,7 @@ pub export fn termux_ghostty_session_append(
 
     handle.colors_changed = false;
     handle.bell_pending = false;
+    handle.progress_changed = false;
 
     handle.stream.nextSlice(bytes[0..len]);
     handle.markRenderStateDirty();
@@ -1452,11 +1530,17 @@ pub export fn termux_ghostty_session_append(
     if (handle.pending_clipboard.items.len > 0) {
         result |= append_result_clipboard_copy;
     }
+    if (handle.pending_notification_title.items.len > 0 or handle.pending_notification_body.items.len > 0) {
+        result |= append_result_desktop_notification;
+    }
     if (handle.colors_changed) {
         result |= append_result_colors_changed;
     }
     if (handle.bell_pending) {
         result |= append_result_bell;
+    }
+    if (handle.progress_changed) {
+        result |= append_result_progress;
     }
     if (handle.pending_output.items.len > 0) {
         result |= append_result_reply_bytes_available;
@@ -1464,7 +1548,7 @@ pub export fn termux_ghostty_session_append(
 
     if (log_append_summary and ghostty_log.enabled()) {
         ghostty_log.debug(
-            "core append session=0x{x} len={} result=0x{x} cursor={}x{} transcriptRows={} pendingOut={} titleBytes={} clipboardBytes={}",
+            "core append session=0x{x} len={} result=0x{x} cursor={}x{} transcriptRows={} pendingOut={} titleBytes={} clipboardBytes={} notificationTitleBytes={} notificationBodyBytes={} progressState={} progressValue={} progressGeneration={}",
             .{
                 @intFromPtr(handle),
                 len,
@@ -1475,6 +1559,11 @@ pub export fn termux_ghostty_session_append(
                 handle.pending_output.items.len,
                 handle.pending_title.items.len,
                 handle.pending_clipboard.items.len,
+                handle.pending_notification_title.items.len,
+                handle.pending_notification_body.items.len,
+                @intFromEnum(handle.progress_state),
+                handle.progress_value,
+                handle.progress_generation,
             },
         );
     }
@@ -1692,6 +1781,41 @@ pub export fn termux_ghostty_session_is_reverse_video(session: ?*const Session) 
 pub export fn termux_ghostty_session_is_alternate_buffer_active(session: ?*const Session) bool {
     const handle = session orelse return false;
     return handle.alternateBufferActive();
+}
+
+pub export fn termux_ghostty_session_get_progress_state(session: ?*const Session) i32 {
+    const handle = session orelse return @intFromEnum(ProgressState.none);
+    return @intFromEnum(handle.progress_state);
+}
+
+pub export fn termux_ghostty_session_get_progress_value(session: ?*const Session) i32 {
+    const handle = session orelse return -1;
+    return handle.progress_value;
+}
+
+pub export fn termux_ghostty_session_get_progress_generation(session: ?*const Session) u64 {
+    const handle = session orelse return 0;
+    return handle.progress_generation;
+}
+
+pub export fn termux_ghostty_session_clear_progress(session: ?*Session) void {
+    const handle = session orelse return;
+    handle.clearProgress();
+    handle.progress_changed = false;
+}
+
+pub export fn termux_ghostty_session_consume_notification_title(session: ?*Session) ?[*:0]u8 {
+    const handle = session orelse return null;
+    const title = handle.consumeNotificationTitle() orelse return null;
+    ghostty_log.debug("core consumeNotificationTitle session=0x{x} bytes={}", .{ @intFromPtr(handle), title.len });
+    return title.ptr;
+}
+
+pub export fn termux_ghostty_session_consume_notification_body(session: ?*Session) ?[*:0]u8 {
+    const handle = session orelse return null;
+    const body = handle.consumeNotificationBody() orelse return null;
+    ghostty_log.debug("core consumeNotificationBody session=0x{x} bytes={}", .{ @intFromPtr(handle), body.len });
+    return body.ptr;
 }
 
 pub fn termux_ghostty_session_consume_title(session: ?*Session) ?[:0]u8 {
@@ -1999,6 +2123,89 @@ const BufferWriter = struct {
         try self.write(value);
     }
 };
+
+fn appendTestBytes(session: *Session, bytes: []const u8) u32 {
+    return termux_ghostty_session_append(session, bytes.ptr, bytes.len);
+}
+
+fn expectOwnedText(actual: ?[*:0]u8, expected: ?[]const u8) !void {
+    if (expected) |expected_text| {
+        const owned_ptr = actual orelse return error.ExpectedText;
+        const owned = std.mem.span(owned_ptr);
+        defer std.heap.c_allocator.free(owned);
+        try testing.expectEqualSlices(u8, expected_text, owned);
+        return;
+    }
+
+    if (actual) |owned_ptr| {
+        const owned = std.mem.span(owned_ptr);
+        defer std.heap.c_allocator.free(owned);
+        try testing.expectEqual(@as(usize, 0), owned.len);
+        return;
+    }
+
+    try testing.expect(actual == null);
+}
+
+test "osc 9 stores pending desktop notification body" {
+    const session = termux_ghostty_session_create(10, 5, 100, 10, 20) orelse return error.OutOfMemory;
+    defer termux_ghostty_session_destroy(session);
+
+    const result = appendTestBytes(session, "\x1B]9;Build finished\x07");
+    try testing.expect((result & append_result_desktop_notification) != 0);
+    try expectOwnedText(termux_ghostty_session_consume_notification_title(session), null);
+    try expectOwnedText(termux_ghostty_session_consume_notification_body(session), "Build finished");
+}
+
+test "osc 777 stores pending desktop notification title and body" {
+    const session = termux_ghostty_session_create(10, 5, 100, 10, 20) orelse return error.OutOfMemory;
+    defer termux_ghostty_session_destroy(session);
+
+    const result = appendTestBytes(session, "\x1B]777;notify;Build;Finished\x1B\\");
+    try testing.expect((result & append_result_desktop_notification) != 0);
+    try expectOwnedText(termux_ghostty_session_consume_notification_title(session), "Build");
+    try expectOwnedText(termux_ghostty_session_consume_notification_body(session), "Finished");
+    try testing.expect(termux_ghostty_session_consume_notification_title(session) == null);
+    try testing.expect(termux_ghostty_session_consume_notification_body(session) == null);
+}
+
+test "osc 9;4 set stores progress state and value" {
+    const session = termux_ghostty_session_create(10, 5, 100, 10, 20) orelse return error.OutOfMemory;
+    defer termux_ghostty_session_destroy(session);
+
+    const result = appendTestBytes(session, "\x1B]9;4;1;50\x07");
+    try testing.expect((result & append_result_progress) != 0);
+    try testing.expectEqual(@as(i32, @intFromEnum(ProgressState.set)), termux_ghostty_session_get_progress_state(session));
+    try testing.expectEqual(@as(i32, 50), termux_ghostty_session_get_progress_value(session));
+    try testing.expectEqual(@as(u64, 1), termux_ghostty_session_get_progress_generation(session));
+}
+
+test "osc 9;4 remove clears progress state" {
+    const session = termux_ghostty_session_create(10, 5, 100, 10, 20) orelse return error.OutOfMemory;
+    defer termux_ghostty_session_destroy(session);
+
+    _ = appendTestBytes(session, "\x1B]9;4;3\x07");
+    const result = appendTestBytes(session, "\x1B]9;4;0\x07");
+    try testing.expect((result & append_result_progress) != 0);
+    try testing.expectEqual(@as(i32, @intFromEnum(ProgressState.none)), termux_ghostty_session_get_progress_state(session));
+    try testing.expectEqual(@as(i32, -1), termux_ghostty_session_get_progress_value(session));
+    try testing.expect(termux_ghostty_session_get_progress_generation(session) >= 2);
+}
+
+test "reset clears progress and pending notification state" {
+    const session = termux_ghostty_session_create(10, 5, 100, 10, 20) orelse return error.OutOfMemory;
+    defer termux_ghostty_session_destroy(session);
+
+    _ = appendTestBytes(session, "\x1B]777;notify;Build;Finished\x1B\\");
+    _ = appendTestBytes(session, "\x1B]9;4;2;75\x07");
+
+    termux_ghostty_session_reset(session);
+
+    try testing.expect(termux_ghostty_session_consume_notification_title(session) == null);
+    try testing.expect(termux_ghostty_session_consume_notification_body(session) == null);
+    try testing.expectEqual(@as(i32, @intFromEnum(ProgressState.none)), termux_ghostty_session_get_progress_state(session));
+    try testing.expectEqual(@as(i32, -1), termux_ghostty_session_get_progress_value(session));
+}
 
 test "queue mouse event updates pressed state and emits sgr bytes" {
     const session = termux_ghostty_session_create(10, 5, 100, 10, 20) orelse return error.OutOfMemory;

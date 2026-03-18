@@ -45,6 +45,12 @@ public final class TerminalSession extends TerminalOutput {
     /** Temporary development toggle for bringing up the Ghostty backend in-app. */
     private static final boolean FORCE_GHOSTTY_BACKEND = true;
 
+    public static final int GHOSTTY_PROGRESS_STATE_NONE = GhosttyNative.PROGRESS_STATE_NONE;
+    public static final int GHOSTTY_PROGRESS_STATE_SET = GhosttyNative.PROGRESS_STATE_SET;
+    public static final int GHOSTTY_PROGRESS_STATE_ERROR = GhosttyNative.PROGRESS_STATE_ERROR;
+    public static final int GHOSTTY_PROGRESS_STATE_INDETERMINATE = GhosttyNative.PROGRESS_STATE_INDETERMINATE;
+    public static final int GHOSTTY_PROGRESS_STATE_PAUSE = GhosttyNative.PROGRESS_STATE_PAUSE;
+
     public final String mHandle = UUID.randomUUID().toString();
 
     TerminalEmulator mEmulator;
@@ -102,12 +108,20 @@ public final class TerminalSession extends TerminalOutput {
     volatile int mGhosttyCursorRow;
     volatile int mGhosttyCursorCol;
     volatile int mGhosttyCursorStyle;
+    volatile int mGhosttyProgressState = GHOSTTY_PROGRESS_STATE_NONE;
+    volatile int mGhosttyProgressValue = -1;
+    volatile long mGhosttyProgressGeneration;
     volatile boolean mGhosttyCursorBlinkingEnabled;
     volatile boolean mGhosttyCursorBlinkState = true;
     volatile int mColumns;
     volatile int mRows;
     volatile int mCellWidthPixels;
     volatile int mCellHeightPixels;
+    volatile long mGhosttyProtocolNotificationGeneration;
+    @Nullable
+    volatile String mGhosttyProtocolNotificationTitle;
+    @Nullable
+    volatile String mGhosttyProtocolNotificationBody;
     @Nullable
     private String mTitle;
 
@@ -167,6 +181,32 @@ public final class TerminalSession extends TerminalOutput {
             return mTitle;
         }
         return (mEmulator == null) ? null : mEmulator.getTitle();
+    }
+
+    public int getGhosttyProgressState() {
+        return mGhosttyProgressState;
+    }
+
+    public int getGhosttyProgressValue() {
+        return mGhosttyProgressValue;
+    }
+
+    public long getGhosttyProgressGeneration() {
+        return mGhosttyProgressGeneration;
+    }
+
+    public long getGhosttyProtocolNotificationGeneration() {
+        return mGhosttyProtocolNotificationGeneration;
+    }
+
+    @Nullable
+    public String getGhosttyProtocolNotificationTitle() {
+        return mGhosttyProtocolNotificationTitle;
+    }
+
+    @Nullable
+    public String getGhosttyProtocolNotificationBody() {
+        return mGhosttyProtocolNotificationBody;
     }
 
     /**
@@ -512,6 +552,27 @@ public final class TerminalSession extends TerminalOutput {
         if (mGhosttySessionWorker != null) {
             mGhosttySessionWorker.requestFullSnapshotRefresh();
         }
+    }
+
+    void updateGhosttyProgressState(int state, int value, long generation) {
+        mGhosttyProgressState = state;
+        mGhosttyProgressValue = value;
+        mGhosttyProgressGeneration = generation;
+    }
+
+    void dispatchGhosttyProgressChanged(long expectedGeneration) {
+        if (mGhosttyProgressGeneration != expectedGeneration) {
+            return;
+        }
+
+        mClient.onTerminalProgressChanged(this);
+    }
+
+    void onTerminalProtocolNotification(@Nullable String title, @Nullable String body) {
+        mGhosttyProtocolNotificationTitle = title;
+        mGhosttyProtocolNotificationBody = body;
+        mGhosttyProtocolNotificationGeneration++;
+        mClient.onTerminalProtocolNotification(this, title, body);
     }
 
     /** Notify the {@link #mClient} that terminal text changed and higher-level listeners should refresh. */

@@ -872,6 +872,13 @@ public final class TermuxConstants {
     /** Base notification id used for terminal session bubble notifications. */
     public static final int TERMUX_APP_SESSION_BUBBLE_NOTIFICATION_ID_BASE = 2000;
 
+    /** Termux app notification channel id used for terminal protocol notifications. */
+    public static final String TERMUX_TERMINAL_PROTOCOL_NOTIFICATIONS_NOTIFICATION_CHANNEL_ID = "termux_terminal_protocol_notifications_channel";
+    /** Termux app notification channel name used for terminal protocol notifications. */
+    public static final String TERMUX_TERMINAL_PROTOCOL_NOTIFICATIONS_NOTIFICATION_CHANNEL_NAME = TermuxConstants.TERMUX_APP_NAME + " Terminal Notifications";
+    /** Base notification id used for terminal protocol notifications. */
+    public static final int TERMUX_TERMINAL_PROTOCOL_NOTIFICATION_ID_BASE = 3000;
+
 
     /** Termux app notification channel id used by {@link TERMUX_FLOAT_APP.TERMUX_FLOAT_SERVICE} */
     public static final String TERMUX_FLOAT_APP_NOTIFICATION_CHANNEL_ID = "termux_float_notification_channel";

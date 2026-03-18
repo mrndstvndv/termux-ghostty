@@ -4,6 +4,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import com.termux.app.TermuxService;
+import com.termux.app.bubbles.BubbleTerminalSessionClient;
 import com.termux.shared.termux.terminal.TermuxTerminalSessionClientBase;
 import com.termux.terminal.TerminalSession;
 import com.termux.terminal.TerminalSessionClient;
@@ -37,6 +38,22 @@ public final class TermuxTerminalSessionClientDispatcher extends TermuxTerminalS
     @NonNull
     private synchronized List<TerminalSessionClient> getRegisteredClientsSnapshot() {
         return new ArrayList<>(mRegisteredClients);
+    }
+
+    private boolean isSessionFocused(@NonNull TerminalSession session, @NonNull List<TerminalSessionClient> clients) {
+        for (TerminalSessionClient client : clients) {
+            if (client instanceof TermuxTerminalSessionActivityClient
+                && ((TermuxTerminalSessionActivityClient) client).isSessionFocused(session)) {
+                return true;
+            }
+
+            if (client instanceof BubbleTerminalSessionClient
+                && ((BubbleTerminalSessionClient) client).isSessionFocused(session)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     @Override
@@ -87,6 +104,22 @@ public final class TermuxTerminalSessionClientDispatcher extends TermuxTerminalS
     public void onColorsChanged(@NonNull TerminalSession changedSession) {
         for (TerminalSessionClient client : getRegisteredClientsSnapshot())
             client.onColorsChanged(changedSession);
+    }
+
+    @Override
+    public void onTerminalProtocolNotification(@NonNull TerminalSession session, @Nullable String title, @Nullable String body) {
+        List<TerminalSessionClient> clients = getRegisteredClientsSnapshot();
+        if (!isSessionFocused(session, clients))
+            mServiceClient.onTerminalProtocolNotification(session, title, body);
+
+        for (TerminalSessionClient client : clients)
+            client.onTerminalProtocolNotification(session, title, body);
+    }
+
+    @Override
+    public void onTerminalProgressChanged(@NonNull TerminalSession session) {
+        for (TerminalSessionClient client : getRegisteredClientsSnapshot())
+            client.onTerminalProgressChanged(session);
     }
 
     @Override

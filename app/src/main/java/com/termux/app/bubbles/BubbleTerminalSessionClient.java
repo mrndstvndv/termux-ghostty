@@ -100,6 +100,13 @@ public final class BubbleTerminalSessionClient extends TermuxTerminalSessionClie
         return mActivity.getProperties().getTerminalCursorStyle();
     }
 
+    public boolean isSessionFocused(@Nullable TerminalSession session) {
+        if (session == null) return false;
+        if (!mActivity.isVisible()) return false;
+        if (!mActivity.hasWindowFocus()) return false;
+        return session == mActivity.getCurrentSession();
+    }
+
     public void applyTerminalStyling() {
         try {
             File colorsFile = TermuxConstants.TERMUX_COLOR_PROPERTIES_FILE;

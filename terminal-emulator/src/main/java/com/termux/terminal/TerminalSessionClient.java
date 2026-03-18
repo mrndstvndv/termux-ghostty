@@ -26,6 +26,10 @@ public interface TerminalSessionClient {
 
     void onColorsChanged(@NonNull TerminalSession session);
 
+    void onTerminalProtocolNotification(@NonNull TerminalSession session, @Nullable String title, @Nullable String body);
+
+    void onTerminalProgressChanged(@NonNull TerminalSession session);
+
     void onTerminalCursorStateChange(boolean state);
 
     void setTerminalShellPid(@NonNull TerminalSession session, int pid);

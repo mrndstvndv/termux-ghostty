@@ -267,6 +267,12 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
         return mActivity.getProperties().getTerminalCursorStyle();
     }
 
+    public boolean isSessionFocused(@Nullable TerminalSession session) {
+        if (session == null) return false;
+        if (!mActivity.isVisible()) return false;
+        if (!mActivity.hasWindowFocus()) return false;
+        return session == mActivity.getCurrentSession();
+    }
 
 
     /** Load mBellSoundPool */

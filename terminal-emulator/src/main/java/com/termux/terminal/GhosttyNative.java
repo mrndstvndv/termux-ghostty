@@ -13,12 +13,20 @@ final class GhosttyNative {
     static final int APPEND_RESULT_CLIPBOARD_COPY = 1 << 4;
     static final int APPEND_RESULT_COLORS_CHANGED = 1 << 5;
     static final int APPEND_RESULT_REPLY_BYTES_AVAILABLE = 1 << 6;
+    static final int APPEND_RESULT_DESKTOP_NOTIFICATION = 1 << 7;
+    static final int APPEND_RESULT_PROGRESS = 1 << 8;
 
     static final int MODE_CURSOR_KEYS_APPLICATION = 1;
     static final int MODE_KEYPAD_APPLICATION = 1 << 1;
     static final int MODE_MOUSE_TRACKING = 1 << 2;
     static final int MODE_BRACKETED_PASTE = 1 << 3;
     static final int MODE_MOUSE_PROTOCOL_SGR = 1 << 4;
+
+    static final int PROGRESS_STATE_NONE = 0;
+    static final int PROGRESS_STATE_SET = 1;
+    static final int PROGRESS_STATE_ERROR = 2;
+    static final int PROGRESS_STATE_INDETERMINATE = 3;
+    static final int PROGRESS_STATE_PAUSE = 4;
 
     static final int TRANSCRIPT_FLAG_JOIN_LINES = 1;
     static final int TRANSCRIPT_FLAG_TRIM = 1 << 1;
@@ -87,6 +95,20 @@ final class GhosttyNative {
 
     @Nullable
     static native String nativeConsumeClipboardText(long nativeHandle);
+
+    @Nullable
+    static native String nativeConsumeNotificationTitle(long nativeHandle);
+
+    @Nullable
+    static native String nativeConsumeNotificationBody(long nativeHandle);
+
+    static native int nativeGetProgressState(long nativeHandle);
+
+    static native int nativeGetProgressValue(long nativeHandle);
+
+    static native long nativeGetProgressGeneration(long nativeHandle);
+
+    static native void nativeClearProgress(long nativeHandle);
 
     static native int nativeGetColumns(long nativeHandle);
 

@@ -35,6 +35,7 @@ final class GhosttySessionWorker extends Thread {
     private static final int MSG_VIEWPORT_SCROLL = 7;
     private static final int MSG_REQUEST_FULL_SNAPSHOT_REFRESH = 8;
     private static final int MSG_MOUSE_EVENT = 9;
+    private static final int MSG_PROGRESS_TIMEOUT = 10;
 
     private static final long SNAPSHOT_INTERVAL_MILLIS = 16; // ~60fps
     private static final long SNAPSHOT_INTERVAL_BUSY_MILLIS = 33; // ~30fps under sustained backlog
@@ -42,6 +43,7 @@ final class GhosttySessionWorker extends Thread {
     private static final long MAX_APPEND_TIME_MILLIS = 8;
     private static final int PERF_LOG_INTERVAL_FRAMES = 120;
     private static final long SLOW_SNAPSHOT_BUILD_NANOS = 8_000_000L;
+    private static final long PROGRESS_TIMEOUT_MILLIS = 15_000L;
 
     private final TerminalSession mSession;
     private final GhosttyTerminalContent mContent;
@@ -261,6 +263,7 @@ final class GhosttySessionWorker extends Thread {
         mContent.reset();
         mContent.requestFullSnapshotRefresh();
         updateCachedState();
+        handleProgressUpdate();
         mSnapshotDirty.set(true);
         scheduleSnapshotBuild(false);
     }
@@ -307,12 +310,73 @@ final class GhosttySessionWorker extends Thread {
             String text = mContent.consumePendingClipboardText();
             mMainThreadHandler.post(() -> mSession.onCopyTextToClipboard(text));
         }
+        if ((result & GhosttyNative.APPEND_RESULT_DESKTOP_NOTIFICATION) != 0) {
+            handleDesktopNotification();
+        }
         if ((result & GhosttyNative.APPEND_RESULT_BELL) != 0) {
             mMainThreadHandler.post(mSession::onBell);
         }
         if ((result & GhosttyNative.APPEND_RESULT_COLORS_CHANGED) != 0) {
             mMainThreadHandler.post(mSession::onColorsChanged);
         }
+        if ((result & GhosttyNative.APPEND_RESULT_PROGRESS) != 0) {
+            handleProgressUpdate();
+        }
+    }
+
+    private void handleDesktopNotification() {
+        String title = mContent.consumePendingNotificationTitle();
+        String body = mContent.consumePendingNotificationBody();
+        if (title == null && body == null) {
+            return;
+        }
+
+        mMainThreadHandler.post(() -> mSession.onTerminalProtocolNotification(title, body));
+    }
+
+    private void handleProgressUpdate() {
+        int previousState = mSession.mGhosttyProgressState;
+        int previousValue = mSession.mGhosttyProgressValue;
+        long previousGeneration = mSession.mGhosttyProgressGeneration;
+
+        int state = mContent.getProgressState();
+        int value = mContent.getProgressValue();
+        long generation = mContent.getProgressGeneration();
+        if (previousState == state && previousValue == value && previousGeneration == generation) {
+            return;
+        }
+
+        mSession.updateGhosttyProgressState(state, value, generation);
+        if (state == TerminalSession.GHOSTTY_PROGRESS_STATE_NONE) {
+            cancelProgressTimeout();
+        } else {
+            scheduleProgressTimeout(generation);
+        }
+
+        mMainThreadHandler.post(() -> mSession.dispatchGhosttyProgressChanged(generation));
+    }
+
+    private void scheduleProgressTimeout(long generation) {
+        Handler handler = getWorkerHandler();
+        handler.removeMessages(MSG_PROGRESS_TIMEOUT);
+        handler.sendMessageDelayed(handler.obtainMessage(MSG_PROGRESS_TIMEOUT, Long.valueOf(generation)), PROGRESS_TIMEOUT_MILLIS);
+    }
+
+    private void cancelProgressTimeout() {
+        getWorkerHandler().removeMessages(MSG_PROGRESS_TIMEOUT);
+    }
+
+    private void handleProgressTimeout(long expectedGeneration) {
+        if (mContent.getProgressGeneration() != expectedGeneration) {
+            return;
+        }
+        if (mContent.getProgressState() == TerminalSession.GHOSTTY_PROGRESS_STATE_NONE) {
+            return;
+        }
+
+        GhosttyLog.debug("Clearing stale Ghostty progress session=" + mSession.mHandle + " generation=" + expectedGeneration);
+        mContent.clearProgress();
+        handleProgressUpdate();
     }
 
     private void handleRequestFullSnapshotRefresh() {
@@ -478,7 +542,11 @@ final class GhosttySessionWorker extends Thread {
                 case MSG_MOUSE_EVENT:
                     handleMouseEvent((GhosttyMouseEvent) msg.obj);
                     break;
+                case MSG_PROGRESS_TIMEOUT:
+                    handleProgressTimeout((Long) msg.obj);
+                    break;
                 case MSG_SHUTDOWN:
+                    cancelProgressTimeout();
                     getLooper().quit();
                     break;
             }

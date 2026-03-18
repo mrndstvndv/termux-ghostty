@@ -313,6 +313,74 @@ pub export fn Java_com_termux_terminal_GhosttyNative_nativeConsumeClipboardText(
     return newJStringFromUtf8(jni, owned);
 }
 
+pub export fn Java_com_termux_terminal_GhosttyNative_nativeConsumeNotificationTitle(
+    env: ?*c.JNIEnv,
+    clazz: c.jclass,
+    native_handle: jlong,
+) c.jstring {
+    _ = clazz;
+
+    const jni = env orelse return null;
+    const owned_ptr = core.termux_ghostty_session_consume_notification_title(sessionFromHandle(native_handle)) orelse return null;
+    const owned = std.mem.span(owned_ptr);
+    defer std.heap.c_allocator.free(owned);
+    return newJStringFromUtf8(jni, owned);
+}
+
+pub export fn Java_com_termux_terminal_GhosttyNative_nativeConsumeNotificationBody(
+    env: ?*c.JNIEnv,
+    clazz: c.jclass,
+    native_handle: jlong,
+) c.jstring {
+    _ = clazz;
+
+    const jni = env orelse return null;
+    const owned_ptr = core.termux_ghostty_session_consume_notification_body(sessionFromHandle(native_handle)) orelse return null;
+    const owned = std.mem.span(owned_ptr);
+    defer std.heap.c_allocator.free(owned);
+    return newJStringFromUtf8(jni, owned);
+}
+
+pub export fn Java_com_termux_terminal_GhosttyNative_nativeGetProgressState(
+    env: ?*c.JNIEnv,
+    clazz: c.jclass,
+    native_handle: jlong,
+) jint {
+    _ = env;
+    _ = clazz;
+    return core.termux_ghostty_session_get_progress_state(sessionFromHandleConst(native_handle));
+}
+
+pub export fn Java_com_termux_terminal_GhosttyNative_nativeGetProgressValue(
+    env: ?*c.JNIEnv,
+    clazz: c.jclass,
+    native_handle: jlong,
+) jint {
+    _ = env;
+    _ = clazz;
+    return core.termux_ghostty_session_get_progress_value(sessionFromHandleConst(native_handle));
+}
+
+pub export fn Java_com_termux_terminal_GhosttyNative_nativeGetProgressGeneration(
+    env: ?*c.JNIEnv,
+    clazz: c.jclass,
+    native_handle: jlong,
+) jlong {
+    _ = env;
+    _ = clazz;
+    return @intCast(core.termux_ghostty_session_get_progress_generation(sessionFromHandleConst(native_handle)));
+}
+
+pub export fn Java_com_termux_terminal_GhosttyNative_nativeClearProgress(
+    env: ?*c.JNIEnv,
+    clazz: c.jclass,
+    native_handle: jlong,
+) void {
+    _ = env;
+    _ = clazz;
+    core.termux_ghostty_session_clear_progress(sessionFromHandle(native_handle));
+}
+
 pub export fn Java_com_termux_terminal_GhosttyNative_nativeGetColumns(
     env: ?*c.JNIEnv,
     clazz: c.jclass,

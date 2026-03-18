@@ -526,6 +526,10 @@ Once MVP works, finalize the feature properly.
 - [ ] More refined top bar / compact controls in bubble
 - [ ] Better bubble suppression logic when same session already visible in full app
 - [ ] Potential `LocusId` integration for better system matching
+- [ ] Investigate using the system-managed bubble overflow (`+` / recent bubbles) for dismissed session bubbles instead of hard-unbubbling them immediately.
+  - Current behavior likely fights overflow because bubble dismiss triggers our `deleteIntent`, which fully unbubbles the session.
+  - Desired behavior for a future pass: explicit `Unbubble session` or session exit fully removes it; casual bubble dismiss should allow SystemUI to keep it in overflow so the user can restore it later.
+  - Need to verify how session title / notification updates interact with overflowed bubbles so we do not accidentally re-promote them.
 
 ## Final quality bar
 

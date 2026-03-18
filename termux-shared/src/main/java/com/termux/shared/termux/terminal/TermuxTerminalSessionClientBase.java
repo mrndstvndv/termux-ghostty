@@ -45,6 +45,14 @@ public class TermuxTerminalSessionClientBase implements TerminalSessionClient {
     }
 
     @Override
+    public void onTerminalProtocolNotification(@NonNull TerminalSession session, @Nullable String title, @Nullable String body) {
+    }
+
+    @Override
+    public void onTerminalProgressChanged(@NonNull TerminalSession session) {
+    }
+
+    @Override
     public void onTerminalCursorStateChange(boolean state) {
     }
 

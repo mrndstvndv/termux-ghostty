@@ -39,6 +39,7 @@ import androidx.annotation.Nullable;
 import androidx.annotation.RequiresApi;
 
 import com.termux.terminal.FrameDelta;
+import com.termux.terminal.GhosttyMouseEvent;
 import com.termux.terminal.JavaTerminalContentAdapter;
 import com.termux.terminal.KeyHandler;
 import com.termux.terminal.RenderFrameCache;
@@ -85,9 +86,10 @@ public final class TerminalView extends View {
     final GestureAndScaleRecognizer mGestureRecognizer;
 
     /** Keep track of where mouse touch event started which we report as mouse scroll. */
-    private int mMouseScrollStartX = -1, mMouseScrollStartY = -1;
+    private float mMouseScrollStartX = Float.NaN, mMouseScrollStartY = Float.NaN;
     /** Keep track of the time when a touch event leading to sending mouse scroll events started. */
     private long mMouseStartDownTime = -1;
+    private int mCapturedGhosttyMouseButtonState;
 
     final Scroller mScroller;
 
@@ -337,6 +339,7 @@ public final class TerminalView extends View {
         mTermSession = session;
         mEmulator = mTermSession.getEmulator();
         mCombiningAccent = 0;
+        mCapturedGhosttyMouseButtonState = 0;
         mGhosttyRenderFrameCache.reset();
         mGhosttyFullSnapshotRefreshRequestedForFrameSequence = -1;
 
@@ -736,15 +739,268 @@ public final class TerminalView extends View {
         return new int[] { column, row };
     }
 
+    static boolean shouldCaptureGhosttyMouse(boolean usingGhosttyBackend, boolean mouseTrackingActive, boolean isMouseSource) {
+        return usingGhosttyBackend && mouseTrackingActive && isMouseSource;
+    }
+
+    static int ghosttyModifiersFromMetaState(int metaState) {
+        int modifiers = 0;
+        if ((metaState & KeyEvent.META_SHIFT_ON) != 0) {
+            modifiers |= GhosttyMouseEvent.MODIFIER_SHIFT;
+        }
+        if ((metaState & KeyEvent.META_ALT_ON) != 0) {
+            modifiers |= GhosttyMouseEvent.MODIFIER_ALT;
+        }
+        if ((metaState & KeyEvent.META_CTRL_ON) != 0) {
+            modifiers |= GhosttyMouseEvent.MODIFIER_CTRL;
+        }
+        return modifiers;
+    }
+
+    static int ghosttyPressedButtonFromButtonState(int buttonState) {
+        if ((buttonState & MotionEvent.BUTTON_PRIMARY) != 0) {
+            return GhosttyMouseEvent.BUTTON_LEFT;
+        }
+        if ((buttonState & MotionEvent.BUTTON_SECONDARY) != 0) {
+            return GhosttyMouseEvent.BUTTON_RIGHT;
+        }
+        if ((buttonState & MotionEvent.BUTTON_TERTIARY) != 0) {
+            return GhosttyMouseEvent.BUTTON_MIDDLE;
+        }
+        if ((buttonState & MotionEvent.BUTTON_BACK) != 0) {
+            return GhosttyMouseEvent.BUTTON_BACK;
+        }
+        if ((buttonState & MotionEvent.BUTTON_FORWARD) != 0) {
+            return GhosttyMouseEvent.BUTTON_FORWARD;
+        }
+        return GhosttyMouseEvent.BUTTON_NONE;
+    }
+
+    static int ghosttyPressedButtonFromStateChange(int previousButtonState, int currentButtonState) {
+        return ghosttyPressedButtonFromButtonState(currentButtonState & ~previousButtonState);
+    }
+
+    static int ghosttyReleasedButtonFromStateChange(int previousButtonState, int currentButtonState) {
+        return ghosttyPressedButtonFromButtonState(previousButtonState & ~currentButtonState);
+    }
+
+    @TargetApi(23)
+    static int ghosttyButtonFromActionButton(int actionButton) {
+        switch (actionButton) {
+            case MotionEvent.BUTTON_PRIMARY:
+                return GhosttyMouseEvent.BUTTON_LEFT;
+            case MotionEvent.BUTTON_SECONDARY:
+                return GhosttyMouseEvent.BUTTON_RIGHT;
+            case MotionEvent.BUTTON_TERTIARY:
+                return GhosttyMouseEvent.BUTTON_MIDDLE;
+            case MotionEvent.BUTTON_BACK:
+                return GhosttyMouseEvent.BUTTON_BACK;
+            case MotionEvent.BUTTON_FORWARD:
+                return GhosttyMouseEvent.BUTTON_FORWARD;
+            default:
+                return GhosttyMouseEvent.BUTTON_NONE;
+        }
+    }
+
+    static int ghosttyVerticalWheelButton(float axisValue) {
+        if (axisValue > 0.0f) {
+            return GhosttyMouseEvent.BUTTON_WHEEL_UP;
+        }
+        if (axisValue < 0.0f) {
+            return GhosttyMouseEvent.BUTTON_WHEEL_DOWN;
+        }
+        return GhosttyMouseEvent.BUTTON_NONE;
+    }
+
+    static int ghosttyHorizontalWheelButton(float axisValue) {
+        if (axisValue > 0.0f) {
+            return GhosttyMouseEvent.BUTTON_WHEEL_RIGHT;
+        }
+        if (axisValue < 0.0f) {
+            return GhosttyMouseEvent.BUTTON_WHEEL_LEFT;
+        }
+        return GhosttyMouseEvent.BUTTON_NONE;
+    }
+
+    static int ghosttyScrollEventCount(float axisValue) {
+        if (axisValue == 0.0f) {
+            return 0;
+        }
+        return Math.max(1, Math.round(Math.abs(axisValue)));
+    }
+
+    static int ghosttyButtonFromLegacyMouseCode(int button) {
+        switch (button) {
+            case TerminalEmulator.MOUSE_LEFT_BUTTON:
+            case TerminalEmulator.MOUSE_LEFT_BUTTON_MOVED:
+                return GhosttyMouseEvent.BUTTON_LEFT;
+            case TerminalEmulator.MOUSE_WHEELUP_BUTTON:
+                return GhosttyMouseEvent.BUTTON_WHEEL_UP;
+            case TerminalEmulator.MOUSE_WHEELDOWN_BUTTON:
+                return GhosttyMouseEvent.BUTTON_WHEEL_DOWN;
+            default:
+                return GhosttyMouseEvent.BUTTON_NONE;
+        }
+    }
+
+    private boolean shouldCaptureGhosttyMouse(MotionEvent event) {
+        if (!hasActiveTerminalBackend() || mTermSession == null) {
+            return false;
+        }
+
+        return shouldCaptureGhosttyMouse(
+            mTermSession.isUsingGhosttyBackend(),
+            mTermSession.isMouseTrackingActive(),
+            event.isFromSource(InputDevice.SOURCE_MOUSE)
+        );
+    }
+
+    private int getGhosttyCellWidthPixels() {
+        return Math.max(1, Math.round(mRenderer.getFontWidth()));
+    }
+
+    private int getGhosttyCellHeightPixels() {
+        return Math.max(1, mRenderer.getFontLineSpacing());
+    }
+
+    private boolean handleGhosttyMouseEvent(MotionEvent event) {
+        int currentButtonState = event.getButtonState();
+        int previousButtonState = mCapturedGhosttyMouseButtonState;
+        mCapturedGhosttyMouseButtonState = currentButtonState;
+
+        switch (event.getActionMasked()) {
+            case MotionEvent.ACTION_SCROLL:
+                return handleGhosttyMouseScroll(event);
+            case MotionEvent.ACTION_HOVER_MOVE:
+            case MotionEvent.ACTION_MOVE:
+                sendGhosttyMouseEvent(event, GhosttyMouseEvent.MOTION, ghosttyPressedButtonFromButtonState(currentButtonState));
+                return true;
+            case MotionEvent.ACTION_DOWN:
+            case MotionEvent.ACTION_BUTTON_PRESS: {
+                int button = ghosttyPressedButtonFromStateChange(previousButtonState, currentButtonState);
+                if (button == GhosttyMouseEvent.BUTTON_NONE && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    button = ghosttyButtonFromActionButton(event.getActionButton());
+                }
+                if (button == GhosttyMouseEvent.BUTTON_NONE) {
+                    button = ghosttyPressedButtonFromButtonState(currentButtonState);
+                }
+                sendGhosttyMouseEvent(event, GhosttyMouseEvent.PRESS, button);
+                return true;
+            }
+            case MotionEvent.ACTION_UP:
+            case MotionEvent.ACTION_BUTTON_RELEASE: {
+                int button = ghosttyReleasedButtonFromStateChange(previousButtonState, currentButtonState);
+                if (button == GhosttyMouseEvent.BUTTON_NONE && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    button = ghosttyButtonFromActionButton(event.getActionButton());
+                }
+                if (button == GhosttyMouseEvent.BUTTON_NONE) {
+                    button = ghosttyPressedButtonFromButtonState(previousButtonState);
+                }
+                sendGhosttyMouseEvent(event, GhosttyMouseEvent.RELEASE, button);
+                return true;
+            }
+            default:
+                return false;
+        }
+    }
+
+    private boolean handleGhosttyMouseScroll(MotionEvent event) {
+        boolean handled = false;
+        handled |= sendGhosttyScrollEvents(event, event.getAxisValue(MotionEvent.AXIS_VSCROLL), true);
+        handled |= sendGhosttyScrollEvents(event, event.getAxisValue(MotionEvent.AXIS_HSCROLL), false);
+        return handled;
+    }
+
+    private boolean sendGhosttyScrollEvents(MotionEvent event, float axisValue, boolean verticalAxis) {
+        int button = verticalAxis ? ghosttyVerticalWheelButton(axisValue) : ghosttyHorizontalWheelButton(axisValue);
+        if (button == GhosttyMouseEvent.BUTTON_NONE) {
+            return false;
+        }
+
+        int count = ghosttyScrollEventCount(axisValue);
+        for (int index = 0; index < count; index++) {
+            sendGhosttyMouseEvent(event, GhosttyMouseEvent.PRESS, button);
+        }
+        return true;
+    }
+
+    private void sendGhosttyMouseEvent(MotionEvent event, int action, int button) {
+        GhosttyMouseEvent mouseEvent = createGhosttyMouseEvent(event, action, button, event.getX(), event.getY());
+        if (mouseEvent == null) {
+            return;
+        }
+
+        mTermSession.sendGhosttyMouseEvent(mouseEvent);
+    }
+
+    @Nullable
+    private GhosttyMouseEvent createGhosttyMouseEvent(MotionEvent event, int action, int button, float surfaceX, float surfaceY) {
+        if (!hasActiveTerminalBackend() || mTermSession == null || !mTermSession.isUsingGhosttyBackend()) {
+            return null;
+        }
+        if (action != GhosttyMouseEvent.MOTION && button == GhosttyMouseEvent.BUTTON_NONE) {
+            return null;
+        }
+
+        return new GhosttyMouseEvent(
+            action,
+            button,
+            ghosttyModifiersFromMetaState(event.getMetaState()),
+            surfaceX,
+            surfaceY,
+            getWidth(),
+            getHeight(),
+            getGhosttyCellWidthPixels(),
+            getGhosttyCellHeightPixels(),
+            mRenderer.mFontLineSpacingAndAscent,
+            0,
+            0,
+            0
+        );
+    }
+
+    @Nullable
+    private GhosttyMouseEvent createGhosttyMouseEventFromLegacyCode(MotionEvent event, int button, boolean pressed) {
+        int ghosttyButton = ghosttyButtonFromLegacyMouseCode(button);
+        int action = button == TerminalEmulator.MOUSE_LEFT_BUTTON_MOVED ? GhosttyMouseEvent.MOTION
+            : (pressed ? GhosttyMouseEvent.PRESS : GhosttyMouseEvent.RELEASE);
+        if (action != GhosttyMouseEvent.MOTION && ghosttyButton == GhosttyMouseEvent.BUTTON_NONE) {
+            return null;
+        }
+
+        float surfaceX = event.getX();
+        float surfaceY = event.getY();
+        if (pressed && (button == TerminalEmulator.MOUSE_WHEELDOWN_BUTTON || button == TerminalEmulator.MOUSE_WHEELUP_BUTTON)) {
+            if (mMouseStartDownTime == event.getDownTime()) {
+                surfaceX = mMouseScrollStartX;
+                surfaceY = mMouseScrollStartY;
+            } else {
+                mMouseStartDownTime = event.getDownTime();
+                mMouseScrollStartX = surfaceX;
+                mMouseScrollStartY = surfaceY;
+            }
+        }
+
+        return createGhosttyMouseEvent(event, action, ghosttyButton, surfaceX, surfaceY);
+    }
+
     /** Send a single mouse event code to the terminal. */
     void sendMouseEventCode(MotionEvent e, int button, boolean pressed) {
+        if (mTermSession != null && mTermSession.isUsingGhosttyBackend()) {
+            GhosttyMouseEvent mouseEvent = createGhosttyMouseEventFromLegacyCode(e, button, pressed);
+            if (mouseEvent != null) {
+                mTermSession.sendGhosttyMouseEvent(mouseEvent);
+            }
+            return;
+        }
+
         int[] columnAndRow = getColumnAndRow(e, false);
         int x = columnAndRow[0] + 1;
         int y = columnAndRow[1] + 1;
         if (pressed && (button == TerminalEmulator.MOUSE_WHEELDOWN_BUTTON || button == TerminalEmulator.MOUSE_WHEELUP_BUTTON)) {
             if (mMouseStartDownTime == e.getDownTime()) {
-                x = mMouseScrollStartX;
-                y = mMouseScrollStartY;
+                x = (int) mMouseScrollStartX;
+                y = (int) mMouseScrollStartY;
             } else {
                 mMouseStartDownTime = e.getDownTime();
                 mMouseScrollStartX = x;
@@ -752,6 +1008,30 @@ public final class TerminalView extends View {
             }
         }
         mTermSession.sendMouseEvent(button, x, y, pressed);
+    }
+
+    private void pasteFromClipboard() {
+        ClipboardManager clipboardManager = (ClipboardManager) getContext().getSystemService(Context.CLIPBOARD_SERVICE);
+        if (clipboardManager == null) {
+            return;
+        }
+
+        ClipData clipData = clipboardManager.getPrimaryClip();
+        if (clipData == null) {
+            return;
+        }
+
+        ClipData.Item clipItem = clipData.getItemAt(0);
+        if (clipItem == null) {
+            return;
+        }
+
+        CharSequence text = clipItem.coerceToText(getContext());
+        if (TextUtils.isEmpty(text)) {
+            return;
+        }
+
+        mTermSession.paste(text.toString());
     }
 
     /** Perform a scroll, either from dragging the screen or by scrolling a mouse wheel. */
@@ -788,6 +1068,10 @@ public final class TerminalView extends View {
     /** Overriding {@link View#onGenericMotionEvent(MotionEvent)}. */
     @Override
     public boolean onGenericMotionEvent(MotionEvent event) {
+        if (shouldCaptureGhosttyMouse(event) && handleGhosttyMouseEvent(event)) {
+            return true;
+        }
+
         if (hasActiveTerminalBackend() && event.isFromSource(InputDevice.SOURCE_MOUSE) && event.getAction() == MotionEvent.ACTION_SCROLL) {
             // Handle mouse wheel scrolling.
             boolean up = event.getAxisValue(MotionEvent.AXIS_VSCROLL) > 0.0f;
@@ -802,31 +1086,33 @@ public final class TerminalView extends View {
     @TargetApi(23)
     public boolean onTouchEvent(MotionEvent event) {
         if (!hasActiveTerminalBackend()) return true;
-        final int action = event.getAction();
+        final int action = event.getActionMasked();
 
         if (isSelectingText()) {
             updateFloatingToolbarVisibility(event);
             mGestureRecognizer.onTouchEvent(event);
             return true;
-        } else if (event.isFromSource(InputDevice.SOURCE_MOUSE)) {
+        }
+
+        if (shouldCaptureGhosttyMouse(event)) {
+            if (handleGhosttyMouseEvent(event)) {
+                return true;
+            }
+            return true;
+        }
+
+        if (event.isFromSource(InputDevice.SOURCE_MOUSE)) {
             if (event.isButtonPressed(MotionEvent.BUTTON_SECONDARY)) {
                 if (action == MotionEvent.ACTION_DOWN) showContextMenu();
                 return true;
-            } else if (event.isButtonPressed(MotionEvent.BUTTON_TERTIARY)) {
-                ClipboardManager clipboardManager = (ClipboardManager) getContext().getSystemService(Context.CLIPBOARD_SERVICE);
-                ClipData clipData = clipboardManager.getPrimaryClip();
-                if (clipData != null) {
-                    ClipData.Item clipItem = clipData.getItemAt(0);
-                    if (clipItem != null) {
-                        CharSequence text = clipItem.coerceToText(getContext());
-                        if (!TextUtils.isEmpty(text)) mTermSession.paste(text.toString());
-                    }
-                }
+            }
+            if (event.isButtonPressed(MotionEvent.BUTTON_TERTIARY)) {
+                pasteFromClipboard();
             } else if (mTermSession.isMouseTrackingActive()) { // BUTTON_PRIMARY.
-                switch (event.getAction()) {
+                switch (action) {
                     case MotionEvent.ACTION_DOWN:
                     case MotionEvent.ACTION_UP:
-                        sendMouseEventCode(event, TerminalEmulator.MOUSE_LEFT_BUTTON, event.getAction() == MotionEvent.ACTION_DOWN);
+                        sendMouseEventCode(event, TerminalEmulator.MOUSE_LEFT_BUTTON, action == MotionEvent.ACTION_DOWN);
                         break;
                     case MotionEvent.ACTION_MOVE:
                         sendMouseEventCode(event, TerminalEmulator.MOUSE_LEFT_BUTTON_MOVED, true);
@@ -1188,20 +1474,28 @@ public final class TerminalView extends View {
         int viewHeight = getHeight();
         if (viewWidth == 0 || viewHeight == 0 || mTermSession == null) return;
 
+        int cellWidthPixels = getGhosttyCellWidthPixels();
+        int cellHeightPixels = getGhosttyCellHeightPixels();
+
         // Set to 80 and 24 if you want to enable vttest.
         int newColumns = Math.max(4, (int) (viewWidth / mRenderer.mFontWidth));
         int newRows = Math.max(4, (viewHeight - mRenderer.mFontLineSpacingAndAscent) / mRenderer.mFontLineSpacing);
-
-        if (!hasActiveTerminalBackend()
-            || newColumns != mTermSession.getColumns() || newRows != mTermSession.getRows()) {
-            mTermSession.updateSize(newColumns, newRows, (int) mRenderer.getFontWidth(), mRenderer.getFontLineSpacing());
-            mEmulator = mTermSession.getEmulator();
-            mClient.onEmulatorSet();
-
-            mTopRow = 0;
-            scrollTo(0, 0);
-            invalidate();
+        boolean sizeChanged = !hasActiveTerminalBackend()
+            || newColumns != mTermSession.getColumns()
+            || newRows != mTermSession.getRows()
+            || cellWidthPixels != mTermSession.getCellWidthPixels()
+            || cellHeightPixels != mTermSession.getCellHeightPixels();
+        if (!sizeChanged) {
+            return;
         }
+
+        mTermSession.updateSize(newColumns, newRows, cellWidthPixels, cellHeightPixels);
+        mEmulator = mTermSession.getEmulator();
+        mClient.onEmulatorSet();
+
+        mTopRow = 0;
+        scrollTo(0, 0);
+        invalidate();
     }
 
     @Override

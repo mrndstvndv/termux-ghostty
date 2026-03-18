@@ -1,4 +1,5 @@
 const std = @import("std");
+const testing = std.testing;
 const ghostty = @import("ghostty-vt");
 const ghostty_log = @import("android_log.zig");
 
@@ -134,6 +135,9 @@ pub const Session = struct {
     last_serialized_mode_bits: u32 = 0,
     last_serialized_palette: [termux_palette_len]u32 = [_]u32{0} ** termux_palette_len,
     frame_perf: FramePerfCounters = .{},
+    mouse_pressed_buttons: u16 = 0,
+    mouse_last_cell: ghostty.Coordinate = .{ .x = 0, .y = 0 },
+    mouse_last_cell_valid: bool = false,
 
     fn deinit(self: *Session) void {
         self.render_state.deinit(self.alloc);
@@ -155,6 +159,9 @@ pub const Session = struct {
         self.pending_clipboard.clearRetainingCapacity();
         self.colors_changed = false;
         self.bell_pending = false;
+        self.mouse_pressed_buttons = 0;
+        self.mouse_last_cell = .{ .x = 0, .y = 0 };
+        self.mouse_last_cell_valid = false;
     }
 
     fn modeBits(self: *const Session) u32 {
@@ -639,6 +646,29 @@ pub const Session = struct {
         self.pending_output.shrinkRetainingCapacity(remaining);
         ghostty_log.debug("core drained pending output wrote={} remaining={}", .{ written, remaining });
         return written;
+    }
+
+    fn hasPressedMouseButtons(self: *const Session) bool {
+        return self.mouse_pressed_buttons != 0;
+    }
+
+    fn updatePressedMouseButtonsBeforeEncode(
+        self: *Session,
+        action: ghostty.input.MouseAction,
+        button: ?ghostty.input.MouseButton,
+    ) void {
+        const resolved_button = button orelse return;
+        if (resolved_button == .four or resolved_button == .five or resolved_button == .six or resolved_button == .seven) {
+            return;
+        }
+
+        const shift: u4 = @intCast(@intFromEnum(resolved_button));
+        const mask: u16 = @as(u16, 1) << shift;
+        switch (action) {
+            .press => self.mouse_pressed_buttons |= mask,
+            .release => self.mouse_pressed_buttons &= ~mask,
+            .motion => {},
+        }
     }
 
     fn transcriptPoint(self: *const Session, column: i32, row: i32) ?ghostty.Point {
@@ -1166,6 +1196,8 @@ pub export fn termux_ghostty_session_create(
     columns: i32,
     rows: i32,
     transcript_rows: i32,
+    cell_width_pixels: i32,
+    cell_height_pixels: i32,
 ) ?*Session {
     const parsed_columns = parseCellCount(columns) orelse {
         ghostty_log.err("core create invalid columns={}", .{ columns });
@@ -1177,6 +1209,14 @@ pub export fn termux_ghostty_session_create(
     };
     const parsed_transcript_rows = parseTranscriptRows(transcript_rows) orelse {
         ghostty_log.err("core create invalid transcriptRows={}", .{ transcript_rows });
+        return null;
+    };
+    const parsed_cell_width_pixels = parsePixelCount(cell_width_pixels) orelse {
+        ghostty_log.err("core create invalid cellWidthPixels={}", .{ cell_width_pixels });
+        return null;
+    };
+    const parsed_cell_height_pixels = parsePixelCount(cell_height_pixels) orelse {
+        ghostty_log.err("core create invalid cellHeightPixels={}", .{ cell_height_pixels });
         return null;
     };
 
@@ -1227,8 +1267,13 @@ pub export fn termux_ghostty_session_create(
     session.last_serialized_mode_bits = 0;
     session.last_serialized_palette = [_]u32{0} ** termux_palette_len;
     session.frame_perf = .{};
+    session.mouse_pressed_buttons = 0;
+    session.mouse_last_cell = .{ .x = 0, .y = 0 };
+    session.mouse_last_cell_valid = false;
+    session.terminal.width_px = @as(u32, parsed_columns) * parsed_cell_width_pixels;
+    session.terminal.height_px = @as(u32, parsed_rows) * parsed_cell_height_pixels;
 
-    ghostty_log.info("core create session=0x{x} cols={} rows={} transcript={} scrollbackBytes={}", .{ @intFromPtr(session), columns, rows, transcript_rows, scrollback_bytes });
+    ghostty_log.info("core create session=0x{x} cols={} rows={} transcript={} cellWidth={} cellHeight={} scrollbackBytes={}", .{ @intFromPtr(session), columns, rows, transcript_rows, cell_width_pixels, cell_height_pixels, scrollback_bytes });
     return session;
 }
 
@@ -1252,6 +1297,8 @@ pub export fn termux_ghostty_session_resize(
     session: ?*Session,
     columns: i32,
     rows: i32,
+    cell_width_pixels: i32,
+    cell_height_pixels: i32,
 ) i32 {
     const handle = session orelse return -1;
     const parsed_columns = parseCellCount(columns) orelse {
@@ -1262,15 +1309,107 @@ pub export fn termux_ghostty_session_resize(
         ghostty_log.err("core resize invalid rows={} session=0x{x}", .{ rows, @intFromPtr(handle) });
         return -1;
     };
+    const parsed_cell_width_pixels = parsePixelCount(cell_width_pixels) orelse {
+        ghostty_log.err("core resize invalid cellWidthPixels={} session=0x{x}", .{ cell_width_pixels, @intFromPtr(handle) });
+        return -1;
+    };
+    const parsed_cell_height_pixels = parsePixelCount(cell_height_pixels) orelse {
+        ghostty_log.err("core resize invalid cellHeightPixels={} session=0x{x}", .{ cell_height_pixels, @intFromPtr(handle) });
+        return -1;
+    };
 
     handle.terminal.resize(handle.alloc, parsed_columns, parsed_rows) catch |err| {
         ghostty_log.err("core resize failed session=0x{x} cols={} rows={} err={any}", .{ @intFromPtr(handle), columns, rows, err });
         return -1;
     };
+    handle.terminal.width_px = @as(u32, parsed_columns) * parsed_cell_width_pixels;
+    handle.terminal.height_px = @as(u32, parsed_rows) * parsed_cell_height_pixels;
     handle.viewport_top_row = handle.clampExternalTopRow(handle.viewport_top_row);
     handle.markRenderStateDirty();
-    ghostty_log.debug("core resize session=0x{x} cols={} rows={}", .{ @intFromPtr(handle), columns, rows });
+    ghostty_log.debug("core resize session=0x{x} cols={} rows={} cellWidth={} cellHeight={}", .{ @intFromPtr(handle), columns, rows, cell_width_pixels, cell_height_pixels });
     return 0;
+}
+
+pub export fn termux_ghostty_session_queue_mouse_event(
+    session: ?*Session,
+    action: i32,
+    button: i32,
+    modifiers: i32,
+    surface_x: f32,
+    surface_y: f32,
+    screen_width_px: i32,
+    screen_height_px: i32,
+    cell_width_px: i32,
+    cell_height_px: i32,
+    padding_top_px: i32,
+    padding_right_px: i32,
+    padding_bottom_px: i32,
+    padding_left_px: i32,
+) i32 {
+    const handle = session orelse return -1;
+
+    const mapped_action = mouseActionFromJava(action) catch |err| {
+        ghostty_log.err("core queueMouse invalid action={} session=0x{x} err={any}", .{ action, @intFromPtr(handle), err });
+        return -1;
+    };
+    const mapped_button = mouseButtonFromJava(button) catch |err| {
+        ghostty_log.err("core queueMouse invalid button={} session=0x{x} err={any}", .{ button, @intFromPtr(handle), err });
+        return -1;
+    };
+    const size = mouseSizeFromJava(
+        screen_width_px,
+        screen_height_px,
+        cell_width_px,
+        cell_height_px,
+        padding_top_px,
+        padding_right_px,
+        padding_bottom_px,
+        padding_left_px,
+    ) catch |err| {
+        ghostty_log.err("core queueMouse invalid size session=0x{x} err={any}", .{ @intFromPtr(handle), err });
+        return -1;
+    };
+
+    handle.updatePressedMouseButtonsBeforeEncode(mapped_action, mapped_button);
+
+    var last_cell: ?ghostty.Coordinate = if (handle.mouse_last_cell_valid) handle.mouse_last_cell else null;
+    var options: ghostty.input.MouseEncodeOptions = .fromTerminal(&handle.terminal, size);
+    options.any_button_pressed = handle.hasPressedMouseButtons();
+    options.last_cell = &last_cell;
+
+    var buffer: [64]u8 = undefined;
+    var writer: std.Io.Writer = .fixed(&buffer);
+    ghostty.input.encodeMouse(&writer, .{
+        .action = mapped_action,
+        .button = mapped_button,
+        .mods = keyModsFromJava(modifiers),
+        .pos = .{
+            .x = surface_x,
+            .y = surface_y,
+        },
+    }, options) catch |err| {
+        ghostty_log.err("core queueMouse encode failed session=0x{x} err={any}", .{ @intFromPtr(handle), err });
+        return -1;
+    };
+
+    const written = writer.buffered();
+    if (written.len == 0) {
+        return 0;
+    }
+
+    handle.appendPendingOutput(written) catch |err| {
+        ghostty_log.err("core queueMouse append failed session=0x{x} err={any}", .{ @intFromPtr(handle), err });
+        return -1;
+    };
+    if (last_cell) |cell| {
+        handle.mouse_last_cell = cell;
+        handle.mouse_last_cell_valid = true;
+    } else {
+        handle.mouse_last_cell = .{ .x = 0, .y = 0 };
+        handle.mouse_last_cell_valid = false;
+    }
+
+    return std.math.cast(i32, written.len) orelse -1;
 }
 
 pub export fn termux_ghostty_session_append(
@@ -1603,6 +1742,69 @@ pub fn termux_ghostty_session_get_transcript_text(
     return handle.transcriptText(join_lines, trim);
 }
 
+const MouseSize = @FieldType(ghostty.input.MouseEncodeOptions, "size");
+
+fn mouseActionFromJava(value: i32) error{InvalidMouseAction}!ghostty.input.MouseAction {
+    return switch (value) {
+        0 => .press,
+        1 => .release,
+        2 => .motion,
+        else => error.InvalidMouseAction,
+    };
+}
+
+fn mouseButtonFromJava(value: i32) error{InvalidMouseButton}!?ghostty.input.MouseButton {
+    return switch (value) {
+        0 => null,
+        1 => .left,
+        2 => .middle,
+        3 => .right,
+        4 => .four,
+        5 => .five,
+        6 => .six,
+        7 => .seven,
+        8 => .eight,
+        9 => .nine,
+        else => error.InvalidMouseButton,
+    };
+}
+
+fn keyModsFromJava(value: i32) ghostty.input.KeyMods {
+    return .{
+        .shift = (value & (1 << 0)) != 0,
+        .alt = (value & (1 << 1)) != 0,
+        .ctrl = (value & (1 << 2)) != 0,
+    };
+}
+
+fn mouseSizeFromJava(
+    screen_width_px: i32,
+    screen_height_px: i32,
+    cell_width_px: i32,
+    cell_height_px: i32,
+    padding_top_px: i32,
+    padding_right_px: i32,
+    padding_bottom_px: i32,
+    padding_left_px: i32,
+) error{InvalidMouseSize}!MouseSize {
+    return .{
+        .screen = .{
+            .width = parsePixelCount(screen_width_px) orelse return error.InvalidMouseSize,
+            .height = parsePixelCount(screen_height_px) orelse return error.InvalidMouseSize,
+        },
+        .cell = .{
+            .width = parsePixelCount(cell_width_px) orelse return error.InvalidMouseSize,
+            .height = parsePixelCount(cell_height_px) orelse return error.InvalidMouseSize,
+        },
+        .padding = .{
+            .top = parsePaddingPixels(padding_top_px) orelse return error.InvalidMouseSize,
+            .right = parsePaddingPixels(padding_right_px) orelse return error.InvalidMouseSize,
+            .bottom = parsePaddingPixels(padding_bottom_px) orelse return error.InvalidMouseSize,
+            .left = parsePaddingPixels(padding_left_px) orelse return error.InvalidMouseSize,
+        },
+    };
+}
+
 fn parseCellCount(value: i32) ?u16 {
     if (value <= 0) {
         return null;
@@ -1617,6 +1819,22 @@ fn parseTranscriptRows(value: i32) ?usize {
     }
 
     return std.math.cast(usize, value);
+}
+
+fn parsePixelCount(value: i32) ?u32 {
+    if (value <= 0) {
+        return null;
+    }
+
+    return std.math.cast(u32, value);
+}
+
+fn parsePaddingPixels(value: i32) ?u32 {
+    if (value < 0) {
+        return null;
+    }
+
+    return std.math.cast(u32, value);
 }
 
 fn estimatedScrollbackBytes(columns: u16, transcript_rows: usize) usize {
@@ -1781,3 +1999,110 @@ const BufferWriter = struct {
         try self.write(value);
     }
 };
+
+test "queue mouse event updates pressed state and emits sgr bytes" {
+    const session = termux_ghostty_session_create(10, 5, 100, 10, 20) orelse return error.OutOfMemory;
+    defer termux_ghostty_session_destroy(session);
+
+    session.terminal.flags.mouse_event = .button;
+    session.terminal.flags.mouse_format = .sgr;
+
+    const press_expected = "\x1B[<0;1;1M";
+    try testing.expectEqual(
+        @as(i32, @intCast(press_expected.len)),
+        termux_ghostty_session_queue_mouse_event(session, 0, 1, 0, 5, 15, 100, 105, 10, 20, 5, 0, 0, 0),
+    );
+    try testing.expect(session.hasPressedMouseButtons());
+    try testing.expect(session.mouse_last_cell_valid);
+    try testing.expectEqual(@as(@TypeOf(session.mouse_last_cell.x), 0), session.mouse_last_cell.x);
+    try testing.expectEqual(@as(@TypeOf(session.mouse_last_cell.y), 0), session.mouse_last_cell.y);
+
+    var out: [64]u8 = undefined;
+    const press_written = termux_ghostty_session_drain_pending_output(session, out[0..].ptr, out.len);
+    try testing.expectEqualSlices(u8, press_expected, out[0..press_written]);
+
+    const release_expected = "\x1B[<0;1;1m";
+    try testing.expectEqual(
+        @as(i32, @intCast(release_expected.len)),
+        termux_ghostty_session_queue_mouse_event(session, 1, 1, 0, 5, 15, 100, 105, 10, 20, 5, 0, 0, 0),
+    );
+    try testing.expect(!session.hasPressedMouseButtons());
+
+    const release_written = termux_ghostty_session_drain_pending_output(session, out[0..].ptr, out.len);
+    try testing.expectEqualSlices(u8, release_expected, out[0..release_written]);
+}
+
+test "queue mouse event wheel buttons do not persist" {
+    const session = termux_ghostty_session_create(10, 5, 100, 10, 20) orelse return error.OutOfMemory;
+    defer termux_ghostty_session_destroy(session);
+
+    session.terminal.flags.mouse_event = .normal;
+    session.terminal.flags.mouse_format = .sgr;
+
+    const expected = "\x1B[<64;1;1M";
+    try testing.expectEqual(
+        @as(i32, @intCast(expected.len)),
+        termux_ghostty_session_queue_mouse_event(session, 0, 4, 0, 5, 15, 100, 105, 10, 20, 5, 0, 0, 0),
+    );
+    try testing.expect(!session.hasPressedMouseButtons());
+
+    var out: [64]u8 = undefined;
+    const written = termux_ghostty_session_drain_pending_output(session, out[0..].ptr, out.len);
+    try testing.expectEqualSlices(u8, expected, out[0..written]);
+}
+
+test "queue mouse event ignores out of viewport motion without buttons" {
+    const session = termux_ghostty_session_create(10, 5, 100, 10, 20) orelse return error.OutOfMemory;
+    defer termux_ghostty_session_destroy(session);
+
+    session.terminal.flags.mouse_event = .any;
+    session.terminal.flags.mouse_format = .sgr;
+
+    try testing.expectEqual(
+        @as(i32, 0),
+        termux_ghostty_session_queue_mouse_event(session, 2, 0, 0, -1, 15, 100, 105, 10, 20, 5, 0, 0, 0),
+    );
+    try testing.expect(!session.mouse_last_cell_valid);
+}
+
+test "queue mouse event encodes sgr pixels with padding" {
+    const session = termux_ghostty_session_create(10, 5, 100, 10, 20) orelse return error.OutOfMemory;
+    defer termux_ghostty_session_destroy(session);
+
+    session.terminal.flags.mouse_event = .normal;
+    session.terminal.flags.mouse_format = .sgr_pixels;
+
+    const expected = "\x1B[<0;15;20M";
+    try testing.expectEqual(
+        @as(i32, @intCast(expected.len)),
+        termux_ghostty_session_queue_mouse_event(session, 0, 1, 0, 15, 25, 100, 105, 10, 20, 5, 0, 0, 0),
+    );
+
+    var out: [64]u8 = undefined;
+    const written = termux_ghostty_session_drain_pending_output(session, out[0..].ptr, out.len);
+    try testing.expectEqualSlices(u8, expected, out[0..written]);
+}
+
+test "queue mouse event motion deduplicates by cell" {
+    const session = termux_ghostty_session_create(10, 5, 100, 10, 20) orelse return error.OutOfMemory;
+    defer termux_ghostty_session_destroy(session);
+
+    session.terminal.flags.mouse_event = .any;
+    session.terminal.flags.mouse_format = .sgr;
+
+    const expected = "\x1B[<35;1;1M";
+    try testing.expectEqual(
+        @as(i32, @intCast(expected.len)),
+        termux_ghostty_session_queue_mouse_event(session, 2, 0, 0, 5, 15, 100, 105, 10, 20, 5, 0, 0, 0),
+    );
+    try testing.expect(session.mouse_last_cell_valid);
+
+    try testing.expectEqual(
+        @as(i32, 0),
+        termux_ghostty_session_queue_mouse_event(session, 2, 0, 0, 9, 19, 100, 105, 10, 20, 5, 0, 0, 0),
+    );
+
+    var out: [64]u8 = undefined;
+    const written = termux_ghostty_session_drain_pending_output(session, out[0..].ptr, out.len);
+    try testing.expectEqualSlices(u8, expected, out[0..written]);
+}

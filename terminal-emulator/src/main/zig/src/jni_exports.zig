@@ -8,6 +8,7 @@ const core = @import("termux_ghostty.zig");
 const jint = c.jint;
 const jlong = c.jlong;
 const jboolean = c.jboolean;
+const jfloat = c.jfloat;
 
 const transcript_flag_join_lines: jint = 1;
 const transcript_flag_trim: jint = 1 << 1;
@@ -18,16 +19,18 @@ pub export fn Java_com_termux_terminal_GhosttyNative_nativeCreate(
     columns: jint,
     rows: jint,
     transcript_rows: jint,
+    cell_width_pixels: jint,
+    cell_height_pixels: jint,
 ) jlong {
     _ = env;
     _ = clazz;
 
-    const session = core.termux_ghostty_session_create(columns, rows, transcript_rows) orelse {
-        ghostty_log.err("jni nativeCreate failed cols={} rows={} transcript={}", .{ columns, rows, transcript_rows });
+    const session = core.termux_ghostty_session_create(columns, rows, transcript_rows, cell_width_pixels, cell_height_pixels) orelse {
+        ghostty_log.err("jni nativeCreate failed cols={} rows={} transcript={} cellWidth={} cellHeight={}", .{ columns, rows, transcript_rows, cell_width_pixels, cell_height_pixels });
         return 0;
     };
     const handle: jlong = @intCast(@intFromPtr(session));
-    ghostty_log.info("jni nativeCreate cols={} rows={} transcript={} handle=0x{x}", .{ columns, rows, transcript_rows, handle });
+    ghostty_log.info("jni nativeCreate cols={} rows={} transcript={} cellWidth={} cellHeight={} handle=0x{x}", .{ columns, rows, transcript_rows, cell_width_pixels, cell_height_pixels, handle });
     return handle;
 }
 
@@ -59,14 +62,59 @@ pub export fn Java_com_termux_terminal_GhosttyNative_nativeResize(
     native_handle: jlong,
     columns: jint,
     rows: jint,
+    cell_width_pixels: jint,
+    cell_height_pixels: jint,
 ) jint {
     _ = env;
     _ = clazz;
-    const result = core.termux_ghostty_session_resize(sessionFromHandle(native_handle), columns, rows);
+    const result = core.termux_ghostty_session_resize(sessionFromHandle(native_handle), columns, rows, cell_width_pixels, cell_height_pixels);
     if (result != 0) {
-        ghostty_log.err("jni nativeResize failed handle=0x{x} cols={} rows={} result={}", .{ native_handle, columns, rows, result });
+        ghostty_log.err("jni nativeResize failed handle=0x{x} cols={} rows={} cellWidth={} cellHeight={} result={}", .{ native_handle, columns, rows, cell_width_pixels, cell_height_pixels, result });
     } else {
-        ghostty_log.debug("jni nativeResize handle=0x{x} cols={} rows={}", .{ native_handle, columns, rows });
+        ghostty_log.debug("jni nativeResize handle=0x{x} cols={} rows={} cellWidth={} cellHeight={}", .{ native_handle, columns, rows, cell_width_pixels, cell_height_pixels });
+    }
+    return result;
+}
+
+pub export fn Java_com_termux_terminal_GhosttyNative_nativeQueueMouseEvent(
+    env: ?*c.JNIEnv,
+    clazz: c.jclass,
+    native_handle: jlong,
+    action: jint,
+    button: jint,
+    modifiers: jint,
+    surface_x: jfloat,
+    surface_y: jfloat,
+    screen_width_px: jint,
+    screen_height_px: jint,
+    cell_width_px: jint,
+    cell_height_px: jint,
+    padding_top_px: jint,
+    padding_right_px: jint,
+    padding_bottom_px: jint,
+    padding_left_px: jint,
+) jint {
+    _ = env;
+    _ = clazz;
+
+    const result = core.termux_ghostty_session_queue_mouse_event(
+        sessionFromHandle(native_handle),
+        action,
+        button,
+        modifiers,
+        surface_x,
+        surface_y,
+        screen_width_px,
+        screen_height_px,
+        cell_width_px,
+        cell_height_px,
+        padding_top_px,
+        padding_right_px,
+        padding_bottom_px,
+        padding_left_px,
+    );
+    if (result < 0) {
+        ghostty_log.err("jni nativeQueueMouseEvent failed handle=0x{x} action={} button={} result={}", .{ native_handle, action, button, result });
     }
     return result;
 }

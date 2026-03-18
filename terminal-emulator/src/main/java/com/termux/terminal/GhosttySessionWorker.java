@@ -34,6 +34,7 @@ final class GhosttySessionWorker extends Thread {
     private static final int MSG_BUILD_SNAPSHOT = 6;
     private static final int MSG_VIEWPORT_SCROLL = 7;
     private static final int MSG_REQUEST_FULL_SNAPSHOT_REFRESH = 8;
+    private static final int MSG_MOUSE_EVENT = 9;
 
     private static final long SNAPSHOT_INTERVAL_MILLIS = 16; // ~60fps
     private static final long SNAPSHOT_INTERVAL_BUSY_MILLIS = 33; // ~30fps under sustained backlog
@@ -64,6 +65,10 @@ final class GhosttySessionWorker extends Thread {
 
     private int mPendingColumns;
     private int mPendingRows;
+    private int mPendingCellWidthPixels;
+    private int mPendingCellHeightPixels;
+    private int mCurrentCellWidthPixels;
+    private int mCurrentCellHeightPixels;
     private int mPendingTopRow;
     private int mCurrentTopRow;
     private long mLastSnapshotTime;
@@ -72,7 +77,14 @@ final class GhosttySessionWorker extends Thread {
     private long mCoalescedBuildRequestCount;
     private long mCoalescedUiWakeupCount;
 
-    GhosttySessionWorker(TerminalSession session, GhosttyTerminalContent content, ByteQueue queue, Handler mainThreadHandler) {
+    GhosttySessionWorker(
+        TerminalSession session,
+        GhosttyTerminalContent content,
+        ByteQueue queue,
+        Handler mainThreadHandler,
+        int cellWidthPixels,
+        int cellHeightPixels
+    ) {
         super("GhosttyWorker-" + session.mHandle);
         mSession = session;
         mContent = content;
@@ -80,6 +92,10 @@ final class GhosttySessionWorker extends Thread {
         mMainThreadHandler = mainThreadHandler;
         mPendingColumns = content.getColumns();
         mPendingRows = content.getRows();
+        mPendingCellWidthPixels = cellWidthPixels;
+        mPendingCellHeightPixels = cellHeightPixels;
+        mCurrentCellWidthPixels = cellWidthPixels;
+        mCurrentCellHeightPixels = cellHeightPixels;
         mPendingTopRow = 0;
     }
 
@@ -113,10 +129,12 @@ final class GhosttySessionWorker extends Thread {
         getWorkerHandler().sendEmptyMessage(MSG_APPEND);
     }
 
-    void resize(int columns, int rows) {
+    void resize(int columns, int rows, int cellWidthPixels, int cellHeightPixels) {
         synchronized (this) {
             mPendingColumns = columns;
             mPendingRows = rows;
+            mPendingCellWidthPixels = cellWidthPixels;
+            mPendingCellHeightPixels = cellHeightPixels;
         }
 
         Handler handler = getWorkerHandler();
@@ -128,6 +146,10 @@ final class GhosttySessionWorker extends Thread {
 
     void reset() {
         getWorkerHandler().sendEmptyMessage(MSG_RESET);
+    }
+
+    void sendMouseEvent(GhosttyMouseEvent event) {
+        getWorkerHandler().obtainMessage(MSG_MOUSE_EVENT, event).sendToTarget();
     }
 
     void shutdown() {
@@ -207,17 +229,27 @@ final class GhosttySessionWorker extends Thread {
     private void handleResize() {
         int columns;
         int rows;
+        int cellWidthPixels;
+        int cellHeightPixels;
         synchronized (this) {
             columns = mPendingColumns;
             rows = mPendingRows;
+            cellWidthPixels = mPendingCellWidthPixels;
+            cellHeightPixels = mPendingCellHeightPixels;
         }
 
-        if (columns == mContent.getColumns() && rows == mContent.getRows()) {
+        boolean sizeUnchanged = columns == mContent.getColumns()
+            && rows == mContent.getRows()
+            && cellWidthPixels == mCurrentCellWidthPixels
+            && cellHeightPixels == mCurrentCellHeightPixels;
+        if (sizeUnchanged) {
             return;
         }
 
         addPendingFrameReason(FrameDelta.REASON_RESIZE);
-        mContent.resize(columns, rows);
+        mContent.resize(columns, rows, cellWidthPixels, cellHeightPixels);
+        mCurrentCellWidthPixels = cellWidthPixels;
+        mCurrentCellHeightPixels = cellHeightPixels;
         mContent.requestFullSnapshotRefresh();
         updateCachedState();
         mSnapshotDirty.set(true);
@@ -248,6 +280,19 @@ final class GhosttySessionWorker extends Thread {
         addPendingFrameReason(FrameDelta.REASON_VIEWPORT_SCROLL);
         mSnapshotDirty.set(true);
         scheduleSnapshotBuild(false);
+    }
+
+    private void handleMouseEvent(GhosttyMouseEvent event) {
+        int appendedBytes = mContent.queueMouseEvent(event);
+        if (appendedBytes < 0) {
+            GhosttyLog.error("Ghostty mouse event failed session=" + mSession.mHandle + " action=" + event.action + " button=" + event.button);
+            return;
+        }
+        if (appendedBytes == 0) {
+            return;
+        }
+
+        drainPendingOutput();
     }
 
     private void processAppendResult(int result) {
@@ -429,6 +474,9 @@ final class GhosttySessionWorker extends Thread {
                     break;
                 case MSG_REQUEST_FULL_SNAPSHOT_REFRESH:
                     handleRequestFullSnapshotRefresh();
+                    break;
+                case MSG_MOUSE_EVENT:
+                    handleMouseEvent((GhosttyMouseEvent) msg.obj);
                     break;
                 case MSG_SHUTDOWN:
                     getLooper().quit();

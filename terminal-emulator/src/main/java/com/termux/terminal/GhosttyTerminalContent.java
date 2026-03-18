@@ -18,18 +18,18 @@ public final class GhosttyTerminalContent implements TerminalContent, AutoClosea
     private long mSnapshotParseTotalNanos;
     private long mSnapshotTotalNanos;
 
-    public GhosttyTerminalContent(int columns, int rows, int transcriptRows) {
+    public GhosttyTerminalContent(int columns, int rows, int transcriptRows, int cellWidthPixels, int cellHeightPixels) {
         if (!GhosttyNative.isLibraryLoaded()) {
             throw new IllegalStateException("libtermux-ghostty.so is not available");
         }
 
-        mNativeHandle = GhosttyNative.nativeCreate(columns, rows, transcriptRows);
+        mNativeHandle = GhosttyNative.nativeCreate(columns, rows, transcriptRows, cellWidthPixels, cellHeightPixels);
         if (mNativeHandle == 0) {
-            GhosttyLog.error("nativeCreate returned null handle for columns=" + columns + ", rows=" + rows + ", transcriptRows=" + transcriptRows);
+            GhosttyLog.error("nativeCreate returned null handle for columns=" + columns + ", rows=" + rows + ", transcriptRows=" + transcriptRows + ", cellWidth=" + cellWidthPixels + ", cellHeight=" + cellHeightPixels);
             throw new IllegalStateException("Failed to create Ghostty terminal");
         }
 
-        GhosttyLog.info("Created Ghostty terminal handle=0x" + Long.toHexString(mNativeHandle) + " columns=" + columns + " rows=" + rows + " transcriptRows=" + transcriptRows);
+        GhosttyLog.info("Created Ghostty terminal handle=0x" + Long.toHexString(mNativeHandle) + " columns=" + columns + " rows=" + rows + " transcriptRows=" + transcriptRows + " cellWidth=" + cellWidthPixels + " cellHeight=" + cellHeightPixels);
     }
 
     @Override
@@ -50,13 +50,13 @@ public final class GhosttyTerminalContent implements TerminalContent, AutoClosea
         GhosttyNative.nativeReset(nativeHandle);
     }
 
-    public synchronized int resize(int columns, int rows) {
+    public synchronized int resize(int columns, int rows, int cellWidthPixels, int cellHeightPixels) {
         long nativeHandle = requireNativeHandle();
-        int result = GhosttyNative.nativeResize(nativeHandle, columns, rows);
+        int result = GhosttyNative.nativeResize(nativeHandle, columns, rows, cellWidthPixels, cellHeightPixels);
         if (result != 0) {
-            GhosttyLog.error("nativeResize failed handle=0x" + Long.toHexString(nativeHandle) + " columns=" + columns + " rows=" + rows + " result=" + result);
+            GhosttyLog.error("nativeResize failed handle=0x" + Long.toHexString(nativeHandle) + " columns=" + columns + " rows=" + rows + " cellWidth=" + cellWidthPixels + " cellHeight=" + cellHeightPixels + " result=" + result);
         } else {
-            GhosttyLog.debug("Resized Ghostty terminal handle=0x" + Long.toHexString(nativeHandle) + " columns=" + columns + " rows=" + rows);
+            GhosttyLog.debug("Resized Ghostty terminal handle=0x" + Long.toHexString(nativeHandle) + " columns=" + columns + " rows=" + rows + " cellWidth=" + cellWidthPixels + " cellHeight=" + cellHeightPixels);
         }
         return result;
     }
@@ -77,6 +77,25 @@ public final class GhosttyTerminalContent implements TerminalContent, AutoClosea
         }
 
         return GhosttyNative.nativeAppend(requireNativeHandle(), data, offset, length);
+    }
+
+    public synchronized int queueMouseEvent(GhosttyMouseEvent event) {
+        return GhosttyNative.nativeQueueMouseEvent(
+            requireNativeHandle(),
+            event.action,
+            event.button,
+            event.modifiers,
+            event.surfaceX,
+            event.surfaceY,
+            event.screenWidthPx,
+            event.screenHeightPx,
+            event.cellWidthPx,
+            event.cellHeightPx,
+            event.paddingTopPx,
+            event.paddingRightPx,
+            event.paddingBottomPx,
+            event.paddingLeftPx
+        );
     }
 
     public synchronized int drainPendingOutput(byte[] buffer, int offset, int length) {

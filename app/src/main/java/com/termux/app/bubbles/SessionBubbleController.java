@@ -152,7 +152,10 @@ public final class SessionBubbleController {
                                                  @NonNull String sessionLabel, @Nullable Integer sessionIndex,
                                                  boolean autoExpand) {
         Person sessionPerson = buildSessionPerson(session, sessionLabel);
-        Icon sessionIcon = mSessionShortcutHelper.createSessionIcon(session, sessionLabel, sessionIndex);
+        Icon sessionIcon = null;
+        if (!shouldUseShortcutBackedBubbleMetadata())
+            sessionIcon = mSessionShortcutHelper.createSessionIcon(session, sessionLabel, sessionIndex);
+
         PendingIntent contentIntent = PendingIntent.getActivity(mService, notificationId,
             TermuxActivity.newInstance(mService, session.mHandle), getContentPendingIntentFlags());
 
@@ -183,14 +186,27 @@ public final class SessionBubbleController {
 
     @NonNull
     private Notification.BubbleMetadata buildBubbleMetadata(@NonNull TerminalSession session, int notificationId,
-                                                            @NonNull Icon sessionIcon, boolean autoExpand) {
-        PendingIntent bubbleIntent = PendingIntent.getActivity(mService, notificationId,
-            BubbleSessionActivity.newInstance(mService, session.mHandle), getBubblePendingIntentFlags());
+                                                            @Nullable Icon sessionIcon, boolean autoExpand) {
         PendingIntent deleteIntent = PendingIntent.getService(mService, notificationId,
             new Intent(mService, TermuxService.class)
                 .setAction(TermuxConstants.TERMUX_APP.TERMUX_SERVICE.ACTION_UNBUBBLE_SESSION)
                 .putExtra(TermuxConstants.TERMUX_APP.TERMUX_ACTIVITY.EXTRA_SESSION_HANDLE, session.mHandle),
             getDeletePendingIntentFlags());
+
+        if (shouldUseShortcutBackedBubbleMetadata()) {
+            return new Notification.BubbleMetadata.Builder(session.mHandle)
+                .setDeleteIntent(deleteIntent)
+                .setDesiredHeight(getDesiredBubbleHeight())
+                .setAutoExpandBubble(autoExpand)
+                .setSuppressNotification(true)
+                .build();
+        }
+
+        if (sessionIcon == null)
+            throw new IllegalArgumentException("Session bubble icon is required for PendingIntent bubbles");
+
+        PendingIntent bubbleIntent = PendingIntent.getActivity(mService, notificationId,
+            BubbleSessionActivity.newInstance(mService, session.mHandle), getBubblePendingIntentFlags());
 
         return new Notification.BubbleMetadata.Builder(bubbleIntent, sessionIcon)
             .setDeleteIntent(deleteIntent)
@@ -250,6 +266,12 @@ public final class SessionBubbleController {
             return PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_MUTABLE;
 
         return PendingIntent.FLAG_UPDATE_CURRENT;
+    }
+
+    private boolean shouldUseShortcutBackedBubbleMetadata() {
+        // Android 16+ can crash in SystemUI when expanding this flow as a PendingIntent-backed app
+        // bubble. Shortcut-backed metadata keeps the session on the conversation bubble path.
+        return Build.VERSION.SDK_INT > Build.VERSION_CODES.VANILLA_ICE_CREAM;
     }
 
     private void setupNotificationChannel() {

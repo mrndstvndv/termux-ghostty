@@ -14,6 +14,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import com.termux.R;
+import com.termux.app.BubbleSessionActivity;
 import com.termux.app.TermuxActivity;
 import com.termux.terminal.TerminalSession;
 
@@ -68,8 +69,7 @@ public final class SessionShortcutHelper {
                                            @Nullable Integer sessionIndex) {
         String shortcutLabel = sanitizeShortcutLabel(label);
         Person sessionPerson = buildSessionPerson(session, shortcutLabel);
-        Intent shortcutIntent = TermuxActivity.newInstance(mContext, session.mHandle);
-        shortcutIntent.setAction(Intent.ACTION_VIEW);
+        Intent shortcutIntent = buildShortcutIntent(session);
 
         ShortcutInfo.Builder shortcutBuilder = new ShortcutInfo.Builder(mContext, session.mHandle)
             .setShortLabel(shortcutLabel)
@@ -101,6 +101,24 @@ public final class SessionShortcutHelper {
         if (shortcutLabel.isEmpty()) shortcutLabel = mContext.getString(R.string.label_terminal_session_shell);
         if (shortcutLabel.length() <= MAX_SHORTCUT_LABEL_LENGTH) return shortcutLabel;
         return shortcutLabel.substring(0, MAX_SHORTCUT_LABEL_LENGTH);
+    }
+
+    @NonNull
+    private Intent buildShortcutIntent(@NonNull TerminalSession session) {
+        Intent shortcutIntent;
+        if (shouldUseBubbleActivityShortcut()) {
+            shortcutIntent = BubbleSessionActivity.newInstance(mContext, session.mHandle);
+        } else {
+            shortcutIntent = TermuxActivity.newInstance(mContext, session.mHandle);
+        }
+
+        shortcutIntent.setAction(Intent.ACTION_VIEW);
+        return shortcutIntent;
+    }
+
+    private boolean shouldUseBubbleActivityShortcut() {
+        // Shortcut-backed bubble metadata expands the shortcut activity itself.
+        return Build.VERSION.SDK_INT > Build.VERSION_CODES.VANILLA_ICE_CREAM;
     }
 
     @Nullable

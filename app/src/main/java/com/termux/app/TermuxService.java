@@ -1010,6 +1010,23 @@ public final class TermuxService extends Service implements AppShell.AppShellCli
         mSessionBubbleController.onSessionTitleChanged(session);
     }
 
+    public void onTerminalSessionProtocolNotification(@Nullable TerminalSession session,
+                                                      @Nullable String title,
+                                                      @Nullable String body) {
+        if (session == null) return;
+        if (mSessionBubbleController == null) return;
+        mSessionBubbleController.onTerminalProtocolNotification(session, title, body);
+    }
+
+    public void markSessionBubbleConversationRead(@Nullable String sessionHandle) {
+        if (mSessionBubbleController == null) return;
+        mSessionBubbleController.markSessionConversationRead(sessionHandle);
+    }
+
+    public boolean isTerminalSessionFocused(@Nullable TerminalSession session) {
+        return mTermuxTerminalSessionClientDispatcher.isSessionFocused(session);
+    }
+
     public void onTerminalSessionFinished(@Nullable TerminalSession session) {
         if (session == null) return;
         if (mSessionBubbleController == null) return;
@@ -1049,6 +1066,10 @@ public final class TermuxService extends Service implements AppShell.AppShellCli
 
     public boolean isSessionBubbled(@Nullable String sessionHandle) {
         return mSessionBubbleController != null && mSessionBubbleController.isSessionBubbled(sessionHandle);
+    }
+
+    public boolean hasSessionBubbleConversation(@Nullable String sessionHandle) {
+        return mSessionBubbleController != null && mSessionBubbleController.hasBubbleConversation(sessionHandle);
     }
 
     @NonNull

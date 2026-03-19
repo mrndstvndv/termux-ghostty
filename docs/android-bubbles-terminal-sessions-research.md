@@ -346,3 +346,13 @@ Best answer is:
 - **build a dedicated per-session bubble activity instead**
 
 That gives you the feature you described: minimize terminal sessions into bubbles, then reopen them quickly, while the underlying shells keep running in `TermuxService`.
+
+## Implementation checklist
+
+- [x] Replace per-session UUID conversation ids with stable bubble slot ids.
+- [x] Keep slot ids stable for the lifetime of the live session.
+- [x] Reuse slot ids for future sessions after exit.
+- [x] Keep dismissed bubble shortcuts alive until session exit so Android can surface them in Recent bubbles.
+- [x] Report shortcut usage on explicit bubble actions.
+- [x] Clear legacy bubble shortcuts on service startup so old conversation spam is pruned.
+- [ ] Add a recent bubbles dialog to restore closed shells or relaunch a new session into the same slot.

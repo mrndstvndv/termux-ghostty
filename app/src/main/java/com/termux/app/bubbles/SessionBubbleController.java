@@ -21,6 +21,7 @@ import com.termux.app.TermuxService;
 import com.termux.shared.logger.Logger;
 import com.termux.shared.notification.NotificationUtils;
 import com.termux.shared.termux.TermuxConstants;
+import com.termux.shared.termux.shell.command.runner.terminal.TermuxSession;
 import com.termux.terminal.TerminalSession;
 
 import java.util.ArrayList;
@@ -35,14 +36,13 @@ public final class SessionBubbleController {
     private final SessionShortcutHelper mSessionShortcutHelper;
     private final Map<String, Integer> mSessionNotificationIds = new HashMap<>();
 
-    private int mNextNotificationId = TermuxConstants.TERMUX_APP_SESSION_BUBBLE_NOTIFICATION_ID_BASE;
-
     private static final String LOG_TAG = "SessionBubbleController";
 
     public SessionBubbleController(@NonNull TermuxService service) {
         mService = service;
         mNotificationManager = NotificationUtils.getNotificationManager(service);
         mSessionShortcutHelper = new SessionShortcutHelper(service);
+        mSessionShortcutHelper.clearAllSessionShortcuts();
         setupNotificationChannel();
     }
 
@@ -58,18 +58,30 @@ public final class SessionBubbleController {
     }
 
     public synchronized void bubbleSession(@Nullable TerminalSession session, boolean autoExpand) {
+        bubbleSession(session, autoExpand, true);
+    }
+
+    private synchronized void bubbleSession(@Nullable TerminalSession session, boolean autoExpand, boolean reportUsage) {
         if (session == null) return;
         if (!isSupported()) return;
         if (!session.isRunning()) return;
 
         String sessionHandle = session.mHandle;
-        int notificationId = getOrCreateNotificationId(sessionHandle);
+        int bubbleSlotId = getBubbleSlotId(session);
+        if (bubbleSlotId < 1) {
+            Logger.logError(LOG_TAG, "Failed to bubble session " + sessionHandle + ": missing bubble slot");
+            return;
+        }
+
+        String shortcutId = getBubbleShortcutId(bubbleSlotId);
+        int notificationId = getOrCreateNotificationId(sessionHandle, bubbleSlotId);
         String sessionLabel = getSessionLabel(session);
-        Integer sessionIndex = getSessionIndex(session);
 
         try {
-            mSessionShortcutHelper.publishSessionShortcut(session, sessionLabel, sessionIndex);
-            Notification notification = buildBubbleNotification(session, notificationId, sessionLabel, sessionIndex, autoExpand);
+            if (reportUsage)
+                mSessionShortcutHelper.reportSessionShortcutUsed(shortcutId);
+            mSessionShortcutHelper.publishSessionShortcut(shortcutId, session, sessionLabel, bubbleSlotId);
+            Notification notification = buildBubbleNotification(session, notificationId, sessionLabel, bubbleSlotId, autoExpand);
             if (notification == null) {
                 mSessionNotificationIds.remove(sessionHandle);
                 return;
@@ -85,18 +97,18 @@ public final class SessionBubbleController {
     public synchronized void updateSessionBubble(@Nullable TerminalSession session) {
         if (session == null) return;
         if (!isSessionBubbled(session.mHandle)) return;
-        bubbleSession(session, false);
+        bubbleSession(session, false, false);
     }
 
     public synchronized void onSessionTitleChanged(@Nullable TerminalSession session) {
         if (session == null) return;
         if (!isSessionBubbled(session.mHandle)) return;
-        bubbleSession(session, false);
+        bubbleSession(session, false, false);
     }
 
     public synchronized void onSessionFinished(@Nullable TerminalSession session) {
         if (session == null) return;
-        unbubbleSession(session.mHandle);
+        dismissSessionBubble(session.mHandle);
     }
 
     public synchronized void refreshAllBubbles() {
@@ -106,22 +118,47 @@ public final class SessionBubbleController {
         for (String sessionHandle : sessionHandles) {
             TerminalSession session = mService.getTerminalSessionForHandle(sessionHandle);
             if (session == null || !session.isRunning()) {
-                unbubbleSession(sessionHandle);
+                removeSessionBubble(sessionHandle);
                 continue;
             }
 
-            bubbleSession(session, false);
+            bubbleSession(session, false, false);
         }
     }
 
     public synchronized void unbubbleSession(@Nullable String sessionHandle) {
+        dismissSessionBubble(sessionHandle);
+    }
+
+    public synchronized void removeSessionBubble(@Nullable String sessionHandle) {
         if (TextUtils.isEmpty(sessionHandle)) return;
 
         Integer notificationId = mSessionNotificationIds.remove(sessionHandle);
         if (notificationId != null && mNotificationManager != null)
             mNotificationManager.cancel(notificationId);
 
-        mSessionShortcutHelper.removeSessionShortcut(sessionHandle);
+        int bubbleSlotId = notificationId != null
+            ? notificationId - TermuxConstants.TERMUX_APP_SESSION_BUBBLE_NOTIFICATION_ID_BASE
+            : -1;
+        if (bubbleSlotId < 1) {
+            TerminalSession terminalSession = mService.getTerminalSessionForHandle(sessionHandle);
+            if (terminalSession != null) {
+                TermuxSession termuxSession = mService.getTermuxSessionForTerminalSession(terminalSession);
+                if (termuxSession != null)
+                    bubbleSlotId = termuxSession.getBubbleSlotId();
+            }
+        }
+
+        if (bubbleSlotId > 0)
+            mSessionShortcutHelper.removeSessionShortcut(getBubbleShortcutId(bubbleSlotId));
+    }
+
+    private void dismissSessionBubble(@Nullable String sessionHandle) {
+        if (TextUtils.isEmpty(sessionHandle)) return;
+
+        Integer notificationId = mSessionNotificationIds.remove(sessionHandle);
+        if (notificationId != null && mNotificationManager != null)
+            mNotificationManager.cancel(notificationId);
     }
 
     public synchronized void clearAll() {
@@ -129,32 +166,40 @@ public final class SessionBubbleController {
 
         List<String> sessionHandles = new ArrayList<>(mSessionNotificationIds.keySet());
         for (String sessionHandle : sessionHandles)
-            unbubbleSession(sessionHandle);
+            removeSessionBubble(sessionHandle);
     }
 
     @NonNull
     public String getSessionLabel(@NonNull TerminalSession session) {
+        int bubbleSlotId = getBubbleSlotId(session);
         String sessionName = session.mSessionName;
         if (!TextUtils.isEmpty(sessionName)) {
             String trimmedSessionName = sessionName.trim();
-            if (!trimmedSessionName.isEmpty()) return trimmedSessionName;
+            if (!trimmedSessionName.isEmpty()) {
+                if (bubbleSlotId > 0) return "[" + bubbleSlotId + "] " + trimmedSessionName;
+                return trimmedSessionName;
+            }
         }
+
+        String sessionTitle = mService.getString(R.string.label_terminal_session_shell);
+        if (bubbleSlotId > 0) return "[" + bubbleSlotId + "] " + sessionTitle;
 
         int index = mService.getIndexOfSession(session);
         if (index >= 0)
-            return "[" + (index + 1) + "] " + mService.getString(R.string.label_terminal_session_shell);
+            return "[" + (index + 1) + "] " + sessionTitle;
 
-        return mService.getString(R.string.label_terminal_session_shell);
+        return sessionTitle;
     }
 
     @Nullable
     private Notification buildBubbleNotification(@NonNull TerminalSession session, int notificationId,
-                                                 @NonNull String sessionLabel, @Nullable Integer sessionIndex,
+                                                 @NonNull String sessionLabel, int bubbleSlotId,
                                                  boolean autoExpand) {
-        Person sessionPerson = buildSessionPerson(session, sessionLabel);
+        String shortcutId = getBubbleShortcutId(bubbleSlotId);
+        Person sessionPerson = buildSessionPerson(shortcutId, sessionLabel);
         Icon sessionIcon = null;
         if (!shouldUseShortcutBackedBubbleMetadata())
-            sessionIcon = mSessionShortcutHelper.createSessionIcon(session, sessionLabel, sessionIndex);
+            sessionIcon = mSessionShortcutHelper.createSessionIcon(session, sessionLabel, bubbleSlotId);
 
         PendingIntent contentIntent = PendingIntent.getActivity(mService, notificationId,
             TermuxActivity.newInstance(mService, session.mHandle), getContentPendingIntentFlags());
@@ -170,23 +215,24 @@ public final class SessionBubbleController {
         builder.setColor(0xFF607D8B);
         builder.setCategory(Notification.CATEGORY_MESSAGE);
         builder.setOnlyAlertOnce(true);
-        builder.setShortcutId(session.mHandle);
+        builder.setShortcutId(shortcutId);
         builder.addPerson(sessionPerson);
         builder.setStyle(new Notification.MessagingStyle(sessionPerson)
             .setConversationTitle(sessionLabel)
             .addMessage(getSessionSubtitle(session), System.currentTimeMillis(), sessionPerson));
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
-            builder.setLocusId(new LocusId(session.mHandle));
+            builder.setLocusId(new LocusId(shortcutId));
 
-        builder.setBubbleMetadata(buildBubbleMetadata(session, notificationId, sessionIcon, autoExpand));
+        builder.setBubbleMetadata(buildBubbleMetadata(session, notificationId, sessionIcon, autoExpand, shortcutId));
 
         return builder.build();
     }
 
     @NonNull
     private Notification.BubbleMetadata buildBubbleMetadata(@NonNull TerminalSession session, int notificationId,
-                                                            @Nullable Icon sessionIcon, boolean autoExpand) {
+                                                            @Nullable Icon sessionIcon, boolean autoExpand,
+                                                            @NonNull String shortcutId) {
         PendingIntent deleteIntent = PendingIntent.getService(mService, notificationId,
             new Intent(mService, TermuxService.class)
                 .setAction(TermuxConstants.TERMUX_APP.TERMUX_SERVICE.ACTION_UNBUBBLE_SESSION)
@@ -194,7 +240,7 @@ public final class SessionBubbleController {
             getDeletePendingIntentFlags());
 
         if (shouldUseShortcutBackedBubbleMetadata()) {
-            return new Notification.BubbleMetadata.Builder(session.mHandle)
+            return new Notification.BubbleMetadata.Builder(shortcutId)
                 .setDeleteIntent(deleteIntent)
                 .setDesiredHeight(getDesiredBubbleHeight())
                 .setAutoExpandBubble(autoExpand)
@@ -216,27 +262,32 @@ public final class SessionBubbleController {
             .build();
     }
 
-    private int getOrCreateNotificationId(@NonNull String sessionHandle) {
+    private int getOrCreateNotificationId(@NonNull String sessionHandle, int bubbleSlotId) {
         Integer notificationId = mSessionNotificationIds.get(sessionHandle);
         if (notificationId != null) return notificationId;
 
-        int nextNotificationId = mNextNotificationId++;
+        int nextNotificationId = TermuxConstants.TERMUX_APP_SESSION_BUBBLE_NOTIFICATION_ID_BASE + bubbleSlotId;
         mSessionNotificationIds.put(sessionHandle, nextNotificationId);
         return nextNotificationId;
     }
 
-    @Nullable
-    private Integer getSessionIndex(@NonNull TerminalSession session) {
-        int sessionIndex = mService.getIndexOfSession(session);
-        if (sessionIndex < 0) return null;
-        return sessionIndex;
+    private int getBubbleSlotId(@NonNull TerminalSession session) {
+        return mService.getBubbleSlotId(session);
     }
 
     @NonNull
-    private Person buildSessionPerson(@NonNull TerminalSession session, @NonNull String sessionLabel) {
+    private String getBubbleShortcutId(int bubbleSlotId) {
+        if (bubbleSlotId < 1)
+            throw new IllegalArgumentException("Invalid bubble slot id: " + bubbleSlotId);
+
+        return TermuxConstants.TERMUX_APP_SESSION_BUBBLE_SHORTCUT_ID_PREFIX + bubbleSlotId;
+    }
+
+    @NonNull
+    private Person buildSessionPerson(@NonNull String shortcutId, @NonNull String sessionLabel) {
         return new Person.Builder()
             .setName(sessionLabel)
-            .setKey(session.mHandle)
+            .setKey(shortcutId)
             .setImportant(true)
             .build();
     }

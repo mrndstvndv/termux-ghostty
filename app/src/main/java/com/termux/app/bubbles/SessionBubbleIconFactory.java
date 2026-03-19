@@ -31,13 +31,13 @@ public final class SessionBubbleIconFactory {
 
     @NonNull
     public Icon createSessionIcon(@NonNull TerminalSession session, @NonNull String sessionLabel,
-                                  @Nullable Integer sessionIndex) {
-        return Icon.createWithAdaptiveBitmap(createSessionBitmap(session, sessionLabel, sessionIndex));
+                                  @Nullable Integer bubbleSlotId) {
+        return Icon.createWithAdaptiveBitmap(createSessionBitmap(session, sessionLabel, bubbleSlotId));
     }
 
     @NonNull
     private Bitmap createSessionBitmap(@NonNull TerminalSession session, @NonNull String sessionLabel,
-                                       @Nullable Integer sessionIndex) {
+                                       @Nullable Integer bubbleSlotId) {
         int iconSize = getIconSize();
         Bitmap bitmap = Bitmap.createBitmap(iconSize, iconSize, Bitmap.Config.ARGB_8888);
         Canvas canvas = new Canvas(bitmap);
@@ -46,7 +46,7 @@ public final class SessionBubbleIconFactory {
         backgroundPaint.setColor(BACKGROUND_COLOR);
         canvas.drawRect(0, 0, iconSize, iconSize, backgroundPaint);
 
-        String badgeText = getBadgeText(session, sessionLabel, sessionIndex);
+        String badgeText = getBadgeText(session, sessionLabel, bubbleSlotId);
         Paint textPaint = createTextPaint(iconSize, badgeText);
         drawCenteredText(canvas, textPaint, badgeText, iconSize);
 
@@ -73,13 +73,13 @@ public final class SessionBubbleIconFactory {
 
     @NonNull
     private String getBadgeText(@NonNull TerminalSession session, @NonNull String sessionLabel,
-                                @Nullable Integer sessionIndex) {
+                                @Nullable Integer bubbleSlotId) {
         String sessionName = session.mSessionName;
         String sessionMonogram = getMonogram(sessionName);
         if (!sessionMonogram.isEmpty()) return sessionMonogram;
 
-        if (sessionIndex != null && sessionIndex >= 0)
-            return String.valueOf(sessionIndex + 1);
+        if (bubbleSlotId != null && bubbleSlotId >= 0)
+            return String.valueOf(bubbleSlotId);
 
         String labelMonogram = getMonogram(sessionLabel);
         if (!labelMonogram.isEmpty()) return labelMonogram;

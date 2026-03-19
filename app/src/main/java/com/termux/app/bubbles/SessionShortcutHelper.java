@@ -16,14 +16,19 @@ import androidx.annotation.Nullable;
 import com.termux.R;
 import com.termux.app.BubbleSessionActivity;
 import com.termux.app.TermuxActivity;
+import com.termux.shared.logger.Logger;
 import com.termux.terminal.TerminalSession;
 
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.List;
+import java.util.Set;
 
 public final class SessionShortcutHelper {
 
     private static final int MAX_SHORTCUT_LABEL_LENGTH = 40;
     private static final String SESSION_SHORTCUT_CATEGORY = "com.termux.session";
+    private static final String LOG_TAG = "SessionShortcutHelper";
 
     private final Context mContext;
     private final SessionBubbleIconFactory mSessionBubbleIconFactory;
@@ -37,60 +42,96 @@ public final class SessionShortcutHelper {
         return Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && getShortcutManager() != null;
     }
 
-    public void publishSessionShortcut(@NonNull TerminalSession session, @NonNull String label,
-                                       @Nullable Integer sessionIndex) {
+    public void clearAllSessionShortcuts() {
+        if (!isSupported()) return;
+
+        try {
+            ShortcutManager shortcutManager = getShortcutManager();
+            if (shortcutManager == null) return;
+
+            List<ShortcutInfo> shortcuts = shortcutManager.getShortcuts(
+                ShortcutManager.FLAG_MATCH_DYNAMIC | ShortcutManager.FLAG_MATCH_CACHED | ShortcutManager.FLAG_MATCH_PINNED | ShortcutManager.FLAG_MATCH_MANIFEST);
+            if (shortcuts == null || shortcuts.isEmpty()) return;
+
+            List<String> shortcutIds = new ArrayList<>();
+            for (ShortcutInfo shortcut : shortcuts) {
+                Set<String> categories = shortcut.getCategories();
+                if (categories == null || !categories.contains(SESSION_SHORTCUT_CATEGORY)) continue;
+                shortcutIds.add(shortcut.getId());
+            }
+
+            if (shortcutIds.isEmpty()) return;
+
+            shortcutManager.removeDynamicShortcuts(shortcutIds);
+            shortcutManager.removeLongLivedShortcuts(shortcutIds);
+        } catch (Exception e) {
+            Logger.logStackTraceWithMessage(LOG_TAG, "Failed to clear Termux session shortcuts", e);
+        }
+    }
+
+    public void publishSessionShortcut(@NonNull String shortcutId, @NonNull TerminalSession session,
+                                       @NonNull String label, @Nullable Integer bubbleSlotId) {
         if (!isSupported()) return;
 
         ShortcutManager shortcutManager = getShortcutManager();
         if (shortcutManager == null) return;
 
-        shortcutManager.pushDynamicShortcut(buildShortcutInfo(session, label, sessionIndex));
+        shortcutManager.pushDynamicShortcut(buildShortcutInfo(shortcutId, session, label, bubbleSlotId));
+    }
+
+    public void reportSessionShortcutUsed(@NonNull String shortcutId) {
+        if (!isSupported()) return;
+
+        ShortcutManager shortcutManager = getShortcutManager();
+        if (shortcutManager == null) return;
+
+        shortcutManager.reportShortcutUsed(shortcutId);
     }
 
     @NonNull
     public Icon createSessionIcon(@NonNull TerminalSession session, @NonNull String label,
-                                  @Nullable Integer sessionIndex) {
-        return mSessionBubbleIconFactory.createSessionIcon(session, label, sessionIndex);
+                                  @Nullable Integer bubbleSlotId) {
+        return mSessionBubbleIconFactory.createSessionIcon(session, label, bubbleSlotId);
     }
 
-    public void removeSessionShortcut(@Nullable String sessionHandle) {
+    public void removeSessionShortcut(@Nullable String shortcutId) {
         if (!isSupported()) return;
-        if (TextUtils.isEmpty(sessionHandle)) return;
+        if (TextUtils.isEmpty(shortcutId)) return;
 
         ShortcutManager shortcutManager = getShortcutManager();
         if (shortcutManager == null) return;
 
-        shortcutManager.removeLongLivedShortcuts(Collections.singletonList(sessionHandle));
-        shortcutManager.removeDynamicShortcuts(Collections.singletonList(sessionHandle));
+        shortcutManager.removeLongLivedShortcuts(Collections.singletonList(shortcutId));
+        shortcutManager.removeDynamicShortcuts(Collections.singletonList(shortcutId));
     }
 
     @NonNull
-    private ShortcutInfo buildShortcutInfo(@NonNull TerminalSession session, @NonNull String label,
-                                           @Nullable Integer sessionIndex) {
+    private ShortcutInfo buildShortcutInfo(@NonNull String shortcutId, @NonNull TerminalSession session,
+                                           @NonNull String label, @Nullable Integer bubbleSlotId) {
         String shortcutLabel = sanitizeShortcutLabel(label);
-        Person sessionPerson = buildSessionPerson(session, shortcutLabel);
+        Person sessionPerson = buildSessionPerson(shortcutId, shortcutLabel);
         Intent shortcutIntent = buildShortcutIntent(session);
 
-        ShortcutInfo.Builder shortcutBuilder = new ShortcutInfo.Builder(mContext, session.mHandle)
+        ShortcutInfo.Builder shortcutBuilder = new ShortcutInfo.Builder(mContext, shortcutId)
             .setShortLabel(shortcutLabel)
             .setLongLabel(shortcutLabel)
-            .setIcon(createSessionIcon(session, shortcutLabel, sessionIndex))
+            .setIcon(createSessionIcon(session, shortcutLabel, bubbleSlotId))
             .setIntent(shortcutIntent)
             .setLongLived(true)
             .setCategories(Collections.singleton(SESSION_SHORTCUT_CATEGORY))
             .setPersons(new Person[]{sessionPerson});
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
-            shortcutBuilder.setLocusId(new LocusId(session.mHandle));
+            shortcutBuilder.setLocusId(new LocusId(shortcutId));
 
         return shortcutBuilder.build();
     }
 
     @NonNull
-    private Person buildSessionPerson(@NonNull TerminalSession session, @NonNull String label) {
+    private Person buildSessionPerson(@NonNull String shortcutId, @NonNull String label) {
         return new Person.Builder()
             .setName(label)
-            .setKey(session.mHandle)
+            .setKey(shortcutId)
             .setImportant(true)
             .build();
     }

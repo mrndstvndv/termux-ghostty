@@ -847,6 +847,8 @@ public final class TermuxConstants {
     public static final String TERMUX_APP_NOTIFICATION_CHANNEL_NAME = TermuxConstants.TERMUX_APP_NAME + " App";
     /** Termux app unique notification id used by {@link TERMUX_APP.TERMUX_SERVICE} */
     public static final int TERMUX_APP_NOTIFICATION_ID = 1337;
+    /** Maximum number of terminal sessions the app allows at once. */
+    public static final int TERMUX_APP_MAX_TERMINAL_SESSIONS = 8;
 
     /** Termux app notification channel id used by {@link TERMUX_APP.RUN_COMMAND_SERVICE} */
     public static final String TERMUX_RUN_COMMAND_NOTIFICATION_CHANNEL_ID = "termux_run_command_notification_channel";
@@ -871,6 +873,8 @@ public final class TermuxConstants {
     public static final String TERMUX_APP_SESSION_BUBBLE_NOTIFICATION_CHANNEL_NAME = TermuxConstants.TERMUX_APP_NAME + " Session Bubbles";
     /** Base notification id used for terminal session bubble notifications. */
     public static final int TERMUX_APP_SESSION_BUBBLE_NOTIFICATION_ID_BASE = 2000;
+    /** Prefix used for stable terminal session bubble shortcut ids. */
+    public static final String TERMUX_APP_SESSION_BUBBLE_SHORTCUT_ID_PREFIX = "termux_session_bubble_slot_";
 
     /** Termux app notification channel id used for terminal protocol notifications. */
     public static final String TERMUX_TERMINAL_PROTOCOL_NOTIFICATIONS_NOTIFICATION_CHANNEL_ID = "termux_terminal_protocol_notifications_channel";

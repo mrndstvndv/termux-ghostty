@@ -41,7 +41,7 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
 
     private final TermuxActivity mActivity;
 
-    private static final int MAX_SESSIONS = 8;
+    private static final int MAX_SESSIONS = TermuxConstants.TERMUX_APP_MAX_TERMINAL_SESSIONS;
 
     private SoundPool mBellSoundPool;
 

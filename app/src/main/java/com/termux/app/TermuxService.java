@@ -618,8 +618,11 @@ public final class TermuxService extends Service implements AppShell.AppShellCli
         // If the execution command was started for a plugin, only then will the stdout be set
         // Otherwise if command was manually started by the user like by adding a new terminal session,
         // then no need to set stdout
+        int bubbleSlotId = getAvailableBubbleSlotId();
+        if (bubbleSlotId < 1)
+            Logger.logWarn(LOG_TAG, "Failed to allocate a bubble slot for the new terminal session");
         TermuxSession newTermuxSession = TermuxSession.execute(this, executionCommand, getTermuxTerminalSessionClient(),
-            this, new TermuxShellEnvironment(), null, executionCommand.isPluginExecutionCommand);
+            this, new TermuxShellEnvironment(), bubbleSlotId, null, executionCommand.isPluginExecutionCommand);
         if (newTermuxSession == null) {
             Logger.logError(LOG_TAG, "Failed to execute new TermuxSession command for:\n" + executionCommand.getCommandIdAndLabelLogString());
             // If the execution command was started for a plugin, then process the error
@@ -654,6 +657,22 @@ public final class TermuxService extends Service implements AppShell.AppShellCli
         return newTermuxSession;
     }
 
+    private synchronized int getAvailableBubbleSlotId() {
+        boolean[] usedBubbleSlots = new boolean[TermuxConstants.TERMUX_APP_MAX_TERMINAL_SESSIONS + 1];
+
+        for (TermuxSession termuxSession : mShellManager.mTermuxSessions) {
+            int bubbleSlotId = termuxSession.getBubbleSlotId();
+            if (bubbleSlotId < 1 || bubbleSlotId > TermuxConstants.TERMUX_APP_MAX_TERMINAL_SESSIONS) continue;
+            usedBubbleSlots[bubbleSlotId] = true;
+        }
+
+        for (int bubbleSlotId = 1; bubbleSlotId <= TermuxConstants.TERMUX_APP_MAX_TERMINAL_SESSIONS; bubbleSlotId++) {
+            if (!usedBubbleSlots[bubbleSlotId]) return bubbleSlotId;
+        }
+
+        return -1;
+    }
+
     /** Remove a TermuxSession. */
     public synchronized int removeTermuxSession(TerminalSession sessionToRemove) {
         int index = getIndexOfSession(sessionToRemove);
@@ -677,7 +696,7 @@ public final class TermuxService extends Service implements AppShell.AppShellCli
                 TermuxPluginUtils.processPluginExecutionCommandResult(this, LOG_TAG, executionCommand);
 
             if (mSessionBubbleController != null)
-                mSessionBubbleController.unbubbleSession(termuxSession.getTerminalSession().mHandle);
+                mSessionBubbleController.removeSessionBubble(termuxSession.getTerminalSession().mHandle);
 
             mShellManager.mTermuxSessions.remove(termuxSession);
 
@@ -963,6 +982,15 @@ public final class TermuxService extends Service implements AppShell.AppShellCli
                 return terminalSession;
         }
         return null;
+    }
+
+    public synchronized int getBubbleSlotId(@Nullable TerminalSession terminalSession) {
+        if (terminalSession == null) return -1;
+
+        TermuxSession termuxSession = getTermuxSessionForTerminalSession(terminalSession);
+        if (termuxSession == null) return -1;
+
+        return termuxSession.getBubbleSlotId();
     }
 
     public void onTerminalSessionRenamed(@Nullable TerminalSession session) {

@@ -114,6 +114,7 @@ public final class BubbleSessionActivity extends AppCompatActivity implements Se
         mTerminalSessionClient.onResume();
         mTerminalViewClient.setSoftKeyboardState();
         updateSessionTitle();
+        markCurrentSessionBubbleConversationRead();
     }
 
     @Override
@@ -123,6 +124,14 @@ public final class BubbleSessionActivity extends AppCompatActivity implements Se
 
         mIsVisible = false;
         mTerminalSessionClient.onStop();
+    }
+
+    @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (!hasFocus) return;
+        if (mIsInvalidState) return;
+        markCurrentSessionBubbleConversationRead();
     }
 
     @Override
@@ -180,6 +189,7 @@ public final class BubbleSessionActivity extends AppCompatActivity implements Se
         mTerminalView.attachSession(session);
         mTerminalSessionClient.applyTerminalStyling();
         updateSessionTitle();
+        markCurrentSessionBubbleConversationRead();
         mTerminalView.requestFocus();
         closeTermuxActivityIfLaunchedFromBubble();
     }
@@ -232,6 +242,15 @@ public final class BubbleSessionActivity extends AppCompatActivity implements Se
 
         mDidCloseTermuxActivityOnBubbleOpen = true;
         mTermuxService.finishTermuxActivityIfPresent();
+    }
+
+    private void markCurrentSessionBubbleConversationRead() {
+        if (mTermuxService == null) return;
+
+        TerminalSession session = getCurrentSession();
+        if (session == null) return;
+
+        mTermuxService.markSessionBubbleConversationRead(session.mHandle);
     }
 
     private boolean shouldCloseTermuxActivityIfLaunchedFromBubble() {

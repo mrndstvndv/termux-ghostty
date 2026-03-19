@@ -24,6 +24,7 @@ import com.termux.shared.termux.TermuxConstants;
 import com.termux.shared.termux.shell.command.runner.terminal.TermuxSession;
 import com.termux.terminal.TerminalSession;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -31,12 +32,64 @@ import java.util.Map;
 
 public final class SessionBubbleController {
 
+    private static final int MAX_PROTOCOL_MESSAGES = 20;
+    private static final String LOG_TAG = "SessionBubbleController";
+
     private final TermuxService mService;
     private final NotificationManager mNotificationManager;
     private final SessionShortcutHelper mSessionShortcutHelper;
     private final Map<String, Integer> mSessionNotificationIds = new HashMap<>();
+    private final Map<String, SessionConversationState> mSessionConversationStates = new HashMap<>();
 
-    private static final String LOG_TAG = "SessionBubbleController";
+    private static final class BubbleMessage {
+        @NonNull
+        private final String mText;
+        private final long mTimestamp;
+
+        private BubbleMessage(@NonNull String text, long timestamp) {
+            mText = text;
+            mTimestamp = timestamp;
+        }
+    }
+
+    private static final class SessionConversationState {
+        private final long mCreatedAt = System.currentTimeMillis();
+        private final ArrayDeque<BubbleMessage> mProtocolMessages = new ArrayDeque<>();
+        private boolean mHasUnread;
+
+        private long getCreatedAt() {
+            return mCreatedAt;
+        }
+
+        private void addProtocolMessage(@NonNull String text) {
+            mProtocolMessages.addLast(new BubbleMessage(text, System.currentTimeMillis()));
+
+            while (mProtocolMessages.size() > MAX_PROTOCOL_MESSAGES)
+                mProtocolMessages.removeFirst();
+        }
+
+        private boolean hasProtocolMessages() {
+            return !mProtocolMessages.isEmpty();
+        }
+
+        private boolean hasUnread() {
+            return mHasUnread;
+        }
+
+        private void setUnread(boolean hasUnread) {
+            mHasUnread = hasUnread;
+        }
+
+        @Nullable
+        private BubbleMessage getLatestProtocolMessage() {
+            return mProtocolMessages.peekLast();
+        }
+
+        @NonNull
+        private List<BubbleMessage> getProtocolMessages() {
+            return new ArrayList<>(mProtocolMessages);
+        }
+    }
 
     public SessionBubbleController(@NonNull TermuxService service) {
         mService = service;
@@ -57,53 +110,66 @@ public final class SessionBubbleController {
         return mSessionNotificationIds.containsKey(sessionHandle);
     }
 
-    public synchronized void bubbleSession(@Nullable TerminalSession session, boolean autoExpand) {
-        bubbleSession(session, autoExpand, true);
+    public synchronized boolean hasBubbleConversation(@Nullable String sessionHandle) {
+        if (TextUtils.isEmpty(sessionHandle)) return false;
+        return mSessionConversationStates.containsKey(sessionHandle);
     }
 
-    private synchronized void bubbleSession(@Nullable TerminalSession session, boolean autoExpand, boolean reportUsage) {
+    public synchronized void bubbleSession(@Nullable TerminalSession session, boolean autoExpand) {
         if (session == null) return;
-        if (!isSupported()) return;
-        if (!session.isRunning()) return;
 
-        String sessionHandle = session.mHandle;
-        int bubbleSlotId = getBubbleSlotId(session);
-        if (bubbleSlotId < 1) {
-            Logger.logError(LOG_TAG, "Failed to bubble session " + sessionHandle + ": missing bubble slot");
-            return;
-        }
-
-        String shortcutId = getBubbleShortcutId(bubbleSlotId);
-        int notificationId = getOrCreateNotificationId(sessionHandle, bubbleSlotId);
-        String sessionLabel = getSessionLabel(session);
-
-        try {
-            if (reportUsage)
-                mSessionShortcutHelper.reportSessionShortcutUsed(shortcutId);
-            mSessionShortcutHelper.publishSessionShortcut(shortcutId, session, sessionLabel, bubbleSlotId);
-            Notification notification = buildBubbleNotification(session, notificationId, sessionLabel, bubbleSlotId, autoExpand);
-            if (notification == null) {
-                mSessionNotificationIds.remove(sessionHandle);
-                return;
-            }
-
-            mNotificationManager.notify(notificationId, notification);
-        } catch (Exception e) {
-            mSessionNotificationIds.remove(sessionHandle);
-            Logger.logStackTraceWithMessage(LOG_TAG, "Failed to bubble session " + sessionHandle, e);
-        }
+        ensureConversationState(session.mHandle).setUnread(false);
+        postBubbleNotification(session, autoExpand, true, true);
     }
 
     public synchronized void updateSessionBubble(@Nullable TerminalSession session) {
         if (session == null) return;
-        if (!isSessionBubbled(session.mHandle)) return;
-        bubbleSession(session, false, false);
+        if (!hasBubbleConversation(session.mHandle)) return;
+        postBubbleNotification(session, false, false, true);
     }
 
     public synchronized void onSessionTitleChanged(@Nullable TerminalSession session) {
         if (session == null) return;
-        if (!isSessionBubbled(session.mHandle)) return;
-        bubbleSession(session, false, false);
+        if (!hasBubbleConversation(session.mHandle)) return;
+        postBubbleNotification(session, false, false, true);
+    }
+
+    public synchronized void onTerminalProtocolNotification(@Nullable TerminalSession session,
+                                                            @Nullable String title,
+                                                            @Nullable String body) {
+        if (session == null) return;
+        if (!session.isRunning()) return;
+
+        String sessionHandle = session.mHandle;
+        if (TextUtils.isEmpty(sessionHandle)) return;
+
+        SessionConversationState conversationState = mSessionConversationStates.get(sessionHandle);
+        if (conversationState == null) return;
+
+        String protocolMessage = buildProtocolMessage(title, body);
+        if (TextUtils.isEmpty(protocolMessage)) return;
+
+        conversationState.addProtocolMessage(protocolMessage);
+        if (!isSessionBubbled(sessionHandle)) return;
+
+        conversationState.setUnread(!mService.isTerminalSessionFocused(session));
+        postBubbleNotification(session, false, false, false);
+    }
+
+    public synchronized void markSessionConversationRead(@Nullable String sessionHandle) {
+        if (TextUtils.isEmpty(sessionHandle)) return;
+
+        SessionConversationState conversationState = mSessionConversationStates.get(sessionHandle);
+        if (conversationState == null) return;
+        if (!conversationState.hasUnread()) return;
+
+        conversationState.setUnread(false);
+        if (!isSessionBubbled(sessionHandle)) return;
+
+        TerminalSession session = mService.getTerminalSessionForHandle(sessionHandle);
+        if (session == null || !session.isRunning()) return;
+
+        postBubbleNotification(session, false, false, false);
     }
 
     public synchronized void onSessionFinished(@Nullable TerminalSession session) {
@@ -122,7 +188,7 @@ public final class SessionBubbleController {
                 continue;
             }
 
-            bubbleSession(session, false, false);
+            postBubbleNotification(session, false, false, true);
         }
     }
 
@@ -136,6 +202,8 @@ public final class SessionBubbleController {
         Integer notificationId = mSessionNotificationIds.remove(sessionHandle);
         if (notificationId != null && mNotificationManager != null)
             mNotificationManager.cancel(notificationId);
+
+        mSessionConversationStates.remove(sessionHandle);
 
         int bubbleSlotId = notificationId != null
             ? notificationId - TermuxConstants.TERMUX_APP_SESSION_BUBBLE_NOTIFICATION_ID_BASE
@@ -153,18 +221,15 @@ public final class SessionBubbleController {
             mSessionShortcutHelper.removeSessionShortcut(getBubbleShortcutId(bubbleSlotId));
     }
 
-    private void dismissSessionBubble(@Nullable String sessionHandle) {
-        if (TextUtils.isEmpty(sessionHandle)) return;
-
-        Integer notificationId = mSessionNotificationIds.remove(sessionHandle);
-        if (notificationId != null && mNotificationManager != null)
-            mNotificationManager.cancel(notificationId);
-    }
-
     public synchronized void clearAll() {
-        if (mSessionNotificationIds.isEmpty()) return;
+        if (mSessionConversationStates.isEmpty() && mSessionNotificationIds.isEmpty()) return;
 
-        List<String> sessionHandles = new ArrayList<>(mSessionNotificationIds.keySet());
+        List<String> sessionHandles = new ArrayList<>(mSessionConversationStates.keySet());
+        for (String sessionHandle : new ArrayList<>(mSessionNotificationIds.keySet())) {
+            if (!sessionHandles.contains(sessionHandle))
+                sessionHandles.add(sessionHandle);
+        }
+
         for (String sessionHandle : sessionHandles)
             removeSessionBubble(sessionHandle);
     }
@@ -191,6 +256,55 @@ public final class SessionBubbleController {
         return sessionTitle;
     }
 
+    private void postBubbleNotification(@Nullable TerminalSession session, boolean autoExpand,
+                                        boolean reportUsage, boolean publishShortcut) {
+        if (session == null) return;
+        if (!isSupported()) return;
+        if (!session.isRunning()) return;
+
+        String sessionHandle = session.mHandle;
+        if (TextUtils.isEmpty(sessionHandle)) return;
+
+        int bubbleSlotId = getBubbleSlotId(session);
+        if (bubbleSlotId < 1) {
+            Logger.logError(LOG_TAG, "Failed to bubble session " + sessionHandle + ": missing bubble slot");
+            return;
+        }
+
+        ensureConversationState(sessionHandle);
+
+        String shortcutId = getBubbleShortcutId(bubbleSlotId);
+        int notificationId = getOrCreateNotificationId(sessionHandle, bubbleSlotId);
+        String sessionLabel = getSessionLabel(session);
+
+        try {
+            if (reportUsage)
+                mSessionShortcutHelper.reportSessionShortcutUsed(shortcutId);
+            if (publishShortcut)
+                mSessionShortcutHelper.publishSessionShortcut(shortcutId, session, sessionLabel, bubbleSlotId);
+
+            Notification notification = buildBubbleNotification(session, notificationId, sessionLabel,
+                bubbleSlotId, autoExpand);
+            if (notification == null) {
+                mSessionNotificationIds.remove(sessionHandle);
+                return;
+            }
+
+            mNotificationManager.notify(notificationId, notification);
+        } catch (Exception e) {
+            mSessionNotificationIds.remove(sessionHandle);
+            Logger.logStackTraceWithMessage(LOG_TAG, "Failed to bubble session " + sessionHandle, e);
+        }
+    }
+
+    private void dismissSessionBubble(@Nullable String sessionHandle) {
+        if (TextUtils.isEmpty(sessionHandle)) return;
+
+        Integer notificationId = mSessionNotificationIds.remove(sessionHandle);
+        if (notificationId != null && mNotificationManager != null)
+            mNotificationManager.cancel(notificationId);
+    }
+
     @Nullable
     private Notification buildBubbleNotification(@NonNull TerminalSession session, int notificationId,
                                                  @NonNull String sessionLabel, int bubbleSlotId,
@@ -204,9 +318,10 @@ public final class SessionBubbleController {
         PendingIntent contentIntent = PendingIntent.getActivity(mService, notificationId,
             TermuxActivity.newInstance(mService, session.mHandle), getContentPendingIntentFlags());
 
+        CharSequence previewText = getBubblePreviewText(session);
         Notification.Builder builder = NotificationUtils.geNotificationBuilder(mService,
             TermuxConstants.TERMUX_APP_SESSION_BUBBLE_NOTIFICATION_CHANNEL_ID, Notification.PRIORITY_HIGH,
-            sessionLabel, getSessionSubtitle(session), null, contentIntent, null,
+            sessionLabel, previewText, previewText, contentIntent, null,
             NotificationUtils.NOTIFICATION_MODE_SILENT);
         if (builder == null) return null;
 
@@ -217,9 +332,7 @@ public final class SessionBubbleController {
         builder.setOnlyAlertOnce(true);
         builder.setShortcutId(shortcutId);
         builder.addPerson(sessionPerson);
-        builder.setStyle(new Notification.MessagingStyle(sessionPerson)
-            .setConversationTitle(sessionLabel)
-            .addMessage(getSessionSubtitle(session), System.currentTimeMillis(), sessionPerson));
+        builder.setStyle(buildMessagingStyle(session, sessionPerson, sessionLabel));
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
             builder.setLocusId(new LocusId(shortcutId));
@@ -227,6 +340,31 @@ public final class SessionBubbleController {
         builder.setBubbleMetadata(buildBubbleMetadata(session, notificationId, sessionIcon, autoExpand, shortcutId));
 
         return builder.build();
+    }
+
+    private boolean shouldSuppressBubbleNotification(@NonNull String sessionHandle) {
+        SessionConversationState conversationState = mSessionConversationStates.get(sessionHandle);
+        if (conversationState == null) return true;
+        return !conversationState.hasUnread();
+    }
+
+    @NonNull
+    private Notification.MessagingStyle buildMessagingStyle(@NonNull TerminalSession session,
+                                                            @NonNull Person sessionPerson,
+                                                            @NonNull String sessionLabel) {
+        Notification.MessagingStyle messagingStyle = new Notification.MessagingStyle(sessionPerson)
+            .setConversationTitle(sessionLabel);
+
+        SessionConversationState conversationState = ensureConversationState(session.mHandle);
+        if (!conversationState.hasProtocolMessages()) {
+            messagingStyle.addMessage(getSessionSubtitle(session), conversationState.getCreatedAt(), sessionPerson);
+            return messagingStyle;
+        }
+
+        for (BubbleMessage protocolMessage : conversationState.getProtocolMessages())
+            messagingStyle.addMessage(protocolMessage.mText, protocolMessage.mTimestamp, sessionPerson);
+
+        return messagingStyle;
     }
 
     @NonNull
@@ -239,12 +377,14 @@ public final class SessionBubbleController {
                 .putExtra(TermuxConstants.TERMUX_APP.TERMUX_ACTIVITY.EXTRA_SESSION_HANDLE, session.mHandle),
             getDeletePendingIntentFlags());
 
+        boolean suppressNotification = shouldSuppressBubbleNotification(session.mHandle);
+
         if (shouldUseShortcutBackedBubbleMetadata()) {
             return new Notification.BubbleMetadata.Builder(shortcutId)
                 .setDeleteIntent(deleteIntent)
                 .setDesiredHeight(getDesiredBubbleHeight())
                 .setAutoExpandBubble(autoExpand)
-                .setSuppressNotification(true)
+                .setSuppressNotification(suppressNotification)
                 .build();
         }
 
@@ -258,8 +398,29 @@ public final class SessionBubbleController {
             .setDeleteIntent(deleteIntent)
             .setDesiredHeight(getDesiredBubbleHeight())
             .setAutoExpandBubble(autoExpand)
-            .setSuppressNotification(true)
+            .setSuppressNotification(suppressNotification)
             .build();
+    }
+
+    @NonNull
+    private SessionConversationState ensureConversationState(@NonNull String sessionHandle) {
+        SessionConversationState conversationState = mSessionConversationStates.get(sessionHandle);
+        if (conversationState != null) return conversationState;
+
+        SessionConversationState newConversationState = new SessionConversationState();
+        mSessionConversationStates.put(sessionHandle, newConversationState);
+        return newConversationState;
+    }
+
+    @NonNull
+    private CharSequence getBubblePreviewText(@NonNull TerminalSession session) {
+        SessionConversationState conversationState = mSessionConversationStates.get(session.mHandle);
+        if (conversationState == null) return getSessionSubtitle(session);
+
+        BubbleMessage latestProtocolMessage = conversationState.getLatestProtocolMessage();
+        if (latestProtocolMessage == null) return getSessionSubtitle(session);
+
+        return latestProtocolMessage.mText;
     }
 
     private int getOrCreateNotificationId(@NonNull String sessionHandle, int bubbleSlotId) {
@@ -276,7 +437,7 @@ public final class SessionBubbleController {
     }
 
     @NonNull
-    private String getBubbleShortcutId(int bubbleSlotId) {
+    public String getBubbleShortcutId(int bubbleSlotId) {
         if (bubbleSlotId < 1)
             throw new IllegalArgumentException("Invalid bubble slot id: " + bubbleSlotId);
 
@@ -297,6 +458,25 @@ public final class SessionBubbleController {
         String title = session.getTitle();
         if (!TextUtils.isEmpty(title)) return title;
         return mService.getString(R.string.notification_text_terminal_session);
+    }
+
+    @Nullable
+    private String buildProtocolMessage(@Nullable String title, @Nullable String body) {
+        String normalizedTitle = normalizeText(title);
+        String normalizedBody = normalizeText(body);
+        if (normalizedTitle == null) return normalizedBody;
+        if (normalizedBody == null) return normalizedTitle;
+        if (TextUtils.equals(normalizedTitle, normalizedBody)) return normalizedTitle;
+        return normalizedTitle + "\n" + normalizedBody;
+    }
+
+    @Nullable
+    private String normalizeText(@Nullable String text) {
+        if (text == null) return null;
+
+        String trimmedText = text.trim();
+        if (trimmedText.isEmpty()) return null;
+        return trimmedText;
     }
 
     private int getDesiredBubbleHeight() {

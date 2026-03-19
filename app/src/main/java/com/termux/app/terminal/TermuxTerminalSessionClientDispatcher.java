@@ -56,6 +56,11 @@ public final class TermuxTerminalSessionClientDispatcher extends TermuxTerminalS
         return false;
     }
 
+    public boolean isSessionFocused(@Nullable TerminalSession session) {
+        if (session == null) return false;
+        return isSessionFocused(session, getRegisteredClientsSnapshot());
+    }
+
     @Override
     public void onTextChanged(@NonNull TerminalSession changedSession) {
         for (TerminalSessionClient client : getRegisteredClientsSnapshot())

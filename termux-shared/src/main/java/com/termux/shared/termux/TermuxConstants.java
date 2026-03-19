@@ -966,6 +966,9 @@ public final class TermuxConstants {
             /** Intent extra for the exact terminal session handle that should be opened. */
             public static final String EXTRA_SESSION_HANDLE = TermuxConstants.TERMUX_PACKAGE_NAME + ".app.session_handle"; // Default: "com.termux.app.session_handle"
 
+            /** Intent extra set on bubble-launch intents so the main activity can be closed once the bubble opens. */
+            public static final String EXTRA_LAUNCHED_FROM_BUBBLE = TermuxConstants.TERMUX_PACKAGE_NAME + ".app.launched_from_bubble"; // Default: "com.termux.app.launched_from_bubble"
+
 
             /** Intent action to make termux app notify user that a crash happened. */
             public static final String ACTION_NOTIFY_APP_CRASH = TermuxConstants.TERMUX_PACKAGE_NAME + ".app.notify_app_crash"; // Default: "com.termux.app.notify_app_crash"

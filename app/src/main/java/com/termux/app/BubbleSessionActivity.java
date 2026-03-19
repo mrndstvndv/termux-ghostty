@@ -4,6 +4,7 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.ServiceConnection;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.IBinder;
 import android.text.TextUtils;
@@ -50,6 +51,7 @@ public final class BubbleSessionActivity extends AppCompatActivity implements Se
     private String mSessionHandle;
     private boolean mIsVisible;
     private boolean mIsInvalidState;
+    private boolean mDidCloseTermuxActivityOnBubbleOpen;
 
     private static final float DEFAULT_EXTRA_KEYS_HEIGHT_DP = 37.5f;
 
@@ -179,6 +181,7 @@ public final class BubbleSessionActivity extends AppCompatActivity implements Se
         mTerminalSessionClient.applyTerminalStyling();
         updateSessionTitle();
         mTerminalView.requestFocus();
+        closeTermuxActivityIfLaunchedFromBubble();
     }
 
     private void setupExtraKeysView() {
@@ -219,6 +222,24 @@ public final class BubbleSessionActivity extends AppCompatActivity implements Se
         });
 
         ViewCompat.requestApplyInsets(mRootView);
+    }
+
+    private void closeTermuxActivityIfLaunchedFromBubble() {
+        if (mDidCloseTermuxActivityOnBubbleOpen) return;
+        if (!shouldCloseTermuxActivityIfLaunchedFromBubble()) return;
+        if (mTermuxService == null) return;
+        if (getCurrentSession() == null) return;
+
+        mDidCloseTermuxActivityOnBubbleOpen = true;
+        mTermuxService.finishTermuxActivityIfPresent();
+    }
+
+    private boolean shouldCloseTermuxActivityIfLaunchedFromBubble() {
+        Intent intent = getIntent();
+        if (intent != null && intent.getBooleanExtra(TermuxConstants.TERMUX_APP.TERMUX_ACTIVITY.EXTRA_LAUNCHED_FROM_BUBBLE, false))
+            return true;
+
+        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && isLaunchedFromBubble();
     }
 
     private void finishForMissingSession() {
@@ -323,6 +344,12 @@ public final class BubbleSessionActivity extends AppCompatActivity implements Se
         Intent intent = new Intent(context, BubbleSessionActivity.class);
         intent.putExtra(TermuxConstants.TERMUX_APP.TERMUX_ACTIVITY.EXTRA_SESSION_HANDLE, sessionHandle);
         intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_NEW_DOCUMENT | Intent.FLAG_ACTIVITY_MULTIPLE_TASK);
+        return intent;
+    }
+
+    public static Intent newBubbleInstance(@NonNull Context context, @NonNull String sessionHandle) {
+        Intent intent = newInstance(context, sessionHandle);
+        intent.putExtra(TermuxConstants.TERMUX_APP.TERMUX_ACTIVITY.EXTRA_LAUNCHED_FROM_BUBBLE, true);
         return intent;
     }
 

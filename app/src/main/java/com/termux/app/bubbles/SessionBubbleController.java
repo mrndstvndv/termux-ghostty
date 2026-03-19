@@ -252,7 +252,7 @@ public final class SessionBubbleController {
             throw new IllegalArgumentException("Session bubble icon is required for PendingIntent bubbles");
 
         PendingIntent bubbleIntent = PendingIntent.getActivity(mService, notificationId,
-            BubbleSessionActivity.newInstance(mService, session.mHandle), getBubblePendingIntentFlags());
+            BubbleSessionActivity.newBubbleInstance(mService, session.mHandle), getBubblePendingIntentFlags());
 
         return new Notification.BubbleMetadata.Builder(bubbleIntent, sessionIcon)
             .setDeleteIntent(deleteIntent)

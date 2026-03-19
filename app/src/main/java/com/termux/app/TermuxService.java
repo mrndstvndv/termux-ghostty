@@ -821,6 +821,11 @@ public final class TermuxService extends Service implements AppShell.AppShellCli
         mTermuxTerminalSessionActivityClient = null;
     }
 
+    public synchronized void finishTermuxActivityIfPresent() {
+        if (mTermuxTerminalSessionActivityClient == null) return;
+        mTermuxTerminalSessionActivityClient.finishActivityIfNotFinishing();
+    }
+
     public synchronized void registerTerminalSessionClient(@NonNull TerminalSessionClient terminalSessionClient) {
         mTermuxTerminalSessionClientDispatcher.registerClient(terminalSessionClient);
     }

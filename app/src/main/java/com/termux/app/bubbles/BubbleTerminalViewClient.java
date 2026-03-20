@@ -5,8 +5,10 @@ import android.view.KeyEvent;
 import android.view.MotionEvent;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 
 import com.termux.app.BubbleSessionActivity;
+import com.termux.shared.interact.ShareUtils;
 import com.termux.shared.logger.Logger;
 import com.termux.shared.termux.extrakeys.SpecialButton;
 import com.termux.shared.termux.terminal.TermuxTerminalViewClientBase;
@@ -42,6 +44,13 @@ public final class BubbleTerminalViewClient extends TermuxTerminalViewClientBase
         TerminalSession session = mActivity.getCurrentSession();
         if (session == null) return;
         if (!session.hasActiveTerminalBackend()) return;
+
+        String url = getTerminalTranscriptUrlOnTap(e);
+        if (url != null) {
+            ShareUtils.openUrl(mActivity, url);
+            return;
+        }
+
         if (KeyboardUtils.areDisableSoftKeyboardFlagsSet(mActivity)) return;
 
         mActivity.getTerminalView().requestFocus();
@@ -65,7 +74,18 @@ public final class BubbleTerminalViewClient extends TermuxTerminalViewClientBase
 
     @Override
     public boolean shouldOpenTerminalTranscriptURLOnClick() {
-        return false;
+        return mActivity.getProperties().shouldOpenTerminalTranscriptURLOnClick();
+    }
+
+    @Nullable
+    @Override
+    public String getTerminalTranscriptUrlOnTap(MotionEvent e) {
+        return getTerminalTranscriptUrlOnTap(
+            e,
+            mActivity.getCurrentSession(),
+            mActivity.getTerminalView(),
+            mActivity.getProperties()
+        );
     }
 
     @Override

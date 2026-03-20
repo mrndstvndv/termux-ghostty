@@ -9,7 +9,8 @@ An experimental Android terminal app combining features from [Termux](https://te
 - **Ghostty integration** — Uses Ghostty-backed terminal rendering/runtime inside the app.
 - **Android session bubbles** — Open terminal sessions as native Android 11+ bubbles without killing the underlying session when the bubble UI is dismissed.
 - **Bubble unread dots for OSC notifications** — Bubbled sessions use conversation-style unread state instead of separate system notifications, and opening the session clears the unread indicator.
-- **Remember soft keyboard state** — Optional `termux.properties` support to restore the last soft keyboard visibility state when reopening the app.
+- **Clickable terminal links** — Optional `termux.properties` support for tap-to-open links in Ghostty sessions via `terminal-onclick-url-open=true`, with `terminal-onclick-url-open-when-mouse-tracking-active=true` to prefer link taps over terminal mouse tracking.
+- **Remember soft keyboard state** — Optional `termux.properties` support via `remember-soft-keyboard-state=true` to restore the last soft keyboard visibility state when reopening the app.
 
 ## Status
 

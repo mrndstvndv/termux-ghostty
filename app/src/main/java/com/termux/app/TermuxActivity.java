@@ -514,12 +514,13 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
 
 
     public void addTermuxActivityRootViewGlobalLayoutListener() {
-        getTermuxActivityRootView().getViewTreeObserver().addOnGlobalLayoutListener(getTermuxActivityRootView());
+        if (getTermuxActivityRootView() == null) return;
+        getTermuxActivityRootView().setTerminalMarginAdjustmentEnabled(true);
     }
 
     public void removeTermuxActivityRootViewGlobalLayoutListener() {
-        if (getTermuxActivityRootView() != null)
-            getTermuxActivityRootView().getViewTreeObserver().removeOnGlobalLayoutListener(getTermuxActivityRootView());
+        if (getTermuxActivityRootView() == null) return;
+        getTermuxActivityRootView().setTerminalMarginAdjustmentEnabled(false);
     }
 
 

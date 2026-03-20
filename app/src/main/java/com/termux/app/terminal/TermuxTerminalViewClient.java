@@ -43,8 +43,8 @@ import com.termux.shared.termux.data.TermuxUrlUtils;
 import com.termux.shared.view.KeyboardUtils;
 import com.termux.shared.view.ViewUtils;
 import com.termux.terminal.KeyHandler;
-import com.termux.terminal.TerminalContent;
 import com.termux.terminal.TerminalSession;
+import com.termux.view.TerminalViewLinkLayout;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -53,6 +53,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 
+import androidx.annotation.Nullable;
 import androidx.drawerlayout.widget.DrawerLayout;
 
 public class TermuxTerminalViewClient extends TermuxTerminalViewClientBase {
@@ -189,18 +190,11 @@ public class TermuxTerminalViewClient extends TermuxTerminalViewClientBase {
     public void onSingleTapUp(MotionEvent e) {
         TerminalSession session = mActivity.getCurrentSession();
         if (session == null || !session.hasActiveTerminalBackend()) return;
-        TerminalContent terminalContent = session.getTerminalContent();
 
-        if (mActivity.getProperties().shouldOpenTerminalTranscriptURLOnClick()) {
-            int[] columnAndRow = mActivity.getTerminalView().getColumnAndRow(e, true);
-            String wordAtTap = terminalContent.getWordAtLocation(columnAndRow[0], columnAndRow[1]);
-            LinkedHashSet<CharSequence> urlSet = TermuxUrlUtils.extractUrls(wordAtTap == null ? "" : wordAtTap);
-
-            if (!urlSet.isEmpty()) {
-                String url = (String) urlSet.iterator().next();
-                ShareUtils.openUrl(mActivity, url);
-                return;
-            }
+        String url = getTerminalTranscriptUrlOnTap(e);
+        if (url != null) {
+            ShareUtils.openUrl(mActivity, url);
+            return;
         }
 
         if (!session.isMouseTrackingActive() && !e.isFromSource(InputDevice.SOURCE_MOUSE)) {
@@ -229,6 +223,41 @@ public class TermuxTerminalViewClient extends TermuxTerminalViewClientBase {
     @Override
     public boolean shouldUseCtrlSpaceWorkaround() {
         return mActivity.getProperties().isUsingCtrlSpaceWorkaround();
+    }
+
+    @Override
+    public boolean shouldOpenTerminalTranscriptURLOnClick() {
+        return mActivity.getProperties().shouldOpenTerminalTranscriptURLOnClick();
+    }
+
+    @Nullable
+    @Override
+    public String getTerminalTranscriptUrlOnTap(MotionEvent e) {
+        TerminalSession session = mActivity.getCurrentSession();
+        if (session == null || !session.hasActiveTerminalBackend()) return null;
+        if (!shouldOpenTerminalTranscriptURLOnClick()) return null;
+        if (mActivity.getTerminalView().isSelectingText()) return null;
+
+        boolean touchTapWhileMouseTracking = session.isMouseTrackingActive()
+            && !e.isFromSource(InputDevice.SOURCE_MOUSE);
+        if (touchTapWhileMouseTracking
+            && !mActivity.getProperties().shouldOpenTerminalTranscriptURLOnClickWhenMouseTrackingActive()) {
+            return null;
+        }
+
+        if (session.isUsingGhosttyBackend()) {
+            TerminalViewLinkLayout.LinkHit hit = mActivity.getTerminalView().getVisibleLinkHit(e);
+            return hit == null ? null : hit.getUrl();
+        }
+
+        int[] columnAndRow = mActivity.getTerminalView().getColumnAndRow(e, true);
+        String wordAtTap = session.getTerminalContent().getWordAtLocation(columnAndRow[0], columnAndRow[1]);
+        LinkedHashSet<CharSequence> urlSet = TermuxUrlUtils.extractUrls(wordAtTap == null ? "" : wordAtTap);
+        if (urlSet.isEmpty()) {
+            return null;
+        }
+
+        return urlSet.iterator().next().toString();
     }
 
     @Override

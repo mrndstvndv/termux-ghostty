@@ -64,6 +64,11 @@ public final class BubbleTerminalViewClient extends TermuxTerminalViewClientBase
     }
 
     @Override
+    public boolean shouldOpenTerminalTranscriptURLOnClick() {
+        return false;
+    }
+
+    @Override
     public boolean isTerminalViewSelected() {
         return true;
     }

@@ -88,6 +88,8 @@ final class GhosttyNative {
 
     static native int nativeFillSnapshotCurrentViewport(long nativeHandle, ByteBuffer buffer, int capacity);
 
+    static native int nativeFillViewportLinks(long nativeHandle, ByteBuffer buffer, int capacity);
+
     static native int nativeFillSnapshot(long nativeHandle, int topRow, ByteBuffer buffer, int capacity);
 
     @Nullable

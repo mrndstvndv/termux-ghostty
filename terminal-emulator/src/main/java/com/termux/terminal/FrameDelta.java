@@ -6,6 +6,9 @@ package com.termux.terminal;
  * <p>The attached {@link ScreenSnapshot} is a transport/debug payload for
  * {@link RenderFrameCache} only. Partial publications may omit unchanged rows and metadata, so UI
  * code must never render that snapshot directly.</p>
+ *
+ * <p>The attached {@link ViewportLinkSnapshot} is always a full visible-viewport link snapshot for
+ * the same published frame sequence.</p>
  */
 public final class FrameDelta {
 
@@ -18,15 +21,26 @@ public final class FrameDelta {
     private final long mFrameSequence;
     private final int mReasonFlags;
     private final ScreenSnapshot mTransportSnapshot;
+    private final ViewportLinkSnapshot mViewportLinkSnapshot;
 
     FrameDelta(long frameSequence, int reasonFlags, ScreenSnapshot transportSnapshot) {
+        this(frameSequence, reasonFlags, transportSnapshot,
+            createDefaultViewportLinkSnapshot(frameSequence, transportSnapshot));
+    }
+
+    FrameDelta(long frameSequence, int reasonFlags, ScreenSnapshot transportSnapshot,
+               ViewportLinkSnapshot viewportLinkSnapshot) {
         if (transportSnapshot == null) {
             throw new IllegalArgumentException("transportSnapshot must not be null");
+        }
+        if (viewportLinkSnapshot == null) {
+            throw new IllegalArgumentException("viewportLinkSnapshot must not be null");
         }
 
         mFrameSequence = frameSequence;
         mReasonFlags = reasonFlags;
         mTransportSnapshot = transportSnapshot;
+        mViewportLinkSnapshot = viewportLinkSnapshot;
     }
 
     public long getFrameSequence() {
@@ -73,7 +87,21 @@ public final class FrameDelta {
         return mTransportSnapshot.hasModeBitsUpdate();
     }
 
+    public ViewportLinkSnapshot getViewportLinkSnapshot() {
+        return mViewportLinkSnapshot;
+    }
+
     ScreenSnapshot getTransportSnapshot() {
         return mTransportSnapshot;
+    }
+
+    private static ViewportLinkSnapshot createDefaultViewportLinkSnapshot(long frameSequence,
+                                                                          ScreenSnapshot transportSnapshot) {
+        if (transportSnapshot == null) {
+            throw new IllegalArgumentException("transportSnapshot must not be null");
+        }
+
+        return ViewportLinkSnapshot.createEmpty(frameSequence, transportSnapshot.getTopRow(),
+            transportSnapshot.getRows(), transportSnapshot.getColumns());
     }
 }

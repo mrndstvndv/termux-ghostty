@@ -58,7 +58,10 @@ final class GhosttySessionWorker extends Thread {
     private final AtomicReference<FrameDelta> mPublishedFrameDelta = new AtomicReference<>();
     private final ScreenSnapshot mSnapshotA = new ScreenSnapshot();
     private final ScreenSnapshot mSnapshotB = new ScreenSnapshot();
+    private final ViewportLinkSnapshot mViewportLinksA = new ViewportLinkSnapshot();
+    private final ViewportLinkSnapshot mViewportLinksB = new ViewportLinkSnapshot();
     private ScreenSnapshot mCurrentStaging = mSnapshotA;
+    private ViewportLinkSnapshot mCurrentViewportLinkStaging = mViewportLinksA;
 
     private final AtomicBoolean mSnapshotDirty = new AtomicBoolean(true);
     private final AtomicBoolean mUIUpdatePending = new AtomicBoolean(false);
@@ -417,6 +420,7 @@ final class GhosttySessionWorker extends Thread {
         if (!mSnapshotDirty.compareAndSet(true, false)) return;
 
         ScreenSnapshot stagingSnapshot = mCurrentStaging;
+        ViewportLinkSnapshot stagingViewportLinks = mCurrentViewportLinkStaging;
         ScreenSnapshot publishedSnapshot = mPublishedSnapshot.get();
         if (publishedSnapshot != null && publishedSnapshot != stagingSnapshot) {
             stagingSnapshot.copyPersistentMetadataFrom(publishedSnapshot);
@@ -424,11 +428,13 @@ final class GhosttySessionWorker extends Thread {
 
         long buildStartNanos = SystemClock.elapsedRealtimeNanos();
         mContent.fillSnapshot(stagingSnapshot);
+        mContent.fillViewportLinks(stagingViewportLinks);
         long buildDurationNanos = SystemClock.elapsedRealtimeNanos() - buildStartNanos;
 
         mLastSnapshotTime = SystemClock.uptimeMillis();
         mPublishedFrameCount++;
         stagingSnapshot.setFrameSequence(mPublishedFrameCount);
+        stagingViewportLinks.setFrameSequence(mPublishedFrameCount);
         mSnapshotBuildTotalNanos += buildDurationNanos;
         logSnapshotBuildPerfIfNeeded(stagingSnapshot, buildDurationNanos);
 
@@ -436,11 +442,14 @@ final class GhosttySessionWorker extends Thread {
         mPublishedFrameDelta.set(new FrameDelta(
             mPublishedFrameCount,
             mPendingFrameReasonFlags.getAndSet(0),
-            stagingSnapshot
+            stagingSnapshot,
+            stagingViewportLinks
         ));
 
-        // Swap staging buffer.
+        // Swap staging buffers.
         mCurrentStaging = (stagingSnapshot == mSnapshotA) ? mSnapshotB : mSnapshotA;
+        mCurrentViewportLinkStaging = (stagingViewportLinks == mViewportLinksA)
+            ? mViewportLinksB : mViewportLinksA;
 
         if (mUIUpdatePending.compareAndSet(false, true)) {
             mMainThreadHandler.post(() -> {

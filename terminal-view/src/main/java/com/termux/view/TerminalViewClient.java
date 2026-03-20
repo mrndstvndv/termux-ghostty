@@ -5,6 +5,8 @@ import android.view.MotionEvent;
 import android.view.ScaleGestureDetector;
 import android.view.View;
 
+import androidx.annotation.Nullable;
+
 import com.termux.terminal.TerminalSession;
 
 /**
@@ -24,7 +26,7 @@ public interface TerminalViewClient {
 
 
     /**
-     * On a single tap on the terminal if terminal mouse reporting not enabled.
+     * On a single tap on the terminal after terminal mouse handling has been resolved.
      */
     void onSingleTapUp(MotionEvent e);
 
@@ -33,6 +35,15 @@ public interface TerminalViewClient {
     boolean shouldEnforceCharBasedInput();
 
     boolean shouldUseCtrlSpaceWorkaround();
+
+    boolean shouldOpenTerminalTranscriptURLOnClick();
+
+    /**
+     * Returns the URL that should be opened for the tap, or {@code null} if the tap should be
+     * handled normally by the terminal.
+     */
+    @Nullable
+    String getTerminalTranscriptUrlOnTap(MotionEvent e);
 
     boolean isTerminalViewSelected();
 

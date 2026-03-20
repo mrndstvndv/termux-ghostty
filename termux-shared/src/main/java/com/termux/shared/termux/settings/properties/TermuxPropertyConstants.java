@@ -146,6 +146,9 @@ public final class TermuxPropertyConstants {
     /** Defines the key for whether url links in terminal transcript will automatically open on click or on tap */
     public static final String KEY_TERMINAL_ONCLICK_URL_OPEN =  "terminal-onclick-url-open"; // Default: "terminal-onclick-url-open"
 
+    /** Defines the key for whether touch taps on terminal links should open urls even when terminal mouse tracking is active */
+    public static final String KEY_TERMINAL_ONCLICK_URL_OPEN_WHEN_MOUSE_TRACKING_ACTIVE =  "terminal-onclick-url-open-when-mouse-tracking-active"; // Default: "terminal-onclick-url-open-when-mouse-tracking-active"
+
 
 
     /** Defines the key for whether to use black UI */
@@ -407,6 +410,7 @@ public final class TermuxPropertyConstants {
         KEY_REMEMBER_SOFT_KEYBOARD_STATE,
         KEY_RUN_TERMUX_AM_SOCKET_SERVER,
         KEY_TERMINAL_ONCLICK_URL_OPEN,
+        KEY_TERMINAL_ONCLICK_URL_OPEN_WHEN_MOUSE_TRACKING_ACTIVE,
         KEY_USE_CTRL_SPACE_WORKAROUND,
         KEY_USE_FULLSCREEN,
         KEY_USE_FULLSCREEN_WORKAROUND,
@@ -454,6 +458,7 @@ public final class TermuxPropertyConstants {
         KEY_HIDE_SOFT_KEYBOARD_ON_STARTUP,
         KEY_REMEMBER_SOFT_KEYBOARD_STATE,
         KEY_TERMINAL_ONCLICK_URL_OPEN,
+        KEY_TERMINAL_ONCLICK_URL_OPEN_WHEN_MOUSE_TRACKING_ACTIVE,
         KEY_USE_CTRL_SPACE_WORKAROUND,
         KEY_USE_FULLSCREEN,
         KEY_USE_FULLSCREEN_WORKAROUND,

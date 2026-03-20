@@ -5,6 +5,8 @@ import android.graphics.Paint;
 import android.graphics.PorterDuff;
 import android.graphics.Typeface;
 
+import androidx.annotation.Nullable;
+
 import com.termux.terminal.ScreenSnapshot;
 import com.termux.terminal.TerminalContent;
 import com.termux.terminal.TextStyle;
@@ -74,12 +76,19 @@ public final class TerminalRenderer {
         }
 
         terminalContent.fillSnapshot(topRow, screenSnapshot);
-        render(screenSnapshot, canvas, selectionY1, selectionY2, selectionX1, selectionX2);
+        render(screenSnapshot, canvas, selectionY1, selectionY2, selectionX1, selectionX2, null);
     }
 
     /** Render a pre-filled ScreenSnapshot to a canvas. */
     public final void render(ScreenSnapshot screenSnapshot, Canvas canvas,
                              int selectionY1, int selectionY2, int selectionX1, int selectionX2) {
+        render(screenSnapshot, canvas, selectionY1, selectionY2, selectionX1, selectionX2, null);
+    }
+
+    /** Render a pre-filled ScreenSnapshot to a canvas with an optional synthetic link overlay. */
+    public final void render(ScreenSnapshot screenSnapshot, Canvas canvas,
+                             int selectionY1, int selectionY2, int selectionX1, int selectionX2,
+                             @Nullable TerminalViewLinkLayout linkLayout) {
         if (screenSnapshot == null) {
             throw new IllegalArgumentException("screenSnapshot must not be null");
         }
@@ -89,13 +98,14 @@ public final class TerminalRenderer {
             screenSnapshot.getCursorRow(),
             screenSnapshot.isCursorVisible(),
             screenSnapshot.getCursorStyle(),
-            screenSnapshot.isReverseVideo());
+            screenSnapshot.isReverseVideo(),
+            linkLayout);
     }
 
     public final void render(ScreenSnapshot screenSnapshot, Canvas canvas,
                              int selectionY1, int selectionY2, int selectionX1, int selectionX2,
                              int cursorCol, int cursorRow, boolean cursorVisible, int cursorShape,
-                             boolean reverseVideo) {
+                             boolean reverseVideo, @Nullable TerminalViewLinkLayout linkLayout) {
         if (screenSnapshot == null) {
             throw new IllegalArgumentException("screenSnapshot must not be null");
         }
@@ -129,6 +139,9 @@ public final class TerminalRenderer {
             RowRenderCache rowRenderCache = obtainRowRenderCache(lineObject, rowIndex, columns, row, cursorX, selx1, selx2);
             renderCachedRow(canvas, screenSnapshot, lineObject, rowRenderCache, heightOffset, cursorShape, reverseVideo);
         }
+
+        drawSyntheticLinkUnderlines(canvas, screenSnapshot, linkLayout, selectionY1, selectionY2,
+            selectionX1, selectionX2, cursorCol, cursorRow, cursorVisible, cursorShape, reverseVideo);
     }
 
     private void prepareRowCaches(ScreenSnapshot screenSnapshot) {
@@ -511,32 +524,15 @@ public final class TerminalRenderer {
     private void drawTextRun(Canvas canvas, char[] text, ScreenSnapshot screenSnapshot, float y, int startColumn, int runWidthColumns,
                              int startCharIndex, int runWidthChars, float mes, int cursor, int cursorStyle,
                              long textStyle, boolean reverseVideo) {
-        int foreColor = TextStyle.decodeForeColor(textStyle);
         final int effect = TextStyle.decodeEffect(textStyle);
-        int backColor = TextStyle.decodeBackColor(textStyle);
         final boolean bold = (effect & (TextStyle.CHARACTER_ATTRIBUTE_BOLD | TextStyle.CHARACTER_ATTRIBUTE_BLINK)) != 0;
         final boolean underline = (effect & TextStyle.CHARACTER_ATTRIBUTE_UNDERLINE) != 0;
         final boolean italic = (effect & TextStyle.CHARACTER_ATTRIBUTE_ITALIC) != 0;
         final boolean strikeThrough = (effect & TextStyle.CHARACTER_ATTRIBUTE_STRIKETHROUGH) != 0;
-        final boolean dim = (effect & TextStyle.CHARACTER_ATTRIBUTE_DIM) != 0;
 
-        if ((foreColor & 0xff000000) != 0xff000000) {
-            if (bold && foreColor >= 0 && foreColor < 8) {
-                foreColor += 8;
-            }
-            foreColor = screenSnapshot.getPaletteColor(foreColor);
-        }
-
-        if ((backColor & 0xff000000) != 0xff000000) {
-            backColor = screenSnapshot.getPaletteColor(backColor);
-        }
-
-        final boolean reverseVideoHere = reverseVideo ^ (effect & (TextStyle.CHARACTER_ATTRIBUTE_INVERSE)) != 0;
-        if (reverseVideoHere) {
-            int tmp = foreColor;
-            foreColor = backColor;
-            backColor = tmp;
-        }
+        long packedColors = resolveEffectiveColors(screenSnapshot, textStyle, reverseVideo);
+        int foreColor = unpackForegroundColor(packedColors);
+        int backColor = unpackBackgroundColor(packedColors);
 
         float left = startColumn * mFontWidth;
         float right = left + runWidthColumns * mFontWidth;
@@ -571,27 +567,206 @@ public final class TerminalRenderer {
         }
 
         if (hasText && (effect & TextStyle.CHARACTER_ATTRIBUTE_INVISIBLE) == 0) {
-            if (dim) {
-                int red = (0xFF & (foreColor >> 16));
-                int green = (0xFF & (foreColor >> 8));
-                int blue = (0xFF & foreColor);
-                red = red * 2 / 3;
-                green = green * 2 / 3;
-                blue = blue * 2 / 3;
-                foreColor = 0xFF000000 + (red << 16) + (green << 8) + blue;
-            }
-
             mTextPaint.setFakeBoldText(bold);
             mTextPaint.setUnderlineText(underline);
             mTextPaint.setTextSkewX(italic ? -0.35f : 0.f);
             mTextPaint.setStrikeThruText(strikeThrough);
             mTextPaint.setColor(foreColor);
-            canvas.drawTextRun(text, startCharIndex, runWidthChars, startCharIndex, runWidthChars, left, y - mFontLineSpacingAndAscent, false, mTextPaint);
+            canvas.drawTextRun(text, startCharIndex, runWidthChars, startCharIndex, runWidthChars,
+                left, y - mFontLineSpacingAndAscent, false, mTextPaint);
         }
 
         if (savedMatrix) {
             canvas.restore();
         }
+    }
+
+    private void drawSyntheticLinkUnderlines(Canvas canvas, ScreenSnapshot screenSnapshot,
+                                             @Nullable TerminalViewLinkLayout linkLayout,
+                                             int selectionY1, int selectionY2, int selectionX1, int selectionX2,
+                                             int cursorCol, int cursorRow, boolean cursorVisible,
+                                             int cursorShape, boolean reverseVideo) {
+        if (linkLayout == null || !linkLayout.isCompatibleWith(screenSnapshot)) {
+            return;
+        }
+
+        float heightOffset = mFontLineSpacingAndAscent;
+        int topRow = screenSnapshot.getTopRow();
+        for (int rowIndex = 0; rowIndex < screenSnapshot.getRows(); rowIndex++) {
+            heightOffset += mFontLineSpacing;
+            TerminalViewLinkLayout.Segment[] segments = linkLayout.getRowSegments(rowIndex);
+            if (segments.length == 0) {
+                continue;
+            }
+
+            int row = topRow + rowIndex;
+            int selectionStart = -1;
+            int selectionEnd = -1;
+            if (row >= selectionY1 && row <= selectionY2) {
+                if (row == selectionY1) {
+                    selectionStart = selectionX1;
+                }
+                selectionEnd = (row == selectionY2) ? selectionX2 : screenSnapshot.getColumns();
+            }
+
+            drawSyntheticRowUnderlines(canvas, screenSnapshot, screenSnapshot.getRow(rowIndex), segments,
+                heightOffset, selectionStart, selectionEnd,
+                row == cursorRow && cursorVisible && cursorShape == CURSOR_STYLE_BLOCK,
+                cursorCol, reverseVideo);
+        }
+    }
+
+    private void drawSyntheticRowUnderlines(Canvas canvas, ScreenSnapshot screenSnapshot,
+                                            ScreenSnapshot.RowSnapshot rowSnapshot,
+                                            TerminalViewLinkLayout.Segment[] segments, float y,
+                                            int selectionStart, int selectionEnd,
+                                            boolean rowHasBlockCursor, int cursorCol,
+                                            boolean reverseVideo) {
+        for (TerminalViewLinkLayout.Segment segment : segments) {
+            drawSyntheticUnderlineSegment(canvas, screenSnapshot, rowSnapshot, segment, y,
+                selectionStart, selectionEnd, rowHasBlockCursor, cursorCol, reverseVideo);
+        }
+    }
+
+    private void drawSyntheticUnderlineSegment(Canvas canvas, ScreenSnapshot screenSnapshot,
+                                               ScreenSnapshot.RowSnapshot rowSnapshot,
+                                               TerminalViewLinkLayout.Segment segment, float y,
+                                               int selectionStart, int selectionEnd,
+                                               boolean rowHasBlockCursor, int cursorCol,
+                                               boolean reverseVideo) {
+        int batchStartColumn = -1;
+        int batchEndColumn = -1;
+        int batchColor = 0;
+
+        for (int column = segment.mStartColumn; column < segment.mEndColumnExclusive; ) {
+            int displayWidth = rowSnapshot.getCellDisplayWidth(column);
+            if (displayWidth <= 0) {
+                column++;
+                continue;
+            }
+
+            int cellEndColumn = Math.min(segment.mEndColumnExclusive, column + displayWidth);
+            long textStyle = rowSnapshot.getStyle(column);
+            if ((TextStyle.decodeEffect(textStyle) & TextStyle.CHARACTER_ATTRIBUTE_UNDERLINE) != 0) {
+                if (batchStartColumn != -1) {
+                    drawSyntheticUnderlineBatch(canvas, y, batchStartColumn, batchEndColumn, batchColor);
+                    batchStartColumn = -1;
+                }
+                column += displayWidth;
+                continue;
+            }
+
+            boolean insideSelection = isCellInsideSelection(column, displayWidth, selectionStart, selectionEnd);
+            boolean insideBlockCursor = rowHasBlockCursor && isCellInsideCursor(column, displayWidth, cursorCol);
+            int underlineColor = resolveEffectiveForegroundColor(screenSnapshot, textStyle,
+                reverseVideo || insideSelection || insideBlockCursor);
+            if (batchStartColumn != -1 && batchEndColumn == column && batchColor == underlineColor) {
+                batchEndColumn = cellEndColumn;
+            } else {
+                if (batchStartColumn != -1) {
+                    drawSyntheticUnderlineBatch(canvas, y, batchStartColumn, batchEndColumn, batchColor);
+                }
+                batchStartColumn = column;
+                batchEndColumn = cellEndColumn;
+                batchColor = underlineColor;
+            }
+
+            column += displayWidth;
+        }
+
+        if (batchStartColumn != -1) {
+            drawSyntheticUnderlineBatch(canvas, y, batchStartColumn, batchEndColumn, batchColor);
+        }
+    }
+
+    private void drawSyntheticUnderlineBatch(Canvas canvas, float y, int startColumn,
+                                             int endColumnExclusive, int color) {
+        if (endColumnExclusive <= startColumn) {
+            return;
+        }
+
+        float thickness = Math.max(1f, Math.round(mTextSize / 14f));
+        float underlineBottom = y - Math.max(1f, thickness * 0.5f);
+        float underlineTop = underlineBottom - thickness;
+        float left = startColumn * mFontWidth;
+        float right = endColumnExclusive * mFontWidth;
+
+        mTextPaint.setColor(color);
+        canvas.drawRect(left, underlineTop, right, underlineBottom, mTextPaint);
+    }
+
+    private static boolean isCellInsideSelection(int column, int displayWidth,
+                                                 int selectionStart, int selectionEnd) {
+        return column <= selectionEnd && (column + displayWidth - 1) >= selectionStart;
+    }
+
+    private static boolean isCellInsideCursor(int column, int displayWidth, int cursorCol) {
+        return cursorCol == column || (displayWidth == 2 && cursorCol == column + 1);
+    }
+
+    private int resolveEffectiveForegroundColor(ScreenSnapshot screenSnapshot, long textStyle,
+                                                boolean reverseVideo) {
+        return unpackForegroundColor(resolveEffectiveColors(screenSnapshot, textStyle, reverseVideo));
+    }
+
+    private long resolveEffectiveColors(ScreenSnapshot screenSnapshot, long textStyle,
+                                        boolean reverseVideo) {
+        int foreColor = TextStyle.decodeForeColor(textStyle);
+        int backColor = TextStyle.decodeBackColor(textStyle);
+        int effect = TextStyle.decodeEffect(textStyle);
+        boolean bold = (effect & (TextStyle.CHARACTER_ATTRIBUTE_BOLD | TextStyle.CHARACTER_ATTRIBUTE_BLINK)) != 0;
+        boolean dim = (effect & TextStyle.CHARACTER_ATTRIBUTE_DIM) != 0;
+
+        foreColor = resolvePaletteColor(screenSnapshot, foreColor, bold);
+        backColor = resolvePaletteColor(screenSnapshot, backColor, false);
+
+        boolean reverseVideoHere = reverseVideo
+            ^ ((effect & TextStyle.CHARACTER_ATTRIBUTE_INVERSE) != 0);
+        if (reverseVideoHere) {
+            int swap = foreColor;
+            foreColor = backColor;
+            backColor = swap;
+        }
+
+        if (dim) {
+            foreColor = applyDim(foreColor);
+        }
+
+        return packColors(foreColor, backColor);
+    }
+
+    private int resolvePaletteColor(ScreenSnapshot screenSnapshot, int color, boolean bold) {
+        if ((color & 0xff000000) == 0xff000000) {
+            return color;
+        }
+
+        int resolved = color;
+        if (bold && resolved >= 0 && resolved < 8) {
+            resolved += 8;
+        }
+        return screenSnapshot.getPaletteColor(resolved);
+    }
+
+    private static int applyDim(int color) {
+        int red = (color >> 16) & 0xFF;
+        int green = (color >> 8) & 0xFF;
+        int blue = color & 0xFF;
+        red = red * 2 / 3;
+        green = green * 2 / 3;
+        blue = blue * 2 / 3;
+        return 0xFF000000 | (red << 16) | (green << 8) | blue;
+    }
+
+    private static long packColors(int foreground, int background) {
+        return (((long) foreground) << 32) | (background & 0xffffffffL);
+    }
+
+    private static int unpackForegroundColor(long packedColors) {
+        return (int) (packedColors >>> 32);
+    }
+
+    private static int unpackBackgroundColor(long packedColors) {
+        return (int) packedColors;
     }
 
     public float getFontWidth() {

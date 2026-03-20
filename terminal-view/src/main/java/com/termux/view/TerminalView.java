@@ -45,6 +45,7 @@ import com.termux.terminal.KeyHandler;
 import com.termux.terminal.RenderFrameCache;
 import com.termux.terminal.ScreenSnapshot;
 import com.termux.terminal.TerminalContent;
+import com.termux.terminal.ViewportLinkSnapshot;
 import com.termux.terminal.TerminalEmulator;
 import com.termux.terminal.TerminalSession;
 import com.termux.view.textselection.TextSelectionCursorController;
@@ -64,6 +65,9 @@ public final class TerminalView extends View {
     private final ScreenSnapshot mScreenSnapshot = new ScreenSnapshot();
     private final RenderFrameCache mGhosttyRenderFrameCache = new RenderFrameCache();
     private long mGhosttyFullSnapshotRefreshRequestedForFrameSequence = -1;
+    @Nullable private ViewportLinkSnapshot mGhosttyAppliedViewportLinkSnapshot;
+    @Nullable private TerminalViewLinkLayout mVisibleLinkLayout;
+    private boolean mVisibleLinkLayoutEnabled;
 
     public TerminalRenderer mRenderer;
 
@@ -187,6 +191,13 @@ public final class TerminalView extends View {
             public boolean onUp(MotionEvent event) {
                 mScrollRemainder = 0.0f;
                 if (hasActiveTerminalBackend() && mTermSession.isMouseTrackingActive() && !event.isFromSource(InputDevice.SOURCE_MOUSE) && !isSelectingText() && !scrolledWithFinger) {
+                    // Allow clients to steal taps for link opening before the touch is converted into
+                    // terminal mouse press/release events.
+                    if (mClient != null && mClient.getTerminalTranscriptUrlOnTap(event) != null) {
+                        scrolledWithFinger = false;
+                        return false;
+                    }
+
                     // Quick event processing when mouse tracking is active - do not wait for check of double tapping
                     // for zooming.
                     sendMouseEventCode(event, TerminalEmulator.MOUSE_LEFT_BUTTON, true);
@@ -342,6 +353,9 @@ public final class TerminalView extends View {
         mCapturedGhosttyMouseButtonState = 0;
         mGhosttyRenderFrameCache.reset();
         mGhosttyFullSnapshotRefreshRequestedForFrameSequence = -1;
+        mGhosttyAppliedViewportLinkSnapshot = null;
+        mVisibleLinkLayout = null;
+        mVisibleLinkLayoutEnabled = false;
 
         updateSize();
         if (mTermSession.isUsingGhosttyBackend()) {
@@ -566,6 +580,9 @@ public final class TerminalView extends View {
         if (ghosttyBackend) {
             mTermSession.setGhosttyTopRow(mTopRow);
             applyLatestGhosttyFrameDelta(ghosttyFrameDelta);
+            refreshVisibleLinkLayoutIfNeeded(mGhosttyRenderFrameCache.getSnapshotForRender(
+                mTermSession.isGhosttyCursorBlinkingEnabled(),
+                mTermSession.getGhosttyCursorBlinkState()));
         }
 
         invalidate();
@@ -587,6 +604,7 @@ public final class TerminalView extends View {
 
         RenderFrameCache.ApplyResult applyResult = mGhosttyRenderFrameCache.apply(frameDelta);
         if (applyResult == RenderFrameCache.ApplyResult.APPLIED) {
+            mGhosttyAppliedViewportLinkSnapshot = frameDelta.getViewportLinkSnapshot();
             if (frameDelta.isFullRebuild()) {
                 mGhosttyFullSnapshotRefreshRequestedForFrameSequence = -1;
             }
@@ -609,6 +627,36 @@ public final class TerminalView extends View {
 
         mGhosttyFullSnapshotRefreshRequestedForFrameSequence = frameSequence;
         mTermSession.requestGhosttyFullSnapshotRefresh();
+    }
+
+    private void refreshVisibleLinkLayoutIfNeeded(@Nullable ScreenSnapshot renderSnapshot) {
+        boolean linksEnabled = mClient != null && mClient.shouldOpenTerminalTranscriptURLOnClick();
+        if (renderSnapshot == null || !linksEnabled) {
+            mVisibleLinkLayout = null;
+            mVisibleLinkLayoutEnabled = linksEnabled;
+            return;
+        }
+
+        TerminalViewLinkLayout existingLayout = mVisibleLinkLayout;
+        if (existingLayout != null
+            && mVisibleLinkLayoutEnabled == linksEnabled
+            && existingLayout.isCompatibleWith(renderSnapshot)) {
+            return;
+        }
+
+        mVisibleLinkLayout = TerminalViewLinkLayout.build(renderSnapshot,
+            getCompatibleGhosttyAppliedViewportLinkSnapshot(renderSnapshot));
+        mVisibleLinkLayoutEnabled = linksEnabled;
+    }
+
+    @Nullable
+    private ViewportLinkSnapshot getCompatibleGhosttyAppliedViewportLinkSnapshot(ScreenSnapshot renderSnapshot) {
+        ViewportLinkSnapshot snapshot = mGhosttyAppliedViewportLinkSnapshot;
+        if (snapshot == null) {
+            return null;
+        }
+
+        return snapshot.isCompatibleWith(renderSnapshot) ? snapshot : null;
     }
 
     private static boolean shouldPreserveViewportScroll(@Nullable FrameDelta frameDelta) {
@@ -737,6 +785,28 @@ public final class TerminalView extends View {
             row += mTopRow;
         }
         return new int[] { column, row };
+    }
+
+    @Nullable
+    public TerminalViewLinkLayout.LinkHit getVisibleLinkHit(MotionEvent event) {
+        if (!hasActiveTerminalBackend() || !mTermSession.isUsingGhosttyBackend() || mRenderer == null) {
+            return null;
+        }
+
+        ScreenSnapshot renderSnapshot = mGhosttyRenderFrameCache.getSnapshotForRender(
+            mTermSession.isGhosttyCursorBlinkingEnabled(),
+            mTermSession.getGhosttyCursorBlinkState());
+        refreshVisibleLinkLayoutIfNeeded(renderSnapshot);
+
+        TerminalViewLinkLayout linkLayout = mVisibleLinkLayout;
+        if (linkLayout == null) {
+            return null;
+        }
+
+        int column = (int) (event.getX() / mRenderer.mFontWidth);
+        int viewportRow = (int) ((event.getY() - mRenderer.mFontLineSpacingAndAscent)
+            / mRenderer.mFontLineSpacing);
+        return linkLayout.findAt(linkLayout.getTopRow() + viewportRow, column);
     }
 
     static boolean shouldCaptureGhosttyMouse(boolean usingGhosttyBackend, boolean mouseTrackingActive, boolean isMouseSource) {
@@ -1516,8 +1586,10 @@ public final class TerminalView extends View {
                 ScreenSnapshot renderSnapshot = mGhosttyRenderFrameCache.getSnapshotForRender(
                     mTermSession.isGhosttyCursorBlinkingEnabled(),
                     mTermSession.getGhosttyCursorBlinkState());
+                refreshVisibleLinkLayoutIfNeeded(renderSnapshot);
                 if (renderSnapshot != null) {
-                    mRenderer.render(renderSnapshot, canvas, sel[0], sel[1], sel[2], sel[3]);
+                    mRenderer.render(renderSnapshot, canvas, sel[0], sel[1], sel[2], sel[3],
+                        mVisibleLinkLayout);
                 } else {
                     canvas.drawColor(0XFF000000);
                 }

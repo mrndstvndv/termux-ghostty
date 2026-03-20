@@ -51,6 +51,9 @@ const snapshot_render_metadata_bytes: usize = (3 * @sizeOf(i32)) + (2 * @sizeOf(
 const snapshot_mode_bits_bytes: usize = @sizeOf(u32);
 const snapshot_row_header_bytes: usize = 2 * @sizeOf(u32);
 const snapshot_cell_bytes: usize = @sizeOf(i32) + @sizeOf(u16) + 2 + @sizeOf(u64);
+const viewport_link_magic: u32 = 0x54474c31;
+const viewport_link_header_bytes: usize = @sizeOf(u32) + @sizeOf(i32) + (4 * @sizeOf(u32));
+const viewport_link_record_bytes: usize = 5 * @sizeOf(u32);
 const log_append_summary = false;
 const log_fill_snapshot_summary = false;
 const log_fill_snapshot_rows = false;
@@ -83,6 +86,24 @@ const SnapshotMetadata = struct {
     },
     mode_bits: u32 = 0,
     palette: [termux_palette_len]u32 = [_]u32{0} ** termux_palette_len,
+};
+
+const ViewportLinkRecord = struct {
+    row: u32,
+    start_column: u32,
+    end_column_exclusive: u32,
+    string_offset: u32,
+    string_length: u32,
+};
+
+const ViewportLinkStringEntry = struct {
+    uri: []const u8,
+    offset: u32,
+};
+
+const ViewportCellLink = struct {
+    id: ghostty.size.HyperlinkCountInt,
+    uri: []const u8,
 };
 
 const FramePerfCounters = struct {
@@ -132,6 +153,8 @@ pub const Session = struct {
     scratch_cell_lengths: std.ArrayListUnmanaged(u16) = .empty,
     scratch_cell_widths: std.ArrayListUnmanaged(u8) = .empty,
     scratch_cell_styles: std.ArrayListUnmanaged(u64) = .empty,
+    scratch_viewport_link_records: std.ArrayListUnmanaged(ViewportLinkRecord) = .empty,
+    scratch_viewport_link_strings: std.ArrayListUnmanaged(ViewportLinkStringEntry) = .empty,
     colors_changed: bool = false,
     bell_pending: bool = false,
     progress_state: ProgressState = .none,
@@ -169,6 +192,8 @@ pub const Session = struct {
         self.scratch_cell_lengths.deinit(self.alloc);
         self.scratch_cell_widths.deinit(self.alloc);
         self.scratch_cell_styles.deinit(self.alloc);
+        self.scratch_viewport_link_records.deinit(self.alloc);
+        self.scratch_viewport_link_strings.deinit(self.alloc);
     }
 
     fn resetTransientState(self: *Session) void {
@@ -599,6 +624,121 @@ pub const Session = struct {
         for (self.scratch_utf16.items) |unit| {
             try writer.writeU16(unit);
         }
+    }
+
+    fn buildViewportLinkScratch(self: *Session) !usize {
+        self.scratch_viewport_link_records.clearRetainingCapacity();
+        self.scratch_viewport_link_strings.clearRetainingCapacity();
+
+        const row_data = self.render_state.row_data.slice();
+        const row_pins = row_data.items(.pin);
+        const row_cells = row_data.items(.cells);
+        if (row_pins.len < self.render_state.rows or row_cells.len < self.render_state.rows) {
+            ghostty_log.err("core fillViewportLinks row data mismatch session=0x{x} renderRows={} pinRows={} cellRows={}", .{
+                @intFromPtr(self),
+                self.render_state.rows,
+                row_pins.len,
+                row_cells.len,
+            });
+            return error.InvalidViewportLinks;
+        }
+
+        var string_table_bytes: usize = 0;
+        const cols: usize = self.render_state.cols;
+        for (0..self.render_state.rows) |row_index| {
+            const pin = row_pins[row_index];
+            const page = &pin.node.data;
+            const cells = row_cells[row_index].slice().items(.raw);
+            if (cells.len < cols) {
+                ghostty_log.err("core fillViewportLinks cell data mismatch session=0x{x} row={} renderCols={} raw={}", .{
+                    @intFromPtr(self),
+                    row_index,
+                    self.render_state.cols,
+                    cells.len,
+                });
+                return error.InvalidViewportLinks;
+            }
+
+            var active_link: ?ViewportCellLink = null;
+            var active_segment_start: usize = 0;
+            var column: usize = 0;
+            while (column < cols) {
+                const raw_cell = cells[column];
+                const display_width = snapshotCellWidth(raw_cell);
+                if (display_width == 0) {
+                    column += 1;
+                    continue;
+                }
+
+                const link = viewportCellLinkForRowCell(page, pin.y, column, raw_cell);
+                if (active_link) |current| {
+                    if (link == null or link.?.id != current.id) {
+                        try self.appendViewportLinkRecord(row_index, active_segment_start, column, current.uri, &string_table_bytes);
+                        active_link = null;
+                    }
+                }
+                if (active_link == null and link != null) {
+                    active_link = link;
+                    active_segment_start = column;
+                }
+
+                column += display_width;
+            }
+
+            if (active_link) |current| {
+                try self.appendViewportLinkRecord(row_index, active_segment_start, cols, current.uri, &string_table_bytes);
+            }
+        }
+
+        return string_table_bytes;
+    }
+
+    fn appendViewportLinkRecord(
+        self: *Session,
+        row_index: usize,
+        start_column: usize,
+        end_column_exclusive: usize,
+        uri: []const u8,
+        string_table_bytes: *usize,
+    ) !void {
+        if (end_column_exclusive <= start_column or uri.len == 0) {
+            return;
+        }
+
+        const string_ref = try self.internViewportLinkUri(uri, string_table_bytes);
+        try self.scratch_viewport_link_records.append(self.alloc, .{
+            .row = std.math.cast(u32, row_index) orelse return error.InvalidViewportLinks,
+            .start_column = std.math.cast(u32, start_column) orelse return error.InvalidViewportLinks,
+            .end_column_exclusive = std.math.cast(u32, end_column_exclusive) orelse return error.InvalidViewportLinks,
+            .string_offset = string_ref.offset,
+            .string_length = string_ref.length,
+        });
+    }
+
+    fn internViewportLinkUri(
+        self: *Session,
+        uri: []const u8,
+        string_table_bytes: *usize,
+    ) !struct { offset: u32, length: u32 } {
+        for (self.scratch_viewport_link_strings.items) |entry| {
+            if (std.mem.eql(u8, entry.uri, uri)) {
+                return .{
+                    .offset = entry.offset,
+                    .length = std.math.cast(u32, entry.uri.len) orelse return error.InvalidViewportLinks,
+                };
+            }
+        }
+
+        const offset = std.math.cast(u32, string_table_bytes.*) orelse return error.InvalidViewportLinks;
+        try self.scratch_viewport_link_strings.append(self.alloc, .{
+            .uri = uri,
+            .offset = offset,
+        });
+        string_table_bytes.* += uri.len;
+        return .{
+            .offset = offset,
+            .length = std.math.cast(u32, uri.len) orelse return error.InvalidViewportLinks,
+        };
     }
 
     fn appendPendingOutput(self: *Session, bytes: []const u8) !void {
@@ -1325,6 +1465,8 @@ pub export fn termux_ghostty_session_create(
     session.scratch_cell_lengths = .empty;
     session.scratch_cell_widths = .empty;
     session.scratch_cell_styles = .empty;
+    session.scratch_viewport_link_records = .empty;
+    session.scratch_viewport_link_strings = .empty;
     session.colors_changed = false;
     session.bell_pending = false;
     session.progress_state = .none;
@@ -1604,6 +1746,16 @@ pub export fn termux_ghostty_session_fill_snapshot_current_viewport(
     return fillSnapshotCurrentViewport(handle, out[0..capacity]);
 }
 
+pub export fn termux_ghostty_session_fill_viewport_links(
+    session: ?*Session,
+    buffer: ?[*]u8,
+    capacity: usize,
+) i32 {
+    const handle = session orelse return -1;
+    const out = buffer orelse return -1;
+    return fillViewportLinksCurrentViewport(handle, out[0..capacity]);
+}
+
 pub export fn termux_ghostty_session_fill_snapshot(
     session: ?*Session,
     top_row: i32,
@@ -1725,6 +1877,64 @@ fn fillSnapshotCurrentViewport(handle: *Session, out: []u8) i32 {
     handle.commitSerializedMetadata(&snapshot_metadata);
     handle.logSnapshotPerfIfNeeded(top_row, required_bytes, dirty_rows, render_timing, snapshot_serialize_ns);
     handle.clearRenderStateDirty();
+    return required_i32;
+}
+
+fn fillViewportLinksCurrentViewport(handle: *Session, out: []u8) i32 {
+    const render_timing = handle.updateRenderStateIfNeeded() catch |err| {
+        ghostty_log.err("core fillViewportLinks render state failed session=0x{x} topRow={} err={any}", .{
+            @intFromPtr(handle),
+            handle.viewport_top_row,
+            err,
+        });
+        return -1;
+    };
+    _ = render_timing;
+
+    const string_table_bytes = handle.buildViewportLinkScratch() catch |err| {
+        ghostty_log.err("core fillViewportLinks build failed session=0x{x} topRow={} err={any}", .{
+            @intFromPtr(handle),
+            handle.viewport_top_row,
+            err,
+        });
+        return -1;
+    };
+
+    const segment_count = handle.scratch_viewport_link_records.items.len;
+    var required_bytes: usize = viewport_link_header_bytes;
+    required_bytes += segment_count * viewport_link_record_bytes;
+    required_bytes += string_table_bytes;
+
+    const required_i32 = std.math.cast(i32, required_bytes) orelse return -1;
+    if (out.len < required_bytes) {
+        ghostty_log.warn("core fillViewportLinks buffer too small session=0x{x} topRow={} required={} capacity={}", .{
+            @intFromPtr(handle),
+            handle.viewport_top_row,
+            required_bytes,
+            out.len,
+        });
+        return required_i32;
+    }
+
+    var writer = BufferWriter.init(out);
+    writer.writeU32(viewport_link_magic) catch return -1;
+    writer.writeI32(handle.viewport_top_row) catch return -1;
+    writer.writeU32(handle.render_state.rows) catch return -1;
+    writer.writeU32(handle.render_state.cols) catch return -1;
+    writer.writeU32(std.math.cast(u32, segment_count) orelse return -1) catch return -1;
+    writer.writeU32(std.math.cast(u32, string_table_bytes) orelse return -1) catch return -1;
+
+    for (handle.scratch_viewport_link_records.items) |record| {
+        writer.writeU32(record.row) catch return -1;
+        writer.writeU32(record.start_column) catch return -1;
+        writer.writeU32(record.end_column_exclusive) catch return -1;
+        writer.writeU32(record.string_offset) catch return -1;
+        writer.writeU32(record.string_length) catch return -1;
+    }
+    for (handle.scratch_viewport_link_strings.items) |entry| {
+        writer.writeBytes(entry.uri) catch return -1;
+    }
+
     return required_i32;
 }
 
@@ -1864,6 +2074,30 @@ pub fn termux_ghostty_session_get_transcript_text(
 ) ?[:0]u8 {
     const handle = session orelse return null;
     return handle.transcriptText(join_lines, trim);
+}
+
+fn viewportCellLinkForRowCell(
+    page: *ghostty.Page,
+    row_y: usize,
+    column: usize,
+    raw_cell: ghostty.Cell,
+) ?ViewportCellLink {
+    if (!raw_cell.hyperlink) {
+        return null;
+    }
+
+    const rac = page.getRowAndCell(column, row_y);
+    const link_id = page.lookupHyperlink(rac.cell) orelse return null;
+    const entry = page.hyperlink_set.get(page.memory, link_id);
+    const uri = entry.uri.slice(page.memory);
+    if (uri.len == 0) {
+        return null;
+    }
+
+    return .{
+        .id = link_id,
+        .uri = uri,
+    };
 }
 
 const MouseSize = @FieldType(ghostty.input.MouseEncodeOptions, "size");
@@ -2122,10 +2356,83 @@ const BufferWriter = struct {
     fn writeU64(self: *BufferWriter, value: u64) !void {
         try self.write(value);
     }
+
+    fn writeBytes(self: *BufferWriter, value: []const u8) !void {
+        if (self.offset + value.len > self.bytes.len) {
+            return error.NoSpaceLeft;
+        }
+
+        @memcpy(self.bytes[self.offset .. self.offset + value.len], value);
+        self.offset += value.len;
+    }
+};
+
+const ExpectedViewportLink = struct {
+    row: u32,
+    start_column: u32,
+    end_column_exclusive: u32,
+    url: []const u8,
 };
 
 fn appendTestBytes(session: *Session, bytes: []const u8) u32 {
     return termux_ghostty_session_append(session, bytes.ptr, bytes.len);
+}
+
+fn expectViewportLinks(
+    session: *Session,
+    expected_top_row: i32,
+    expected_rows: u32,
+    expected_columns: u32,
+    expected_segments: []const ExpectedViewportLink,
+) !void {
+    var buffer: [4096]u8 = undefined;
+    const written_i32 = termux_ghostty_session_fill_viewport_links(session, buffer[0..].ptr, buffer.len);
+    try testing.expect(written_i32 > 0);
+
+    const written: usize = @intCast(written_i32);
+    var offset: usize = 0;
+    try testing.expectEqual(viewport_link_magic, readU32Native(buffer[0..written], &offset));
+    try testing.expectEqual(expected_top_row, readI32Native(buffer[0..written], &offset));
+    try testing.expectEqual(expected_rows, readU32Native(buffer[0..written], &offset));
+    try testing.expectEqual(expected_columns, readU32Native(buffer[0..written], &offset));
+
+    const segment_count = readU32Native(buffer[0..written], &offset);
+    const string_table_bytes = readU32Native(buffer[0..written], &offset);
+    try testing.expectEqual(expected_segments.len, segment_count);
+
+    const records_start = offset;
+    const string_table_start = records_start + (segment_count * viewport_link_record_bytes);
+    try testing.expectEqual(written, string_table_start + string_table_bytes);
+    const string_table = buffer[string_table_start..written];
+
+    for (expected_segments, 0..) |expected, index| {
+        var record_offset = records_start + (index * viewport_link_record_bytes);
+        const row = readU32Native(buffer[0..written], &record_offset);
+        const start_column = readU32Native(buffer[0..written], &record_offset);
+        const end_column_exclusive = readU32Native(buffer[0..written], &record_offset);
+        const string_offset = readU32Native(buffer[0..written], &record_offset);
+        const string_length = readU32Native(buffer[0..written], &record_offset);
+
+        try testing.expectEqual(expected.row, row);
+        try testing.expectEqual(expected.start_column, start_column);
+        try testing.expectEqual(expected.end_column_exclusive, end_column_exclusive);
+        try testing.expectEqualSlices(u8, expected.url,
+            string_table[string_offset .. string_offset + string_length]);
+    }
+}
+
+fn readU32Native(bytes: []const u8, offset: *usize) u32 {
+    const start = offset.*;
+    offset.* = start + @sizeOf(u32);
+    const raw: [4]u8 = .{ bytes[start], bytes[start + 1], bytes[start + 2], bytes[start + 3] };
+    return @bitCast(raw);
+}
+
+fn readI32Native(bytes: []const u8, offset: *usize) i32 {
+    const start = offset.*;
+    offset.* = start + @sizeOf(i32);
+    const raw: [4]u8 = .{ bytes[start], bytes[start + 1], bytes[start + 2], bytes[start + 3] };
+    return @bitCast(raw);
 }
 
 fn expectOwnedText(actual: ?[*:0]u8, expected: ?[]const u8) !void {
@@ -2312,4 +2619,92 @@ test "queue mouse event motion deduplicates by cell" {
     var out: [64]u8 = undefined;
     const written = termux_ghostty_session_drain_pending_output(session, out[0..].ptr, out.len);
     try testing.expectEqualSlices(u8, expected, out[0..written]);
+}
+
+test "fill viewport links serializes single osc8 segment" {
+    const session = termux_ghostty_session_create(10, 5, 100, 10, 20) orelse return error.OutOfMemory;
+    defer termux_ghostty_session_destroy(session);
+
+    _ = appendTestBytes(session, "\x1B]8;;https://example.com\x07abc\x1B]8;;\x07");
+
+    try expectViewportLinks(session, 0, 5, 10, &.{
+        .{
+            .row = 0,
+            .start_column = 0,
+            .end_column_exclusive = 3,
+            .url = "https://example.com",
+        },
+    });
+}
+
+test "fill viewport links serializes wrapped osc8 segments" {
+    const session = termux_ghostty_session_create(4, 2, 100, 10, 20) orelse return error.OutOfMemory;
+    defer termux_ghostty_session_destroy(session);
+
+    _ = appendTestBytes(session, "\x1B]8;;https://wrapped.example\x07abcdef\x1B]8;;\x07");
+
+    try expectViewportLinks(session, 0, 2, 4, &.{
+        .{
+            .row = 0,
+            .start_column = 0,
+            .end_column_exclusive = 4,
+            .url = "https://wrapped.example",
+        },
+        .{
+            .row = 1,
+            .start_column = 0,
+            .end_column_exclusive = 2,
+            .url = "https://wrapped.example",
+        },
+    });
+}
+
+test "fill viewport links keeps adjacent osc8 links separate" {
+    const session = termux_ghostty_session_create(10, 2, 100, 10, 20) orelse return error.OutOfMemory;
+    defer termux_ghostty_session_destroy(session);
+
+    _ = appendTestBytes(session,
+        "\x1B]8;;https://one.example\x07ab\x1B]8;;\x07"
+        ++ "\x1B]8;;https://two.example\x07cd\x1B]8;;\x07");
+
+    try expectViewportLinks(session, 0, 2, 10, &.{
+        .{
+            .row = 0,
+            .start_column = 0,
+            .end_column_exclusive = 2,
+            .url = "https://one.example",
+        },
+        .{
+            .row = 0,
+            .start_column = 2,
+            .end_column_exclusive = 4,
+            .url = "https://two.example",
+        },
+    });
+}
+
+test "fill viewport links tracks scrolled viewport rows" {
+    const session = termux_ghostty_session_create(4, 2, 100, 10, 20) orelse return error.OutOfMemory;
+    defer termux_ghostty_session_destroy(session);
+
+    _ = appendTestBytes(session,
+        "\x1B]8;;https://one.example\x07a\x1B]8;;\x07\r\n"
+        ++ "\x1B]8;;https://two.example\x07b\x1B]8;;\x07\r\n"
+        ++ "\x1B]8;;https://three.example\x07c\x1B]8;;\x07");
+    _ = termux_ghostty_session_set_viewport_top_row(session, -1);
+
+    try expectViewportLinks(session, -1, 2, 4, &.{
+        .{
+            .row = 0,
+            .start_column = 0,
+            .end_column_exclusive = 1,
+            .url = "https://one.example",
+        },
+        .{
+            .row = 1,
+            .start_column = 0,
+            .end_column_exclusive = 1,
+            .url = "https://two.example",
+        },
+    });
 }

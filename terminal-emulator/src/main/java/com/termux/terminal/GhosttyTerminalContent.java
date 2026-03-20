@@ -302,6 +302,42 @@ public final class GhosttyTerminalContent implements TerminalContent, AutoClosea
         return requiredBytes;
     }
 
+    public int fillViewportLinks(ViewportLinkSnapshot snapshot) {
+        if (snapshot == null) {
+            throw new IllegalArgumentException("snapshot must not be null");
+        }
+
+        long nativeHandle;
+        int requiredBytes;
+        synchronized (this) {
+            nativeHandle = requireNativeHandle();
+            snapshot.getBuffer().clear();
+
+            requiredBytes = GhosttyNative.nativeFillViewportLinks(nativeHandle, snapshot.getBuffer(), snapshot.getCapacityBytes());
+            if (requiredBytes < 0) {
+                GhosttyLog.error("nativeFillViewportLinks failed handle=0x" + Long.toHexString(nativeHandle)
+                    + " capacity=" + snapshot.getCapacityBytes());
+                throw new IllegalStateException("nativeFillViewportLinks failed");
+            }
+            if (requiredBytes > snapshot.getCapacityBytes()) {
+                GhosttyLog.error("nativeFillViewportLinks buffer too small handle=0x"
+                    + Long.toHexString(nativeHandle) + " required=" + requiredBytes
+                    + " capacity=" + snapshot.getCapacityBytes());
+                throw new IllegalStateException("nativeFillViewportLinks buffer too small: required="
+                    + requiredBytes + ", capacity=" + snapshot.getCapacityBytes());
+            }
+        }
+
+        try {
+            snapshot.markNativeSnapshot(requiredBytes);
+        } catch (RuntimeException error) {
+            GhosttyLog.error("markNativeViewportLinkSnapshot failed required=" + requiredBytes, error);
+            throw error;
+        }
+
+        return requiredBytes;
+    }
+
     private void logSnapshotFillPerfIfNeeded(long nativeHandle, int topRow, int rows, int columns, int requiredBytes,
                                              long nativeFillDurationNanos, long parseDurationNanos, long totalDurationNanos) {
         mSnapshotFillCount++;

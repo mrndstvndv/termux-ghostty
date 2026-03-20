@@ -3,6 +3,8 @@ package com.termux.shared.termux.terminal;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
 
+import androidx.annotation.Nullable;
+
 import com.termux.shared.logger.Logger;
 import com.termux.terminal.TerminalSession;
 import com.termux.view.TerminalViewClient;
@@ -31,6 +33,17 @@ public class TermuxTerminalViewClientBase implements TerminalViewClient {
 
     public boolean shouldUseCtrlSpaceWorkaround() {
         return false;
+    }
+
+    @Override
+    public boolean shouldOpenTerminalTranscriptURLOnClick() {
+        return false;
+    }
+
+    @Nullable
+    @Override
+    public String getTerminalTranscriptUrlOnTap(MotionEvent e) {
+        return null;
     }
 
     @Override

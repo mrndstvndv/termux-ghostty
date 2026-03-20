@@ -250,6 +250,42 @@ pub export fn Java_com_termux_terminal_GhosttyNative_nativeFillSnapshotCurrentVi
     return result;
 }
 
+pub export fn Java_com_termux_terminal_GhosttyNative_nativeFillViewportLinks(
+    env: ?*c.JNIEnv,
+    clazz: c.jclass,
+    native_handle: jlong,
+    buffer: c.jobject,
+    capacity: jint,
+) jint {
+    _ = clazz;
+
+    const jni = env orelse {
+        ghostty_log.err("jni nativeFillViewportLinks missing env handle=0x{x}", .{ native_handle });
+        return -1;
+    };
+    const handle = sessionFromHandle(native_handle) orelse {
+        ghostty_log.err("jni nativeFillViewportLinks invalid handle=0x{x}", .{ native_handle });
+        return -1;
+    };
+    if (capacity <= 0) {
+        ghostty_log.err("jni nativeFillViewportLinks invalid capacity handle=0x{x} capacity={}", .{ native_handle, capacity });
+        return -1;
+    }
+
+    const address = jni.*.*.GetDirectBufferAddress.?(jni, buffer) orelse {
+        ghostty_log.err("jni nativeFillViewportLinks missing direct buffer address handle=0x{x}", .{ native_handle });
+        return -1;
+    };
+    const count = std.math.cast(usize, capacity) orelse return -1;
+    const result = core.termux_ghostty_session_fill_viewport_links(handle, @ptrCast(address), count);
+    if (result < 0) {
+        ghostty_log.err("jni nativeFillViewportLinks failed handle=0x{x} capacity={} result={}", .{ native_handle, capacity, result });
+    } else if (result > capacity) {
+        ghostty_log.warn("jni nativeFillViewportLinks buffer too small handle=0x{x} required={} capacity={}", .{ native_handle, result, capacity });
+    }
+    return result;
+}
+
 pub export fn Java_com_termux_terminal_GhosttyNative_nativeFillSnapshot(
     env: ?*c.JNIEnv,
     clazz: c.jclass,

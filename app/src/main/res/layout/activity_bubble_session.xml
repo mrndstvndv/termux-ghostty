@@ -22,7 +22,7 @@
 
     <com.termux.shared.termux.extrakeys.ExtraKeysView
         android:id="@+id/bubble_extra_keys_view"
-        style="?android:attr/buttonBarStyle"
+        style="?attr/buttonBarStyle"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="6dp"

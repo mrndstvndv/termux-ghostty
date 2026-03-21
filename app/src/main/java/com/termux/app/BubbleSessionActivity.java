@@ -1,5 +1,6 @@
 package com.termux.app;
 
+import android.app.WallpaperManager;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
@@ -53,6 +54,7 @@ public final class BubbleSessionActivity extends AppCompatActivity implements Se
     private boolean mIsVisible;
     private boolean mIsInvalidState;
     private boolean mDidCloseTermuxActivityOnBubbleOpen;
+    private int mLastMaterialYouWallpaperId;
 
     private static final float DEFAULT_EXTRA_KEYS_HEIGHT_DP = 37.5f;
 
@@ -64,6 +66,7 @@ public final class BubbleSessionActivity extends AppCompatActivity implements Se
 
         mProperties = TermuxAppSharedProperties.getProperties();
         mProperties.loadTermuxPropertiesFromDisk();
+        mLastMaterialYouWallpaperId = getMaterialYouWallpaperId();
         setActivityTheme();
         applyMaterialYouThemeOverlay();
 
@@ -113,6 +116,7 @@ public final class BubbleSessionActivity extends AppCompatActivity implements Se
         super.onResume();
         if (mIsInvalidState) return;
 
+        reloadMaterialYouThemeIfNeeded();
         mTerminalSessionClient.onResume();
         mTerminalViewClient.setSoftKeyboardState();
         updateSessionTitle();
@@ -379,6 +383,33 @@ public final class BubbleSessionActivity extends AppCompatActivity implements Se
         if (rowCount <= 0) return 0;
 
         return Math.round(getExtraKeysButtonHeight() * rowCount * mProperties.getTerminalToolbarHeightScaleFactor());
+    }
+
+    private void reloadMaterialYouThemeIfNeeded() {
+        if (!shouldReloadMaterialYouThemeForWallpaperChanges()) return;
+
+        int wallpaperId = getMaterialYouWallpaperId();
+        if (wallpaperId == 0) return;
+        if (mLastMaterialYouWallpaperId == 0) {
+            mLastMaterialYouWallpaperId = wallpaperId;
+            return;
+        }
+        if (mLastMaterialYouWallpaperId == wallpaperId) return;
+
+        Logger.logDebug(LOG_TAG, "Recreating bubble for updated Material You wallpaper colors");
+        mLastMaterialYouWallpaperId = wallpaperId;
+        recreate();
+    }
+
+    private boolean shouldReloadMaterialYouThemeForWallpaperChanges() {
+        if (mProperties == null) return false;
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return false;
+        return TermuxThemeUtils.isMaterialYouThemeEnabled(mProperties.getMaterialYouTheme());
+    }
+
+    private int getMaterialYouWallpaperId() {
+        if (!shouldReloadMaterialYouThemeForWallpaperChanges()) return 0;
+        return WallpaperManager.getInstance(this).getWallpaperId(WallpaperManager.FLAG_SYSTEM);
     }
 
     public static Intent newInstance(@NonNull Context context, @NonNull String sessionHandle) {

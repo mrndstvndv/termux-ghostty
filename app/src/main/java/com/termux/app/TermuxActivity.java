@@ -2,6 +2,7 @@ package com.termux.app;
 
 import android.annotation.SuppressLint;
 import android.app.AlertDialog;
+import android.app.WallpaperManager;
 import android.content.ActivityNotFoundException;
 import android.content.BroadcastReceiver;
 import android.content.ComponentName;
@@ -10,6 +11,7 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.ServiceConnection;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.IBinder;
 import android.view.ContextMenu;
@@ -175,6 +177,7 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
     private int mNavBarHeight;
 
     private float mTerminalToolbarDefaultHeight;
+    private int mLastMaterialYouWallpaperId;
 
 
     private static final int CONTEXT_MENU_SELECT_URL_ID = 0;
@@ -211,6 +214,7 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         // Load Termux app SharedProperties from disk
         mProperties = TermuxAppSharedProperties.getProperties();
         reloadProperties();
+        mLastMaterialYouWallpaperId = getMaterialYouWallpaperId();
 
         setActivityTheme();
         applyMaterialYouThemeOverlay();
@@ -320,6 +324,7 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
             mTermuxTerminalViewClient.onResume();
 
         markCurrentSessionBubbleConversationRead();
+        reloadMaterialYouThemeIfNeeded();
 
         // Check if a crash happened on last run of the app or if a plugin crashed and show a
         // notification with the crash details if it did
@@ -1004,6 +1009,7 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         intentFilter.addAction(TERMUX_ACTIVITY.ACTION_NOTIFY_APP_CRASH);
         intentFilter.addAction(TERMUX_ACTIVITY.ACTION_RELOAD_STYLE);
         intentFilter.addAction(TERMUX_ACTIVITY.ACTION_REQUEST_PERMISSIONS);
+        intentFilter.addAction(Intent.ACTION_WALLPAPER_CHANGED);
 
         registerReceiver(mTermuxActivityBroadcastReceiver, intentFilter);
     }
@@ -1043,6 +1049,10 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
                         Logger.logDebug(LOG_TAG, "Received intent to request storage permissions");
                         requestStoragePermission(false);
                         return;
+                    case Intent.ACTION_WALLPAPER_CHANGED:
+                        Logger.logDebug(LOG_TAG, "Received intent for wallpaper changed");
+                        reloadMaterialYouThemeIfNeeded();
+                        return;
                     default:
                 }
             }
@@ -1052,6 +1062,7 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
     private void reloadActivityStyling(boolean recreateActivity) {
         if (mProperties != null) {
             reloadProperties();
+            mLastMaterialYouWallpaperId = getMaterialYouWallpaperId();
 
             if (mExtraKeysView != null) {
                 mExtraKeysView.setButtonTextAllCaps(mProperties.shouldExtraKeysTextBeAllCaps());
@@ -1084,6 +1095,33 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
     }
 
 
+
+    private void reloadMaterialYouThemeIfNeeded() {
+        if (!shouldReloadMaterialYouThemeForWallpaperChanges()) return;
+
+        int wallpaperId = getMaterialYouWallpaperId();
+        if (wallpaperId == 0) return;
+        if (mLastMaterialYouWallpaperId == 0) {
+            mLastMaterialYouWallpaperId = wallpaperId;
+            return;
+        }
+        if (mLastMaterialYouWallpaperId == wallpaperId) return;
+
+        Logger.logDebug(LOG_TAG, "Recreating activity for updated Material You wallpaper colors");
+        mLastMaterialYouWallpaperId = wallpaperId;
+        reloadActivityStyling(true);
+    }
+
+    private boolean shouldReloadMaterialYouThemeForWallpaperChanges() {
+        if (mProperties == null) return false;
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return false;
+        return TermuxThemeUtils.isMaterialYouThemeEnabled(mProperties.getMaterialYouTheme());
+    }
+
+    private int getMaterialYouWallpaperId() {
+        if (!shouldReloadMaterialYouThemeForWallpaperChanges()) return 0;
+        return WallpaperManager.getInstance(this).getWallpaperId(WallpaperManager.FLAG_SYSTEM);
+    }
 
     public static void startTermuxActivity(@NonNull final Context context) {
         ActivityUtils.startActivity(context, newInstance(context));

@@ -37,4 +37,23 @@
         <item name="extraKeysButtonActiveBackgroundColor">@color/grey_500</item>
     </style>
 
+
+
+    <!-- TermuxActivity Material 3 DayNight NoActionBar theme. -->
+    <style name="Theme.TermuxActivity.M3.DayNight.NoActionBar" parent="Theme.BaseActivity.M3.DayNight.NoActionBar">
+        <item name="android:windowBackground">?attr/colorSurface</item>
+        <item name="android:windowActionModeOverlay">true</item>
+        <item name="android:windowTranslucentStatus">true</item>
+        <item name="android:windowTranslucentNavigation">true</item>
+        <item name="android:windowAllowReturnTransitionOverlap">true</item>
+        <item name="android:windowAllowEnterTransitionOverlap">true</item>
+        <item name="buttonBarButtonStyle">@style/TermuxActivity.Drawer.ButtonBarStyle.M3</item>
+        <item name="termuxActivityDrawerBackground">?attr/colorSurfaceContainerLow</item>
+        <item name="termuxActivityDrawerImageTint">?attr/colorOnSurface</item>
+        <item name="extraKeysButtonTextColor">?attr/colorOnSurface</item>
+        <item name="extraKeysButtonActiveTextColor">?attr/colorError</item>
+        <item name="extraKeysButtonBackgroundColor">?attr/colorSurfaceContainerHigh</item>
+        <item name="extraKeysButtonActiveBackgroundColor">?attr/colorSurfaceContainerHighest</item>
+    </style>
+
 </resources>

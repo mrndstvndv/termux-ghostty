@@ -9,7 +9,9 @@ import com.termux.app.BubbleSessionActivity;
 import com.termux.shared.interact.ShareUtils;
 import com.termux.shared.logger.Logger;
 import com.termux.shared.termux.TermuxConstants;
+import com.termux.shared.termux.settings.properties.TermuxPropertyConstants;
 import com.termux.shared.termux.terminal.TermuxTerminalSessionClientBase;
+import com.termux.shared.termux.theme.MaterialYouTerminalColors;
 import com.termux.terminal.TerminalColors;
 import com.termux.terminal.TerminalSession;
 
@@ -111,9 +113,13 @@ public final class BubbleTerminalSessionClient extends TermuxTerminalSessionClie
         try {
             File colorsFile = TermuxConstants.TERMUX_COLOR_PROPERTIES_FILE;
             File fontFile = TermuxConstants.TERMUX_FONT_FILE;
+            String materialYouTheme = mActivity.getProperties().getMaterialYouTheme();
+            boolean isMaterialYou = !TermuxPropertyConstants.IVALUE_MATERIAL_YOU_THEME_DISABLED.equals(materialYouTheme);
 
             Properties properties = new Properties();
-            if (colorsFile.isFile()) {
+            if (isMaterialYou) {
+                properties.putAll(MaterialYouTerminalColors.generate(mActivity));
+            } else if (colorsFile.isFile()) {
                 try (InputStream inputStream = new FileInputStream(colorsFile)) {
                     properties.load(inputStream);
                 }

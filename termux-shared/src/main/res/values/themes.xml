@@ -55,6 +55,24 @@
 
 
 
+    <!-- BaseActivity Material 3 Light DarkActionBar theme. -->
+    <style name="Theme.BaseActivity.M3.Light.DarkActionBar" parent="Theme.Material3.Light"/>
+    <!-- BaseActivity Material 3 Light NoActionBar theme. -->
+    <style name="Theme.BaseActivity.M3.Light.NoActionBar" parent="Theme.BaseActivity.M3.Light.DarkActionBar">
+        <item name="windowActionBar">false</item>
+        <item name="windowNoTitle">true</item>
+    </style>
+
+    <!-- BaseActivity Material 3 DayNight DarkActionBar theme. -->
+    <style name="Theme.BaseActivity.M3.DayNight.DarkActionBar" parent="Theme.Material3.Light"/>
+    <!-- BaseActivity Material 3 DayNight NoActionBar theme. -->
+    <style name="Theme.BaseActivity.M3.DayNight.NoActionBar" parent="Theme.BaseActivity.M3.DayNight.DarkActionBar">
+        <item name="windowActionBar">false</item>
+        <item name="windowNoTitle">true</item>
+    </style>
+
+
+
     <!-- BaseActivity extended classes Day NoActionBar themes. -->
     <style name="Theme.MediaViewActivity.Light" parent="Theme.BaseActivity.Light.NoActionBar"/>
     <style name="Theme.MarkdownViewActivity.Light" parent="Theme.MediaViewActivity.Light"/>

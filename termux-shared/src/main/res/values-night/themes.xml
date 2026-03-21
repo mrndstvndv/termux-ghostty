@@ -34,6 +34,14 @@
 
 
 
+    <!-- BaseActivity Material 3 DayNight DarkActionBar theme. -->
+    <style name="Theme.BaseActivity.M3.DayNight.DarkActionBar" parent="Theme.Material3.Dark"/>
+    <!-- BaseActivity Material 3 DayNight NoActionBar theme. -->
+    <style name="Theme.BaseActivity.M3.DayNight.NoActionBar" parent="Theme.BaseActivity.M3.DayNight.DarkActionBar">
+        <item name="windowActionBar">false</item>
+        <item name="windowNoTitle">true</item>
+    </style>
+
 
 
     <!--

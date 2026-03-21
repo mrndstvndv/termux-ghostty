@@ -44,7 +44,8 @@ public class TermuxApplication extends Application {
         TermuxShellManager shellManager = TermuxShellManager.init(context);
 
         // Set NightMode.APP_NIGHT_MODE
-        TermuxThemeUtils.setAppNightMode(properties.getNightMode());
+        TermuxThemeUtils.setAppNightMode(
+            TermuxThemeUtils.getAppNightMode(properties.getNightMode(), properties.getMaterialYouTheme()));
 
         // Check and create termux files directory. If failed to access it like in case of secondary
         // user or external sd card installation, then don't run files directory related code

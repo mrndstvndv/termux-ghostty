@@ -26,6 +26,7 @@ import android.widget.ListView;
 import android.widget.RelativeLayout;
 import android.widget.Toast;
 
+import com.google.android.material.color.DynamicColors;
 import com.termux.R;
 import com.termux.app.api.file.FileReceiverActivity;
 import com.termux.app.terminal.TermuxActivityRootView;
@@ -51,8 +52,8 @@ import com.termux.shared.termux.interact.TextInputDialogUtils;
 import com.termux.shared.logger.Logger;
 import com.termux.shared.termux.TermuxUtils;
 import com.termux.shared.termux.settings.properties.TermuxAppSharedProperties;
+import com.termux.shared.termux.settings.properties.TermuxPropertyConstants;
 import com.termux.shared.termux.theme.TermuxThemeUtils;
-import com.termux.shared.theme.NightMode;
 import com.termux.shared.view.ViewUtils;
 import com.termux.terminal.TerminalSession;
 import com.termux.terminal.TerminalSessionClient;
@@ -212,6 +213,7 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         reloadProperties();
 
         setActivityTheme();
+        applyMaterialYouThemeOverlay();
 
         super.onCreate(savedInstanceState);
 
@@ -495,13 +497,28 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
 
 
     private void setActivityTheme() {
-        // Update NightMode.APP_NIGHT_MODE
-        TermuxThemeUtils.setAppNightMode(mProperties.getNightMode());
+        String appNightMode = TermuxThemeUtils.getAppNightMode(mProperties.getNightMode(), mProperties.getMaterialYouTheme());
+        TermuxThemeUtils.setAppNightMode(appNightMode);
+        AppCompatActivityUtils.setNightMode(this, appNightMode, true);
+    }
 
-        // Set activity night mode. If NightMode.SYSTEM is set, then android will automatically
-        // trigger recreation of activity when uiMode/dark mode configuration is changed so that
-        // day or night theme takes affect.
-        AppCompatActivityUtils.setNightMode(this, NightMode.getAppNightMode().getName(), true);
+    private void applyMaterialYouThemeOverlay() {
+        String materialYouTheme = mProperties.getMaterialYouTheme();
+        if (!TermuxThemeUtils.isMaterialYouThemeEnabled(materialYouTheme)) return;
+
+        if (TermuxPropertyConstants.IVALUE_MATERIAL_YOU_THEME_LIGHT.equals(materialYouTheme)) {
+            setTheme(R.style.Theme_TermuxActivity_M3_Light_NoActionBar);
+        } else if (TermuxPropertyConstants.IVALUE_MATERIAL_YOU_THEME_BLACK.equals(materialYouTheme)) {
+            setTheme(R.style.Theme_TermuxActivity_M3_Black_NoActionBar);
+        } else {
+            setTheme(R.style.Theme_TermuxActivity_M3_DayNight_NoActionBar);
+        }
+
+        DynamicColors.applyToActivityIfAvailable(this);
+
+        if (TermuxPropertyConstants.IVALUE_MATERIAL_YOU_THEME_BLACK.equals(materialYouTheme)) {
+            getTheme().applyStyle(R.style.Theme_TermuxActivity_M3_Black_NoActionBar, true);
+        }
     }
 
     private void setMargins() {
@@ -1042,7 +1059,8 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
             }
 
             // Update NightMode.APP_NIGHT_MODE
-            TermuxThemeUtils.setAppNightMode(mProperties.getNightMode());
+            TermuxThemeUtils.setAppNightMode(
+                TermuxThemeUtils.getAppNightMode(mProperties.getNightMode(), mProperties.getMaterialYouTheme()));
         }
 
         setMargins();

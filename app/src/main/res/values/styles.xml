@@ -14,4 +14,6 @@
         <item name="android:textColor">@color/white</item>
     </style>
 
+    <style name="TermuxActivity.Drawer.ButtonBarStyle.M3" parent="@style/Widget.Material3.Button.TextButton" />
+
 </resources>

@@ -20,6 +20,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 
+import com.google.android.material.color.DynamicColors;
 import com.termux.R;
 import com.termux.app.bubbles.BubbleTerminalExtraKeys;
 import com.termux.app.bubbles.BubbleTerminalSessionClient;
@@ -31,8 +32,8 @@ import com.termux.shared.termux.extrakeys.ExtraKeysInfo;
 import com.termux.shared.termux.extrakeys.ExtraKeysView;
 import com.termux.shared.termux.settings.preferences.TermuxAppSharedPreferences;
 import com.termux.shared.termux.settings.properties.TermuxAppSharedProperties;
+import com.termux.shared.termux.settings.properties.TermuxPropertyConstants;
 import com.termux.shared.termux.theme.TermuxThemeUtils;
-import com.termux.shared.theme.NightMode;
 import com.termux.shared.view.KeyboardUtils;
 import com.termux.terminal.TerminalSession;
 import com.termux.view.TerminalView;
@@ -64,6 +65,7 @@ public final class BubbleSessionActivity extends AppCompatActivity implements Se
         mProperties = TermuxAppSharedProperties.getProperties();
         mProperties.loadTermuxPropertiesFromDisk();
         setActivityTheme();
+        applyMaterialYouThemeOverlay();
 
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_bubble_session);
@@ -267,8 +269,28 @@ public final class BubbleSessionActivity extends AppCompatActivity implements Se
     }
 
     private void setActivityTheme() {
-        TermuxThemeUtils.setAppNightMode(mProperties.getNightMode());
-        AppCompatActivityUtils.setNightMode(this, NightMode.getAppNightMode().getName(), true);
+        String appNightMode = TermuxThemeUtils.getAppNightMode(mProperties.getNightMode(), mProperties.getMaterialYouTheme());
+        TermuxThemeUtils.setAppNightMode(appNightMode);
+        AppCompatActivityUtils.setNightMode(this, appNightMode, true);
+    }
+
+    private void applyMaterialYouThemeOverlay() {
+        String materialYouTheme = mProperties.getMaterialYouTheme();
+        if (!TermuxThemeUtils.isMaterialYouThemeEnabled(materialYouTheme)) return;
+
+        if (TermuxPropertyConstants.IVALUE_MATERIAL_YOU_THEME_LIGHT.equals(materialYouTheme)) {
+            setTheme(R.style.Theme_TermuxActivity_M3_Light_NoActionBar);
+        } else if (TermuxPropertyConstants.IVALUE_MATERIAL_YOU_THEME_BLACK.equals(materialYouTheme)) {
+            setTheme(R.style.Theme_TermuxActivity_M3_Black_NoActionBar);
+        } else {
+            setTheme(R.style.Theme_TermuxActivity_M3_DayNight_NoActionBar);
+        }
+
+        DynamicColors.applyToActivityIfAvailable(this);
+
+        if (TermuxPropertyConstants.IVALUE_MATERIAL_YOU_THEME_BLACK.equals(materialYouTheme)) {
+            getTheme().applyStyle(R.style.Theme_TermuxActivity_M3_Black_NoActionBar, true);
+        }
     }
 
     public void onSessionFinished() {

@@ -296,6 +296,8 @@ public abstract class TermuxSharedProperties {
                 return (String) getExtraKeysStyleInternalPropertyValueFromValue(value);
             case TermuxPropertyConstants.KEY_NIGHT_MODE:
                 return (String) getNightModeInternalPropertyValueFromValue(value);
+            case TermuxPropertyConstants.KEY_MATERIAL_YOU_THEME:
+                return (String) getMaterialYouThemeInternalPropertyValueFromValue(value);
             case TermuxPropertyConstants.KEY_SOFT_KEYBOARD_TOGGLE_BEHAVIOUR:
                 return (String) getSoftKeyboardToggleBehaviourInternalPropertyValueFromValue(value);
             case TermuxPropertyConstants.KEY_VOLUME_KEYS_BEHAVIOUR:
@@ -551,6 +553,18 @@ public abstract class TermuxSharedProperties {
     }
 
     /**
+     * Returns the value itself if it is not {@code null}, otherwise returns {@link TermuxPropertyConstants#DEFAULT_IVALUE_MATERIAL_YOU_THEME}.
+     *
+     * @param value {@link String} value to convert.
+     * @return Returns the internal value for value.
+     */
+    public static String getMaterialYouThemeInternalPropertyValueFromValue(String value) {
+        return (String) SharedProperties.getDefaultIfNotInMap(TermuxPropertyConstants.KEY_MATERIAL_YOU_THEME,
+            TermuxPropertyConstants.MAP_MATERIAL_YOU_THEME, SharedProperties.toLowerCase(value),
+            TermuxPropertyConstants.DEFAULT_IVALUE_MATERIAL_YOU_THEME, true, LOG_TAG);
+    }
+
+    /**
      * Returns the value itself if it is not {@code null}, otherwise returns {@link TermuxPropertyConstants#DEFAULT_IVALUE_SOFT_KEYBOARD_TOGGLE_BEHAVIOUR}.
      *
      * @param value {@link String} value to convert.
@@ -683,6 +697,16 @@ public abstract class TermuxSharedProperties {
     public static String getNightMode(Context context) {
         return (String) TermuxSharedProperties.getTermuxInternalPropertyValue(context,
             TermuxPropertyConstants.KEY_NIGHT_MODE);
+    }
+
+    public String getMaterialYouTheme() {
+        return (String) getInternalPropertyValue(TermuxPropertyConstants.KEY_MATERIAL_YOU_THEME, true);
+    }
+
+    /** Get the {@link TermuxPropertyConstants#KEY_MATERIAL_YOU_THEME} value from the properties file on disk. */
+    public static String getMaterialYouTheme(Context context) {
+        return (String) TermuxSharedProperties.getTermuxInternalPropertyValue(context,
+            TermuxPropertyConstants.KEY_MATERIAL_YOU_THEME);
     }
 
     public boolean shouldEnableDisableSoftKeyboardOnToggle() {

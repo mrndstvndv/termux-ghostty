@@ -27,6 +27,7 @@ import com.termux.app.TermuxService;
 import com.termux.shared.termux.settings.properties.TermuxPropertyConstants;
 import com.termux.shared.termux.terminal.io.BellHandler;
 import com.termux.shared.logger.Logger;
+import com.termux.shared.termux.theme.MaterialYouTerminalColors;
 import com.termux.terminal.TerminalColors;
 import com.termux.terminal.TerminalSession;
 import com.termux.terminal.TerminalSessionClient;
@@ -516,22 +517,28 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
         try {
             File colorsFile = TermuxConstants.TERMUX_COLOR_PROPERTIES_FILE;
             File fontFile = TermuxConstants.TERMUX_FONT_FILE;
+            String materialYouTheme = mActivity.getProperties().getMaterialYouTheme();
+            boolean isMaterialYou = !TermuxPropertyConstants.IVALUE_MATERIAL_YOU_THEME_DISABLED.equals(materialYouTheme);
 
-            final Properties props = new Properties();
-            if (colorsFile.isFile()) {
+            Properties properties = new Properties();
+            if (isMaterialYou) {
+                properties.putAll(MaterialYouTerminalColors.generate(mActivity));
+            } else if (colorsFile.isFile()) {
                 try (InputStream in = new FileInputStream(colorsFile)) {
-                    props.load(in);
+                    properties.load(in);
                 }
             }
 
-            TerminalColors.COLOR_SCHEME.updateWith(props);
+            TerminalColors.COLOR_SCHEME.updateWith(properties);
             TerminalSession session = mActivity.getCurrentSession();
             if (session != null) {
                 session.reloadColorScheme();
             }
 
-            final Typeface newTypeface = (fontFile.exists() && fontFile.length() > 0) ? Typeface.createFromFile(fontFile) : Typeface.MONOSPACE;
-            mActivity.getTerminalView().setTypeface(newTypeface);
+            Typeface typeface = (fontFile.exists() && fontFile.length() > 0)
+                ? Typeface.createFromFile(fontFile)
+                : Typeface.MONOSPACE;
+            mActivity.getTerminalView().setTypeface(typeface);
         } catch (Exception e) {
             Logger.logStackTraceWithMessage(LOG_TAG, "Error in checkForFontAndColors()", e);
         }

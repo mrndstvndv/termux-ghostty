@@ -83,6 +83,9 @@ import java.util.Set;
  *
  * - 0.19.0 (2026-03-13)
  *      - Add `KEY_REMEMBER_SOFT_KEYBOARD_STATE`.
+ *
+ * - 0.20.0 (2026-03-21)
+ *      - Add `KEY_MATERIAL_YOU_THEME`.
  */
 
 /**
@@ -361,6 +364,28 @@ public final class TermuxPropertyConstants {
 
 
 
+    /** Defines the key for Material You theme variant. */
+    public static final String KEY_MATERIAL_YOU_THEME = "material-you-theme"; // Default: "material-you-theme"
+
+    public static final String IVALUE_MATERIAL_YOU_THEME_DISABLED = "disabled";
+    public static final String IVALUE_MATERIAL_YOU_THEME_LIGHT = "light";
+    public static final String IVALUE_MATERIAL_YOU_THEME_DARK = "dark";
+    public static final String IVALUE_MATERIAL_YOU_THEME_BLACK = "black";
+    public static final String IVALUE_MATERIAL_YOU_THEME_SYSTEM = "system";
+    public static final String DEFAULT_IVALUE_MATERIAL_YOU_THEME = IVALUE_MATERIAL_YOU_THEME_DISABLED;
+
+    /** Defines the bidirectional map for Material You theme values and their internal values */
+    public static final ImmutableBiMap<String, String> MAP_MATERIAL_YOU_THEME =
+        new ImmutableBiMap.Builder<String, String>()
+            .put(IVALUE_MATERIAL_YOU_THEME_DISABLED, IVALUE_MATERIAL_YOU_THEME_DISABLED)
+            .put(IVALUE_MATERIAL_YOU_THEME_LIGHT, IVALUE_MATERIAL_YOU_THEME_LIGHT)
+            .put(IVALUE_MATERIAL_YOU_THEME_DARK, IVALUE_MATERIAL_YOU_THEME_DARK)
+            .put(IVALUE_MATERIAL_YOU_THEME_BLACK, IVALUE_MATERIAL_YOU_THEME_BLACK)
+            .put(IVALUE_MATERIAL_YOU_THEME_SYSTEM, IVALUE_MATERIAL_YOU_THEME_SYSTEM)
+            .build();
+
+
+
     /** Defines the key for whether toggle soft keyboard request will show/hide or enable/disable keyboard */
     public static final String KEY_SOFT_KEYBOARD_TOGGLE_BEHAVIOUR =  "soft-keyboard-toggle-behaviour"; // Default: "soft-keyboard-toggle-behaviour"
 
@@ -440,6 +465,7 @@ public final class TermuxPropertyConstants {
         KEY_EXTRA_KEYS,
         KEY_EXTRA_KEYS_STYLE,
         KEY_NIGHT_MODE,
+        KEY_MATERIAL_YOU_THEME,
         KEY_SOFT_KEYBOARD_TOGGLE_BEHAVIOUR,
         KEY_VOLUME_KEYS_BEHAVIOUR
     ));

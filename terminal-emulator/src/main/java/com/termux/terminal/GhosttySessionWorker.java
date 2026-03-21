@@ -36,6 +36,7 @@ final class GhosttySessionWorker extends Thread {
     private static final int MSG_REQUEST_FULL_SNAPSHOT_REFRESH = 8;
     private static final int MSG_MOUSE_EVENT = 9;
     private static final int MSG_PROGRESS_TIMEOUT = 10;
+    private static final int MSG_APPLY_COLOR_SCHEME = 11;
 
     private static final long SNAPSHOT_INTERVAL_MILLIS = 16; // ~60fps
     private static final long SNAPSHOT_INTERVAL_BUSY_MILLIS = 33; // ~30fps under sustained backlog
@@ -173,6 +174,18 @@ final class GhosttySessionWorker extends Thread {
         handler.sendEmptyMessage(MSG_REQUEST_FULL_SNAPSHOT_REFRESH);
     }
 
+    void applyColorScheme(int[] colors) {
+        if (colors == null) {
+            return;
+        }
+
+        Handler handler = getWorkerHandler();
+        if (handler.hasMessages(MSG_APPLY_COLOR_SCHEME)) {
+            handler.removeMessages(MSG_APPLY_COLOR_SCHEME);
+        }
+        handler.obtainMessage(MSG_APPLY_COLOR_SCHEME, colors.clone()).sendToTarget();
+    }
+
     FrameDelta getPublishedFrameDelta() {
         return mPublishedFrameDelta.get();
     }
@@ -264,11 +277,22 @@ final class GhosttySessionWorker extends Thread {
     private void handleReset() {
         addPendingFrameReason(FrameDelta.REASON_RESET);
         mContent.reset();
+        mContent.applyColorScheme(TerminalColors.COLOR_SCHEME.mDefaultColors);
         mContent.requestFullSnapshotRefresh();
         updateCachedState();
         handleProgressUpdate();
         mSnapshotDirty.set(true);
-        scheduleSnapshotBuild(false);
+        buildAndPublishSnapshot();
+        mMainThreadHandler.post(mSession::onColorsChanged);
+    }
+
+    private void handleApplyColorScheme(int[] colors) {
+        addPendingFrameReason(FrameDelta.REASON_COLOR_SCHEME);
+        mContent.applyColorScheme(colors);
+        mContent.requestFullSnapshotRefresh();
+        mSnapshotDirty.set(true);
+        buildAndPublishSnapshot();
+        mMainThreadHandler.post(mSession::onColorsChanged);
     }
 
     private void handleViewportScroll() {
@@ -553,6 +577,9 @@ final class GhosttySessionWorker extends Thread {
                     break;
                 case MSG_PROGRESS_TIMEOUT:
                     handleProgressTimeout((Long) msg.obj);
+                    break;
+                case MSG_APPLY_COLOR_SCHEME:
+                    handleApplyColorScheme((int[]) msg.obj);
                     break;
                 case MSG_SHUTDOWN:
                     cancelProgressTimeout();

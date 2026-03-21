@@ -2,7 +2,7 @@ package com.termux.terminal;
 
 import java.nio.charset.StandardCharsets;
 
-/** A client which receives callbacks from events triggered by feeding input to a {@link TerminalEmulator}. */
+/** A client which receives callbacks from events triggered by terminal backend output. */
 public abstract class TerminalOutput {
 
     /** Write a string using the UTF-8 encoding to the terminal client. */

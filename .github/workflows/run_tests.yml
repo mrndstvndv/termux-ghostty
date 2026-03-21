@@ -16,11 +16,7 @@ jobs:
     steps:
     - name: Clone repository
       uses: actions/checkout@v6
-    - name: Setup java 17
-      uses: actions/setup-java@v5
-      with:
-        distribution: 'temurin'
-        java-version: '17'
+    - name: Install Determinate Nix
+      uses: DeterminateSystems/determinate-nix-action@v3
     - name: Execute tests
-      run: |
-        ./gradlew test
+      run: nix develop --command ./gradlew test

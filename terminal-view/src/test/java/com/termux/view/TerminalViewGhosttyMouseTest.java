@@ -4,7 +4,7 @@ import android.view.KeyEvent;
 import android.view.MotionEvent;
 
 import com.termux.terminal.GhosttyMouseEvent;
-import com.termux.terminal.TerminalEmulator;
+import com.termux.terminal.TerminalConstants;
 
 import org.junit.Test;
 
@@ -16,10 +16,9 @@ public class TerminalViewGhosttyMouseTest {
 
     @Test
     public void capturesHardwareMouseOnlyWhenGhosttyTrackingIsActive() {
-        assertTrue(TerminalView.shouldCaptureGhosttyMouse(true, true, true));
-        assertFalse(TerminalView.shouldCaptureGhosttyMouse(false, true, true));
-        assertFalse(TerminalView.shouldCaptureGhosttyMouse(true, false, true));
-        assertFalse(TerminalView.shouldCaptureGhosttyMouse(true, true, false));
+        assertTrue(TerminalView.shouldCaptureGhosttyMouse(true, true));
+        assertFalse(TerminalView.shouldCaptureGhosttyMouse(false, true));
+        assertFalse(TerminalView.shouldCaptureGhosttyMouse(true, false));
     }
 
     @Test
@@ -78,19 +77,19 @@ public class TerminalViewGhosttyMouseTest {
     public void preservesLegacyTouchButtonMappingsForGhosttyRouting() {
         assertEquals(
             GhosttyMouseEvent.BUTTON_LEFT,
-            TerminalView.ghosttyButtonFromLegacyMouseCode(TerminalEmulator.MOUSE_LEFT_BUTTON)
+            TerminalView.ghosttyButtonFromTerminalMouseCode(TerminalConstants.MOUSE_LEFT_BUTTON)
         );
         assertEquals(
             GhosttyMouseEvent.BUTTON_LEFT,
-            TerminalView.ghosttyButtonFromLegacyMouseCode(TerminalEmulator.MOUSE_LEFT_BUTTON_MOVED)
+            TerminalView.ghosttyButtonFromTerminalMouseCode(TerminalConstants.MOUSE_LEFT_BUTTON_MOVED)
         );
         assertEquals(
             GhosttyMouseEvent.BUTTON_WHEEL_UP,
-            TerminalView.ghosttyButtonFromLegacyMouseCode(TerminalEmulator.MOUSE_WHEELUP_BUTTON)
+            TerminalView.ghosttyButtonFromTerminalMouseCode(TerminalConstants.MOUSE_WHEELUP_BUTTON)
         );
         assertEquals(
             GhosttyMouseEvent.BUTTON_WHEEL_DOWN,
-            TerminalView.ghosttyButtonFromLegacyMouseCode(TerminalEmulator.MOUSE_WHEELDOWN_BUTTON)
+            TerminalView.ghosttyButtonFromTerminalMouseCode(TerminalConstants.MOUSE_WHEELDOWN_BUTTON)
         );
     }
 }

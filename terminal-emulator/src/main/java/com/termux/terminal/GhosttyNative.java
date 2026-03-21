@@ -59,6 +59,8 @@ final class GhosttyNative {
 
     static native void nativeReset(long nativeHandle);
 
+    static native int nativeSetColorScheme(long nativeHandle, int[] colors);
+
     static native int nativeResize(long nativeHandle, int columns, int rows, int cellWidthPixels, int cellHeightPixels);
 
     static native int nativeQueueMouseEvent(

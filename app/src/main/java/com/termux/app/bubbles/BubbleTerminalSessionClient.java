@@ -121,8 +121,9 @@ public final class BubbleTerminalSessionClient extends TermuxTerminalSessionClie
 
             TerminalColors.COLOR_SCHEME.updateWith(properties);
             TerminalSession session = mActivity.getCurrentSession();
-            if (session != null && session.getEmulator() != null)
-                session.getEmulator().mColors.reset();
+            if (session != null) {
+                session.reloadColorScheme();
+            }
 
             Typeface typeface = (fontFile.exists() && fontFile.length() > 0)
                 ? Typeface.createFromFile(fontFile)

@@ -1512,6 +1512,33 @@ pub export fn termux_ghostty_session_reset(session: ?*Session) void {
     handle.resetTransientState();
 }
 
+pub export fn termux_ghostty_session_set_color_scheme(
+    session: ?*Session,
+    colors: [*]const i32,
+    length: usize,
+) i32 {
+    const handle = session orelse return -1;
+    if (length < termux_palette_len) {
+        ghostty_log.err("core set_color_scheme invalid length={} session=0x{x}", .{ length, @intFromPtr(handle) });
+        return -1;
+    }
+
+    var palette: @TypeOf(handle.terminal.colors.palette.original) = undefined;
+    for (&palette, 0..) |*entry, index| {
+        entry.* = argbToRgb(@bitCast(colors[index]));
+    }
+
+    handle.terminal.colors.palette = .init(palette);
+    handle.terminal.colors.foreground = .init(argbToRgb(@bitCast(colors[@intCast(termux_default_foreground)])));
+    handle.terminal.colors.background = .init(argbToRgb(@bitCast(colors[@intCast(termux_default_background)])));
+    handle.terminal.colors.cursor = .init(argbToRgb(@bitCast(colors[@intCast(termux_default_cursor)])));
+    handle.terminal.flags.dirty.palette = true;
+    handle.markRenderStateDirty();
+    handle.requestFullSnapshotRefresh();
+    ghostty_log.debug("core set_color_scheme session=0x{x}", .{ @intFromPtr(handle) });
+    return 0;
+}
+
 pub export fn termux_ghostty_session_resize(
     session: ?*Session,
     columns: i32,
@@ -2241,6 +2268,14 @@ fn snapshotCellWidth(cell: ghostty.Cell) u8 {
 
 fn rgbToArgb(rgb: ghostty.color.RGB) u32 {
     return 0xFF000000 | (@as(u32, rgb.r) << 16) | (@as(u32, rgb.g) << 8) | @as(u32, rgb.b);
+}
+
+fn argbToRgb(argb: u32) ghostty.color.RGB {
+    return .{
+        .r = @intCast((argb >> 16) & 0xFF),
+        .g = @intCast((argb >> 8) & 0xFF),
+        .b = @intCast(argb & 0xFF),
+    };
 }
 
 fn encodeTermuxColor(color: ghostty.Style.Color, default_index: u32) u32 {

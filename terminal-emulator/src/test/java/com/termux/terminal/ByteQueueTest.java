@@ -51,4 +51,15 @@ public class ByteQueueTest extends TestCase {
 		assertEquals(0, q.read(new byte[128], false));
 	}
 
+	public void testClosePreservesBufferedBytesUntilDrained() throws Exception {
+		ByteQueue q = new ByteQueue(10);
+		assertTrue(q.write(new byte[]{1, 2, 3}, 0, 3));
+		q.close();
+
+		byte[] arr = new byte[10];
+		assertEquals(3, q.read(arr, true));
+		assertArrayEquals(new byte[]{1, 2, 3}, new byte[]{arr[0], arr[1], arr[2]});
+		assertEquals(-1, q.read(arr, true));
+	}
+
 }

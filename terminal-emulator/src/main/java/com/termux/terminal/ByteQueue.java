@@ -33,7 +33,7 @@ final class ByteQueue {
                 return 0;
             }
         }
-        if (!mOpen) return -1;
+        if (mStoredBytes == 0 && !mOpen) return -1;
 
         int totalRead = 0;
         int bufferLength = mBuffer.length;

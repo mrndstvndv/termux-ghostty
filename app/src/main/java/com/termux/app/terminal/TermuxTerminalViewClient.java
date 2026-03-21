@@ -119,10 +119,9 @@ public class TermuxTerminalViewClient extends TermuxTerminalViewClientBase {
 
         TerminalSession currentSession = mActivity.getCurrentSession();
         if (currentSession != null && currentSession.hasActiveTerminalBackend()) {
-            // Start terminal cursor blinking if enabled
-            // If emulator is already set, then start blinker now, otherwise wait for onEmulatorSet()
-            // event to start it. This is needed since onEmulatorSet() may not be called after
-            // TermuxActivity is started after device display timeout with double tap and not power button.
+            // Start terminal cursor blinking if enabled.
+            // If the session is already ready, start now. Otherwise wait for onTerminalReady(),
+            // which may arrive after the final size pass once the view can initialize the backend.
             setTerminalCursorBlinkerState(true);
             mTerminalCursorBlinkerStateAlreadySet = true;
         }
@@ -155,17 +154,14 @@ public class TermuxTerminalViewClient extends TermuxTerminalViewClientBase {
     }
 
     /**
-     * Should be called when {@link com.termux.view.TerminalView#mEmulator} is set
+     * Should be called when the attached terminal becomes ready for use.
      */
     @Override
-    public void onEmulatorSet() {
+    public void onTerminalReady() {
         if (!mTerminalCursorBlinkerStateAlreadySet) {
-            // Start terminal cursor blinking if enabled
-            // We need to wait for the first session to be attached that's set in
-            // TermuxActivity.onServiceConnected() and then the multiple calls to TerminalView.updateSize()
-            // where the final one eventually sets the mEmulator when width/height is not 0. Otherwise
-            // blinker will not start again if TermuxActivity is started again after exiting it with
-            // double back press. Check TerminalView.setTerminalCursorBlinkerState().
+            // Wait for the first attached session to finish its final size pass before starting
+            // the blinker. Otherwise the first session may miss blink startup after activity
+            // recreation when the view was still measuring.
             setTerminalCursorBlinkerState(true);
             mTerminalCursorBlinkerStateAlreadySet = true;
         }

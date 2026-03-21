@@ -75,7 +75,7 @@ public interface TerminalViewClient {
 
     void onSoftKeyboardDismissed();
 
-    void onEmulatorSet();
+    void onTerminalReady();
 
 
     void logError(String tag, String message);

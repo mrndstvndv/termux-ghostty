@@ -56,6 +56,35 @@ pub export fn Java_com_termux_terminal_GhosttyNative_nativeReset(
     core.termux_ghostty_session_reset(sessionFromHandle(native_handle));
 }
 
+pub export fn Java_com_termux_terminal_GhosttyNative_nativeSetColorScheme(
+    env: ?*c.JNIEnv,
+    clazz: c.jclass,
+    native_handle: jlong,
+    colors: c.jintArray,
+) jint {
+    _ = clazz;
+
+    const jni = env orelse {
+        ghostty_log.err("jni nativeSetColorScheme missing env handle=0x{x}", .{ native_handle });
+        return -1;
+    };
+    const handle = sessionFromHandle(native_handle) orelse {
+        ghostty_log.err("jni nativeSetColorScheme invalid handle=0x{x}", .{ native_handle });
+        return -1;
+    };
+
+    const color_count = jni.*.*.GetArrayLength.?(jni, colors);
+    if (color_count < 259) {
+        ghostty_log.err("jni nativeSetColorScheme invalid color count handle=0x{x} count={}", .{ native_handle, color_count });
+        return -1;
+    }
+
+    var color_buffer: [259]jint = undefined;
+    jni.*.*.GetIntArrayRegion.?(jni, colors, 0, 259, &color_buffer);
+    const colors_ptr: [*]const i32 = @ptrCast(color_buffer[0..].ptr);
+    return @intCast(core.termux_ghostty_session_set_color_scheme(handle, colors_ptr, color_buffer.len));
+}
+
 pub export fn Java_com_termux_terminal_GhosttyNative_nativeResize(
     env: ?*c.JNIEnv,
     clazz: c.jclass,

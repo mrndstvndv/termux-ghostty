@@ -14,13 +14,13 @@ The project is organized as a Gradle monorepo with the following subprojects:
 ## Building and Running
 
 ### Prerequisites
--   Android SDK and NDK (configured in `local.properties` or environment variables).
--   Java 11 or higher.
+-   [Nix](https://nixos.org/) with flakes enabled (or use `nix develop` from the flake).
+-   All toolchain (JDK 17, Android SDK/NDK, Zig) is provided by the Nix dev shell.
 
 ### Key Commands
--   **Build Debug APK**: `./gradlew assembleDebug`
--   **Run Unit Tests**: `./gradlew test` (Uses Robolectric for Android logic tests).
--   **Clean Build**: `./gradlew clean`
+-   **Build Debug APK**: `nix develop --command ./gradlew assembleDebug`
+-   **Run Unit Tests**: `nix develop --command ./gradlew test` (Uses Robolectric for Android logic tests).
+-   **Clean Build**: `nix develop --command ./gradlew clean`
 
 ### Build Configuration
 -   **Bootstrap**: The build process automatically downloads minimal Linux environments (bootstrap zips).
@@ -35,14 +35,17 @@ The project is organized as a Gradle monorepo with the following subprojects:
 -   **Compatibility**: Ensure changes in `:termux-shared` or `:terminal-view` do not break compatibility with plugin apps.
 
 ### Commit Guidelines
--   **Format**: Use semantic commit subjects in the exact format `Type: Summary` so changelog tooling can parse them.
--   **Types**: Use `Added`, `Changed`, `Deprecated`, `Removed`, `Fixed`, `Security`.
--   **Style**: Use sentence case for the summary and keep it to one line (e.g., `Removed: Legacy Java terminal backend`).
--   **Avoid**: Do not use lowercase Conventional Commit prefixes like `feat:` or `fix:` in this repository.
+-   **Format**: Use Conventional Commits so the release changelog tooling can parse them. Format: `type(scope): description`.
+-   **Types**: `feat` (features), `fix` (bug fixes), `update` (changes), `ui` (UI changes), `refactor`, `perf` (performance).
+-   **Scope**: Optional. E.g. `feat(bubble): add unread tracking`.
+-   **Breaking changes**: Append `!` before `:` (e.g. `feat!: drop Android 5 support`) or include `BREAKING CHANGE:` in the commit body.
+-   **Skipped** (not in changelog): `ci`, `chore`, `doc`, `Merge`, `Revert`.
+-   **Style**: Use sentence case for the description. Keep it to one line.
 
 ### Versioning
 -   Follows [Semantic Versioning 2.0.0](https://semver.org/).
 -   Version names in `build.gradle` must strictly follow the `major.minor.patch` format.
+-   The `publish-release.yml` workflow auto-bumps version based on commit types and creates a GitHub release.
 
 ## Key Files
 -   `README.md`: High-level user and contributor information.

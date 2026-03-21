@@ -3,7 +3,6 @@ package com.termux.terminal;
 import android.annotation.SuppressLint;
 import android.os.Handler;
 import android.os.Message;
-import android.os.SystemClock;
 import android.system.ErrnoException;
 import android.system.Os;
 import android.system.OsConstants;
@@ -19,31 +18,25 @@ import java.io.InputStream;
 import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicReference;
-import java.util.Objects;
 import java.util.UUID;
 
 /**
  * A terminal session, consisting of a process coupled to a terminal interface.
  * <p>
- * The subprocess will be executed by the constructor, and when the size is made known by a call to
- * {@link #updateSize(int, int, int, int)} terminal emulation will begin and threads will be spawned to handle the subprocess I/O.
- * All terminal emulation and callback methods will be performed on the main thread.
+ * The subprocess will be executed after the first successful call to
+ * {@link #updateSize(int, int, int, int)}. At that point the Ghostty backend is initialized and
+ * threads are spawned to handle subprocess I/O.
+ * <p>
+ * Terminal mutation happens on the Ghostty worker thread. UI callbacks are posted back to the main
+ * thread.
  * <p>
  * The child process may be exited forcefully by using the {@link #finishIfRunning()} method.
  * <p>
- * NOTE: The terminal session may outlive the EmulatorView, so be careful with callbacks!
+ * NOTE: The terminal session may outlive the terminal view, so be careful with callbacks!
  */
 public final class TerminalSession extends TerminalOutput {
 
-    private static final int MSG_NEW_INPUT = 1;
     private static final int MSG_PROCESS_EXITED = 4;
-    private static final int MAIN_THREAD_INPUT_BUFFER_BYTES = 16 * 1024;
-    private static final long MAIN_THREAD_INPUT_BUDGET_MILLIS = 8;
-    private static final long MAIN_THREAD_INPUT_RESCHEDULE_DELAY_MILLIS = 1;
-
-    /** Temporary development toggle for bringing up the Ghostty backend in-app. */
-    private static final boolean FORCE_GHOSTTY_BACKEND = true;
 
     public static final int GHOSTTY_PROGRESS_STATE_NONE = GhosttyNative.PROGRESS_STATE_NONE;
     public static final int GHOSTTY_PROGRESS_STATE_SET = GhosttyNative.PROGRESS_STATE_SET;
@@ -53,14 +46,11 @@ public final class TerminalSession extends TerminalOutput {
 
     public final String mHandle = UUID.randomUUID().toString();
 
-    TerminalEmulator mEmulator;
     private GhosttyTerminalContent mGhosttyTerminalContent;
     private GhosttySessionWorker mGhosttySessionWorker;
-    private final JavaTerminalContentAdapter mJavaTerminalContentAdapter = new JavaTerminalContentAdapter();
 
     /**
-     * A queue written to from a separate thread when the process outputs, and read by main thread to process by
-     * terminal emulator.
+     * A queue written to from a separate thread when the process outputs and read by the Ghostty worker.
      */
     final ByteQueue mProcessToTerminalIOQueue = new ByteQueue(64 * 1024);
     /**
@@ -142,13 +132,9 @@ public final class TerminalSession extends TerminalOutput {
      */
     public void updateTerminalSessionClient(TerminalSessionClient client) {
         mClient = client;
-
-        if (mEmulator != null) {
-            mEmulator.updateTerminalSessionClient(client);
-        }
     }
 
-    /** Inform the attached pty of the new size and reflow or initialize the emulator. */
+    /** Inform the attached pty of the new size or initialize the Ghostty backend. */
     public void updateSize(int columns, int rows, int cellWidthPixels, int cellHeightPixels) {
         if (!hasActiveTerminalBackend()) {
             GhosttyLog.info("Initializing terminal backend columns=" + columns + " rows=" + rows + " cellWidth=" + cellWidthPixels + " cellHeight=" + cellHeightPixels);
@@ -166,21 +152,13 @@ public final class TerminalSession extends TerminalOutput {
         if (mGhosttySessionWorker != null) {
             GhosttyLog.debug("Enqueuing Ghostty resize pid=" + mShellPid + " columns=" + columns + " rows=" + rows + " cellWidth=" + cellWidthPixels + " cellHeight=" + cellHeightPixels);
             mGhosttySessionWorker.resize(columns, rows, cellWidthPixels, cellHeightPixels);
-            return;
-        }
-
-        if (mEmulator != null) {
-            mEmulator.resize(columns, rows, cellWidthPixels, cellHeightPixels);
         }
     }
 
     /** The terminal title as set through escape sequences or null if none set. */
     @Nullable
     public String getTitle() {
-        if (mGhosttyTerminalContent != null) {
-            return mTitle;
-        }
-        return (mEmulator == null) ? null : mEmulator.getTitle();
+        return mTitle;
     }
 
     public int getGhosttyProgressState() {
@@ -216,8 +194,16 @@ public final class TerminalSession extends TerminalOutput {
      * @param rows    The number of rows in the terminal window.
      */
     public void initializeTerminalBackend(int columns, int rows, int cellWidthPixels, int cellHeightPixels) {
-        boolean requestedGhosttyBackend = shouldUseGhosttyBackend();
-        GhosttyLog.info("initializeTerminalBackend requestedGhostty=" + requestedGhosttyBackend + " columns=" + columns + " rows=" + rows + " transcriptRows=" + resolveTranscriptRows());
+        if (!GhosttyNative.isLibraryLoaded()) {
+            String message = "Ghostty native library is not loaded";
+            mShellPid = -1;
+            mShellExitStatus = 1;
+            GhosttyLog.error(message + " for session " + mHandle);
+            Logger.logError(mClient, LOG_TAG, message);
+            throw new IllegalStateException(message);
+        }
+
+        GhosttyLog.info("initializeTerminalBackend columns=" + columns + " rows=" + rows + " transcriptRows=" + resolveTranscriptRows());
 
         this.mColumns = columns;
         this.mRows = rows;
@@ -225,32 +211,40 @@ public final class TerminalSession extends TerminalOutput {
         this.mCellHeightPixels = cellHeightPixels;
         this.mLastKnownActiveRows = rows;
 
-        if (requestedGhosttyBackend) {
-            try {
-                mGhosttyTerminalContent = new GhosttyTerminalContent(columns, rows, resolveTranscriptRows(), cellWidthPixels, cellHeightPixels);
-                mLastKnownGhosttyTranscriptRows = mGhosttyTerminalContent.getActiveTranscriptRows();
-                mGhosttySessionWorker = new GhosttySessionWorker(this, mGhosttyTerminalContent, mProcessToTerminalIOQueue, mMainThreadHandler, cellWidthPixels, cellHeightPixels);
-                mGhosttySessionWorker.start();
-                mEmulator = null;
-                mJavaTerminalContentAdapter.setTerminalEmulator(null);
-                GhosttyLog.info("Ghostty backend selected for session " + mHandle);
-            } catch (Throwable error) {
-                GhosttyLog.warn("Ghostty backend creation failed for session " + mHandle + ", falling back to Java emulator", error);
-                Logger.logWarn(mClient, LOG_TAG, "Ghostty backend unavailable, falling back to Java emulator: " + error.getMessage());
+        try {
+            mGhosttyTerminalContent = new GhosttyTerminalContent(columns, rows, resolveTranscriptRows(), cellWidthPixels, cellHeightPixels);
+            mLastKnownGhosttyTranscriptRows = mGhosttyTerminalContent.getActiveTranscriptRows();
+            mLastKnownActiveRows = mGhosttyTerminalContent.getActiveRows();
+            mGhosttyModeBits = mGhosttyTerminalContent.getModeBits();
+            mGhosttyAlternateBufferActive = mGhosttyTerminalContent.isAlternateBufferActive();
+            mGhosttyReverseVideo = mGhosttyTerminalContent.isReverseVideo();
+            mGhosttyCursorVisible = mGhosttyTerminalContent.isCursorEnabled();
+            mGhosttyCursorRow = mGhosttyTerminalContent.getCursorRow();
+            mGhosttyCursorCol = mGhosttyTerminalContent.getCursorCol();
+            mGhosttyCursorStyle = mGhosttyTerminalContent.getCursorStyle();
+            mGhosttySessionWorker = new GhosttySessionWorker(this, mGhosttyTerminalContent, mProcessToTerminalIOQueue, mMainThreadHandler, cellWidthPixels, cellHeightPixels);
+            mGhosttySessionWorker.start();
+            GhosttyLog.info("Ghostty backend selected for session " + mHandle);
+        } catch (Throwable error) {
+            if (mGhosttyTerminalContent != null) {
+                try {
+                    mGhosttyTerminalContent.close();
+                } catch (Exception ignored) {
+                }
                 mGhosttyTerminalContent = null;
             }
-        }
-
-        if (mGhosttyTerminalContent == null) {
-            GhosttyLog.info("Java terminal emulator selected for session " + mHandle);
-            mEmulator = new TerminalEmulator(this, columns, rows, cellWidthPixels, cellHeightPixels, mTranscriptRows, mClient);
-            mJavaTerminalContentAdapter.setTerminalEmulator(mEmulator);
+            mGhosttySessionWorker = null;
+            mShellPid = -1;
+            mShellExitStatus = 1;
+            GhosttyLog.error("Ghostty backend creation failed for session " + mHandle, error);
+            Logger.logError(mClient, LOG_TAG, "Failed to initialize Ghostty backend: " + error.getMessage());
+            throw new IllegalStateException("Failed to initialize Ghostty backend", error);
         }
 
         int[] processId = new int[1];
         mTerminalFileDescriptor = JNI.createSubprocess(mShellPath, mCwd, mArgs, mEnv, processId, rows, columns, cellWidthPixels, cellHeightPixels);
         mShellPid = processId[0];
-        GhosttyLog.info("Subprocess created session=" + mHandle + " pid=" + mShellPid + " fd=" + mTerminalFileDescriptor + " backend=" + (mGhosttyTerminalContent != null ? "ghostty" : "java"));
+        GhosttyLog.info("Subprocess created session=" + mHandle + " pid=" + mShellPid + " fd=" + mTerminalFileDescriptor + " backend=ghostty");
         mClient.setTerminalShellPid(this, mShellPid);
 
         final FileDescriptor terminalFileDescriptorWrapped = wrapFileDescriptor(mTerminalFileDescriptor, mClient);
@@ -266,8 +260,6 @@ public final class TerminalSession extends TerminalOutput {
                         if (!mProcessToTerminalIOQueue.write(buffer, 0, read)) return;
                         if (mGhosttySessionWorker != null) {
                             mGhosttySessionWorker.onOutputAvailable();
-                        } else if (!mMainThreadHandler.hasMessages(MSG_NEW_INPUT)) {
-                            mMainThreadHandler.sendEmptyMessage(MSG_NEW_INPUT);
                         }
                     }
                 } catch (Exception e) {
@@ -302,24 +294,12 @@ public final class TerminalSession extends TerminalOutput {
     }
 
     public boolean hasActiveTerminalBackend() {
-        return mGhosttyTerminalContent != null || mEmulator != null;
-    }
-
-    public boolean isUsingGhosttyBackend() {
         return mGhosttyTerminalContent != null;
     }
 
     @Nullable
     public TerminalContent getTerminalContent() {
-        if (mGhosttyTerminalContent != null) {
-            return mGhosttyTerminalContent;
-        }
-        if (mEmulator == null) {
-            return null;
-        }
-
-        mJavaTerminalContentAdapter.setTerminalEmulator(mEmulator);
-        return mJavaTerminalContentAdapter;
+        return mGhosttyTerminalContent;
     }
 
     /** Write data to the shell process. */
@@ -356,23 +336,14 @@ public final class TerminalSession extends TerminalOutput {
     }
 
     @Nullable
-    public TerminalEmulator getEmulator() {
-        return mEmulator;
-    }
-
-    @Nullable
     public String getSelectedText(int startColumn, int startRow, int endColumn, int endRow) {
-        if (mGhosttySessionWorker != null) {
-            return mGhosttyTerminalContent.getSelectedText(startColumn, startRow, endColumn, endRow);
-        }
-        return mEmulator == null ? null : mEmulator.getSelectedText(startColumn, startRow, endColumn, endRow);
+        return mGhosttyTerminalContent == null
+            ? null
+            : mGhosttyTerminalContent.getSelectedText(startColumn, startRow, endColumn, endRow);
     }
 
     public int getActiveRows() {
-        if (mGhosttySessionWorker != null) {
-            return mLastKnownActiveRows;
-        }
-        return mEmulator == null ? 0 : mEmulator.getScreen().getActiveRows();
+        return mGhosttyTerminalContent == null ? 0 : mLastKnownActiveRows;
     }
 
     public int getRows() {
@@ -392,95 +363,43 @@ public final class TerminalSession extends TerminalOutput {
     }
 
     public int getCursorRow() {
-        if (mGhosttySessionWorker != null) {
-            return mGhosttyCursorRow;
-        }
-
-        TerminalContent terminalContent = getTerminalContent();
-        return terminalContent == null ? 0 : terminalContent.getCursorRow();
+        return mGhosttyCursorRow;
     }
 
     public int getCursorCol() {
-        if (mGhosttySessionWorker != null) {
-            return mGhosttyCursorCol;
-        }
-
-        TerminalContent terminalContent = getTerminalContent();
-        return terminalContent == null ? 0 : terminalContent.getCursorCol();
+        return mGhosttyCursorCol;
     }
 
     public int getCursorStyle() {
-        if (mGhosttySessionWorker != null) {
-            return mGhosttyCursorStyle;
-        }
-
-        TerminalContent terminalContent = getTerminalContent();
-        return terminalContent == null ? 0 : terminalContent.getCursorStyle();
+        return mGhosttyCursorStyle;
     }
 
     public boolean shouldCursorBeVisible() {
-        if (mGhosttySessionWorker != null) {
-            return mGhosttyCursorVisible && (!mGhosttyCursorBlinkingEnabled || mGhosttyCursorBlinkState);
-        }
-
-        TerminalContent terminalContent = getTerminalContent();
-        return terminalContent != null && terminalContent.shouldCursorBeVisible();
+        return mGhosttyCursorVisible && (!mGhosttyCursorBlinkingEnabled || mGhosttyCursorBlinkState);
     }
 
     public boolean isReverseVideo() {
-        if (mGhosttySessionWorker != null) {
-            return mGhosttyReverseVideo;
-        }
-
-        TerminalContent terminalContent = getTerminalContent();
-        return terminalContent != null && terminalContent.isReverseVideo();
+        return mGhosttyReverseVideo;
     }
 
     public boolean isMouseTrackingActive() {
-        if (mGhosttySessionWorker != null) {
-            return (mGhosttyModeBits & GhosttyNative.MODE_MOUSE_TRACKING) != 0;
-        }
-        TerminalContent terminalContent = getTerminalContent();
-        return terminalContent != null && terminalContent.isMouseTrackingActive();
+        return (mGhosttyModeBits & GhosttyNative.MODE_MOUSE_TRACKING) != 0;
     }
 
     public boolean isAlternateBufferActive() {
-        if (mGhosttySessionWorker != null) {
-            return mGhosttyAlternateBufferActive;
-        }
-        TerminalContent terminalContent = getTerminalContent();
-        return terminalContent != null && terminalContent.isAlternateBufferActive();
+        return mGhosttyAlternateBufferActive;
     }
 
     public boolean isCursorKeysApplicationMode() {
-        if (mGhosttySessionWorker != null) {
-            return (mGhosttyModeBits & GhosttyNative.MODE_CURSOR_KEYS_APPLICATION) != 0;
-        }
-        return mEmulator != null && mEmulator.isCursorKeysApplicationMode();
+        return (mGhosttyModeBits & GhosttyNative.MODE_CURSOR_KEYS_APPLICATION) != 0;
     }
 
     public boolean isKeypadApplicationMode() {
-        if (mGhosttySessionWorker != null) {
-            return (mGhosttyModeBits & GhosttyNative.MODE_KEYPAD_APPLICATION) != 0;
-        }
-        return mEmulator != null && mEmulator.isKeypadApplicationMode();
+        return (mGhosttyModeBits & GhosttyNative.MODE_KEYPAD_APPLICATION) != 0;
     }
 
     public boolean isBracketedPasteMode() {
-        if (mGhosttySessionWorker != null) {
-            return (mGhosttyModeBits & GhosttyNative.MODE_BRACKETED_PASTE) != 0;
-        }
-        return false;
-    }
-
-    public void sendMouseEvent(int mouseButton, int column, int row, boolean pressed) {
-        if (mGhosttyTerminalContent != null) {
-            return;
-        }
-
-        if (mEmulator != null) {
-            mEmulator.sendMouseEvent(mouseButton, column, row, pressed);
-        }
+        return (mGhosttyModeBits & GhosttyNative.MODE_BRACKETED_PASTE) != 0;
     }
 
     public void sendGhosttyMouseEvent(GhosttyMouseEvent event) {
@@ -492,14 +411,7 @@ public final class TerminalSession extends TerminalOutput {
     }
 
     public void paste(String text) {
-        if (text == null) {
-            return;
-        }
-
-        if (mGhosttyTerminalContent == null) {
-            if (mEmulator != null) {
-                mEmulator.paste(text);
-            }
+        if (text == null || mGhosttyTerminalContent == null) {
             return;
         }
 
@@ -514,32 +426,25 @@ public final class TerminalSession extends TerminalOutput {
     }
 
     public void setCursorBlinkingEnabled(boolean cursorBlinkingEnabled) {
-        if (mGhosttyTerminalContent != null) {
-            mGhosttyCursorBlinkingEnabled = cursorBlinkingEnabled;
-            mGhosttyTerminalContent.setCursorBlinkingEnabled(cursorBlinkingEnabled);
+        if (mGhosttyTerminalContent == null) {
             return;
         }
-        if (mEmulator != null) {
-            mEmulator.setCursorBlinkingEnabled(cursorBlinkingEnabled);
-        }
+
+        mGhosttyCursorBlinkingEnabled = cursorBlinkingEnabled;
+        mGhosttyTerminalContent.setCursorBlinkingEnabled(cursorBlinkingEnabled);
     }
 
     public void setCursorBlinkState(boolean cursorBlinkState) {
-        if (mGhosttyTerminalContent != null) {
-            mGhosttyCursorBlinkState = cursorBlinkState;
-            mGhosttyTerminalContent.setCursorBlinkState(cursorBlinkState);
+        if (mGhosttyTerminalContent == null) {
             return;
         }
-        if (mEmulator != null) {
-            mEmulator.setCursorBlinkState(cursorBlinkState);
-        }
+
+        mGhosttyCursorBlinkState = cursorBlinkState;
+        mGhosttyTerminalContent.setCursorBlinkState(cursorBlinkState);
     }
 
     public boolean isCursorEnabled() {
-        if (mGhosttySessionWorker != null) {
-            return mGhosttyCursorVisible;
-        }
-        return mEmulator != null && mEmulator.isCursorEnabled();
+        return mGhosttyCursorVisible;
     }
 
     public void setGhosttyTopRow(int topRow) {
@@ -551,6 +456,12 @@ public final class TerminalSession extends TerminalOutput {
     public void requestGhosttyFullSnapshotRefresh() {
         if (mGhosttySessionWorker != null) {
             mGhosttySessionWorker.requestFullSnapshotRefresh();
+        }
+    }
+
+    public void reloadColorScheme() {
+        if (mGhosttySessionWorker != null) {
+            mGhosttySessionWorker.applyColorScheme(TerminalColors.COLOR_SCHEME.mDefaultColors);
         }
     }
 
@@ -575,28 +486,19 @@ public final class TerminalSession extends TerminalOutput {
         mClient.onTerminalProtocolNotification(this, title, body);
     }
 
-    /** Notify the {@link #mClient} that terminal text changed and higher-level listeners should refresh. */
-    protected void notifyTextChanged() {
-        mClient.onTextChanged(this);
-    }
-
     /** Notify the {@link #mClient} that a new frame is ready to draw. */
     protected void notifyFrameAvailable() {
         mClient.onFrameAvailable(this);
     }
 
-    /** Reset state for terminal emulator state. */
+    /** Reset state for the active terminal backend. */
     public void reset() {
-        if (mGhosttySessionWorker != null) {
-            GhosttyLog.debug("Resetting Ghostty session via worker " + mHandle);
-            mGhosttySessionWorker.reset();
+        if (mGhosttySessionWorker == null) {
             return;
         }
 
-        if (mEmulator != null) {
-            mEmulator.reset();
-            notifyTextChanged();
-        }
+        GhosttyLog.debug("Resetting Ghostty session via worker " + mHandle);
+        mGhosttySessionWorker.reset();
     }
 
     /** Finish this terminal session by sending SIGKILL to the shell. */
@@ -630,10 +532,7 @@ public final class TerminalSession extends TerminalOutput {
     }
 
     public int getActiveTranscriptRows() {
-        if (mGhosttySessionWorker != null) {
-            return mLastKnownGhosttyTranscriptRows;
-        }
-        return mEmulator == null ? 0 : mEmulator.getScreen().getActiveTranscriptRows();
+        return mGhosttyTerminalContent == null ? 0 : mLastKnownGhosttyTranscriptRows;
     }
 
     @Nullable
@@ -704,43 +603,26 @@ public final class TerminalSession extends TerminalOutput {
     }
 
     public boolean isAutoScrollDisabled() {
-        if (mGhosttyTerminalContent != null) {
-            return mAutoScrollDisabled;
-        }
-        return mEmulator != null && mEmulator.isAutoScrollDisabled();
+        return mGhosttyTerminalContent != null && mAutoScrollDisabled;
     }
 
     public void toggleAutoScrollDisabled() {
         if (mGhosttyTerminalContent != null) {
             mAutoScrollDisabled = !mAutoScrollDisabled;
-            return;
-        }
-        if (mEmulator != null) {
-            mEmulator.toggleAutoScrollDisabled();
         }
     }
 
     public int getScrollCounter() {
-        if (mGhosttySessionWorker != null) {
-            return mScrollCounter.get();
-        }
-        return mEmulator == null ? 0 : mEmulator.getScrollCounter();
+        return mGhosttySessionWorker == null ? 0 : mScrollCounter.get();
     }
 
     public void clearScrollCounter() {
         if (mGhosttySessionWorker != null) {
             mScrollCounter.set(0);
-            return;
-        }
-        if (mEmulator != null) {
-            mEmulator.clearScrollCounter();
         }
     }
 
     public int getBackgroundColor() {
-        if (mEmulator != null) {
-            return mEmulator.mColors.mCurrentColors[TextStyle.COLOR_INDEX_BACKGROUND];
-        }
         FrameDelta frameDelta = getGhosttyPublishedFrameDelta();
         if (frameDelta != null) {
             return frameDelta.getTransportSnapshot().getPaletteColor(TextStyle.COLOR_INDEX_BACKGROUND);
@@ -748,27 +630,21 @@ public final class TerminalSession extends TerminalOutput {
         return TerminalColors.COLOR_SCHEME.mDefaultColors[TextStyle.COLOR_INDEX_BACKGROUND];
     }
 
-    private boolean shouldUseGhosttyBackend() {
-        return FORCE_GHOSTTY_BACKEND && GhosttyNative.isLibraryLoaded();
+    static int resolveTranscriptRows(@Nullable Integer transcriptRows) {
+        if (transcriptRows == null) {
+            return TerminalConstants.DEFAULT_TERMINAL_TRANSCRIPT_ROWS;
+        }
+        if (transcriptRows < TerminalConstants.TERMINAL_TRANSCRIPT_ROWS_MIN) {
+            return TerminalConstants.DEFAULT_TERMINAL_TRANSCRIPT_ROWS;
+        }
+        if (transcriptRows > TerminalConstants.TERMINAL_TRANSCRIPT_ROWS_MAX) {
+            return TerminalConstants.DEFAULT_TERMINAL_TRANSCRIPT_ROWS;
+        }
+        return transcriptRows;
     }
 
     private int resolveTranscriptRows() {
-        if (mTranscriptRows == null) {
-            return TerminalEmulator.DEFAULT_TERMINAL_TRANSCRIPT_ROWS;
-        }
-        if (mTranscriptRows < TerminalEmulator.TERMINAL_TRANSCRIPT_ROWS_MIN) {
-            return TerminalEmulator.DEFAULT_TERMINAL_TRANSCRIPT_ROWS;
-        }
-        if (mTranscriptRows > TerminalEmulator.TERMINAL_TRANSCRIPT_ROWS_MAX) {
-            return TerminalEmulator.DEFAULT_TERMINAL_TRANSCRIPT_ROWS;
-        }
-        return mTranscriptRows;
-    }
-
-    private void appendToActiveBackend(byte[] buffer, int bytesRead) {
-        if (mEmulator != null) {
-            mEmulator.append(buffer, bytesRead);
-        }
+        return resolveTranscriptRows(mTranscriptRows);
     }
 
     private static FileDescriptor wrapFileDescriptor(int fileDescriptor, TerminalSessionClient client) {
@@ -792,16 +668,8 @@ public final class TerminalSession extends TerminalOutput {
     @SuppressLint("HandlerLeak")
     class MainThreadHandler extends Handler {
 
-        final byte[] mReceiveBuffer = new byte[MAIN_THREAD_INPUT_BUFFER_BYTES];
-
         @Override
         public void handleMessage(Message msg) {
-            removeMessages(MSG_NEW_INPUT);
-
-            if (drainProcessToTerminalQueue(msg.what != MSG_PROCESS_EXITED)) {
-                notifyTextChanged();
-            }
-
             if (msg.what != MSG_PROCESS_EXITED) {
                 return;
             }
@@ -820,45 +688,11 @@ public final class TerminalSession extends TerminalOutput {
 
             byte[] bytesToWrite = exitDescription.getBytes(StandardCharsets.UTF_8);
             if (mGhosttySessionWorker != null) {
+                mGhosttySessionWorker.onOutputAvailable();
                 mGhosttySessionWorker.appendDirect(bytesToWrite);
-            } else {
-                appendToActiveBackend(bytesToWrite, bytesToWrite.length);
-                notifyTextChanged();
             }
 
             mClient.onSessionFinished(TerminalSession.this);
-        }
-
-        private boolean drainProcessToTerminalQueue(boolean timeSlice) {
-            boolean screenUpdated = false;
-            long deadline = timeSlice ? SystemClock.uptimeMillis() + MAIN_THREAD_INPUT_BUDGET_MILLIS : Long.MAX_VALUE;
-
-            while (true) {
-                int bytesRead = mProcessToTerminalIOQueue.read(mReceiveBuffer, false);
-                if (bytesRead <= 0) {
-                    return screenUpdated;
-                }
-
-                if (mGhosttySessionWorker != null) {
-                    mGhosttySessionWorker.onOutputAvailable();
-                    return screenUpdated;
-                }
-
-                appendToActiveBackend(mReceiveBuffer, bytesRead);
-                screenUpdated = true;
-
-                if (!timeSlice) {
-                    continue;
-                }
-                if (SystemClock.uptimeMillis() < deadline) {
-                    continue;
-                }
-
-                if (!hasMessages(MSG_NEW_INPUT)) {
-                    sendEmptyMessageDelayed(MSG_NEW_INPUT, MAIN_THREAD_INPUT_RESCHEDULE_DELAY_MILLIS);
-                }
-                return screenUpdated;
-            }
         }
 
     }

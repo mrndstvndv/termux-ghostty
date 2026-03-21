@@ -7,14 +7,11 @@ import android.view.MotionEvent;
 import androidx.annotation.Nullable;
 
 import com.termux.shared.logger.Logger;
-import com.termux.shared.termux.data.TermuxUrlUtils;
 import com.termux.shared.termux.settings.properties.TermuxSharedProperties;
 import com.termux.terminal.TerminalSession;
 import com.termux.view.TerminalView;
 import com.termux.view.TerminalViewClient;
 import com.termux.view.TerminalViewLinkLayout;
-
-import java.util.LinkedHashSet;
 
 public class TermuxTerminalViewClientBase implements TerminalViewClient {
 
@@ -68,17 +65,8 @@ public class TermuxTerminalViewClientBase implements TerminalViewClient {
             return null;
         }
 
-        if (session.isUsingGhosttyBackend()) {
-            TerminalViewLinkLayout.LinkHit hit = terminalView.getVisibleLinkHit(e);
-            return hit == null ? null : hit.getUrl();
-        }
-
-        int[] columnAndRow = terminalView.getColumnAndRow(e, true);
-        String wordAtTap = session.getTerminalContent().getWordAtLocation(columnAndRow[0], columnAndRow[1]);
-        LinkedHashSet<CharSequence> urlSet = TermuxUrlUtils.extractUrls(wordAtTap == null ? "" : wordAtTap);
-        if (urlSet.isEmpty()) return null;
-
-        return urlSet.iterator().next().toString();
+        TerminalViewLinkLayout.LinkHit hit = terminalView.getVisibleLinkHit(e);
+        return hit == null ? null : hit.getUrl();
     }
 
     @Override
@@ -137,7 +125,7 @@ public class TermuxTerminalViewClientBase implements TerminalViewClient {
     }
 
     @Override
-    public void onEmulatorSet() {
+    public void onTerminalReady() {
 
     }
 

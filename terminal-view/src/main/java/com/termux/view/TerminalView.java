@@ -40,13 +40,12 @@ import androidx.annotation.RequiresApi;
 
 import com.termux.terminal.FrameDelta;
 import com.termux.terminal.GhosttyMouseEvent;
-import com.termux.terminal.JavaTerminalContentAdapter;
 import com.termux.terminal.KeyHandler;
 import com.termux.terminal.RenderFrameCache;
 import com.termux.terminal.ScreenSnapshot;
+import com.termux.terminal.TerminalConstants;
 import com.termux.terminal.TerminalContent;
 import com.termux.terminal.ViewportLinkSnapshot;
-import com.termux.terminal.TerminalEmulator;
 import com.termux.terminal.TerminalSession;
 import com.termux.view.textselection.TextSelectionCursorController;
 
@@ -56,13 +55,9 @@ public final class TerminalView extends View {
     /** Log terminal view key and IME events. */
     private static boolean TERMINAL_VIEW_KEY_LOGGING_ENABLED = false;
 
-    /** The currently displayed terminal session, whose emulator is {@link #mEmulator}. */
+    /** The currently displayed terminal session. */
     public TerminalSession mTermSession;
-    /** Our terminal emulator whose session is {@link #mTermSession}. */
-    public TerminalEmulator mEmulator;
 
-    private final JavaTerminalContentAdapter mTerminalContent = new JavaTerminalContentAdapter();
-    private final ScreenSnapshot mScreenSnapshot = new ScreenSnapshot();
     private final RenderFrameCache mGhosttyRenderFrameCache = new RenderFrameCache();
     private long mGhosttyFullSnapshotRefreshRequestedForFrameSequence = -1;
     @Nullable private ViewportLinkSnapshot mGhosttyAppliedViewportLinkSnapshot;
@@ -163,12 +158,9 @@ public final class TerminalView extends View {
                 return;
             }
 
-            boolean ghosttyBackend = mTermSession != null && mTermSession.isUsingGhosttyBackend();
-            long refreshStartNanos = ghosttyBackend ? SystemClock.elapsedRealtimeNanos() : 0L;
+            long refreshStartNanos = SystemClock.elapsedRealtimeNanos();
             setContentDescription(getText());
-            if (ghosttyBackend) {
-                recordAccessibilityRefresh(SystemClock.elapsedRealtimeNanos() - refreshStartNanos);
-            }
+            recordAccessibilityRefresh(SystemClock.elapsedRealtimeNanos() - refreshStartNanos);
             mLastAccessibilityRefreshUptimeMillis = SystemClock.uptimeMillis();
         }
     };
@@ -200,8 +192,8 @@ public final class TerminalView extends View {
 
                     // Quick event processing when mouse tracking is active - do not wait for check of double tapping
                     // for zooming.
-                    sendMouseEventCode(event, TerminalEmulator.MOUSE_LEFT_BUTTON, true);
-                    sendMouseEventCode(event, TerminalEmulator.MOUSE_LEFT_BUTTON, false);
+                    sendMouseEventCode(event, TerminalConstants.MOUSE_LEFT_BUTTON, true);
+                    sendMouseEventCode(event, TerminalConstants.MOUSE_LEFT_BUTTON, false);
                     return true;
                 }
                 scrolledWithFinger = false;
@@ -229,7 +221,7 @@ public final class TerminalView extends View {
                     // This means that we never report moving with button press-events for touch input,
                     // since we cannot just start sending these events without a starting press event,
                     // which we do not do for touch input, only mouse in onTouchEvent().
-                    sendMouseEventCode(e, TerminalEmulator.MOUSE_LEFT_BUTTON_MOVED, true);
+                    sendMouseEventCode(e, TerminalConstants.MOUSE_LEFT_BUTTON_MOVED, true);
                 } else {
                     scrolledWithFinger = true;
                     distanceY += mScrollRemainder;
@@ -348,7 +340,6 @@ public final class TerminalView extends View {
         mTopRow = 0;
 
         mTermSession = session;
-        mEmulator = mTermSession.getEmulator();
         mCombiningAccent = 0;
         mCapturedGhosttyMouseButtonState = 0;
         mGhosttyRenderFrameCache.reset();
@@ -358,9 +349,7 @@ public final class TerminalView extends View {
         mVisibleLinkLayoutEnabled = false;
 
         updateSize();
-        if (mTermSession.isUsingGhosttyBackend()) {
-            requestGhosttyFullSnapshotRefresh(-1);
-        }
+        requestGhosttyFullSnapshotRefresh(-1);
         onScreenUpdated();
 
         // Wait with enabling the scrollbar until we have a terminal to get scroll position from.
@@ -453,7 +442,7 @@ public final class TerminalView extends View {
                             codePoint = Character.toCodePoint(firstChar, text.charAt(i));
                         } else {
                             // At end of string, with no low surrogate following the high:
-                            codePoint = TerminalEmulator.UNICODE_REPLACEMENT_CHAR;
+                            codePoint = TerminalConstants.UNICODE_REPLACEMENT_CHAR;
                         }
                     } else {
                         codePoint = firstChar;
@@ -533,9 +522,8 @@ public final class TerminalView extends View {
     private void applyScreenUpdate(boolean skipScrolling) {
         if (!hasActiveTerminalBackend()) return;
 
-        boolean ghosttyBackend = mTermSession.isUsingGhosttyBackend();
-        long frameApplyStartNanos = ghosttyBackend ? SystemClock.elapsedRealtimeNanos() : 0L;
-        FrameDelta ghosttyFrameDelta = ghosttyBackend ? mTermSession.getGhosttyPublishedFrameDelta() : null;
+        long frameApplyStartNanos = SystemClock.elapsedRealtimeNanos();
+        FrameDelta ghosttyFrameDelta = mTermSession.getGhosttyPublishedFrameDelta();
         if (shouldPreserveViewportScroll(ghosttyFrameDelta)) {
             skipScrolling = true;
         }
@@ -576,25 +564,19 @@ public final class TerminalView extends View {
         }
 
         mTermSession.clearScrollCounter();
-
-        if (ghosttyBackend) {
-            mTermSession.setGhosttyTopRow(mTopRow);
-            applyLatestGhosttyFrameDelta(ghosttyFrameDelta);
-            refreshVisibleLinkLayoutIfNeeded(mGhosttyRenderFrameCache.getSnapshotForRender(
-                mTermSession.isGhosttyCursorBlinkingEnabled(),
-                mTermSession.getGhosttyCursorBlinkState()));
-        }
+        mTermSession.setGhosttyTopRow(mTopRow);
+        applyLatestGhosttyFrameDelta(ghosttyFrameDelta);
+        refreshVisibleLinkLayoutIfNeeded(mGhosttyRenderFrameCache.getSnapshotForRender(
+            mTermSession.isGhosttyCursorBlinkingEnabled(),
+            mTermSession.getGhosttyCursorBlinkState()));
 
         invalidate();
         scheduleAccessibilityContentDescriptionRefresh();
-
-        if (ghosttyBackend) {
-            recordGhosttyFrameApply(SystemClock.elapsedRealtimeNanos() - frameApplyStartNanos);
-        }
+        recordGhosttyFrameApply(SystemClock.elapsedRealtimeNanos() - frameApplyStartNanos);
     }
 
     private void applyLatestGhosttyFrameDelta(@Nullable FrameDelta frameDelta) {
-        if (!hasActiveTerminalBackend() || !mTermSession.isUsingGhosttyBackend()) {
+        if (!hasActiveTerminalBackend()) {
             return;
         }
 
@@ -618,7 +600,7 @@ public final class TerminalView extends View {
     }
 
     private void requestGhosttyFullSnapshotRefresh(long frameSequence) {
-        if (!hasActiveTerminalBackend() || !mTermSession.isUsingGhosttyBackend()) {
+        if (!hasActiveTerminalBackend()) {
             return;
         }
         if (frameSequence <= mGhosttyFullSnapshotRefreshRequestedForFrameSequence) {
@@ -789,7 +771,7 @@ public final class TerminalView extends View {
 
     @Nullable
     public TerminalViewLinkLayout.LinkHit getVisibleLinkHit(MotionEvent event) {
-        if (!hasActiveTerminalBackend() || !mTermSession.isUsingGhosttyBackend() || mRenderer == null) {
+        if (!hasActiveTerminalBackend() || mRenderer == null) {
             return null;
         }
 
@@ -809,8 +791,8 @@ public final class TerminalView extends View {
         return linkLayout.findAt(linkLayout.getTopRow() + viewportRow, column);
     }
 
-    static boolean shouldCaptureGhosttyMouse(boolean usingGhosttyBackend, boolean mouseTrackingActive, boolean isMouseSource) {
-        return usingGhosttyBackend && mouseTrackingActive && isMouseSource;
+    static boolean shouldCaptureGhosttyMouse(boolean mouseTrackingActive, boolean isMouseSource) {
+        return mouseTrackingActive && isMouseSource;
     }
 
     static int ghosttyModifiersFromMetaState(int metaState) {
@@ -899,14 +881,14 @@ public final class TerminalView extends View {
         return Math.max(1, Math.round(Math.abs(axisValue)));
     }
 
-    static int ghosttyButtonFromLegacyMouseCode(int button) {
+    static int ghosttyButtonFromTerminalMouseCode(int button) {
         switch (button) {
-            case TerminalEmulator.MOUSE_LEFT_BUTTON:
-            case TerminalEmulator.MOUSE_LEFT_BUTTON_MOVED:
+            case TerminalConstants.MOUSE_LEFT_BUTTON:
+            case TerminalConstants.MOUSE_LEFT_BUTTON_MOVED:
                 return GhosttyMouseEvent.BUTTON_LEFT;
-            case TerminalEmulator.MOUSE_WHEELUP_BUTTON:
+            case TerminalConstants.MOUSE_WHEELUP_BUTTON:
                 return GhosttyMouseEvent.BUTTON_WHEEL_UP;
-            case TerminalEmulator.MOUSE_WHEELDOWN_BUTTON:
+            case TerminalConstants.MOUSE_WHEELDOWN_BUTTON:
                 return GhosttyMouseEvent.BUTTON_WHEEL_DOWN;
             default:
                 return GhosttyMouseEvent.BUTTON_NONE;
@@ -919,7 +901,6 @@ public final class TerminalView extends View {
         }
 
         return shouldCaptureGhosttyMouse(
-            mTermSession.isUsingGhosttyBackend(),
             mTermSession.isMouseTrackingActive(),
             event.isFromSource(InputDevice.SOURCE_MOUSE)
         );
@@ -1005,7 +986,7 @@ public final class TerminalView extends View {
 
     @Nullable
     private GhosttyMouseEvent createGhosttyMouseEvent(MotionEvent event, int action, int button, float surfaceX, float surfaceY) {
-        if (!hasActiveTerminalBackend() || mTermSession == null || !mTermSession.isUsingGhosttyBackend()) {
+        if (!hasActiveTerminalBackend() || mTermSession == null) {
             return null;
         }
         if (action != GhosttyMouseEvent.MOTION && button == GhosttyMouseEvent.BUTTON_NONE) {
@@ -1030,9 +1011,9 @@ public final class TerminalView extends View {
     }
 
     @Nullable
-    private GhosttyMouseEvent createGhosttyMouseEventFromLegacyCode(MotionEvent event, int button, boolean pressed) {
-        int ghosttyButton = ghosttyButtonFromLegacyMouseCode(button);
-        int action = button == TerminalEmulator.MOUSE_LEFT_BUTTON_MOVED ? GhosttyMouseEvent.MOTION
+    private GhosttyMouseEvent createGhosttyMouseEventFromTerminalMouseCode(MotionEvent event, int button, boolean pressed) {
+        int ghosttyButton = ghosttyButtonFromTerminalMouseCode(button);
+        int action = button == TerminalConstants.MOUSE_LEFT_BUTTON_MOVED ? GhosttyMouseEvent.MOTION
             : (pressed ? GhosttyMouseEvent.PRESS : GhosttyMouseEvent.RELEASE);
         if (action != GhosttyMouseEvent.MOTION && ghosttyButton == GhosttyMouseEvent.BUTTON_NONE) {
             return null;
@@ -1040,7 +1021,7 @@ public final class TerminalView extends View {
 
         float surfaceX = event.getX();
         float surfaceY = event.getY();
-        if (pressed && (button == TerminalEmulator.MOUSE_WHEELDOWN_BUTTON || button == TerminalEmulator.MOUSE_WHEELUP_BUTTON)) {
+        if (pressed && (button == TerminalConstants.MOUSE_WHEELDOWN_BUTTON || button == TerminalConstants.MOUSE_WHEELUP_BUTTON)) {
             if (mMouseStartDownTime == event.getDownTime()) {
                 surfaceX = mMouseScrollStartX;
                 surfaceY = mMouseScrollStartY;
@@ -1056,28 +1037,14 @@ public final class TerminalView extends View {
 
     /** Send a single mouse event code to the terminal. */
     void sendMouseEventCode(MotionEvent e, int button, boolean pressed) {
-        if (mTermSession != null && mTermSession.isUsingGhosttyBackend()) {
-            GhosttyMouseEvent mouseEvent = createGhosttyMouseEventFromLegacyCode(e, button, pressed);
-            if (mouseEvent != null) {
-                mTermSession.sendGhosttyMouseEvent(mouseEvent);
-            }
+        if (mTermSession == null) {
             return;
         }
 
-        int[] columnAndRow = getColumnAndRow(e, false);
-        int x = columnAndRow[0] + 1;
-        int y = columnAndRow[1] + 1;
-        if (pressed && (button == TerminalEmulator.MOUSE_WHEELDOWN_BUTTON || button == TerminalEmulator.MOUSE_WHEELUP_BUTTON)) {
-            if (mMouseStartDownTime == e.getDownTime()) {
-                x = (int) mMouseScrollStartX;
-                y = (int) mMouseScrollStartY;
-            } else {
-                mMouseStartDownTime = e.getDownTime();
-                mMouseScrollStartX = x;
-                mMouseScrollStartY = y;
-            }
+        GhosttyMouseEvent mouseEvent = createGhosttyMouseEventFromTerminalMouseCode(e, button, pressed);
+        if (mouseEvent != null) {
+            mTermSession.sendGhosttyMouseEvent(mouseEvent);
         }
-        mTermSession.sendMouseEvent(button, x, y, pressed);
     }
 
     private void pasteFromClipboard() {
@@ -1116,16 +1083,14 @@ public final class TerminalView extends View {
                 return;
             }
 
-            if (mTermSession.isUsingGhosttyBackend()) {
-                mTermSession.setGhosttyTopRow(mTopRow);
-            }
+            mTermSession.setGhosttyTopRow(mTopRow);
             if (!awakenScrollBars()) invalidate();
             return;
         }
 
         for (int i = 0; i < amount; i++) {
             if (mTermSession.isMouseTrackingActive()) {
-                sendMouseEventCode(event, up ? TerminalEmulator.MOUSE_WHEELUP_BUTTON : TerminalEmulator.MOUSE_WHEELDOWN_BUTTON, true);
+                sendMouseEventCode(event, up ? TerminalConstants.MOUSE_WHEELUP_BUTTON : TerminalConstants.MOUSE_WHEELDOWN_BUTTON, true);
                 continue;
             }
 
@@ -1182,10 +1147,10 @@ public final class TerminalView extends View {
                 switch (action) {
                     case MotionEvent.ACTION_DOWN:
                     case MotionEvent.ACTION_UP:
-                        sendMouseEventCode(event, TerminalEmulator.MOUSE_LEFT_BUTTON, action == MotionEvent.ACTION_DOWN);
+                        sendMouseEventCode(event, TerminalConstants.MOUSE_LEFT_BUTTON, action == MotionEvent.ACTION_DOWN);
                         break;
                     case MotionEvent.ACTION_MOVE:
-                        sendMouseEventCode(event, TerminalEmulator.MOUSE_LEFT_BUTTON_MOVED, true);
+                        sendMouseEventCode(event, TerminalConstants.MOUSE_LEFT_BUTTON_MOVED, true);
                         break;
                 }
             }
@@ -1560,8 +1525,7 @@ public final class TerminalView extends View {
         }
 
         mTermSession.updateSize(newColumns, newRows, cellWidthPixels, cellHeightPixels);
-        mEmulator = mTermSession.getEmulator();
-        mClient.onEmulatorSet();
+        mClient.onTerminalReady();
 
         mTopRow = 0;
         scrollTo(0, 0);
@@ -1570,8 +1534,7 @@ public final class TerminalView extends View {
 
     @Override
     protected void onDraw(Canvas canvas) {
-        boolean ghosttyBackend = hasActiveTerminalBackend() && mTermSession.isUsingGhosttyBackend();
-        long drawStartNanos = ghosttyBackend ? SystemClock.elapsedRealtimeNanos() : 0L;
+        long drawStartNanos = hasActiveTerminalBackend() ? SystemClock.elapsedRealtimeNanos() : 0L;
 
         if (!hasActiveTerminalBackend()) {
             canvas.drawColor(0XFF000000);
@@ -1582,26 +1545,22 @@ public final class TerminalView extends View {
                 mTextSelectionCursorController.getSelectors(sel);
             }
 
-            if (ghosttyBackend) {
-                ScreenSnapshot renderSnapshot = mGhosttyRenderFrameCache.getSnapshotForRender(
-                    mTermSession.isGhosttyCursorBlinkingEnabled(),
-                    mTermSession.getGhosttyCursorBlinkState());
-                refreshVisibleLinkLayoutIfNeeded(renderSnapshot);
-                if (renderSnapshot != null) {
-                    mRenderer.render(renderSnapshot, canvas, sel[0], sel[1], sel[2], sel[3],
-                        mVisibleLinkLayout);
-                } else {
-                    canvas.drawColor(0XFF000000);
-                }
+            ScreenSnapshot renderSnapshot = mGhosttyRenderFrameCache.getSnapshotForRender(
+                mTermSession.isGhosttyCursorBlinkingEnabled(),
+                mTermSession.getGhosttyCursorBlinkState());
+            refreshVisibleLinkLayoutIfNeeded(renderSnapshot);
+            if (renderSnapshot != null) {
+                mRenderer.render(renderSnapshot, canvas, sel[0], sel[1], sel[2], sel[3],
+                    mVisibleLinkLayout);
             } else {
-                mRenderer.render(getTerminalContent(), mScreenSnapshot, canvas, mTopRow, sel[0], sel[1], sel[2], sel[3]);
+                canvas.drawColor(0XFF000000);
             }
 
             // render the text selection handles
             renderTextSelection();
         }
 
-        if (ghosttyBackend) {
+        if (hasActiveTerminalBackend()) {
             recordGhosttyDraw(SystemClock.elapsedRealtimeNanos() - drawStartNanos);
         }
     }
@@ -1806,16 +1765,12 @@ public final class TerminalView extends View {
      * {@link #TERMINAL_CURSOR_BLINK_RATE_MIN} and {@link #TERMINAL_CURSOR_BLINK_RATE_MAX}.
      *
      * This should be called when the view holding this activity is resumed or stopped so that
-     * cursor blinker does not run when activity is not visible. If you call this on onResume()
-     * to start cursor blinking, then ensure that {@link #mEmulator} is set, otherwise wait for the
-     * {@link TerminalViewClient#onEmulatorSet()} event after calling {@link #attachSession(TerminalSession)}
-     * for the first session added in the activity since blinking will not start if {@link #mEmulator}
-     * is not set, like if activity is started again after exiting it with double back press. Do not
-     * call this directly after {@link #attachSession(TerminalSession)} since {@link #updateSize()}
-     * may return without setting {@link #mEmulator} since width/height may be 0. Its called again in
-     * {@link #onSizeChanged(int, int, int, int)}. Calling on onResume() if emulator is already set
-     * is necessary, since onEmulatorSet() may not be called after activity is started after device
-     * display timeout with double tap and not power button.
+     * cursor blinker does not run when activity is not visible. If you call this in onResume()
+     * to start cursor blinking, ensure the terminal backend is already ready. Otherwise wait for
+     * {@link TerminalViewClient#onTerminalReady()} after calling {@link #attachSession(TerminalSession)}
+     * for the first session added in the activity, since blinking cannot start until the view has
+     * finished a size pass and initialized the backend. Calling this again in onResume() remains
+     * necessary because onTerminalReady() may not fire after activity resume from display timeout.
      *
      * It should also be called on the
      * {@link com.termux.terminal.TerminalSessionClient#onTerminalCursorStateChange(boolean)}
@@ -1846,7 +1801,7 @@ public final class TerminalView extends View {
      *
      * @param start If cursor blinker should be started or stopped.
      * @param startOnlyIfCursorEnabled If set to {@code true}, then it will also be checked if the
-     *                                 cursor is even enabled by {@link TerminalEmulator} before
+     *                                 cursor is enabled by the active terminal backend before
      *                                 starting the cursor blinker.
      */
     public synchronized void setTerminalCursorBlinkerState(boolean start, boolean startOnlyIfCursorEnabled) {
@@ -1904,9 +1859,8 @@ public final class TerminalView extends View {
         public void run() {
             try {
                 if (hasActiveTerminalBackend()) {
-                    // Toggle the blink state and invalidate(). Ghostty applies the transient
-                    // blink visibility to the UI-owned render cache before draw, while the
-                    // legacy Java backend picks it up during snapshot fill.
+                    // Toggle the blink state and invalidate(). The UI-owned render cache applies
+                    // the transient cursor visibility before draw.
                     mCursorVisible = !mCursorVisible;
                     mTermSession.setCursorBlinkState(mCursorVisible);
                     invalidate();
@@ -1966,15 +1920,16 @@ public final class TerminalView extends View {
     }
 
     public TerminalContent getTerminalContent() {
-        if (mTermSession != null) {
-            TerminalContent terminalContent = mTermSession.getTerminalContent();
-            if (terminalContent != null) {
-                return terminalContent;
-            }
+        if (mTermSession == null) {
+            throw new IllegalStateException("No terminal session attached");
         }
 
-        mTerminalContent.setTerminalEmulator(mEmulator);
-        return mTerminalContent;
+        TerminalContent terminalContent = mTermSession.getTerminalContent();
+        if (terminalContent != null) {
+            return terminalContent;
+        }
+
+        throw new IllegalStateException("Terminal content is not ready");
     }
 
     private boolean hasActiveTerminalBackend() {

@@ -35,9 +35,10 @@ The project is organized as a Gradle monorepo with the following subprojects:
 -   **Compatibility**: Ensure changes in `:termux-shared` or `:terminal-view` do not break compatibility with plugin apps.
 
 ### Commit Guidelines
--   **Format**: Follow [Conventional Commits](https://www.conventionalcommits.org).
--   **Style**: The first letter of the `type` and `description` must be capital (e.g., `Fixed: Fix terminal crash`).
+-   **Format**: Use semantic commit subjects in the exact format `Type: Summary` so changelog tooling can parse them.
 -   **Types**: Use `Added`, `Changed`, `Deprecated`, `Removed`, `Fixed`, `Security`.
+-   **Style**: Use sentence case for the summary and keep it to one line (e.g., `Removed: Legacy Java terminal backend`).
+-   **Avoid**: Do not use lowercase Conventional Commit prefixes like `feat:` or `fix:` in this repository.
 
 ### Versioning
 -   Follows [Semantic Versioning 2.0.0](https://semver.org/).

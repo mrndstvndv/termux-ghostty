@@ -150,7 +150,7 @@ public final class BubbleTerminalViewClient extends TermuxTerminalViewClientBase
     }
 
     @Override
-    public void onEmulatorSet() {
+    public void onTerminalReady() {
         if (!mActivity.isVisible()) {
             Logger.logVerbose(LOG_TAG, "Ignoring cursor blinker start since bubble activity is not visible");
             return;

@@ -185,9 +185,9 @@ public class TerminalRowTest extends TestCase {
 	}
 
 	public void testReplacementChar() {
-		row.setChar(0, TerminalEmulator.UNICODE_REPLACEMENT_CHAR, 0);
+		row.setChar(0, TerminalConstants.UNICODE_REPLACEMENT_CHAR, 0);
 		row.setChar(1, 'Y', 0);
-		assertLineStartsWith(TerminalEmulator.UNICODE_REPLACEMENT_CHAR, 'Y', ' ', ' ');
+		assertLineStartsWith(TerminalConstants.UNICODE_REPLACEMENT_CHAR, 'Y', ' ', ' ');
 	}
 
 	public void testSurrogateCharsWithNormalDisplayWidth() {
@@ -375,7 +375,7 @@ public class TerminalRowTest extends TestCase {
 		assertEquals(1, Character.charCount(0x009F));
 
 		int[] points = new int[]{0xC2541, 'a', '8', 0x73EE, 0x009F, 0x881F, 0x8324, 0xD4C9, 0xFFFD, 'B', 0x009B, 0x61C9, 'Z'};
-		// int[] expected = new int[] { TerminalEmulator.UNICODE_REPLACEMENT_CHAR, 'a', '8', 0x73EE, 0x009F, 0x881F, 0x8324, 0xD4C9, 0xFFFD,
+		// int[] expected = new int[] { TerminalConstants.UNICODE_REPLACEMENT_CHAR, 'a', '8', 0x73EE, 0x009F, 0x881F, 0x8324, 0xD4C9, 0xFFFD,
 		// 'B', 0x009B, 0x61C9, 'Z' };
 		int currentColumn = 0;
 		for (int point : points) {

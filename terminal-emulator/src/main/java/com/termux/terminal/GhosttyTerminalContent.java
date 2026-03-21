@@ -30,6 +30,7 @@ public final class GhosttyTerminalContent implements TerminalContent, AutoClosea
         }
 
         GhosttyLog.info("Created Ghostty terminal handle=0x" + Long.toHexString(mNativeHandle) + " columns=" + columns + " rows=" + rows + " transcriptRows=" + transcriptRows + " cellWidth=" + cellWidthPixels + " cellHeight=" + cellHeightPixels);
+        applyColorScheme(TerminalColors.COLOR_SCHEME.mDefaultColors);
     }
 
     @Override
@@ -48,6 +49,14 @@ public final class GhosttyTerminalContent implements TerminalContent, AutoClosea
         long nativeHandle = requireNativeHandle();
         GhosttyLog.debug("Resetting Ghostty terminal handle=0x" + Long.toHexString(nativeHandle));
         GhosttyNative.nativeReset(nativeHandle);
+    }
+
+    public synchronized void applyColorScheme(int[] colors) {
+        validateColorScheme(colors);
+        int result = GhosttyNative.nativeSetColorScheme(requireNativeHandle(), colors);
+        if (result != 0) {
+            throw new IllegalStateException("Failed to apply Ghostty color scheme: " + result);
+        }
     }
 
     public synchronized int resize(int columns, int rows, int cellWidthPixels, int cellHeightPixels) {
@@ -385,6 +394,15 @@ public final class GhosttyTerminalContent implements TerminalContent, AutoClosea
         }
 
         return mNativeHandle;
+    }
+
+    private static void validateColorScheme(int[] colors) {
+        if (colors == null) {
+            throw new IllegalArgumentException("colors must not be null");
+        }
+        if (colors.length < TextStyle.NUM_INDEXED_COLORS) {
+            throw new IllegalArgumentException("colors length must be >= " + TextStyle.NUM_INDEXED_COLORS);
+        }
     }
 
     private static void validateRange(byte[] data, int offset, int length) {

@@ -522,7 +522,7 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         DynamicColors.applyToActivityIfAvailable(this);
 
         if (TermuxPropertyConstants.IVALUE_MATERIAL_YOU_THEME_BLACK.equals(materialYouTheme)) {
-            getTheme().applyStyle(R.style.Theme_TermuxActivity_M3_Black_NoActionBar, true);
+            getTheme().applyStyle(R.style.ThemeOverlay_TermuxActivity_M3_Black, true);
         }
     }
 

@@ -84,7 +84,6 @@
 
     <!-- TermuxActivity Material 3 Black NoActionBar theme. -->
     <style name="Theme.TermuxActivity.M3.Black.NoActionBar" parent="Theme.TermuxActivity.M3.DayNight.NoActionBar">
-        <!-- Keep Material You dark colors, but force primary surfaces/backgrounds to black. -->
         <item name="android:windowBackground">#000000</item>
         <item name="colorSurface">#000000</item>
         <item name="termuxActivityDrawerBackground">#000000</item>
@@ -93,6 +92,14 @@
         <item name="extraKeysButtonActiveTextColor">?attr/colorError</item>
         <item name="extraKeysButtonBackgroundColor">#000000</item>
         <item name="extraKeysButtonActiveBackgroundColor">?attr/colorSurfaceContainerHighest</item>
+    </style>
+
+    <!-- Apply after DynamicColors so only black surfaces override wallpaper-derived colors. -->
+    <style name="ThemeOverlay.TermuxActivity.M3.Black" parent="">
+        <item name="android:windowBackground">#000000</item>
+        <item name="colorSurface">#000000</item>
+        <item name="termuxActivityDrawerBackground">#000000</item>
+        <item name="extraKeysButtonBackgroundColor">#000000</item>
     </style>
 
 </resources>

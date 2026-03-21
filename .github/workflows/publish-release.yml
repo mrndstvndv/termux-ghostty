@@ -1,0 +1,220 @@
+name: Publish Release
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - master
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  changelog:
+    name: Generate Changelog
+    runs-on: ubuntu-latest
+    outputs:
+      skip_release: ${{ steps.changelog.outputs.skip_release }}
+      new_version: ${{ steps.changelog.outputs.new_version }}
+      changelog: ${{ steps.changelog.outputs.changelog }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get Previous Release Tag
+        id: previous_release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PREVIOUS_TAG=$(gh release list --limit 1 --json tagName --jq '.[0].tagName' 2>/dev/null || echo "")
+          echo "previous_tag=$PREVIOUS_TAG" >> $GITHUB_OUTPUT
+          echo "Previous release tag: $PREVIOUS_TAG"
+
+      - name: Generate Changelog
+        id: changelog
+        run: |
+          chmod +x .github/scripts/generate-changelog.sh
+          .github/scripts/generate-changelog.sh "${{ steps.previous_release.outputs.previous_tag }}" 2>/tmp/script_output > /tmp/changelog_output
+
+          SKIP_RELEASE=$(grep "skip_release=" /tmp/script_output | cut -d= -f2)
+          NEW_VERSION=$(grep "^v" /tmp/script_output)
+          CHANGELOG=$(cat /tmp/changelog_output)
+
+          echo "skip_release=$SKIP_RELEASE" >> $GITHUB_OUTPUT
+          echo "changelog<<EOF" >> $GITHUB_OUTPUT
+          echo "$CHANGELOG" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+
+          echo "Skip release: $SKIP_RELEASE"
+          echo "New version: $NEW_VERSION"
+          echo "Changelog:"
+          echo "$CHANGELOG"
+
+  build:
+    name: Build Signed Release APK (${{ matrix.package_variant }})
+    needs: changelog
+    if: needs.changelog.outputs.skip_release != 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package_variant: [ apt-android-7, apt-android-5 ]
+
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Update Version in build.gradle
+        run: |
+          NEW_VERSION="${{ needs.changelog.outputs.new_version }}"
+          VERSION_NAME="${NEW_VERSION#v}"
+
+          CURRENT_VERSION_CODE=$(grep -m 1 -E '^\s+versionCode\s+[0-9]+' app/build.gradle | grep -oE '[0-9]+')
+          NEW_VERSION_CODE=$((CURRENT_VERSION_CODE + 1))
+
+          echo "Updating version: name=$VERSION_NAME, code=$NEW_VERSION_CODE"
+
+          sed -i "s/^\(\s*versionCode\s\+\)[0-9]\+/\1$NEW_VERSION_CODE/" app/build.gradle
+          sed -i "s/^\(\s*versionName\s\+\)\"[^\"]*\"/\1\"$VERSION_NAME\"/" app/build.gradle
+
+          grep -q "versionCode $NEW_VERSION_CODE" app/build.gradle || { echo "ERROR: Failed to update versionCode"; exit 1; }
+          grep -q "versionName \"$VERSION_NAME\"" app/build.gradle || { echo "ERROR: Failed to update versionName"; exit 1; }
+
+      - name: Install Determinate Nix
+        uses: DeterminateSystems/determinate-nix-action@v3
+
+      - name: Decode Keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 -d > release.keystore
+
+      - name: Build Signed Release APK
+        env:
+          TERMUX_APP_VERSION_NAME: ${{ needs.changelog.outputs.new_version }} # v prefix stripped below
+          TERMUX_PACKAGE_VARIANT: ${{ matrix.package_variant }}
+          KEYSTORE_FILE: release.keystore
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          exit_on_error() { echo "$1"; exit 1; }
+
+          # Strip 'v' prefix for semver
+          TERMUX_APP_VERSION_NAME="${TERMUX_APP_VERSION_NAME#v}"
+          export TERMUX_APP_VERSION_NAME
+          export TERMUX_APK_VERSION_TAG="${TERMUX_APP_VERSION_NAME}-${{ matrix.package_variant }}-github-release"
+
+          if ! nix develop --command ./gradlew assembleRelease --no-daemon; then
+            exit_on_error "Build failed for '${{ matrix.package_variant }}' release."
+          fi
+
+          APK_DIR_PATH="./app/build/outputs/apk/release"
+          APK_BASENAME_PREFIX="termux-app_${TERMUX_APP_VERSION_NAME}-${{ matrix.package_variant }}-github-release"
+
+          echo "Validating APKs"
+          for abi in universal arm64-v8a armeabi-v7a x86_64 x86; do
+            if ! test -f "$APK_DIR_PATH/${APK_BASENAME_PREFIX}_$abi.apk"; then
+              files_found="$(ls "$APK_DIR_PATH")"
+              exit_on_error "Failed to find built APK at '$APK_DIR_PATH/${APK_BASENAME_PREFIX}_$abi.apk'. Files found: "$'\n'"$files_found"
+            fi
+          done
+
+          echo "Generating sha25sums file"
+          if ! (cd "$APK_DIR_PATH"; sha256sum \
+            "${APK_BASENAME_PREFIX}_universal.apk" \
+            "${APK_BASENAME_PREFIX}_arm64-v8a.apk" \
+            "${APK_BASENAME_PREFIX}_armeabi-v7a.apk" \
+            "${APK_BASENAME_PREFIX}_x86_64.apk" \
+            "${APK_BASENAME_PREFIX}_x86.apk" \
+            > "${APK_BASENAME_PREFIX}_sha256sums"); then
+            exit_on_error "Generate sha25sums failed for '${{ matrix.package_variant }}' release."
+          fi
+
+          echo "APK_DIR_PATH=$APK_DIR_PATH" >> $GITHUB_ENV
+          echo "APK_BASENAME_PREFIX=$APK_BASENAME_PREFIX" >> $GITHUB_ENV
+
+      - name: Upload APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-apks-${{ matrix.package_variant }}
+          path: |
+            ${{ env.APK_DIR_PATH }}/termux-app_*.apk
+            ${{ env.APK_DIR_PATH }}/termux-app_*_sha256sums
+          retention-days: 1
+
+  release:
+    name: Create GitHub Release
+    needs: [ changelog, build ]
+    if: needs.changelog.outputs.skip_release != 'true'
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download all APK artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: release-apks-*
+          path: release-apks
+          merge-multiple: true
+
+      - name: List release files
+        run: ls -la release-apks/
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.changelog.outputs.new_version }}
+          name: Release ${{ needs.changelog.outputs.new_version }}
+          body: ${{ needs.changelog.outputs.changelog }}
+          files: release-apks/*
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  commit-version:
+    name: Commit Version Update
+    needs: [ changelog, release ]
+    if: needs.changelog.outputs.skip_release != 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Update Version in build.gradle
+        run: |
+          NEW_VERSION="${{ needs.changelog.outputs.new_version }}"
+          VERSION_NAME="${NEW_VERSION#v}"
+
+          CURRENT_VERSION_CODE=$(grep -m 1 -E '^\s+versionCode\s+[0-9]+' app/build.gradle | grep -oE '[0-9]+')
+          NEW_VERSION_CODE=$((CURRENT_VERSION_CODE + 1))
+
+          sed -i "s/^\(\s*versionCode\s\+\)[0-9]\+/\1$NEW_VERSION_CODE/" app/build.gradle
+          sed -i "s/^\(\s*versionName\s\+\)\"[^\"]*\"/\1\"$VERSION_NAME\"/" app/build.gradle
+
+      - name: Commit and Push
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          NEW_VERSION="${{ needs.changelog.outputs.new_version }}"
+          NEW_VERSION_CODE=$(grep -m 1 -E '^\s+versionCode\s+[0-9]+' app/build.gradle | grep -oE '[0-9]+')
+
+          git add app/build.gradle
+          git commit -m "chore: bump version to $NEW_VERSION (code $NEW_VERSION_CODE) [skip ci]"
+          git push origin master

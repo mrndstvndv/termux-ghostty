@@ -20,3 +20,10 @@
 - `ui(settings): update theme picker layout`
 - `perf(emulator): reduce frame allocation overhead`
 - `feat!: drop Android 5 support`
+
+## Documentation
+
+All fork-specific docs go under `docs/fork/`. Do not add `.md` files to the repo root.
+
+- `docs/fork/` — research, comparisons, guides, architecture docs
+- `docs/fork/plans/` — implementation plans, checklists, stabilization docs

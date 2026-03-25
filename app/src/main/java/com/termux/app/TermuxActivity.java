@@ -23,7 +23,9 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.widget.EditText;
+import android.widget.HorizontalScrollView;
 import android.widget.ImageButton;
+import android.widget.LinearLayout;
 import android.widget.ListView;
 import android.widget.RelativeLayout;
 import android.widget.Toast;
@@ -46,6 +48,7 @@ import com.termux.app.activities.HelpActivity;
 import com.termux.app.activities.SettingsActivity;
 import com.termux.shared.termux.crash.TermuxCrashUtils;
 import com.termux.shared.termux.settings.preferences.TermuxAppSharedPreferences;
+import com.termux.app.terminal.SessionTabStripController;
 import com.termux.app.terminal.TermuxSessionsListViewController;
 import com.termux.app.terminal.io.TerminalToolbarViewPager;
 import com.termux.app.terminal.TermuxTerminalViewClient;
@@ -140,6 +143,16 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
      * The termux sessions list controller.
      */
     TermuxSessionsListViewController mTermuxSessionListViewController;
+
+    /**
+     * The session tab strip controller for the tabs view mode.
+     */
+    SessionTabStripController mSessionTabStripController;
+
+    /**
+     * Whether session tabs mode is enabled via termux.properties.
+     */
+    boolean mUseSessionTabs;
 
     /**
      * The {@link TermuxActivity} broadcast receiver for various things like terminal style configuration changes.
@@ -427,6 +440,7 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         mTermuxService = ((TermuxService.LocalBinder) service).service;
 
         setTermuxSessionsListView();
+        setSessionTabStripView();
 
         final Intent intent = getIntent();
         setIntent(null);
@@ -569,6 +583,21 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         termuxSessionsListView.setAdapter(mTermuxSessionListViewController);
         termuxSessionsListView.setOnItemClickListener(mTermuxSessionListViewController);
         termuxSessionsListView.setOnItemLongClickListener(mTermuxSessionListViewController);
+    }
+
+    private void setSessionTabStripView() {
+        mUseSessionTabs = mProperties.shouldUseSessionTabs();
+
+        HorizontalScrollView tabScrollView = findViewById(R.id.session_tab_strip_scroll);
+        LinearLayout tabStrip = findViewById(R.id.session_tab_strip);
+
+        if (mUseSessionTabs) {
+            mSessionTabStripController = new SessionTabStripController(this, tabStrip, tabScrollView);
+            mSessionTabStripController.setVisible(true);
+            mSessionTabStripController.notifyDataSetChanged();
+        } else {
+            tabScrollView.setVisibility(View.GONE);
+        }
     }
 
 
@@ -937,6 +966,20 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
 
     public void termuxSessionListNotifyUpdated() {
         mTermuxSessionListViewController.notifyDataSetChanged();
+        if (mSessionTabStripController != null) {
+            mSessionTabStripController.notifyDataSetChanged();
+        }
+    }
+
+    /** Call when only the current session changes (no structural changes). */
+    public void onCurrentSessionChanged() {
+        if (mSessionTabStripController != null) {
+            mSessionTabStripController.onSessionChanged();
+        }
+    }
+
+    public SessionTabStripController getSessionTabStripController() {
+        return mSessionTabStripController;
     }
 
     public boolean isVisible() {

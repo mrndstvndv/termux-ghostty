@@ -624,6 +624,10 @@ public abstract class TermuxSharedProperties {
         return (boolean) getInternalPropertyValue(TermuxPropertyConstants.KEY_REMEMBER_SOFT_KEYBOARD_STATE, true);
     }
 
+    public boolean shouldUseSessionTabs() {
+        return (boolean) getInternalPropertyValue(TermuxPropertyConstants.KEY_USE_SESSION_TABS, true);
+    }
+
     public boolean shouldRunTermuxAmSocketServer() {
         return (boolean) getInternalPropertyValue(TermuxPropertyConstants.KEY_RUN_TERMUX_AM_SOCKET_SERVER, true);
     }

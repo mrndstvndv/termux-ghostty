@@ -320,6 +320,9 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
         checkAndScrollToSession(session);
         updateBackgroundColor();
 
+        // Update tab strip selection (O(1), not full rebuild)
+        mActivity.onCurrentSessionChanged();
+
         if (isSessionFocused(session))
             mActivity.markCurrentSessionBubbleConversationRead();
     }

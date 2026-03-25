@@ -86,6 +86,9 @@ import java.util.Set;
  *
  * - 0.20.0 (2026-03-21)
  *      - Add `KEY_MATERIAL_YOU_THEME`.
+ *
+ * - 0.21.0 (2026-03-24)
+ *      - Add `KEY_USE_SESSION_TABS`.
  */
 
 /**
@@ -130,6 +133,9 @@ public final class TermuxPropertyConstants {
 
     /** Defines the key for whether text for the extra keys buttons should be all capitalized automatically */
     public static final String KEY_EXTRA_KEYS_TEXT_ALL_CAPS =  "extra-keys-text-all-caps"; // Default: "extra-keys-text-all-caps"
+
+    /** Defines the key for whether to show session tabs above the terminal instead of the drawer */
+    public static final String KEY_USE_SESSION_TABS =  "use-session-tabs"; // Default: "use-session-tabs"
 
 
 
@@ -439,6 +445,7 @@ public final class TermuxPropertyConstants {
         KEY_USE_CTRL_SPACE_WORKAROUND,
         KEY_USE_FULLSCREEN,
         KEY_USE_FULLSCREEN_WORKAROUND,
+        KEY_USE_SESSION_TABS,
         TermuxConstants.PROP_ALLOW_EXTERNAL_APPS,
 
         /* int */
@@ -488,6 +495,7 @@ public final class TermuxPropertyConstants {
         KEY_USE_CTRL_SPACE_WORKAROUND,
         KEY_USE_FULLSCREEN,
         KEY_USE_FULLSCREEN_WORKAROUND,
+        KEY_USE_SESSION_TABS,
         TermuxConstants.PROP_ALLOW_EXTERNAL_APPS
     ));
 

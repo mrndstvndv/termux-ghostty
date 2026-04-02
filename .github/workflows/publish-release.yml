@@ -102,6 +102,7 @@ jobs:
         env:
           TERMUX_APP_VERSION_NAME: ${{ needs.changelog.outputs.new_version }} # v prefix stripped below
           TERMUX_PACKAGE_VARIANT: ${{ matrix.package_variant }}
+          TERMUX_SPLIT_APKS_FOR_RELEASE_BUILDS: "1"
           KEYSTORE_FILE: release.keystore
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}

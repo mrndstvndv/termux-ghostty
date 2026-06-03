@@ -302,6 +302,8 @@ public abstract class TermuxSharedProperties {
                 return (String) getSoftKeyboardToggleBehaviourInternalPropertyValueFromValue(value);
             case TermuxPropertyConstants.KEY_VOLUME_KEYS_BEHAVIOUR:
                 return (String) getVolumeKeysBehaviourInternalPropertyValueFromValue(value);
+            case TermuxPropertyConstants.KEY_SESSION_TAB_BAR_POSITION:
+                return (String) getSessionTabBarPositionInternalPropertyValueFromValue(value);
 
             default:
                 // default false boolean behaviour
@@ -501,6 +503,16 @@ public abstract class TermuxSharedProperties {
     }
 
     /**
+     * Returns the value itself if it is not {@code null}, otherwise returns {@link TermuxPropertyConstants#DEFAULT_IVALUE_SESSION_TAB_BAR_POSITION}.
+     *
+     * @param value {@link String} value to convert.
+     * @return Returns the internal value for value.
+     */
+    public static String getSessionTabBarPositionInternalPropertyValueFromValue(String value) {
+        return (String) SharedProperties.getDefaultIfNotInMap(TermuxPropertyConstants.KEY_SESSION_TAB_BAR_POSITION, TermuxPropertyConstants.MAP_SESSION_TAB_BAR_POSITION, SharedProperties.toLowerCase(value), TermuxPropertyConstants.DEFAULT_IVALUE_SESSION_TAB_BAR_POSITION, true, LOG_TAG);
+    }
+
+    /**
      * Returns the path itself if a directory exists at it and is readable, otherwise returns
      *  {@link TermuxPropertyConstants#DEFAULT_IVALUE_DEFAULT_WORKING_DIRECTORY}.
      *
@@ -626,6 +638,10 @@ public abstract class TermuxSharedProperties {
 
     public boolean shouldUseSessionTabs() {
         return (boolean) getInternalPropertyValue(TermuxPropertyConstants.KEY_USE_SESSION_TABS, true);
+    }
+
+    public String getSessionTabBarPosition() {
+        return (String) getInternalPropertyValue(TermuxPropertyConstants.KEY_SESSION_TAB_BAR_POSITION, true);
     }
 
     public boolean shouldRunTermuxAmSocketServer() {

@@ -137,6 +137,20 @@ public final class TermuxPropertyConstants {
     /** Defines the key for whether to show session tabs above the terminal instead of the drawer */
     public static final String KEY_USE_SESSION_TABS =  "use-session-tabs"; // Default: "use-session-tabs"
 
+    /** Defines the key for session tab bar position (top or bottom) */
+    public static final String KEY_SESSION_TAB_BAR_POSITION = "session-tab-bar-position"; // Default: "session-tab-bar-position"
+
+    public static final String IVALUE_SESSION_TAB_BAR_POSITION_TOP = "top";
+    public static final String IVALUE_SESSION_TAB_BAR_POSITION_BOTTOM = "bottom";
+    public static final String DEFAULT_IVALUE_SESSION_TAB_BAR_POSITION = IVALUE_SESSION_TAB_BAR_POSITION_BOTTOM;
+
+    /** Defines the bidirectional map for session tab bar position values and their internal values */
+    public static final ImmutableBiMap<String, String> MAP_SESSION_TAB_BAR_POSITION =
+        new ImmutableBiMap.Builder<String, String>()
+            .put(IVALUE_SESSION_TAB_BAR_POSITION_TOP, IVALUE_SESSION_TAB_BAR_POSITION_TOP)
+            .put(IVALUE_SESSION_TAB_BAR_POSITION_BOTTOM, IVALUE_SESSION_TAB_BAR_POSITION_BOTTOM)
+            .build();
+
 
 
     /** Defines the key for whether to hide soft keyboard when termux app is started */
@@ -474,7 +488,8 @@ public final class TermuxPropertyConstants {
         KEY_NIGHT_MODE,
         KEY_MATERIAL_YOU_THEME,
         KEY_SOFT_KEYBOARD_TOGGLE_BEHAVIOUR,
-        KEY_VOLUME_KEYS_BEHAVIOUR
+        KEY_VOLUME_KEYS_BEHAVIOUR,
+        KEY_SESSION_TAB_BAR_POSITION
     ));
 
     /** Defines the set for keys loaded by termux that have default boolean behaviour with false as default.

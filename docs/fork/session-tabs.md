@@ -8,9 +8,15 @@ Add to `~/.termux/termux.properties`:
 
 ```properties
 use-session-tabs=true
+
+# Choose the position of the session tab bar.
+# - bottom: Just above the extra keys (default)
+# - top: At the top of the terminal screen
+session-tab-bar-position=bottom
 ```
 
-Default: `false` (drawer mode)
+Default for `use-session-tabs`: `false` (drawer mode)
+Default for `session-tab-bar-position`: `bottom`
 
 ## Features
 

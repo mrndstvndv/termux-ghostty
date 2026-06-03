@@ -592,11 +592,25 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         LinearLayout tabStrip = findViewById(R.id.session_tab_strip);
 
         if (mUseSessionTabs) {
+            LinearLayout contentLayout = findViewById(R.id.activity_termux_content_layout);
+            if (contentLayout != null && tabScrollView != null) {
+                String tabPosition = mProperties.getSessionTabBarPosition();
+                contentLayout.removeView(tabScrollView);
+                if (TermuxPropertyConstants.IVALUE_SESSION_TAB_BAR_POSITION_TOP.equals(tabPosition)) {
+                    contentLayout.addView(tabScrollView, 0);
+                } else {
+                    // default is bottom
+                    contentLayout.addView(tabScrollView, 1);
+                }
+            }
+
             mSessionTabStripController = new SessionTabStripController(this, tabStrip, tabScrollView);
             mSessionTabStripController.setVisible(true);
             mSessionTabStripController.notifyDataSetChanged();
         } else {
-            tabScrollView.setVisibility(View.GONE);
+            if (tabScrollView != null) {
+                tabScrollView.setVisibility(View.GONE);
+            }
         }
     }
 
@@ -1119,6 +1133,7 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
 
         setMargins();
         setTerminalToolbarHeight();
+        setSessionTabStripView();
 
         FileReceiverActivity.updateFileReceiverActivityComponentsState(this);
 

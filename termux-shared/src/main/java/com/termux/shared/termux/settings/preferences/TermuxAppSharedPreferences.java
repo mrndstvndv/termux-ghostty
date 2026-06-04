@@ -132,6 +132,28 @@ public class TermuxAppSharedPreferences extends AppSharedPreferences {
         return TERMUX_APP.VALUE_LAST_SOFT_KEYBOARD_STATE_UNKNOWN;
     }
 
+    public int getLastSoftKeyboardHeightPortrait() {
+        return SharedPreferenceUtils.getInt(mSharedPreferences,
+            TERMUX_APP.KEY_LAST_SOFT_KEYBOARD_HEIGHT_PORTRAIT,
+            TERMUX_APP.DEFAULT_VALUE_KEY_LAST_SOFT_KEYBOARD_HEIGHT_PORTRAIT);
+    }
+
+    public void setLastSoftKeyboardHeightPortrait(int value) {
+        SharedPreferenceUtils.setInt(mSharedPreferences, TERMUX_APP.KEY_LAST_SOFT_KEYBOARD_HEIGHT_PORTRAIT,
+            value, false);
+    }
+
+    public int getLastSoftKeyboardHeightLandscape() {
+        return SharedPreferenceUtils.getInt(mSharedPreferences,
+            TERMUX_APP.KEY_LAST_SOFT_KEYBOARD_HEIGHT_LANDSCAPE,
+            TERMUX_APP.DEFAULT_VALUE_KEY_LAST_SOFT_KEYBOARD_HEIGHT_LANDSCAPE);
+    }
+
+    public void setLastSoftKeyboardHeightLandscape(int value) {
+        SharedPreferenceUtils.setInt(mSharedPreferences, TERMUX_APP.KEY_LAST_SOFT_KEYBOARD_HEIGHT_LANDSCAPE,
+            value, false);
+    }
+
 
 
     public boolean shouldKeepScreenOn() {

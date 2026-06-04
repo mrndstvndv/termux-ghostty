@@ -8,6 +8,7 @@ import android.view.WindowInsets;
 import android.widget.LinearLayout;
 
 import androidx.annotation.Nullable;
+import androidx.core.graphics.Insets;
 import androidx.core.view.WindowInsetsCompat;
 
 import com.termux.app.TermuxActivity;
@@ -37,9 +38,16 @@ public class TermuxActivityRootView extends LinearLayout {
     private int mBasePaddingTop;
     private int mBasePaddingRight;
     private int mBasePaddingBottom;
+    private boolean mRealImeInsetsReceived = false;
 
     public TermuxActivityRootView(Context context) {
         super(context);
+    }
+
+    @Override
+    protected void onAttachedToWindow() {
+        super.onAttachedToWindow();
+        mRealImeInsetsReceived = false;
     }
 
     public TermuxActivityRootView(Context context, @Nullable AttributeSet attrs) {
@@ -186,9 +194,70 @@ public class TermuxActivityRootView extends LinearLayout {
         setPadding(mBasePaddingLeft, mBasePaddingTop, mBasePaddingRight, mBasePaddingBottom + bottomCorrection);
     }
 
+    public WindowInsets adjustWindowInsets(WindowInsets insets) {
+        if (mActivity == null) return insets;
+
+        WindowInsetsCompat windowInsets = WindowInsetsCompat.toWindowInsetsCompat(insets);
+        int imeBottomInset = windowInsets.getInsets(WindowInsetsCompat.Type.ime()).bottom;
+        int systemBarsBottomInset = windowInsets.getInsets(WindowInsetsCompat.Type.systemBars()).bottom;
+
+        boolean isRealImeVisible = windowInsets.isVisible(WindowInsetsCompat.Type.ime()) || imeBottomInset > systemBarsBottomInset;
+
+        if (isRealImeVisible) {
+            mRealImeInsetsReceived = true;
+            int keyboardHeight = Math.max(0, imeBottomInset - systemBarsBottomInset);
+            if (keyboardHeight > 0) {
+                int orientation = getResources().getConfiguration().orientation;
+                if (orientation == android.content.res.Configuration.ORIENTATION_PORTRAIT) {
+                    mActivity.getPreferences().setLastSoftKeyboardHeightPortrait(keyboardHeight);
+                } else if (orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE) {
+                    mActivity.getPreferences().setLastSoftKeyboardHeightLandscape(keyboardHeight);
+                }
+            }
+        }
+
+        if (!mRealImeInsetsReceived
+                && mActivity.getProperties().shouldRememberSoftKeyboardState()
+                && com.termux.shared.termux.settings.preferences.TermuxPreferenceConstants.TERMUX_APP.VALUE_LAST_SOFT_KEYBOARD_STATE_VISIBLE.equals(mActivity.getPreferences().getLastSoftKeyboardState())) {
+
+            int lastKeyboardHeight = 0;
+            int orientation = getResources().getConfiguration().orientation;
+            if (orientation == android.content.res.Configuration.ORIENTATION_PORTRAIT) {
+                lastKeyboardHeight = mActivity.getPreferences().getLastSoftKeyboardHeightPortrait();
+            } else if (orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE) {
+                lastKeyboardHeight = mActivity.getPreferences().getLastSoftKeyboardHeightLandscape();
+            }
+
+            if (lastKeyboardHeight > 0) {
+                int newImeBottom = systemBarsBottomInset + lastKeyboardHeight;
+                if (mRootViewLoggingEnabled) {
+                    Logger.logVerbose(LOG_TAG, "Pre-applying last known keyboard height in insets: " + lastKeyboardHeight + " for orientation " + orientation);
+                }
+                WindowInsetsCompat.Builder builder = new WindowInsetsCompat.Builder(windowInsets);
+                builder.setInsets(WindowInsetsCompat.Type.ime(), Insets.of(
+                    windowInsets.getInsets(WindowInsetsCompat.Type.ime()).left,
+                    windowInsets.getInsets(WindowInsetsCompat.Type.ime()).top,
+                    windowInsets.getInsets(WindowInsetsCompat.Type.ime()).right,
+                    newImeBottom
+                ));
+                builder.setVisible(WindowInsetsCompat.Type.ime(), true);
+                WindowInsetsCompat modifiedCompat = builder.build();
+                WindowInsets modifiedInsets = modifiedCompat.toWindowInsets();
+                if (modifiedInsets != null) {
+                    return modifiedInsets;
+                }
+            }
+        }
+
+        return insets;
+    }
+
     public static class WindowInsetsListener implements View.OnApplyWindowInsetsListener {
         @Override
         public WindowInsets onApplyWindowInsets(View v, WindowInsets insets) {
+            if (v instanceof TermuxActivityRootView) {
+                insets = ((TermuxActivityRootView) v).adjustWindowInsets(insets);
+            }
             WindowInsets appliedInsets = v.onApplyWindowInsets(insets);
             if (v instanceof TermuxActivityRootView) {
                 ((TermuxActivityRootView) v).onWindowInsetsChanged(insets);

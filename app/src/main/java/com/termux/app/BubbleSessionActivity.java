@@ -281,7 +281,6 @@ public final class BubbleSessionActivity extends AppCompatActivity implements Se
                         imeInsets.right,
                         systemBarInsets.bottom + lastKeyboardHeight
                     ));
-                    builder.setVisible(WindowInsetsCompat.Type.ime(), true);
                     windowInsets = builder.build();
                 }
             }

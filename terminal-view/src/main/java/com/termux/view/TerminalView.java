@@ -1510,6 +1510,14 @@ public final class TerminalView extends View {
         updateSize();
     }
 
+    @Override
+    protected void onWindowVisibilityChanged(int visibility) {
+        super.onWindowVisibilityChanged(visibility);
+        if (visibility == View.VISIBLE) {
+            updateSize(true);
+        }
+    }
+
     /** Check if the terminal size in rows and columns should be updated. */
     public void updateSize() {
         updateSize(false);
@@ -1519,6 +1527,10 @@ public final class TerminalView extends View {
         int viewWidth = getWidth();
         int viewHeight = getHeight();
         if (viewWidth == 0 || viewHeight == 0 || mTermSession == null || mRenderer == null) return;
+
+        if (getWindowVisibility() != View.VISIBLE) {
+            return;
+        }
 
         int cellWidthPixels = getGhosttyCellWidthPixels();
         int cellHeightPixels = getGhosttyCellHeightPixels();

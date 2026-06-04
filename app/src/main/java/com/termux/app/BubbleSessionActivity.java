@@ -242,6 +242,11 @@ public final class BubbleSessionActivity extends AppCompatActivity implements Se
 
             boolean isRealImeVisible = windowInsets.isVisible(WindowInsetsCompat.Type.ime()) || imeInsets.bottom > systemBarInsets.bottom;
 
+            android.util.Log.w(LOG_TAG, "setOnApplyWindowInsetsListener: isRealImeVisible=" + isRealImeVisible 
+                + ", mRealImeInsetsReceived=" + mRealImeInsetsReceived 
+                + ", imeInsets.bottom=" + imeInsets.bottom 
+                + ", systemBarInsets.bottom=" + systemBarInsets.bottom);
+
             if (isRealImeVisible) {
                 mRealImeInsetsReceived = true;
                 if (keyboardBottomInset > 0) {
@@ -268,7 +273,7 @@ public final class BubbleSessionActivity extends AppCompatActivity implements Se
 
                 if (lastKeyboardHeight > 0) {
                     keyboardBottomInset = lastKeyboardHeight;
-                    Logger.logVerbose(LOG_TAG, "Pre-applying last known keyboard height in bubble: " + lastKeyboardHeight + " for orientation " + orientation);
+                    android.util.Log.w(LOG_TAG, "Pre-applying last known keyboard height in bubble: " + lastKeyboardHeight + " for orientation " + orientation);
                     WindowInsetsCompat.Builder builder = new WindowInsetsCompat.Builder(windowInsets);
                     builder.setInsets(WindowInsetsCompat.Type.ime(), Insets.of(
                         imeInsets.left,

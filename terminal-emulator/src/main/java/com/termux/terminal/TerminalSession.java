@@ -142,6 +142,7 @@ public final class TerminalSession extends TerminalOutput {
             return;
         }
 
+        android.util.Log.w("TerminalSession", "TerminalSession.updateSize: pid=" + mShellPid + " columns=" + columns + " rows=" + rows + " cellWidth=" + cellWidthPixels + " cellHeight=" + cellHeightPixels);
         this.mColumns = columns;
         this.mRows = rows;
         this.mCellWidthPixels = cellWidthPixels;

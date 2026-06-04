@@ -1531,6 +1531,13 @@ public final class TerminalView extends View {
             || newRows != mTermSession.getRows()
             || cellWidthPixels != mTermSession.getCellWidthPixels()
             || cellHeightPixels != mTermSession.getCellHeightPixels();
+
+        android.util.Log.w(LOG_TAG, "updateSize(immediate=" + immediate + "): viewWidth=" + viewWidth + ", viewHeight=" + viewHeight 
+            + ", newColumns=" + newColumns + ", newRows=" + newRows 
+            + ", currentColumns=" + (hasActiveTerminalBackend() ? mTermSession.getColumns() : -1)
+            + ", currentRows=" + (hasActiveTerminalBackend() ? mTermSession.getRows() : -1)
+            + ", sizeChanged=" + sizeChanged);
+
         if (!sizeChanged) {
             removeCallbacks(mResizeRunnable);
             return;
@@ -1557,6 +1564,10 @@ public final class TerminalView extends View {
 
     private void doUpdateSize() {
         if (mTermSession == null || mPendingNewColumns == -1) return;
+        android.util.Log.w(LOG_TAG, "doUpdateSize() (debounced): mPendingNewColumns=" + mPendingNewColumns 
+            + ", mPendingNewRows=" + mPendingNewRows 
+            + ", currentColumns=" + mTermSession.getColumns() 
+            + ", currentRows=" + mTermSession.getRows());
         mTermSession.updateSize(mPendingNewColumns, mPendingNewRows, mPendingCellWidth, mPendingCellHeight);
         mClient.onTerminalReady();
 

@@ -217,6 +217,11 @@ public class TermuxActivityRootView extends LinearLayout {
 
         boolean isRealImeVisible = windowInsets.isVisible(WindowInsetsCompat.Type.ime()) || imeBottomInset > systemBarsBottomInset;
 
+        android.util.Log.w("TermuxActivityRootView", "adjustWindowInsets: isRealImeVisible=" + isRealImeVisible 
+            + ", mRealImeInsetsReceived=" + mRealImeInsetsReceived 
+            + ", imeBottomInset=" + imeBottomInset 
+            + ", systemBarsBottomInset=" + systemBarsBottomInset);
+
         if (isRealImeVisible) {
             mRealImeInsetsReceived = true;
             int keyboardHeight = Math.max(0, imeBottomInset - systemBarsBottomInset);
@@ -244,9 +249,7 @@ public class TermuxActivityRootView extends LinearLayout {
 
             if (lastKeyboardHeight > 0) {
                 int newImeBottom = systemBarsBottomInset + lastKeyboardHeight;
-                if (mRootViewLoggingEnabled) {
-                    Logger.logVerbose(LOG_TAG, "Pre-applying last known keyboard height in insets: " + lastKeyboardHeight + " for orientation " + orientation);
-                }
+                android.util.Log.w("TermuxActivityRootView", "Pre-applying last known keyboard height in insets: " + lastKeyboardHeight + " for orientation " + orientation);
                 WindowInsetsCompat.Builder builder = new WindowInsetsCompat.Builder(windowInsets);
                 builder.setInsets(WindowInsetsCompat.Type.ime(), Insets.of(
                     windowInsets.getInsets(WindowInsetsCompat.Type.ime()).left,

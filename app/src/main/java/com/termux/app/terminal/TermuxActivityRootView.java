@@ -257,7 +257,6 @@ public class TermuxActivityRootView extends LinearLayout {
                     windowInsets.getInsets(WindowInsetsCompat.Type.ime()).right,
                     newImeBottom
                 ));
-                builder.setVisible(WindowInsetsCompat.Type.ime(), true);
                 WindowInsetsCompat modifiedCompat = builder.build();
                 WindowInsets modifiedInsets = modifiedCompat.toWindowInsets();
                 if (modifiedInsets != null) {

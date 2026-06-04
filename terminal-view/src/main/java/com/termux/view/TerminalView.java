@@ -1576,6 +1576,10 @@ public final class TerminalView extends View {
 
     private void doUpdateSize() {
         if (mTermSession == null || mPendingNewColumns == -1) return;
+        if (getWindowVisibility() != View.VISIBLE) {
+            mPendingNewColumns = -1;
+            return;
+        }
         android.util.Log.w(LOG_TAG, "doUpdateSize() (debounced): mPendingNewColumns=" + mPendingNewColumns 
             + ", mPendingNewRows=" + mPendingNewRows 
             + ", currentColumns=" + mTermSession.getColumns() 

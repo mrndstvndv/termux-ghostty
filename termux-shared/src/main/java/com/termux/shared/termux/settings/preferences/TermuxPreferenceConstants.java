@@ -130,6 +130,18 @@ public final class TermuxPreferenceConstants {
         public static final String VALUE_LAST_SOFT_KEYBOARD_STATE_UNKNOWN = "unknown";
         public static final String DEFAULT_VALUE_KEY_LAST_SOFT_KEYBOARD_STATE = VALUE_LAST_SOFT_KEYBOARD_STATE_UNKNOWN;
 
+        /**
+         * Defines the key for the last remembered soft keyboard height in portrait mode.
+         */
+        public static final String KEY_LAST_SOFT_KEYBOARD_HEIGHT_PORTRAIT = "last_soft_keyboard_height_portrait";
+        public static final int DEFAULT_VALUE_KEY_LAST_SOFT_KEYBOARD_HEIGHT_PORTRAIT = 0;
+
+        /**
+         * Defines the key for the last remembered soft keyboard height in landscape mode.
+         */
+        public static final String KEY_LAST_SOFT_KEYBOARD_HEIGHT_LANDSCAPE = "last_soft_keyboard_height_landscape";
+        public static final int DEFAULT_VALUE_KEY_LAST_SOFT_KEYBOARD_HEIGHT_LANDSCAPE = 0;
+
 
         /**
          * Defines the key for whether to always keep screen on.

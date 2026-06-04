@@ -55,6 +55,7 @@ public final class BubbleSessionActivity extends AppCompatActivity implements Se
     private boolean mIsInvalidState;
     private boolean mDidCloseTermuxActivityOnBubbleOpen;
     private int mLastMaterialYouWallpaperId;
+    private boolean mRealImeInsetsReceived = false;
 
     private static final float DEFAULT_EXTRA_KEYS_HEIGHT_DP = 37.5f;
 
@@ -114,6 +115,7 @@ public final class BubbleSessionActivity extends AppCompatActivity implements Se
     @Override
     protected void onResume() {
         super.onResume();
+        mRealImeInsetsReceived = false;
         if (mIsInvalidState) return;
 
         reloadMaterialYouThemeIfNeeded();
@@ -121,6 +123,12 @@ public final class BubbleSessionActivity extends AppCompatActivity implements Se
         mTerminalViewClient.setSoftKeyboardState();
         updateSessionTitle();
         markCurrentSessionBubbleConversationRead();
+    }
+
+    @Override
+    public void onConfigurationChanged(@NonNull android.content.res.Configuration newConfig) {
+        super.onConfigurationChanged(newConfig);
+        mRealImeInsetsReceived = false;
     }
 
     @Override
@@ -231,6 +239,47 @@ public final class BubbleSessionActivity extends AppCompatActivity implements Se
             Insets imeInsets = windowInsets.getInsets(WindowInsetsCompat.Type.ime());
             Insets systemBarInsets = windowInsets.getInsets(WindowInsetsCompat.Type.systemBars());
             int keyboardBottomInset = Math.max(0, imeInsets.bottom - systemBarInsets.bottom);
+
+            boolean isRealImeVisible = windowInsets.isVisible(WindowInsetsCompat.Type.ime()) || imeInsets.bottom > systemBarInsets.bottom;
+
+            if (isRealImeVisible) {
+                mRealImeInsetsReceived = true;
+                if (keyboardBottomInset > 0) {
+                    int orientation = getResources().getConfiguration().orientation;
+                    if (orientation == android.content.res.Configuration.ORIENTATION_PORTRAIT) {
+                        getPreferences().setLastSoftKeyboardHeightPortrait(keyboardBottomInset);
+                    } else if (orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE) {
+                        getPreferences().setLastSoftKeyboardHeightLandscape(keyboardBottomInset);
+                    }
+                }
+            }
+
+            if (!mRealImeInsetsReceived
+                    && getProperties().shouldRememberSoftKeyboardState()
+                    && com.termux.shared.termux.settings.preferences.TermuxPreferenceConstants.TERMUX_APP.VALUE_LAST_SOFT_KEYBOARD_STATE_VISIBLE.equals(getPreferences().getLastSoftKeyboardState())) {
+
+                int lastKeyboardHeight = 0;
+                int orientation = getResources().getConfiguration().orientation;
+                if (orientation == android.content.res.Configuration.ORIENTATION_PORTRAIT) {
+                    lastKeyboardHeight = getPreferences().getLastSoftKeyboardHeightPortrait();
+                } else if (orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE) {
+                    lastKeyboardHeight = getPreferences().getLastSoftKeyboardHeightLandscape();
+                }
+
+                if (lastKeyboardHeight > 0) {
+                    keyboardBottomInset = lastKeyboardHeight;
+                    Logger.logVerbose(LOG_TAG, "Pre-applying last known keyboard height in bubble: " + lastKeyboardHeight + " for orientation " + orientation);
+                    WindowInsetsCompat.Builder builder = new WindowInsetsCompat.Builder(windowInsets);
+                    builder.setInsets(WindowInsetsCompat.Type.ime(), Insets.of(
+                        imeInsets.left,
+                        imeInsets.top,
+                        imeInsets.right,
+                        systemBarInsets.bottom + lastKeyboardHeight
+                    ));
+                    builder.setVisible(WindowInsetsCompat.Type.ime(), true);
+                    windowInsets = builder.build();
+                }
+            }
 
             view.setPadding(basePaddingLeft, basePaddingTop, basePaddingRight,
                 basePaddingBottom + keyboardBottomInset);

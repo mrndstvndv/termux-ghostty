@@ -80,6 +80,11 @@ public final class TerminalView extends View {
 
     /** The top row of text to display. Ranges from -activeTranscriptRows to 0. */
     int mTopRow;
+    private final Runnable mResizeRunnable = this::doUpdateSize;
+    private int mPendingNewColumns = -1;
+    private int mPendingNewRows = -1;
+    private int mPendingCellWidth = -1;
+    private int mPendingCellHeight = -1;
     int[] mDefaultSelectors = new int[]{-1,-1,-1,-1};
 
     float mScaleFactor = 1.f;
@@ -350,7 +355,7 @@ public final class TerminalView extends View {
         mVisibleLinkLayout = null;
         mVisibleLinkLayoutEnabled = false;
 
-        updateSize();
+        updateSize(true);
         requestGhosttyFullSnapshotRefresh(-1);
         onScreenUpdated();
 
@@ -732,12 +737,12 @@ public final class TerminalView extends View {
      */
     public void setTextSize(int textSize) {
         mRenderer = new TerminalRenderer(textSize, mRenderer == null ? Typeface.MONOSPACE : mRenderer.mTypeface);
-        updateSize();
+        updateSize(true);
     }
 
     public void setTypeface(Typeface newTypeface) {
         mRenderer = new TerminalRenderer(mRenderer.mTextSize, newTypeface);
-        updateSize();
+        updateSize(true);
         invalidate();
     }
 
@@ -1507,6 +1512,10 @@ public final class TerminalView extends View {
 
     /** Check if the terminal size in rows and columns should be updated. */
     public void updateSize() {
+        updateSize(false);
+    }
+
+    public void updateSize(boolean immediate) {
         int viewWidth = getWidth();
         int viewHeight = getHeight();
         if (viewWidth == 0 || viewHeight == 0 || mTermSession == null || mRenderer == null) return;
@@ -1523,15 +1532,38 @@ public final class TerminalView extends View {
             || cellWidthPixels != mTermSession.getCellWidthPixels()
             || cellHeightPixels != mTermSession.getCellHeightPixels();
         if (!sizeChanged) {
+            removeCallbacks(mResizeRunnable);
             return;
         }
 
-        mTermSession.updateSize(newColumns, newRows, cellWidthPixels, cellHeightPixels);
+        if (immediate || !hasActiveTerminalBackend()) {
+            removeCallbacks(mResizeRunnable);
+            mTermSession.updateSize(newColumns, newRows, cellWidthPixels, cellHeightPixels);
+            mClient.onTerminalReady();
+
+            mTopRow = 0;
+            scrollTo(0, 0);
+            invalidate();
+        } else {
+            mPendingNewColumns = newColumns;
+            mPendingNewRows = newRows;
+            mPendingCellWidth = cellWidthPixels;
+            mPendingCellHeight = cellHeightPixels;
+
+            removeCallbacks(mResizeRunnable);
+            postDelayed(mResizeRunnable, 250); // Debounce by 250ms
+        }
+    }
+
+    private void doUpdateSize() {
+        if (mTermSession == null || mPendingNewColumns == -1) return;
+        mTermSession.updateSize(mPendingNewColumns, mPendingNewRows, mPendingCellWidth, mPendingCellHeight);
         mClient.onTerminalReady();
 
         mTopRow = 0;
         scrollTo(0, 0);
         invalidate();
+        mPendingNewColumns = -1;
     }
 
     @Override

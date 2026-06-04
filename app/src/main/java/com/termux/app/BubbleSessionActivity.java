@@ -56,6 +56,10 @@ public final class BubbleSessionActivity extends AppCompatActivity implements Se
     private boolean mDidCloseTermuxActivityOnBubbleOpen;
     private int mLastMaterialYouWallpaperId;
     private boolean mRealImeInsetsReceived = false;
+    private int mBasePaddingLeft;
+    private int mBasePaddingTop;
+    private int mBasePaddingRight;
+    private int mBasePaddingBottom;
 
     private static final float DEFAULT_EXTRA_KEYS_HEIGHT_DP = 37.5f;
 
@@ -89,6 +93,26 @@ public final class BubbleSessionActivity extends AppCompatActivity implements Se
         }
 
         mRootView = findViewById(R.id.activity_bubble_root_view);
+        mBasePaddingLeft = mRootView.getPaddingLeft();
+        mBasePaddingTop = mRootView.getPaddingTop();
+        mBasePaddingRight = mRootView.getPaddingRight();
+        mBasePaddingBottom = mRootView.getPaddingBottom();
+
+        int initialKeyboardHeight = 0;
+        if (mProperties.shouldRememberSoftKeyboardState()
+                && com.termux.shared.termux.settings.preferences.TermuxPreferenceConstants.TERMUX_APP.VALUE_LAST_SOFT_KEYBOARD_STATE_VISIBLE.equals(mPreferences.getLastSoftKeyboardState())) {
+            int orientation = getResources().getConfiguration().orientation;
+            if (orientation == android.content.res.Configuration.ORIENTATION_PORTRAIT) {
+                initialKeyboardHeight = mPreferences.getLastSoftKeyboardHeightPortrait();
+            } else if (orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE) {
+                initialKeyboardHeight = mPreferences.getLastSoftKeyboardHeightLandscape();
+            }
+        }
+
+        if (initialKeyboardHeight > 0) {
+            mRootView.setPadding(mBasePaddingLeft, mBasePaddingTop, mBasePaddingRight, mBasePaddingBottom + initialKeyboardHeight);
+        }
+
         mTerminalView = findViewById(R.id.bubble_terminal_view);
         mExtraKeysView = findViewById(R.id.bubble_extra_keys_view);
         mTerminalViewClient = new BubbleTerminalViewClient(this);
@@ -120,7 +144,9 @@ public final class BubbleSessionActivity extends AppCompatActivity implements Se
 
         reloadMaterialYouThemeIfNeeded();
         mTerminalSessionClient.onResume();
-        mTerminalViewClient.setSoftKeyboardState();
+        if (mTermuxService != null) {
+            mTerminalViewClient.setSoftKeyboardState();
+        }
         updateSessionTitle();
         markCurrentSessionBubbleConversationRead();
     }
@@ -206,6 +232,7 @@ public final class BubbleSessionActivity extends AppCompatActivity implements Se
         markCurrentSessionBubbleConversationRead();
         mTerminalView.requestFocus();
         closeTermuxActivityIfLaunchedFromBubble();
+        mTerminalViewClient.setSoftKeyboardState();
     }
 
     private void setupExtraKeysView() {
@@ -229,11 +256,6 @@ public final class BubbleSessionActivity extends AppCompatActivity implements Se
 
     private void setRootWindowInsetsListener() {
         if (mRootView == null) return;
-
-        final int basePaddingLeft = mRootView.getPaddingLeft();
-        final int basePaddingTop = mRootView.getPaddingTop();
-        final int basePaddingRight = mRootView.getPaddingRight();
-        final int basePaddingBottom = mRootView.getPaddingBottom();
 
         ViewCompat.setOnApplyWindowInsetsListener(mRootView, (view, windowInsets) -> {
             Insets imeInsets = windowInsets.getInsets(WindowInsetsCompat.Type.ime());
@@ -285,8 +307,8 @@ public final class BubbleSessionActivity extends AppCompatActivity implements Se
                 }
             }
 
-            view.setPadding(basePaddingLeft, basePaddingTop, basePaddingRight,
-                basePaddingBottom + keyboardBottomInset);
+            view.setPadding(mBasePaddingLeft, mBasePaddingTop, mBasePaddingRight,
+                mBasePaddingBottom + keyboardBottomInset);
             return windowInsets;
         });
 

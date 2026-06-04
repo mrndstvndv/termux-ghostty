@@ -50,6 +50,20 @@ public class TermuxActivityRootView extends LinearLayout {
         mRealImeInsetsReceived = false;
     }
 
+    @Override
+    protected void onWindowVisibilityChanged(int visibility) {
+        super.onWindowVisibilityChanged(visibility);
+        if (visibility == View.VISIBLE) {
+            mRealImeInsetsReceived = false;
+        }
+    }
+
+    @Override
+    protected void onConfigurationChanged(android.content.res.Configuration newConfig) {
+        super.onConfigurationChanged(newConfig);
+        mRealImeInsetsReceived = false;
+    }
+
     public TermuxActivityRootView(Context context, @Nullable AttributeSet attrs) {
         super(context, attrs);
     }

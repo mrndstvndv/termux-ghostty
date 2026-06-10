@@ -91,16 +91,32 @@ public class SessionTabStripController {
         resolveColors();
         TerminalSession currentSession = mActivity.getCurrentSession();
 
+        boolean isRightAligned = TermuxPropertyConstants.IVALUE_SESSION_TAB_BAR_ALIGN_RIGHT.equals(
+            mActivity.getProperties().getSessionTabBarAlign());
+
         List<TermuxSession> sessions = service.getTermuxSessions();
-        for (int i = 0; i < sessions.size(); i++) {
-            TerminalSession session = sessions.get(i).getTerminalSession();
-            if (session == null) continue;
+        if (isRightAligned) {
+            for (int i = sessions.size() - 1; i >= 0; i--) {
+                TerminalSession session = sessions.get(i).getTerminalSession();
+                if (session == null) continue;
 
-            boolean isCurrent = session == currentSession;
-            if (isCurrent) mSelectedIndex = i;
+                boolean isCurrent = session == currentSession;
+                if (isCurrent) mSelectedIndex = i;
 
-            TextView tab = createTabView(i, session, isCurrent);
-            mTabStrip.addView(tab);
+                TextView tab = createTabView(i, session, isCurrent);
+                mTabStrip.addView(tab);
+            }
+        } else {
+            for (int i = 0; i < sessions.size(); i++) {
+                TerminalSession session = sessions.get(i).getTerminalSession();
+                if (session == null) continue;
+
+                boolean isCurrent = session == currentSession;
+                if (isCurrent) mSelectedIndex = i;
+
+                TextView tab = createTabView(i, session, isCurrent);
+                mTabStrip.addView(tab);
+            }
         }
 
         // "+" button always at the end
@@ -109,7 +125,8 @@ public class SessionTabStripController {
         // If no session was marked current but sessions exist, default to first
         if (mSelectedIndex < 0 && !sessions.isEmpty()) {
             mSelectedIndex = 0;
-            View firstTab = mTabStrip.getChildAt(0);
+            int childIndex = getChildIndexForSessionIndex(0, sessions.size());
+            View firstTab = mTabStrip.getChildAt(childIndex);
             if (firstTab instanceof TextView) {
                 styleTabSelected((TextView) firstTab);
             }
@@ -146,17 +163,21 @@ public class SessionTabStripController {
         int oldIndex = mSelectedIndex;
         mSelectedIndex = newIndex;
 
+        int sessionsSize = service.getTermuxSessionsSize();
+
         // Unhighlight old tab
-        if (oldIndex >= 0 && oldIndex < mTabStrip.getChildCount()) {
-            View oldTab = mTabStrip.getChildAt(oldIndex);
+        if (oldIndex >= 0 && oldIndex < sessionsSize) {
+            int oldChildIndex = getChildIndexForSessionIndex(oldIndex, sessionsSize);
+            View oldTab = mTabStrip.getChildAt(oldChildIndex);
             if (oldTab instanceof TextView) {
                 styleTabUnselected((TextView) oldTab);
             }
         }
 
         // Highlight new tab
-        if (mSelectedIndex >= 0 && mSelectedIndex < mTabStrip.getChildCount()) {
-            View newTab = mTabStrip.getChildAt(mSelectedIndex);
+        if (mSelectedIndex >= 0 && mSelectedIndex < sessionsSize) {
+            int newChildIndex = getChildIndexForSessionIndex(mSelectedIndex, sessionsSize);
+            View newTab = mTabStrip.getChildAt(newChildIndex);
             if (newTab instanceof TextView) {
                 styleTabSelected((TextView) newTab);
             }
@@ -300,10 +321,25 @@ public class SessionTabStripController {
             .show();
     }
 
-    private void scrollToTab(int index) {
-        if (index < 0 || index >= mTabStrip.getChildCount()) return;
+    private int getChildIndexForSessionIndex(int sessionIndex, int sessionsSize) {
+        boolean isRightAligned = TermuxPropertyConstants.IVALUE_SESSION_TAB_BAR_ALIGN_RIGHT.equals(
+            mActivity.getProperties().getSessionTabBarAlign());
+        if (isRightAligned) {
+            return sessionsSize - 1 - sessionIndex;
+        } else {
+            return sessionIndex;
+        }
+    }
 
-        View tabView = mTabStrip.getChildAt(index);
+    private void scrollToTab(int sessionIndex) {
+        TermuxService service = mActivity.getTermuxService();
+        if (service == null) return;
+        int sessionsSize = service.getTermuxSessionsSize();
+
+        int childIndex = getChildIndexForSessionIndex(sessionIndex, sessionsSize);
+        if (childIndex < 0 || childIndex >= mTabStrip.getChildCount()) return;
+
+        View tabView = mTabStrip.getChildAt(childIndex);
         mScrollView.post(() -> {
             int scrollX = tabView.getLeft() - (mScrollView.getWidth() - tabView.getWidth()) / 2;
             mScrollView.smoothScrollTo(Math.max(0, scrollX), 0);

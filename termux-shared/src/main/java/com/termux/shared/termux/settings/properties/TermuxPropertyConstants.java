@@ -151,6 +151,22 @@ public final class TermuxPropertyConstants {
             .put(IVALUE_SESSION_TAB_BAR_POSITION_BOTTOM, IVALUE_SESSION_TAB_BAR_POSITION_BOTTOM)
             .build();
 
+    /** Defines the key for session tab bar alignment (left, center, or right) */
+    public static final String KEY_SESSION_TAB_BAR_ALIGN = "session-tab-bar-align"; // Default: "session-tab-bar-align"
+
+    public static final String IVALUE_SESSION_TAB_BAR_ALIGN_LEFT = "left";
+    public static final String IVALUE_SESSION_TAB_BAR_ALIGN_CENTER = "center";
+    public static final String IVALUE_SESSION_TAB_BAR_ALIGN_RIGHT = "right";
+    public static final String DEFAULT_IVALUE_SESSION_TAB_BAR_ALIGN = IVALUE_SESSION_TAB_BAR_ALIGN_LEFT;
+
+    /** Defines the bidirectional map for session tab bar alignment values and their internal values */
+    public static final ImmutableBiMap<String, String> MAP_SESSION_TAB_BAR_ALIGN =
+        new ImmutableBiMap.Builder<String, String>()
+            .put(IVALUE_SESSION_TAB_BAR_ALIGN_LEFT, IVALUE_SESSION_TAB_BAR_ALIGN_LEFT)
+            .put(IVALUE_SESSION_TAB_BAR_ALIGN_CENTER, IVALUE_SESSION_TAB_BAR_ALIGN_CENTER)
+            .put(IVALUE_SESSION_TAB_BAR_ALIGN_RIGHT, IVALUE_SESSION_TAB_BAR_ALIGN_RIGHT)
+            .build();
+
 
 
     /** Defines the key for whether to hide soft keyboard when termux app is started */
@@ -489,7 +505,8 @@ public final class TermuxPropertyConstants {
         KEY_MATERIAL_YOU_THEME,
         KEY_SOFT_KEYBOARD_TOGGLE_BEHAVIOUR,
         KEY_VOLUME_KEYS_BEHAVIOUR,
-        KEY_SESSION_TAB_BAR_POSITION
+        KEY_SESSION_TAB_BAR_POSITION,
+        KEY_SESSION_TAB_BAR_ALIGN
     ));
 
     /** Defines the set for keys loaded by termux that have default boolean behaviour with false as default.

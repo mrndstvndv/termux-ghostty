@@ -604,6 +604,21 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
                 }
             }
 
+            if (tabScrollView != null && tabStrip != null) {
+                String tabAlign = mProperties.getSessionTabBarAlign();
+                if (TermuxPropertyConstants.IVALUE_SESSION_TAB_BAR_ALIGN_RIGHT.equals(tabAlign)) {
+                    tabScrollView.setFillViewport(true);
+                    tabStrip.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
+                } else if (TermuxPropertyConstants.IVALUE_SESSION_TAB_BAR_ALIGN_CENTER.equals(tabAlign)) {
+                    tabScrollView.setFillViewport(true);
+                    tabStrip.setGravity(Gravity.CENTER);
+                } else {
+                    // default is left
+                    tabScrollView.setFillViewport(false);
+                    tabStrip.setGravity(Gravity.LEFT | Gravity.CENTER_VERTICAL);
+                }
+            }
+
             mSessionTabStripController = new SessionTabStripController(this, tabStrip, tabScrollView);
             mSessionTabStripController.setVisible(true);
             mSessionTabStripController.notifyDataSetChanged();

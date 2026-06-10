@@ -304,6 +304,8 @@ public abstract class TermuxSharedProperties {
                 return (String) getVolumeKeysBehaviourInternalPropertyValueFromValue(value);
             case TermuxPropertyConstants.KEY_SESSION_TAB_BAR_POSITION:
                 return (String) getSessionTabBarPositionInternalPropertyValueFromValue(value);
+            case TermuxPropertyConstants.KEY_SESSION_TAB_BAR_ALIGN:
+                return (String) getSessionTabBarAlignInternalPropertyValueFromValue(value);
 
             default:
                 // default false boolean behaviour
@@ -513,6 +515,16 @@ public abstract class TermuxSharedProperties {
     }
 
     /**
+     * Returns the value itself if it is not {@code null}, otherwise returns {@link TermuxPropertyConstants#DEFAULT_IVALUE_SESSION_TAB_BAR_ALIGN}.
+     *
+     * @param value {@link String} value to convert.
+     * @return Returns the internal value for value.
+     */
+    public static String getSessionTabBarAlignInternalPropertyValueFromValue(String value) {
+        return (String) SharedProperties.getDefaultIfNotInMap(TermuxPropertyConstants.KEY_SESSION_TAB_BAR_ALIGN, TermuxPropertyConstants.MAP_SESSION_TAB_BAR_ALIGN, SharedProperties.toLowerCase(value), TermuxPropertyConstants.DEFAULT_IVALUE_SESSION_TAB_BAR_ALIGN, true, LOG_TAG);
+    }
+
+    /**
      * Returns the path itself if a directory exists at it and is readable, otherwise returns
      *  {@link TermuxPropertyConstants#DEFAULT_IVALUE_DEFAULT_WORKING_DIRECTORY}.
      *
@@ -642,6 +654,10 @@ public abstract class TermuxSharedProperties {
 
     public String getSessionTabBarPosition() {
         return (String) getInternalPropertyValue(TermuxPropertyConstants.KEY_SESSION_TAB_BAR_POSITION, true);
+    }
+
+    public String getSessionTabBarAlign() {
+        return (String) getInternalPropertyValue(TermuxPropertyConstants.KEY_SESSION_TAB_BAR_ALIGN, true);
     }
 
     public boolean shouldRunTermuxAmSocketServer() {

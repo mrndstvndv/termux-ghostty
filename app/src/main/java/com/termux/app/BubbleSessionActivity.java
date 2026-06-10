@@ -109,6 +109,10 @@ public final class BubbleSessionActivity extends AppCompatActivity implements Se
             }
         }
 
+        android.util.Log.w(LOG_TAG, "onCreate: getLastSoftKeyboardState=" + mPreferences.getLastSoftKeyboardState() 
+            + ", shouldRememberSoftKeyboardState=" + mProperties.shouldRememberSoftKeyboardState() 
+            + ", initialKeyboardHeight=" + initialKeyboardHeight);
+
         if (initialKeyboardHeight > 0) {
             mRootView.setPadding(mBasePaddingLeft, mBasePaddingTop, mBasePaddingRight, mBasePaddingBottom + initialKeyboardHeight);
         }
@@ -139,6 +143,7 @@ public final class BubbleSessionActivity extends AppCompatActivity implements Se
     @Override
     protected void onResume() {
         super.onResume();
+        android.util.Log.w(LOG_TAG, "onResume");
         mRealImeInsetsReceived = false;
         if (mIsInvalidState) return;
 
@@ -176,6 +181,7 @@ public final class BubbleSessionActivity extends AppCompatActivity implements Se
 
     @Override
     protected void onDestroy() {
+        closeTermuxActivityIfLaunchedFromBubble();
         super.onDestroy();
 
         if (mTermuxService != null) {
@@ -192,7 +198,7 @@ public final class BubbleSessionActivity extends AppCompatActivity implements Se
 
     @Override
     public void onServiceConnected(ComponentName name, IBinder service) {
-        Logger.logDebug(LOG_TAG, "onServiceConnected");
+        android.util.Log.w(LOG_TAG, "onServiceConnected");
         mTermuxService = ((TermuxService.LocalBinder) service).service;
         mTermuxService.registerTerminalSessionClient(mTerminalSessionClient);
         attachRequestedSession();
@@ -218,6 +224,7 @@ public final class BubbleSessionActivity extends AppCompatActivity implements Se
     }
 
     private void attachRequestedSession() {
+        android.util.Log.w(LOG_TAG, "attachRequestedSession");
         if (mTermuxService == null) return;
 
         TerminalSession session = mTermuxService.getTerminalSessionForHandle(mSessionHandle);
@@ -231,7 +238,6 @@ public final class BubbleSessionActivity extends AppCompatActivity implements Se
         updateSessionTitle();
         markCurrentSessionBubbleConversationRead();
         mTerminalView.requestFocus();
-        closeTermuxActivityIfLaunchedFromBubble();
         mTerminalViewClient.setSoftKeyboardState();
     }
 

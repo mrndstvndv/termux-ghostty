@@ -13,10 +13,17 @@ use-session-tabs=true
 # - bottom: Just above the extra keys (default)
 # - top: At the top of the terminal screen
 session-tab-bar-position=bottom
+
+# Choose the alignment of the session tab bar.
+# - left: Tabs start from the left (default)
+# - center: Tabs are centered horizontally
+# - right: Tabs are aligned to the right
+session-tab-bar-align=left
 ```
 
 Default for `use-session-tabs`: `false` (drawer mode)
 Default for `session-tab-bar-position`: `bottom`
+Default for `session-tab-bar-align`: `left`
 
 ## Features
 

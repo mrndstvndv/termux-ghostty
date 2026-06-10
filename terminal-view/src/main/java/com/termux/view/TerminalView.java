@@ -355,7 +355,7 @@ public final class TerminalView extends View {
         mVisibleLinkLayout = null;
         mVisibleLinkLayoutEnabled = false;
 
-        updateSize(true);
+        updateSize(false);
         requestGhosttyFullSnapshotRefresh(-1);
         onScreenUpdated();
 
@@ -1514,7 +1514,7 @@ public final class TerminalView extends View {
     protected void onWindowVisibilityChanged(int visibility) {
         super.onWindowVisibilityChanged(visibility);
         if (visibility == View.VISIBLE) {
-            updateSize(true);
+            updateSize(false);
         }
     }
 

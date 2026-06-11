@@ -1,6 +1,7 @@
 package com.termux.shared.termux.settings.properties;
 
 import android.content.Context;
+import android.content.Intent;
 
 import androidx.annotation.NonNull;
 
@@ -172,6 +173,60 @@ public abstract class TermuxSharedProperties {
             // We get the property value directly from file and return its internal value
             return getInternalTermuxPropertyValueFromValue(mContext, key, mSharedProperties.getProperty(key, false));
         }
+    }
+
+    public synchronized boolean setPropertyValueAndSave(Context context, String key, String value) {
+        File propertiesFile = new File(TermuxConstants.TERMUX_PROPERTIES_PRIMARY_FILE_PATH);
+        StringBuilder newContent = new StringBuilder();
+        boolean keyFound = false;
+
+        if (propertiesFile.exists()) {
+            try (java.io.BufferedReader reader = new java.io.BufferedReader(
+                    new java.io.InputStreamReader(new java.io.FileInputStream(propertiesFile), java.nio.charset.StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    String trimmed = line.trim();
+                    if (!trimmed.startsWith("#") && trimmed.contains("=")) {
+                        String[] parts = trimmed.split("=", 2);
+                        if (parts[0].trim().equals(key)) {
+                            newContent.append(key).append("=").append(value).append("\n");
+                            keyFound = true;
+                            continue;
+                        }
+                    }
+                    newContent.append(line).append("\n");
+                }
+            } catch (Exception e) {
+                Logger.logStackTraceWithMessage(LOG_TAG, "Failed to read termux.properties", e);
+                return false;
+            }
+        } else {
+            File parent = propertiesFile.getParentFile();
+            if (parent != null && !parent.exists()) {
+                parent.mkdirs();
+            }
+        }
+
+        if (!keyFound) {
+            newContent.append(key).append("=").append(value).append("\n");
+        }
+
+        try (java.io.BufferedWriter writer = new java.io.BufferedWriter(
+                new java.io.OutputStreamWriter(new java.io.FileOutputStream(propertiesFile), java.nio.charset.StandardCharsets.UTF_8))) {
+            writer.write(newContent.toString());
+            writer.flush();
+        } catch (Exception e) {
+            Logger.logStackTraceWithMessage(LOG_TAG, "Failed to write termux.properties", e);
+            return false;
+        }
+
+        loadTermuxPropertiesFromDisk();
+
+        Intent intent = new Intent(TermuxConstants.TERMUX_APP.TERMUX_ACTIVITY.ACTION_RELOAD_STYLE);
+        intent.putExtra(TermuxConstants.TERMUX_APP.TERMUX_ACTIVITY.EXTRA_RECREATE_ACTIVITY, true);
+        context.sendBroadcast(intent);
+
+        return true;
     }
 
 

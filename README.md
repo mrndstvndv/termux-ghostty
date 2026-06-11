@@ -1,6 +1,6 @@
 # Termux-Ghostty
 
-An experimental Android terminal app combining features from [Termux](https://termux.dev) and [Ghostty](https://ghostty.org).
+An experimental Android terminal app using libghostty-vt as the terminal backend + added opinionated qol features.
 
 > ⚠️ **NOTICE**: This is an **unofficial** fork and is **not affiliated with ghostty-org or termux**. It combines features from both projects under their respective licenses (GPLv3 and MIT).
 
@@ -9,6 +9,9 @@ An experimental Android terminal app combining features from [Termux](https://te
 - **Ghostty integration** — Uses Ghostty-backed VT parsing and terminal state management inside the app.
 - **Android session bubbles** — Open terminal sessions as native Android 11+ bubbles without killing the underlying session when the bubble UI is dismissed.
 - **Bubble unread dots for OSC notifications** — Bubbled sessions use conversation-style unread state instead of separate system notifications, and opening the session clears the unread indicator.
+- **Session tabs** — Optional `termux.properties` support via `use-session-tabs=true` to show horizontal session tabs instead of the navigation drawer.
+- **Tab bar position** — Vertical position of the session tab bar via `session-tab-bar-position=top|bottom` (defaults to `bottom`).
+- **Tab bar alignment** — Alignment of the session tab bar via `session-tab-bar-align=left|center|right` (defaults to `left`).
 - **Clickable terminal links** — Optional `termux.properties` support for tap-to-open links in Ghostty sessions via `terminal-onclick-url-open=true`, with `terminal-onclick-url-open-when-mouse-tracking-active=true` to prefer link taps over terminal mouse tracking.
 - **Remember soft keyboard state** — Optional `termux.properties` support via `remember-soft-keyboard-state=true` to restore the last soft keyboard visibility state when reopening the app.
 - **Material You theming** — Optional `termux.properties` support via `material-you-theme=disabled|light|dark|black|system` to theme the entire app (chrome + terminal ANSI palette) with wallpaper-derived Material 3 colors on Android 12+. `black` uses dynamic accent colors with pure black backgrounds. When enabled, `colors.properties` is ignored. Recreates automatically on wallpaper changes.

@@ -245,4 +245,29 @@
     <!-- Donate Preference -->
     <string name="donate_preference_title">Donate</string>
 
+    <!-- Ghostty Fork Settings -->
+    <string name="termux_ghostty_preferences_title">Ghostty Fork Features</string>
+    <string name="termux_ghostty_preferences_summary">Configure custom QoL features added in this fork</string>
+
+    <string name="termux_ghostty_session_tabs_category_title">Session Tabs</string>
+    <string name="termux_ghostty_use_session_tabs_title">Use Session Tabs</string>
+    <string name="termux_ghostty_use_session_tabs_summary">Show horizontal session tabs above the terminal instead of using the drawer sidebar</string>
+    <string name="termux_ghostty_session_tab_bar_position_title">Tab Bar Position</string>
+    <string name="termux_ghostty_session_tab_bar_position_summary">Select the vertical position of the session tab bar</string>
+    <string name="termux_ghostty_session_tab_bar_align_title">Tab Bar Alignment</string>
+    <string name="termux_ghostty_session_tab_bar_align_summary">Select horizontal alignment of tab items</string>
+
+    <string name="termux_ghostty_theme_keyboard_category_title">Theme &amp; Keyboard</string>
+    <string name="termux_ghostty_material_you_theme_title">Material You Theme</string>
+    <string name="termux_ghostty_material_you_theme_summary">Theme the app chrome and ANSI palette using wallpaper colors (Android 12+)</string>
+    <string name="termux_ghostty_remember_soft_keyboard_state_title">Remember Soft Keyboard State</string>
+    <string name="termux_ghostty_remember_soft_keyboard_state_summary">Restore the last soft keyboard visibility state when reopening the app</string>
+
+    <string name="termux_ghostty_interaction_category_title">Interactions</string>
+    <string name="termux_ghostty_terminal_onclick_url_open_title">Clickable Terminal Links</string>
+    <string name="termux_ghostty_terminal_onclick_url_open_summary">Tap URLs/links in the terminal to open them in a browser</string>
+    <string name="termux_ghostty_terminal_onclick_url_open_when_mouse_tracking_active_title">Url Tap Overrides Mouse Tracking</string>
+    <string name="termux_ghostty_terminal_onclick_url_open_when_mouse_tracking_active_summary">Prefer link clicks over mouse tracking when both are active</string>
+
 </resources>
+

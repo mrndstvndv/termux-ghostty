@@ -1,9 +1,11 @@
 package com.termux.app.fragments.settings.termux;
 
 import android.content.Context;
+import android.content.Intent;
 import android.os.Bundle;
 
 import androidx.annotation.Keep;
+import androidx.annotation.NonNull;
 import androidx.preference.PreferenceDataStore;
 import androidx.preference.PreferenceFragmentCompat;
 import androidx.preference.PreferenceManager;
@@ -24,6 +26,65 @@ public class GhosttyFeaturesPreferencesFragment extends PreferenceFragmentCompat
         preferenceManager.setPreferenceDataStore(GhosttyFeaturesPreferencesDataStore.getInstance(context));
 
         setPreferencesFromResource(R.xml.termux_ghostty_features_preferences, rootKey);
+
+        setupRestartPromptListeners();
+    }
+
+    private void setupRestartPromptListeners() {
+        String[] restartKeys = {
+            "use-session-tabs",
+            "session-tab-bar-position",
+            "session-tab-bar-align",
+            "remember-soft-keyboard-state",
+            "terminal-onclick-url-open",
+            "terminal-onclick-url-open-when-mouse-tracking-active",
+            "material-you-theme"
+        };
+
+        for (String key : restartKeys) {
+            androidx.preference.Preference pref = findPreference(key);
+            if (pref != null) {
+                pref.setOnPreferenceChangeListener((preference, newValue) -> {
+                    showRestartDialog();
+                    return true;
+                });
+            }
+        }
+    }
+
+    private void showRestartDialog() {
+        Context context = getContext();
+        if (context == null) return;
+
+        new androidx.appcompat.app.AlertDialog.Builder(context)
+            .setTitle("Restart Required")
+            .setMessage("This settings change requires a restart of Termux to take effect.")
+            .setPositiveButton("Restart Now", (dialog, which) -> {
+                restartTermux(context);
+            })
+            .setNegativeButton("Later", null)
+            .show();
+    }
+
+    private void restartTermux(@NonNull Context context) {
+        // Cleanly stop the service
+        Intent stopServiceIntent = new Intent(context, com.termux.app.TermuxService.class);
+        stopServiceIntent.setAction(com.termux.shared.termux.TermuxConstants.TERMUX_APP.TERMUX_SERVICE.ACTION_STOP_SERVICE);
+        context.startService(stopServiceIntent);
+
+        // Relaunch the app
+        Intent launchIntent = context.getPackageManager().getLaunchIntentForPackage(context.getPackageName());
+        if (launchIntent != null) {
+            launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+            context.startActivity(launchIntent);
+
+            android.app.Activity activity = getActivity();
+            if (activity != null) {
+                activity.finishAffinity();
+            }
+
+            System.exit(0);
+        }
     }
 
 }

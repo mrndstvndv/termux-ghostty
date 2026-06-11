@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string-array name="session_tab_bar_position_entries">
+        <item>Bottom</item>
+        <item>Top</item>
+    </string-array>
+    <string-array name="session_tab_bar_position_values">
+        <item>bottom</item>
+        <item>top</item>
+    </string-array>
+
+    <string-array name="session_tab_bar_align_entries">
+        <item>Left</item>
+        <item>Center</item>
+        <item>Right</item>
+    </string-array>
+    <string-array name="session_tab_bar_align_values">
+        <item>left</item>
+        <item>center</item>
+        <item>right</item>
+    </string-array>
+
+    <string-array name="material_you_theme_entries">
+        <item>Disabled</item>
+        <item>Light</item>
+        <item>Dark</item>
+        <item>Black</item>
+        <item>System</item>
+    </string-array>
+    <string-array name="material_you_theme_values">
+        <item>disabled</item>
+        <item>light</item>
+        <item>dark</item>
+        <item>black</item>
+        <item>system</item>
+    </string-array>
+</resources>

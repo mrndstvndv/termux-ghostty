@@ -55,6 +55,21 @@ fun TerminalWorkspaceContainer(
                     }
                 })
                 attachSession(session)
+
+                // Force a resize once the view is actually laid out with real dimensions
+                addOnLayoutChangeListener(object : android.view.View.OnLayoutChangeListener {
+                    override fun onLayoutChange(
+                        v: android.view.View, left: Int, top: Int, right: Int, bottom: Int,
+                        oldLeft: Int, oldTop: Int, oldRight: Int, oldBottom: Int
+                    ) {
+                        val w = right - left
+                        val h = bottom - top
+                        if (w > 0 && h > 0) {
+                            updateSize(true)
+                        }
+                    }
+                })
+
                 onViewCreated(this)
             }
         },
@@ -63,8 +78,6 @@ fun TerminalWorkspaceContainer(
                 view.attachSession(session)
             }
             onViewCreated(view)
-            // Force immediate resize so the terminal session knows the real dimensions
-            view.post { view.updateSize(true) }
         },
         onRelease = { view ->
             view.detachSession()

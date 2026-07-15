@@ -182,7 +182,11 @@ class MainActivity : ComponentActivity() {
                     }
 
                     override fun onResize(columns: Int, rows: Int, cellWidth: Int, cellHeight: Int) {
-                        channel.resizeWindow(columns, rows, columns * cellWidth, rows * cellHeight)
+                        try {
+                            channel.resizeWindow(columns, rows, columns * cellWidth, rows * cellHeight)
+                        } catch (e: Exception) {
+                            android.util.Log.w("MainActivity", "resizeWindow failed", e)
+                        }
                     }
 
                     override fun onClose() {
@@ -218,11 +222,13 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     } catch (e: Exception) {
-                        // ignore
+                        android.util.Log.w("MainActivity", "SSH reader error", e)
                     } finally {
                         withContext(Dispatchers.Main) {
-                            cleanupConnection()
-                            screenState.value = ScreenState.Dashboard
+                            if (screenState.value is ScreenState.TerminalWorkspace) {
+                                cleanupConnection()
+                                screenState.value = ScreenState.Dashboard
+                            }
                         }
                     }
                 }

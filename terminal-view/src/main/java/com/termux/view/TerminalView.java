@@ -1527,10 +1527,7 @@ public final class TerminalView extends View {
         int viewWidth = getWidth();
         int viewHeight = getHeight();
         if (viewWidth == 0 || viewHeight == 0 || mTermSession == null || mRenderer == null) return;
-
-        if (getWindowVisibility() != View.VISIBLE) {
-            return;
-        }
+        // Removed getWindowVisibility() guard to allow resizing when hosted inside Compose AndroidView
 
         int cellWidthPixels = getGhosttyCellWidthPixels();
         int cellHeightPixels = getGhosttyCellHeightPixels();
@@ -1576,10 +1573,7 @@ public final class TerminalView extends View {
 
     private void doUpdateSize() {
         if (mTermSession == null || mPendingNewColumns == -1) return;
-        if (getWindowVisibility() != View.VISIBLE) {
-            mPendingNewColumns = -1;
-            return;
-        }
+        // Removed getWindowVisibility() guard to allow resizing when hosted inside Compose AndroidView
         android.util.Log.w(LOG_TAG, "doUpdateSize() (debounced): mPendingNewColumns=" + mPendingNewColumns 
             + ", mPendingNewRows=" + mPendingNewRows 
             + ", currentColumns=" + mTermSession.getColumns() 

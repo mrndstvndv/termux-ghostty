@@ -449,6 +449,14 @@ public final class ScreenSnapshot {
         int payloadRowCount = mFullRebuild ? rows : dirtyRowCount;
         for (int payloadIndex = 0; payloadIndex < payloadRowCount; payloadIndex++) {
             int rowIndex = mFullRebuild ? payloadIndex : mDirtyRows[payloadIndex];
+
+            // Align buffer position to 8-byte boundary at the start of every row.
+            // The native Zig serializer pads each row start to an 8-byte boundary
+            // so that all typed view buffers (IntBuffer, LongBuffer, etc.) are
+            // aligned relative to the absolute backing direct-buffer address,
+            // preventing SIGBUS on ARM and slow byte-by-byte fallbacks on all arches.
+            buffer.position((buffer.position() + 7) & ~7);
+
             int charsUsed = buffer.getInt();
             boolean lineWrap = buffer.getInt() != 0;
             if (charsUsed < 0) {
@@ -457,35 +465,35 @@ public final class ScreenSnapshot {
 
             RowSnapshot row = mRowsData[rowIndex];
             row.beginNative(charsUsed, columns, lineWrap);
-            for (int column = 0; column < columns; column++) {
-                int textStart = buffer.getInt();
-                short textLength = buffer.getShort();
-                byte displayWidth = buffer.get();
-                buffer.get();
-                long style = buffer.getLong();
 
-                int unsignedTextLength = textLength & 0xFFFF;
-                int unsignedDisplayWidth = displayWidth & 0xFF;
-                if (textStart < 0 || textStart > charsUsed) {
-                    throw new IllegalStateException("Native row " + rowIndex + " column " + column + " has invalid textStart=" + textStart + " charsUsed=" + charsUsed);
-                }
-                if (textStart + unsignedTextLength > charsUsed) {
-                    throw new IllegalStateException("Native row " + rowIndex + " column " + column + " has invalid text range start=" + textStart + " length=" + unsignedTextLength + " charsUsed=" + charsUsed);
-                }
-                if (unsignedDisplayWidth > 2) {
-                    throw new IllegalStateException("Native row " + rowIndex + " column " + column + " has invalid displayWidth=" + unsignedDisplayWidth);
-                }
+            // Bulk read contiguous Cell Starts (i32 array, 4-byte aligned).
+            buffer.asIntBuffer().get(row.mCellTextStart, 0, columns);
+            buffer.position(buffer.position() + columns * 4);
 
-                row.mCellTextStart[column] = textStart;
-                row.mCellTextLength[column] = textLength;
-                row.mCellDisplayWidth[column] = displayWidth;
-                row.mStyle[column] = style;
-            }
+            // Bulk read contiguous Cell Lengths (u16 array, 2-byte aligned).
+            buffer.asShortBuffer().get(row.mCellTextLength, 0, columns);
+            buffer.position(buffer.position() + columns * 2);
 
-            for (int charIndex = 0; charIndex < charsUsed; charIndex++) {
-                row.mText[charIndex] = buffer.getChar();
-            }
+            // Bulk read contiguous Cell Display Widths (u8 array, 1-byte aligned).
+            buffer.get(row.mCellDisplayWidth, 0, columns);
+
+            // Align buffer position to 8-byte boundary before the styles array.
+            // The native side inserts 0–7 padding bytes here to ensure the u64
+            // styles array is 8-byte aligned in the backing buffer address space.
+            buffer.position((buffer.position() + 7) & ~7);
+
+            // Bulk read contiguous Cell Styles (u64 array, 8-byte aligned).
+            buffer.asLongBuffer().get(row.mStyle, 0, columns);
+            buffer.position(buffer.position() + columns * 8);
+
+            // Bulk read UTF-16 characters (u16 array, 2-byte aligned).
+            buffer.asCharBuffer().get(row.mText, 0, charsUsed);
+            buffer.position(buffer.position() + charsUsed * 2);
+
             row.finishNative();
+
+            // Validate cell layout bounds after bulk deserialization.
+            validateNativeRow(rowIndex, charsUsed, columns, row.mCellTextStart, row.mCellTextLength, row.mCellDisplayWidth);
         }
     }
 

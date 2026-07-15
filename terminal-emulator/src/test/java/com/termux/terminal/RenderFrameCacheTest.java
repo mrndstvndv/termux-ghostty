@@ -120,6 +120,12 @@ public final class RenderFrameCacheTest {
 
         int payloadRowCount = fullRebuild ? rows : dirtyRows.length;
         for (int rowIndex = 0; rowIndex < payloadRowCount; rowIndex++) {
+            // Align row start to 8-byte boundary, matching native Zig serializer.
+            int pos = buffer.position();
+            int alignedPos = (pos + 7) & ~7;
+            while (buffer.position() < alignedPos) {
+                buffer.put((byte) 0);
+            }
             writeBlankRow(buffer, columns);
         }
 
@@ -127,14 +133,37 @@ public final class RenderFrameCacheTest {
     }
 
     private static void writeBlankRow(ByteBuffer buffer, int columns) {
+        // Header: charsUsed=0, lineWrap=false
         buffer.putInt(0);
         buffer.putInt(0);
+
+        // Contiguous Cell Starts (i32 * columns)
         for (int column = 0; column < columns; column++) {
             buffer.putInt(0);
+        }
+
+        // Contiguous Cell Lengths (u16 * columns)
+        for (int column = 0; column < columns; column++) {
             buffer.putShort((short) 0);
+        }
+
+        // Contiguous Cell Display Widths (u8 * columns)
+        for (int column = 0; column < columns; column++) {
             buffer.put((byte) 1);
+        }
+
+        // Align to 8-byte boundary before styles array
+        int pos = buffer.position();
+        int alignedPos = (pos + 7) & ~7;
+        while (buffer.position() < alignedPos) {
             buffer.put((byte) 0);
+        }
+
+        // Contiguous Cell Styles (u64 * columns)
+        for (int column = 0; column < columns; column++) {
             buffer.putLong(0L);
         }
+
+        // No characters (charsUsed=0)
     }
 }

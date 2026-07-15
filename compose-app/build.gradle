@@ -1,0 +1,80 @@
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+}
+
+android {
+    namespace 'com.mrndtvndv.term'
+    compileSdk project.properties.compileSdkVersion.toInteger()
+
+    defaultConfig {
+        applicationId "com.mrndtvndv.term"
+        minSdk project.properties.minSdkVersion.toInteger()
+        targetSdk project.properties.targetSdkVersion.toInteger()
+        versionCode 1
+        versionName "1.0.0"
+    }
+
+    compileOptions {
+        coreLibraryDesugaringEnabled true
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = "17"
+        freeCompilerArgs += ["-opt-in=kotlin.RequiresOptIn"]
+    }
+
+    buildFeatures {
+        compose true
+    }
+
+    composeOptions {
+        kotlinCompilerExtensionVersion '1.5.14' // Matches Kotlin 1.9.24
+    }
+
+    packaging {
+        resources {
+            // Exclude signature files from Bouncy Castle to avoid packaging/signing errors
+            excludes += [
+                'META-INF/INDEX.LIST',
+                'META-INF/DEPENDENCIES',
+                'META-INF/LICENSE',
+                'META-INF/LICENSE.txt',
+                'META-INF/NOTICE',
+                'META-INF/NOTICE.txt',
+                'META-INF/ASL2.0',
+                'META-INF/*.kotlin_module'
+            ]
+        }
+    }
+}
+
+dependencies {
+    implementation project(':terminal-view')
+    implementation project(':terminal-emulator')
+    implementation project(':termux-shared')
+
+    // Compose & Activity-Compose
+    def composeBom = platform('androidx.compose:compose-bom:2024.06.00')
+    implementation composeBom
+    implementation 'androidx.compose.ui:ui'
+    implementation 'androidx.compose.material3:material3'
+    implementation 'androidx.compose.material:material-icons-extended'
+    implementation 'androidx.activity:activity-compose:1.9.0'
+    implementation 'androidx.lifecycle:lifecycle-viewmodel-compose:2.8.2'
+    implementation 'androidx.lifecycle:lifecycle-runtime-compose:2.8.2'
+    implementation 'androidx.window:window:1.3.0'
+
+    // JVM SSH Library
+    implementation 'com.hierynomus:sshj:0.39.0'
+    
+    // Explicitly add modern Bouncy Castle for Android compat
+    implementation 'org.bouncycastle:bcprov-jdk18on:1.78'
+    
+    // Conscrypt for faster & secure cryptographic operations on Android
+    implementation 'org.conscrypt:conscrypt-android:2.5.2'
+
+    coreLibraryDesugaring "com.android.tools:desugar_jdk_libs:1.1.5"
+}

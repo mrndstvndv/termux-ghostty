@@ -1,0 +1,262 @@
+package com.mrndtvndv.term
+
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.Surface
+import androidx.compose.runtime.*
+import androidx.compose.ui.Modifier
+import androidx.lifecycle.SavedStateHandle
+import androidx.lifecycle.lifecycleScope
+import com.mrndtvndv.term.data.ssh.jvm.JvmSshSession
+import com.mrndtvndv.term.domain.SftpClient
+import com.mrndtvndv.term.domain.SshAuth
+import com.mrndtvndv.term.domain.SshConfig
+import com.mrndtvndv.term.domain.SshShellChannel
+import com.mrndtvndv.term.ui.dashboard.DashboardScreen
+import com.mrndtvndv.term.ui.sftp.SftpViewModel
+import com.mrndtvndv.term.ui.theme.TermuxGhosttyTheme
+import com.mrndtvndv.term.ui.workspace.TerminalWorkspaceScreen
+import com.termux.shared.termux.terminal.TermuxTerminalSessionClientBase
+import com.termux.terminal.TerminalSession
+import com.termux.terminal.TerminalSessionIO
+import com.termux.view.TerminalView
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.bouncycastle.jce.provider.BouncyCastleProvider
+import org.conscrypt.Conscrypt
+import java.security.Security
+import android.content.ComponentName
+import android.content.Context
+import android.content.Intent
+import android.content.ServiceConnection
+import android.os.Build
+import android.os.IBinder
+import com.mrndtvndv.term.service.SshSessionService
+
+sealed interface ScreenState {
+    object Dashboard : ScreenState
+    object TerminalWorkspace : ScreenState
+}
+
+class MainActivity : ComponentActivity() {
+
+    private var sshSession: JvmSshSession? = null
+    private var shellChannel: SshShellChannel? = null
+    private var sftpClient: SftpClient? = null
+    private var activeTerminalView: TerminalView? = null
+    private var sshService: SshSessionService? = null
+    private var isBound = false
+    
+    private val connection = object : ServiceConnection {
+        override fun onServiceConnected(className: ComponentName, service: IBinder) {
+            val binder = service as SshSessionService.LocalBinder
+            sshService = binder.getService()
+            isBound = true
+            terminalSessionState.value?.let { session ->
+                sshService?.addSession(session)
+            }
+        }
+
+        override fun onServiceDisconnected(arg0: ComponentName) {
+            isBound = false
+            sshService = null
+        }
+    }
+
+    private val terminalSessionState = mutableStateOf<TerminalSession?>(null)
+    private val sftpViewModelState = mutableStateOf<SftpViewModel?>(null)
+    private val screenState = mutableStateOf<ScreenState>(ScreenState.Dashboard)
+    
+    private val connectionLoading = mutableStateOf(false)
+    private val connectionError = mutableStateOf<String?>(null)
+    
+    private var readerJob: Job? = null
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        
+        // Remove ancient system BC provider and insert our modern provider
+        Security.removeProvider("BC")
+        Security.insertProviderAt(BouncyCastleProvider(), 1)
+        
+        // Perform Conscrypt security provider initialization
+        Security.insertProviderAt(Conscrypt.newProvider(), 2)
+
+        setContent {
+            TermuxGhosttyTheme {
+                Surface(
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    val currentScreen by screenState
+                    val termSession by terminalSessionState
+                    val sftpViewModel by sftpViewModelState
+                    val isLoading by connectionLoading
+                    val errorMessage by connectionError
+
+                    when (currentScreen) {
+                        is ScreenState.Dashboard -> {
+                            DashboardScreen(
+                                isLoading = isLoading,
+                                errorMessage = errorMessage,
+                                onConnect = { host, port, username, password ->
+                                    connectSsh(host, port, username, password)
+                                }
+                            )
+                        }
+                        is ScreenState.TerminalWorkspace -> {
+                            if (termSession != null && sftpViewModel != null) {
+                                TerminalWorkspaceScreen(
+                                    session = termSession!!,
+                                    sftpViewModel = sftpViewModel!!,
+                                    onViewCreated = { view ->
+                                        activeTerminalView = view
+                                    },
+                                    onViewReleased = {
+                                        activeTerminalView = null
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun connectSsh(host: String, port: Int, username: String, passwordString: String) {
+        connectionLoading.value = true
+        connectionError.value = null
+        
+        lifecycleScope.launch {
+            try {
+                val session = JvmSshSession()
+                sshSession = session
+                
+                withContext(Dispatchers.IO) {
+                    session.connect(SshConfig(host, port, username))
+                    session.authenticate(SshAuth.Password(passwordString.toCharArray()))
+                }
+                
+                val channel = session.openShellChannel("xterm-256color", 80, 24)
+                shellChannel = channel
+                
+                val sftp = session.openSftpClient()
+                sftpClient = sftp
+                
+                val sessionClient = object : TermuxTerminalSessionClientBase() {
+                    override fun onFrameAvailable(changedSession: TerminalSession) {
+                        activeTerminalView?.onFrameAvailable()
+                    }
+                }
+                val sessionIo = object : TerminalSessionIO {
+                    override fun write(data: ByteArray?, offset: Int, count: Int) {
+                        if (data != null && count > 0) {
+                            lifecycleScope.launch(Dispatchers.IO) {
+                                try {
+                                    channel.outputStream.write(data, offset, count)
+                                    channel.outputStream.flush()
+                                } catch (e: Exception) {
+                                    // ignore
+                                }
+                            }
+                        }
+                    }
+
+                    override fun onResize(columns: Int, rows: Int, cellWidth: Int, cellHeight: Int) {
+                        channel.resizeWindow(columns, rows, columns * cellWidth, rows * cellHeight)
+                    }
+
+                    override fun onClose() {
+                        lifecycleScope.launch(Dispatchers.Main) {
+                            cleanupConnection()
+                            screenState.value = ScreenState.Dashboard
+                        }
+                    }
+                }
+                
+                val termSession = TerminalSession(2000, sessionClient, sessionIo)
+                terminalSessionState.value = termSession
+                
+                val serviceIntent = Intent(this@MainActivity, SshSessionService::class.java)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    startForegroundService(serviceIntent)
+                } else {
+                    startService(serviceIntent)
+                }
+                bindService(serviceIntent, connection, Context.BIND_AUTO_CREATE)
+                
+                readerJob = lifecycleScope.launch(Dispatchers.IO) {
+                    val buffer = ByteArray(4096)
+                    try {
+                        val input = channel.inputStream
+                        while (isActive) {
+                            val bytesRead = input.read(buffer)
+                            if (bytesRead == -1) break
+                            if (bytesRead > 0) {
+                                withContext(Dispatchers.Main) {
+                                    termSession.appendOutput(buffer, 0, bytesRead)
+                                }
+                            }
+                        }
+                    } catch (e: Exception) {
+                        // ignore
+                    } finally {
+                        withContext(Dispatchers.Main) {
+                            cleanupConnection()
+                            screenState.value = ScreenState.Dashboard
+                        }
+                    }
+                }
+                
+                val sftpVM = SftpViewModel(sftp, SavedStateHandle())
+                sftpViewModelState.value = sftpVM
+                
+                connectionLoading.value = false
+                screenState.value = ScreenState.TerminalWorkspace
+                
+            } catch (e: Exception) {
+                cleanupConnection()
+                connectionLoading.value = false
+                connectionError.value = e.localizedMessage ?: "Failed to connect"
+            }
+        }
+    }
+
+    private fun cleanupConnection() {
+        readerJob?.cancel()
+        readerJob = null
+        val handle = terminalSessionState.value?.mHandle
+        if (handle != null) {
+            sshService?.removeSession(handle)
+        }
+        if (isBound) {
+            unbindService(connection)
+            isBound = false
+            sshService = null
+        }
+        try {
+            shellChannel?.close()
+        } catch (e: Exception) {}
+        shellChannel = null
+        try {
+            sftpClient?.close()
+        } catch (e: Exception) {}
+        sftpClient = null
+        try {
+            sshSession?.disconnect()
+        } catch (e: Exception) {}
+        sshSession = null
+        terminalSessionState.value = null
+        sftpViewModelState.value = null
+    }
+
+    override fun onDestroy() {
+        cleanupConnection()
+        super.onDestroy()
+    }
+}

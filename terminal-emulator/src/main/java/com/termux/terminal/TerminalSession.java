@@ -49,6 +49,9 @@ public final class TerminalSession extends TerminalOutput {
     private GhosttyTerminalContent mGhosttyTerminalContent;
     private GhosttySessionWorker mGhosttySessionWorker;
 
+    private TerminalSessionIO mIoHandler;
+    private boolean mIsCustomIO = false;
+
     /**
      * A queue written to from a separate thread when the process outputs and read by the Ghostty worker.
      */
@@ -126,12 +129,31 @@ public final class TerminalSession extends TerminalOutput {
         this.mClient = client;
     }
 
+    public TerminalSession(Integer transcriptRows, TerminalSessionClient client, TerminalSessionIO ioHandler) {
+        this.mShellPath = null;
+        this.mCwd = null;
+        this.mArgs = null;
+        this.mEnv = null;
+        this.mTranscriptRows = transcriptRows;
+        this.mClient = client;
+        this.mIoHandler = ioHandler;
+        this.mIsCustomIO = true;
+    }
+
     /**
      * @param client The {@link TerminalSessionClient} interface implementation to allow
      *               for communication between {@link TerminalSession} and its client.
      */
     public void updateTerminalSessionClient(TerminalSessionClient client) {
         mClient = client;
+    }
+
+    public void appendOutput(byte[] data, int offset, int count) {
+        if (mProcessToTerminalIOQueue.write(data, offset, count)) {
+            if (mGhosttySessionWorker != null) {
+                mGhosttySessionWorker.onOutputAvailable();
+            }
+        }
     }
 
     /** Inform the attached pty of the new size or initialize the Ghostty backend. */
@@ -143,6 +165,21 @@ public final class TerminalSession extends TerminalOutput {
         }
 
         android.util.Log.w("TerminalSession", "TerminalSession.updateSize: pid=" + mShellPid + " columns=" + columns + " rows=" + rows + " cellWidth=" + cellWidthPixels + " cellHeight=" + cellHeightPixels);
+        if (mIsCustomIO) {
+            this.mColumns = columns;
+            this.mRows = rows;
+            this.mCellWidthPixels = cellWidthPixels;
+            this.mCellHeightPixels = cellHeightPixels;
+            this.mLastKnownActiveRows = rows;
+            if (mGhosttySessionWorker != null) {
+                mGhosttySessionWorker.resize(columns, rows, cellWidthPixels, cellHeightPixels);
+            }
+            if (mIoHandler != null) {
+                mIoHandler.onResize(columns, rows, cellWidthPixels, cellHeightPixels);
+            }
+            return;
+        }
+
         this.mColumns = columns;
         this.mRows = rows;
         this.mCellWidthPixels = cellWidthPixels;
@@ -242,6 +279,11 @@ public final class TerminalSession extends TerminalOutput {
             throw new IllegalStateException("Failed to initialize Ghostty backend", error);
         }
 
+        if (mIsCustomIO) {
+            mShellPid = 1; // Dummy positive PID to pass isRunning() check
+            return;
+        }
+
         int[] processId = new int[1];
         mTerminalFileDescriptor = JNI.createSubprocess(mShellPath, mCwd, mArgs, mEnv, processId, rows, columns, cellWidthPixels, cellHeightPixels);
         mShellPid = processId[0];
@@ -306,7 +348,11 @@ public final class TerminalSession extends TerminalOutput {
     /** Write data to the shell process. */
     @Override
     public void write(byte[] data, int offset, int count) {
-        if (mShellPid > 0) mTerminalToProcessIOQueue.write(data, offset, count);
+        if (mIsCustomIO) {
+            if (mIoHandler != null) mIoHandler.write(data, offset, count);
+        } else if (mShellPid > 0) {
+            mTerminalToProcessIOQueue.write(data, offset, count);
+        }
     }
 
     /** Write the Unicode code point to the terminal encoded in UTF-8. */
@@ -505,6 +551,10 @@ public final class TerminalSession extends TerminalOutput {
     /** Finish this terminal session by sending SIGKILL to the shell. */
     public void finishIfRunning() {
         if (isRunning()) {
+            if (mIsCustomIO) {
+                cleanupResources(0);
+                return;
+            }
             try {
                 Os.kill(mShellPid, OsConstants.SIGKILL);
             } catch (ErrnoException e) {
@@ -523,7 +573,13 @@ public final class TerminalSession extends TerminalOutput {
 
         mTerminalToProcessIOQueue.close();
         mProcessToTerminalIOQueue.close();
-        JNI.close(mTerminalFileDescriptor);
+        if (mIsCustomIO) {
+            if (mIoHandler != null) {
+                mIoHandler.onClose();
+            }
+        } else {
+            JNI.close(mTerminalFileDescriptor);
+        }
     }
 
     @Override

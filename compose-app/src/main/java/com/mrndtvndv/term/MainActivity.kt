@@ -45,6 +45,10 @@ sealed interface ScreenState {
 
 class MainActivity : ComponentActivity() {
 
+    private val sharedPreferences by lazy {
+        getSharedPreferences("ssh_prefs", Context.MODE_PRIVATE)
+    }
+
     private var sshSession: JvmSshSession? = null
     private var shellChannel: SshShellChannel? = null
     private var sftpClient: SftpClient? = null
@@ -87,6 +91,11 @@ class MainActivity : ComponentActivity() {
         // Perform Conscrypt security provider initialization
         Security.insertProviderAt(Conscrypt.newProvider(), 2)
 
+        val savedHost = sharedPreferences.getString("ssh_host", "10.0.2.2") ?: "10.0.2.2"
+        val savedPort = sharedPreferences.getInt("ssh_port", 2222)
+        val savedUsername = sharedPreferences.getString("ssh_username", "root") ?: "root"
+        val savedPassword = sharedPreferences.getString("ssh_password", "") ?: ""
+
         setContent {
             TermuxGhosttyTheme {
                 Surface(
@@ -103,6 +112,10 @@ class MainActivity : ComponentActivity() {
                             DashboardScreen(
                                 isLoading = isLoading,
                                 errorMessage = errorMessage,
+                                initialHost = savedHost,
+                                initialPort = savedPort,
+                                initialUsername = savedUsername,
+                                initialPassword = savedPassword,
                                 onConnect = { host, port, username, password ->
                                     connectSsh(host, port, username, password)
                                 }
@@ -216,6 +229,14 @@ class MainActivity : ComponentActivity() {
                 val sftpVM = SftpViewModel(sftp, SavedStateHandle())
                 sftpViewModelState.value = sftpVM
                 
+                sharedPreferences.edit().apply {
+                    putString("ssh_host", host)
+                    putInt("ssh_port", port)
+                    putString("ssh_username", username)
+                    putString("ssh_password", passwordString)
+                    apply()
+                }
+
                 connectionLoading.value = false
                 screenState.value = ScreenState.TerminalWorkspace
                 

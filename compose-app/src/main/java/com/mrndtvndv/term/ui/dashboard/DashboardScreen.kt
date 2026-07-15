@@ -16,12 +16,16 @@ fun DashboardScreen(
     isLoading: Boolean,
     errorMessage: String?,
     onConnect: (String, Int, String, String) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    initialHost: String = "10.0.2.2",
+    initialPort: Int = 2222,
+    initialUsername: String = "root",
+    initialPassword: String = ""
 ) {
-    var host by remember { mutableStateOf("10.0.2.2") }
-    var portString by remember { mutableStateOf("2222") }
-    var username by remember { mutableStateOf("root") }
-    var password by remember { mutableStateOf("") }
+    var host by remember(initialHost) { mutableStateOf(initialHost) }
+    var portString by remember(initialPort) { mutableStateOf(initialPort.toString()) }
+    var username by remember(initialUsername) { mutableStateOf(initialUsername) }
+    var password by remember(initialPassword) { mutableStateOf(initialPassword) }
 
     Box(
         modifier = modifier

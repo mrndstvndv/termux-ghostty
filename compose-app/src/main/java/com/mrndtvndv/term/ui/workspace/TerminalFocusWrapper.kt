@@ -17,8 +17,9 @@ import androidx.compose.ui.input.key.type
 import com.termux.terminal.TerminalSession
 import com.termux.terminal.KeyHandler
 import com.termux.view.TerminalView
+import com.mrndtvndv.term.ui.keyboard.ExtraKeysController
 
-fun TerminalSession.handleKeyEvent(keyEvent: KeyEvent): Boolean {
+fun TerminalSession.handleKeyEvent(keyEvent: KeyEvent, extraKeysController: ExtraKeysController): Boolean {
     val nativeEvent = keyEvent.nativeKeyEvent
     val keyCode = nativeEvent.keyCode
     val type = keyEvent.type
@@ -37,9 +38,9 @@ fun TerminalSession.handleKeyEvent(keyEvent: KeyEvent): Boolean {
 
     if (type == KeyEventType.KeyDown) {
         var keyMod = 0
-        if (nativeEvent.isShiftPressed) keyMod = keyMod or KeyHandler.KEYMOD_SHIFT
-        if (nativeEvent.isCtrlPressed) keyMod = keyMod or KeyHandler.KEYMOD_CTRL
-        if (nativeEvent.isAltPressed) keyMod = keyMod or KeyHandler.KEYMOD_ALT
+        if (nativeEvent.isShiftPressed || extraKeysController.readShift()) keyMod = keyMod or KeyHandler.KEYMOD_SHIFT
+        if (nativeEvent.isCtrlPressed || extraKeysController.readControl()) keyMod = keyMod or KeyHandler.KEYMOD_CTRL
+        if (nativeEvent.isAltPressed || extraKeysController.readAlt()) keyMod = keyMod or KeyHandler.KEYMOD_ALT
         if (nativeEvent.isNumLockOn) keyMod = keyMod or KeyHandler.KEYMOD_NUM_LOCK
 
         val code = KeyHandler.getCode(
@@ -61,6 +62,7 @@ fun TerminalSession.handleKeyEvent(keyEvent: KeyEvent): Boolean {
 @Composable
 fun TerminalFocusWrapper(
     session: TerminalSession,
+    extraKeysController: ExtraKeysController,
     isTerminalActive: Boolean,
     onViewCreated: (TerminalView) -> Unit,
     onViewReleased: () -> Unit,
@@ -80,11 +82,12 @@ fun TerminalFocusWrapper(
             .focusRequester(focusRequester)
             .focusable()
             .onPreviewKeyEvent { keyEvent ->
-                session.handleKeyEvent(keyEvent)
+                session.handleKeyEvent(keyEvent, extraKeysController)
             }
     ) {
         TerminalWorkspaceContainer(
             session = session,
+            extraKeysController = extraKeysController,
             onViewCreated = onViewCreated,
             onViewReleased = onViewReleased
         )

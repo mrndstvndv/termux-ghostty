@@ -97,6 +97,10 @@ class MainActivity : ComponentActivity() {
         val savedUsername = sharedPreferences.getString("ssh_username", "root") ?: "root"
         val savedPassword = sharedPreferences.getString("ssh_password", "") ?: ""
 
+        val savedExtraKeysEnabled = sharedPreferences.getBoolean("extra_keys_enabled", true)
+        val savedExtraKeysPreset = sharedPreferences.getString("extra_keys_preset", "Double Row") ?: "Double Row"
+        val savedExtraKeysCustomJson = sharedPreferences.getString("extra_keys_custom_json", "[]") ?: "[]"
+
         setContent {
             TermuxGhosttyTheme {
                 Surface(
@@ -107,6 +111,32 @@ class MainActivity : ComponentActivity() {
                     val sftpViewModel by sftpViewModelState
                     val isLoading by connectionLoading
                     val errorMessage by connectionError
+
+                    var extraKeysEnabled by remember { mutableStateOf(savedExtraKeysEnabled) }
+                    var extraKeysPreset by remember { mutableStateOf(savedExtraKeysPreset) }
+                    var extraKeysCustomJson by remember { mutableStateOf(savedExtraKeysCustomJson) }
+
+                    val onExtraKeysEnabledChange: (Boolean) -> Unit = { enabled ->
+                        extraKeysEnabled = enabled
+                        sharedPreferences.edit().putBoolean("extra_keys_enabled", enabled).apply()
+                    }
+                    val onExtraKeysPresetChange: (String) -> Unit = { preset ->
+                        extraKeysPreset = preset
+                        sharedPreferences.edit().putString("extra_keys_preset", preset).apply()
+                    }
+                    val onExtraKeysCustomJsonChange: (String) -> Unit = { json ->
+                        extraKeysCustomJson = json
+                        sharedPreferences.edit().putString("extra_keys_custom_json", json).apply()
+                    }
+
+                    val resolvedJson = remember(extraKeysPreset, extraKeysCustomJson) {
+                        when (extraKeysPreset) {
+                            "Double Row" -> com.mrndtvndv.term.ui.dashboard.PRESET_DOUBLE_ROW
+                            "Single Row" -> com.mrndtvndv.term.ui.dashboard.PRESET_SINGLE_ROW
+                            "Arrows Only" -> com.mrndtvndv.term.ui.dashboard.PRESET_ARROWS_ONLY
+                            else -> extraKeysCustomJson
+                        }
+                    }
 
                     when (currentScreen) {
                         is ScreenState.Dashboard -> {
@@ -119,7 +149,13 @@ class MainActivity : ComponentActivity() {
                                 initialPassword = savedPassword,
                                 onConnect = { host, port, username, password ->
                                     connectSsh(host, port, username, password)
-                                }
+                                },
+                                extraKeysEnabled = extraKeysEnabled,
+                                onExtraKeysEnabledChange = onExtraKeysEnabledChange,
+                                extraKeysPreset = extraKeysPreset,
+                                onExtraKeysPresetChange = onExtraKeysPresetChange,
+                                extraKeysCustomJson = extraKeysCustomJson,
+                                onExtraKeysCustomJsonChange = onExtraKeysCustomJsonChange
                             )
                         }
                         is ScreenState.TerminalWorkspace -> {
@@ -127,6 +163,8 @@ class MainActivity : ComponentActivity() {
                                 TerminalWorkspaceScreen(
                                     session = termSession!!,
                                     sftpViewModel = sftpViewModel!!,
+                                    extraKeysEnabled = extraKeysEnabled,
+                                    extraKeysJson = resolvedJson,
                                     onViewCreated = { view ->
                                         activeTerminalView = view
                                     },

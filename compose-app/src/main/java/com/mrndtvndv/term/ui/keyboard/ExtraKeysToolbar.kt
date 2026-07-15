@@ -183,7 +183,7 @@ fun ExtraKeyButtonComponent(
                                     // Repeat action
                                     while (true) {
                                         if (session != null) {
-                                            dispatchExtraKey(buttonInfo.key, extraKeysController, activeTerminalView, session)
+                                            dispatchExtraKey(buttonInfo, extraKeysController, activeTerminalView, session)
                                         }
                                         delay(80) // Repeat delay (80ms)
                                     }
@@ -224,7 +224,7 @@ fun ExtraKeyButtonComponent(
 
                                     if (isSwipedUp && buttonInfo.popup != null) {
                                         if (session != null) {
-                                            dispatchExtraKey(buttonInfo.popup!!.key, extraKeysController, activeTerminalView, session)
+                                            dispatchExtraKey(buttonInfo.popup!!, extraKeysController, activeTerminalView, session)
                                         }
                                     } else if (!isLongPressed || isModifier) {
                                         if (isModifier) {
@@ -234,7 +234,7 @@ fun ExtraKeyButtonComponent(
                                         } else {
                                             view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                                             if (session != null) {
-                                                dispatchExtraKey(buttonInfo.key, extraKeysController, activeTerminalView, session)
+                                                dispatchExtraKey(buttonInfo, extraKeysController, activeTerminalView, session)
                                             }
                                         }
                                     }
@@ -284,12 +284,20 @@ fun ExtraKeyButtonComponent(
 }
 
 fun dispatchExtraKey(
-    key: String,
+    buttonInfo: ExtraKeyButton,
     extraKeysController: ExtraKeysController,
     activeTerminalView: TerminalView?,
     session: TerminalSession
 ) {
-    if (key.contains(" ") && !ExtraKeysConstants.PRIMARY_KEY_CODES_FOR_STRINGS.containsKey(key)) {
+    val key = buttonInfo.key
+    // Treat as macro if: the ExtraKeyButton is explicitly a macro ({macro: '...'}),
+    // OR it's a plain string key that contains spaces (e.g. 'CTRL b n') — convenience format.
+    val isMacro = buttonInfo.isMacro ||
+        (key.contains(" ") && !ExtraKeysConstants.PRIMARY_KEY_CODES_FOR_STRINGS.containsKey(key))
+
+    if (isMacro) {
+        // Macro: split by space, accumulate modifiers, fire on non-modifier tokens.
+        // This matches the legacy TerminalExtraKeys.java behavior exactly.
         val parts = key.split(" ")
         var ctrl = false
         var alt = false
@@ -308,6 +316,8 @@ fun dispatchExtraKey(
             }
         }
     } else {
+        // Single key: read modifier state from the extra keys controller toggle buttons,
+        // consuming the active (non-locked) state in the process.
         val ctrl = extraKeysController.readControl()
         val alt = extraKeysController.readAlt()
         val shift = extraKeysController.readShift()

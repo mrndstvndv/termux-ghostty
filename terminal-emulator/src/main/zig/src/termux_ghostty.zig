@@ -50,7 +50,6 @@ const snapshot_header_bytes: usize = @sizeOf(u32) + @sizeOf(i32) + (5 * @sizeOf(
 const snapshot_render_metadata_bytes: usize = (3 * @sizeOf(i32)) + (2 * @sizeOf(u32));
 const snapshot_mode_bits_bytes: usize = @sizeOf(u32);
 const snapshot_row_header_bytes: usize = 2 * @sizeOf(u32);
-const snapshot_cell_bytes: usize = @sizeOf(i32) + @sizeOf(u16) + 2 + @sizeOf(u64);
 const viewport_link_magic: u32 = 0x54474c31;
 const viewport_link_header_bytes: usize = @sizeOf(u32) + @sizeOf(i32) + (4 * @sizeOf(u32));
 const viewport_link_record_bytes: usize = 5 * @sizeOf(u32);
@@ -496,6 +495,7 @@ pub const Session = struct {
                 continue;
             }
 
+            total = (total + 7) & ~@as(usize, 7);
             total += try self.snapshotRowRequiredBytes(row_index);
         }
 
@@ -510,7 +510,7 @@ pub const Session = struct {
         const raw_cells = cells.items(.raw);
         const grapheme_cells = cells.items(.grapheme);
 
-        var total: usize = snapshot_row_header_bytes + (cols * snapshot_cell_bytes);
+        var chars: usize = 0;
         for (0..cols) |column| {
             const raw_cell = raw_cells[column];
             if (raw_cell.wide == .spacer_tail or raw_cell.wide == .spacer_head) {
@@ -520,17 +520,19 @@ pub const Session = struct {
                 continue;
             }
 
-            total += utf16LengthForCodepoint(raw_cell.codepoint()) * @sizeOf(u16);
+            chars += utf16LengthForCodepoint(raw_cell.codepoint());
             if (!raw_cell.hasGrapheme()) {
                 continue;
             }
 
             for (grapheme_cells[column]) |cp| {
-                total += utf16LengthForCodepoint(cp) * @sizeOf(u16);
+                chars += utf16LengthForCodepoint(cp);
             }
         }
 
-        return total;
+        const base_size = snapshot_row_header_bytes + (cols * 4) + (cols * 2) + (cols * 1);
+        const styles_padding = (8 - (base_size % 8)) % 8;
+        return base_size + styles_padding + (cols * 8) + (chars * 2);
     }
 
     fn writeSnapshotRow(self: *Session, writer: *BufferWriter, row_index: usize) !void {
@@ -616,9 +618,17 @@ pub const Session = struct {
         try writer.writeU32(@intFromBool(row_rows[row_index].wrap));
         for (0..self.render_state.cols) |column| {
             try writer.writeI32(self.scratch_cell_starts.items[column]);
+        }
+        for (0..self.render_state.cols) |column| {
             try writer.writeU16(self.scratch_cell_lengths.items[column]);
+        }
+        for (0..self.render_state.cols) |column| {
             try writer.writeU8(self.scratch_cell_widths.items[column]);
+        }
+        while (writer.offset % 8 != 0) {
             try writer.writeU8(0);
+        }
+        for (0..self.render_state.cols) |column| {
             try writer.writeU64(self.scratch_cell_styles.items[column]);
         }
         for (self.scratch_utf16.items) |unit| {
@@ -1895,6 +1905,10 @@ fn fillSnapshotCurrentViewport(handle: *Session, out: []u8) i32 {
     for (0..handle.render_state.rows) |row_index| {
         if (!handle.shouldSerializeRow(row_index)) {
             continue;
+        }
+
+        while (writer.offset % 8 != 0) {
+            writer.writeU8(0) catch return -1;
         }
 
         handle.writeSnapshotRow(&writer, row_index) catch return -1;

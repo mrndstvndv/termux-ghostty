@@ -7,6 +7,8 @@ import androidx.compose.ui.viewinterop.AndroidView
 import com.termux.terminal.TerminalSession
 import com.termux.view.TerminalView
 import com.termux.shared.termux.terminal.TermuxTerminalViewClientBase
+import com.termux.shared.termux.settings.preferences.TermuxAppSharedPreferences
+
 
 import android.view.MotionEvent
 import android.view.View
@@ -60,7 +62,11 @@ fun TerminalWorkspaceContainer(
 ) {
     AndroidView(
         factory = { context ->
-            var currentFontSize = 14
+            val sizes = TermuxAppSharedPreferences.getDefaultFontSizes(context)
+            val defaultFontSize = sizes[0]
+            val minFontSize = sizes[1]
+            val maxFontSize = sizes[2]
+            var currentFontSize = defaultFontSize
             TerminalView(context, null).apply {
                 layoutParams = ViewGroup.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
@@ -78,8 +84,8 @@ fun TerminalWorkspaceContainer(
                     override fun onScale(scale: Float): Float {
                         if (scale < 0.9f || scale > 1.1f) {
                             val increase = scale > 1.0f
-                            val delta = if (increase) 1 else -1
-                            val newSize = (currentFontSize + delta).coerceIn(4, 40)
+                            val delta = if (increase) 2 else -2
+                            val newSize = (currentFontSize + delta).coerceIn(minFontSize, maxFontSize)
                             if (newSize != currentFontSize) {
                                 currentFontSize = newSize
                                 this@apply.setTextSize(newSize)

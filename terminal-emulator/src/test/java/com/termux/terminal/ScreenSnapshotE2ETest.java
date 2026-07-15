@@ -119,6 +119,26 @@ public class ScreenSnapshotE2ETest {
                 buffer.putInt(mockRow.charsUsed);
                 buffer.putInt(mockRow.lineWrap ? 1 : 0);
 
+                // Compute FNV-1a hash matching the original algorithm and put it into the byte buffer
+                long hash = 0xcbf29ce484222325L;
+                hash = mixHash(hash, mockRow.charsUsed);
+                hash = mixHash(hash, columns);
+                hash = mixHash(hash, mockRow.lineWrap ? 1L : 0L);
+                hash = mixHash(hash, 1L); // mHasCellLayout is always 1 (true) for serialized rows
+
+                for (int i = 0; i < mockRow.charsUsed; i++) {
+                    hash = mixHash(hash, mockRow.text[i]);
+                }
+                for (int i = 0; i < columns; i++) {
+                    hash = mixHash(hash, mockRow.style[i]);
+                }
+                for (int i = 0; i < columns; i++) {
+                    hash = mixHash(hash, mockRow.cellTextStart[i]);
+                    hash = mixHash(hash, mockRow.cellTextLength[i] & 0xFFFFL);
+                    hash = mixHash(hash, mockRow.cellDisplayWidth[i] & 0xFFL);
+                }
+                buffer.putLong(hash);
+
                 // 3. Bulk write cell starts (4-byte aligned)
                 for (int i = 0; i < columns; i++) {
                     buffer.putInt(mockRow.cellTextStart[i]);
@@ -288,6 +308,7 @@ public class ScreenSnapshotE2ETest {
             // 2. Read headers
             int charsUsed = buf.getInt();
             boolean lineWrap = buf.getInt() != 0;
+            long contentHash = buf.getLong();
 
             int[] cellTextStart = new int[columns];
             short[] cellTextLength = new short[columns];
@@ -320,7 +341,7 @@ public class ScreenSnapshotE2ETest {
             // Bounds checks
             validateMockRow(rowIndex, charsUsed, columns, cellTextStart, cellTextLength, cellDisplayWidth);
 
-            setRowNativeFields(snapshot.getRow(rowIndex), text, charsUsed, style, cellTextStart, cellTextLength, cellDisplayWidth, columns, lineWrap);
+            setRowNativeFields(snapshot.getRow(rowIndex), text, charsUsed, style, cellTextStart, cellTextLength, cellDisplayWidth, columns, lineWrap, contentHash);
         }
 
         setBackingNative(snapshot);
@@ -343,7 +364,7 @@ public class ScreenSnapshotE2ETest {
         }
     }
 
-    private static void setRowNativeFields(ScreenSnapshot.RowSnapshot row, char[] text, int charsUsed, long[] style, int[] cellTextStart, short[] cellTextLength, byte[] cellDisplayWidth, int columns, boolean lineWrap) {
+    private static void setRowNativeFields(ScreenSnapshot.RowSnapshot row, char[] text, int charsUsed, long[] style, int[] cellTextStart, short[] cellTextLength, byte[] cellDisplayWidth, int columns, boolean lineWrap, long contentHash) {
         try {
             java.lang.reflect.Method beginNative = ScreenSnapshot.RowSnapshot.class.getDeclaredMethod("beginNative", int.class, int.class, boolean.class);
             beginNative.setAccessible(true);
@@ -381,9 +402,19 @@ public class ScreenSnapshotE2ETest {
             java.lang.reflect.Method finishNative = ScreenSnapshot.RowSnapshot.class.getDeclaredMethod("finishNative");
             finishNative.setAccessible(true);
             finishNative.invoke(row);
+
+            java.lang.reflect.Field mContentHash = ScreenSnapshot.RowSnapshot.class.getDeclaredField("mContentHash");
+            mContentHash.setAccessible(true);
+            mContentHash.setLong(row, contentHash);
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
+    }
+
+    private static long mixHash(long hash, long value) {
+        hash ^= value;
+        hash *= 0x100000001b3L;
+        return hash;
     }
 
     private static void setBackingNative(ScreenSnapshot snapshot) {

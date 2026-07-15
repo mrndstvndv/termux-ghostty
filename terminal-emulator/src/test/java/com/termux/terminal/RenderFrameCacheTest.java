@@ -133,9 +133,10 @@ public final class RenderFrameCacheTest {
     }
 
     private static void writeBlankRow(ByteBuffer buffer, int columns) {
-        // Header: charsUsed=0, lineWrap=false
+        // Header: charsUsed=0, lineWrap=false, contentHash=0
         buffer.putInt(0);
         buffer.putInt(0);
+        buffer.putLong(0L);
 
         // Contiguous Cell Starts (i32 * columns)
         for (int column = 0; column < columns; column++) {

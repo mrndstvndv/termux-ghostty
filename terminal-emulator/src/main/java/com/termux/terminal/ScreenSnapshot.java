@@ -459,12 +459,14 @@ public final class ScreenSnapshot {
 
             int charsUsed = buffer.getInt();
             boolean lineWrap = buffer.getInt() != 0;
+            long contentHash = buffer.getLong();
             if (charsUsed < 0) {
                 throw new IllegalStateException("charsUsed must be >= 0");
             }
 
             RowSnapshot row = mRowsData[rowIndex];
             row.beginNative(charsUsed, columns, lineWrap);
+            row.mContentHash = contentHash;
 
             // Bulk read contiguous Cell Starts (i32 array, 4-byte aligned).
             buffer.asIntBuffer().get(row.mCellTextStart, 0, columns);
@@ -576,7 +578,6 @@ public final class ScreenSnapshot {
             mLineWrap = lineWrap;
             mHasCellLayout = false;
             markMutated();
-            updateContentHash();
         }
 
         private void setNative(char[] text, int charsUsed, long[] style, int[] cellTextStart, short[] cellTextLength, byte[] cellDisplayWidth, int columns, boolean lineWrap) {
@@ -609,7 +610,6 @@ public final class ScreenSnapshot {
                 System.arraycopy(cellTextLength, 0, mCellTextLength, 0, columns);
                 System.arraycopy(cellDisplayWidth, 0, mCellDisplayWidth, 0, columns);
             }
-            updateContentHash();
         }
 
         private void beginNative(int charsUsed, int columns, boolean lineWrap) {
@@ -719,37 +719,6 @@ public final class ScreenSnapshot {
         }
 
         private void finishNative() {
-            updateContentHash();
-        }
-
-        private void updateContentHash() {
-            long hash = 0xcbf29ce484222325L;
-            hash = mixHash(hash, mCharsUsed);
-            hash = mixHash(hash, mColumns);
-            hash = mixHash(hash, mLineWrap ? 1L : 0L);
-            hash = mixHash(hash, mHasCellLayout ? 1L : 0L);
-
-            for (int i = 0; i < mCharsUsed; i++) {
-                hash = mixHash(hash, mText[i]);
-            }
-            for (int i = 0; i < mColumns; i++) {
-                hash = mixHash(hash, mStyle[i]);
-            }
-            if (mHasCellLayout) {
-                for (int i = 0; i < mColumns; i++) {
-                    hash = mixHash(hash, mCellTextStart[i]);
-                    hash = mixHash(hash, mCellTextLength[i] & 0xFFFFL);
-                    hash = mixHash(hash, mCellDisplayWidth[i] & 0xFFL);
-                }
-            }
-
-            mContentHash = hash;
-        }
-
-        private static long mixHash(long hash, long value) {
-            hash ^= value;
-            hash *= 0x100000001b3L;
-            return hash;
         }
 
         private void markMutated() {

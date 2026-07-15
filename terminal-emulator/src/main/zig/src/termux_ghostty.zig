@@ -49,7 +49,13 @@ const snapshot_metadata_mode_bits: u32 = 1 << 2;
 const snapshot_header_bytes: usize = @sizeOf(u32) + @sizeOf(i32) + (5 * @sizeOf(u32));
 const snapshot_render_metadata_bytes: usize = (3 * @sizeOf(i32)) + (2 * @sizeOf(u32));
 const snapshot_mode_bits_bytes: usize = @sizeOf(u32);
-const snapshot_row_header_bytes: usize = 2 * @sizeOf(u32);
+const snapshot_row_header_bytes: usize = 2 * @sizeOf(u32) + @sizeOf(u64);
+const FNV_OFFSET_BASIS: u64 = 0xcbf29ce484222325;
+const FNV_PRIME: u64 = 0x100000001b3;
+
+inline fn mixHash(hash: u64, value: u64) u64 {
+    return (hash ^ value) *% FNV_PRIME;
+}
 const viewport_link_magic: u32 = 0x54474c31;
 const viewport_link_header_bytes: usize = @sizeOf(u32) + @sizeOf(i32) + (4 * @sizeOf(u32));
 const viewport_link_record_bytes: usize = 5 * @sizeOf(u32);
@@ -614,8 +620,28 @@ pub const Session = struct {
             return error.InvalidSnapshotRow;
         }
 
+        var hash: u64 = FNV_OFFSET_BASIS;
+        hash = mixHash(hash, @as(u64, self.scratch_utf16.items.len));
+        hash = mixHash(hash, @as(u64, self.render_state.cols));
+        hash = mixHash(hash, @as(u64, @intFromBool(row_rows[row_index].wrap)));
+        hash = mixHash(hash, 1); // mHasCellLayout is always 1 (true) for serialized rows
+
+        for (self.scratch_utf16.items) |char| {
+            hash = mixHash(hash, @as(u64, char));
+        }
+        for (self.scratch_cell_styles.items) |style| {
+            hash = mixHash(hash, style);
+        }
+        for (0..self.render_state.cols) |i| {
+            // Safe sign-extension conversion from i32 to i64, then bitcast to u64
+            hash = mixHash(hash, @bitCast(@as(i64, self.scratch_cell_starts.items[i])));
+            hash = mixHash(hash, @as(u64, self.scratch_cell_lengths.items[i]));
+            hash = mixHash(hash, @as(u64, self.scratch_cell_widths.items[i]));
+        }
+
         try writer.writeU32(std.math.cast(u32, self.scratch_utf16.items.len) orelse return error.InvalidSnapshotRow);
         try writer.writeU32(@intFromBool(row_rows[row_index].wrap));
+        try writer.writeU64(hash);
         for (0..self.render_state.cols) |column| {
             try writer.writeI32(self.scratch_cell_starts.items[column]);
         }

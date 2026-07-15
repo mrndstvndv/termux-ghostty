@@ -17,6 +17,7 @@ import com.termux.terminal.TerminalSession
 import com.mrndtvndv.term.ui.sftp.SftpFileBrowser
 import com.mrndtvndv.term.ui.sftp.SftpViewModel
 import com.mrndtvndv.term.ui.keyboard.ExtraKeysToolbar
+import com.mrndtvndv.term.ui.keyboard.ExtraKeysController
 import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.launch
 
@@ -27,9 +28,10 @@ import com.termux.view.TerminalView
 fun TabbedWorkspace(
     session: TerminalSession,
     sftpViewModel: SftpViewModel,
-    ctrlActive: Boolean,
-    altActive: Boolean,
-    onExtraKeyClick: (String) -> Unit,
+    extraKeysController: ExtraKeysController,
+    activeTerminalView: TerminalView?,
+    extraKeysEnabled: Boolean,
+    extraKeysJson: String,
     onViewCreated: (TerminalView) -> Unit,
     onViewReleased: () -> Unit,
     modifier: Modifier = Modifier
@@ -62,16 +64,20 @@ fun TabbedWorkspace(
                     Box(modifier = Modifier.weight(1f)) {
                         TerminalFocusWrapper(
                             session = session,
+                            extraKeysController = extraKeysController,
                             isTerminalActive = pagerState.currentPage == 0,
                             onViewCreated = onViewCreated,
                             onViewReleased = onViewReleased
                         )
                     }
-                    ExtraKeysToolbar(
-                        onKeyClick = onExtraKeyClick,
-                        ctrlActive = ctrlActive,
-                        altActive = altActive
-                    )
+                    if (extraKeysEnabled) {
+                        ExtraKeysToolbar(
+                            extraKeysController = extraKeysController,
+                            activeTerminalView = activeTerminalView,
+                            session = session,
+                            extraKeysJson = extraKeysJson
+                        )
+                    }
                 }
                 1 -> SftpFileBrowser(viewModel = sftpViewModel)
             }
@@ -84,9 +90,10 @@ fun SplitWorkspace(
     session: TerminalSession,
     sftpViewModel: SftpViewModel,
     foldingFeature: FoldingFeature?,
-    ctrlActive: Boolean,
-    altActive: Boolean,
-    onExtraKeyClick: (String) -> Unit,
+    extraKeysController: ExtraKeysController,
+    activeTerminalView: TerminalView?,
+    extraKeysEnabled: Boolean,
+    extraKeysJson: String,
     onViewCreated: (TerminalView) -> Unit,
     onViewReleased: () -> Unit,
     modifier: Modifier = Modifier
@@ -107,16 +114,20 @@ fun SplitWorkspace(
                 Box(modifier = Modifier.weight(1f)) {
                     TerminalFocusWrapper(
                         session = session,
+                        extraKeysController = extraKeysController,
                         isTerminalActive = true,
                         onViewCreated = onViewCreated,
                         onViewReleased = onViewReleased
                     )
                 }
-                ExtraKeysToolbar(
-                    onKeyClick = onExtraKeyClick,
-                    ctrlActive = ctrlActive,
-                    altActive = altActive
-                )
+                if (extraKeysEnabled) {
+                    ExtraKeysToolbar(
+                        extraKeysController = extraKeysController,
+                        activeTerminalView = activeTerminalView,
+                        session = session,
+                        extraKeysJson = extraKeysJson
+                    )
+                }
             }
             VerticalDivider(modifier = Modifier.fillMaxHeight(), thickness = 1.dp, color = MaterialTheme.colorScheme.outline)
             Box(modifier = Modifier.width(sftpWidth)) {
@@ -130,6 +141,8 @@ fun SplitWorkspace(
 fun TerminalWorkspaceScreen(
     session: TerminalSession,
     sftpViewModel: SftpViewModel,
+    extraKeysEnabled: Boolean,
+    extraKeysJson: String,
     onViewCreated: (TerminalView) -> Unit,
     onViewReleased: () -> Unit,
     modifier: Modifier = Modifier
@@ -138,8 +151,8 @@ fun TerminalWorkspaceScreen(
     val configuration = LocalConfiguration.current
     val isWideScreen = configuration.screenWidthDp >= 600
 
-    var ctrlActive by remember { mutableStateOf(false) }
-    var altActive by remember { mutableStateOf(false) }
+    val extraKeysController = remember { ExtraKeysController() }
+    var activeTerminalView by remember { mutableStateOf<TerminalView?>(null) }
 
     var foldingFeature by remember { mutableStateOf<FoldingFeature?>(null) }
     LaunchedEffect(context) {
@@ -153,18 +166,14 @@ fun TerminalWorkspaceScreen(
             }
     }
 
-    val onExtraKeyClick: (String) -> Unit = { key ->
-        when (key) {
-            "CTRL" -> ctrlActive = !ctrlActive
-            "ALT" -> altActive = !altActive
-            "ESC" -> session.write("\u001b")
-            "TAB" -> session.write("\t")
-            "◀" -> session.write("\u001b[D")
-            "▲" -> session.write("\u001b[A")
-            "▼" -> session.write("\u001b[B")
-            "▶" -> session.write("\u001b[C")
-            else -> session.write(key)
-        }
+    val handleViewCreated: (TerminalView) -> Unit = { view ->
+        activeTerminalView = view
+        onViewCreated(view)
+    }
+
+    val handleViewReleased: () -> Unit = {
+        activeTerminalView = null
+        onViewReleased()
     }
 
     if (isWideScreen) {
@@ -172,22 +181,24 @@ fun TerminalWorkspaceScreen(
             session = session,
             sftpViewModel = sftpViewModel,
             foldingFeature = foldingFeature,
-            ctrlActive = ctrlActive,
-            altActive = altActive,
-            onExtraKeyClick = onExtraKeyClick,
-            onViewCreated = onViewCreated,
-            onViewReleased = onViewReleased,
+            extraKeysController = extraKeysController,
+            activeTerminalView = activeTerminalView,
+            extraKeysEnabled = extraKeysEnabled,
+            extraKeysJson = extraKeysJson,
+            onViewCreated = handleViewCreated,
+            onViewReleased = handleViewReleased,
             modifier = modifier
         )
     } else {
         TabbedWorkspace(
             session = session,
             sftpViewModel = sftpViewModel,
-            ctrlActive = ctrlActive,
-            altActive = altActive,
-            onExtraKeyClick = onExtraKeyClick,
-            onViewCreated = onViewCreated,
-            onViewReleased = onViewReleased,
+            extraKeysController = extraKeysController,
+            activeTerminalView = activeTerminalView,
+            extraKeysEnabled = extraKeysEnabled,
+            extraKeysJson = extraKeysJson,
+            onViewCreated = handleViewCreated,
+            onViewReleased = handleViewReleased,
             modifier = modifier
         )
     }

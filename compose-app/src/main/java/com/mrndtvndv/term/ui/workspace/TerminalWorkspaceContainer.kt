@@ -53,6 +53,7 @@ private fun TerminalView.forceUpdateSize() {
 @Composable
 fun TerminalWorkspaceContainer(
     session: TerminalSession,
+    extraKeysController: com.mrndtvndv.term.ui.keyboard.ExtraKeysController,
     onViewCreated: (TerminalView) -> Unit,
     onViewReleased: () -> Unit,
     modifier: Modifier = Modifier
@@ -86,6 +87,22 @@ fun TerminalWorkspaceContainer(
                             return 1.0f
                         }
                         return scale
+                    }
+
+                    override fun readControlKey(): Boolean {
+                        return extraKeysController.readControl()
+                    }
+
+                    override fun readAltKey(): Boolean {
+                        return extraKeysController.readAlt()
+                    }
+
+                    override fun readShiftKey(): Boolean {
+                        return extraKeysController.readShift()
+                    }
+
+                    override fun readFnKey(): Boolean {
+                        return extraKeysController.readFn()
                     }
                 })
                 attachSession(session)

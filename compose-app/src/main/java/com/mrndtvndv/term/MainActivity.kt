@@ -131,7 +131,8 @@ class MainActivity : ComponentActivity() {
                                     },
                                     onViewReleased = {
                                         activeTerminalView = null
-                                    }
+                                    },
+                                    modifier = Modifier.fillMaxSize()
                                 )
                             }
                         }

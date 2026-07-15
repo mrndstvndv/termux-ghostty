@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chuchu Rendering Portability & Performance Analysis</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --card-bg: rgba(30, 41, 59, 0.7);
+            --border-color: rgba(255, 255, 255, 0.08);
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            --accent-primary: #3b82f6;
+            --accent-secondary: #60a5fa;
+            --accent-glow: rgba(59, 130, 246, 0.15);
+            --success-color: #10b981;
+            --warning-color: #f59e0b;
+            --code-bg: #0b0f19;
+            --font-sans: 'Outfit', sans-serif;
+            --font-mono: 'JetBrains Mono', monospace;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            background-image: 
+                radial-gradient(circle at 10% 20%, rgba(59, 130, 246, 0.05) 0%, transparent 40%),
+                radial-gradient(circle at 90% 80%, rgba(96, 165, 250, 0.05) 0%, transparent 40%);
+            color: var(--text-primary);
+            font-family: var(--font-sans);
+            line-height: 1.6;
+            padding: 2rem 1rem;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1100px;
+            margin: 0 auto;
+        }
+
+        /* Header Style */
+        header {
+            text-align: center;
+            margin-bottom: 3rem;
+            padding-bottom: 2rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .badge {
+            background: linear-gradient(135deg, rgba(59, 130, 246, 0.2), rgba(96, 165, 250, 0.2));
+            color: var(--accent-secondary);
+            padding: 0.4rem 1rem;
+            border-radius: 50px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            display: inline-block;
+            margin-bottom: 1rem;
+            border: 1px solid rgba(59, 130, 246, 0.3);
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, #ffffff 30%, #94a3b8 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 0.5rem;
+            letter-spacing: -0.02em;
+        }
+
+        .subtitle {
+            color: var(--text-secondary);
+            font-size: 1.1rem;
+            max-width: 600px;
+            margin: 0 auto;
+            font-weight: 300;
+        }
+
+        /* Tabs System */
+        .tabs-nav {
+            display: flex;
+            justify-content: center;
+            gap: 0.5rem;
+            margin-bottom: 2.5rem;
+            background: rgba(15, 23, 42, 0.4);
+            padding: 0.4rem;
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            width: fit-content;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        .tab-btn {
+            background: transparent;
+            border: none;
+            color: var(--text-secondary);
+            padding: 0.6rem 1.5rem;
+            font-family: var(--font-sans);
+            font-size: 0.95rem;
+            font-weight: 500;
+            cursor: pointer;
+            border-radius: 8px;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .tab-btn:hover {
+            color: var(--text-primary);
+            background: rgba(255, 255, 255, 0.03);
+        }
+
+        .tab-btn.active {
+            color: var(--text-primary);
+            background: var(--accent-primary);
+            box-shadow: 0 4px 12px var(--accent-glow);
+        }
+
+        .tab-panel {
+            display: none;
+            animation: fadeIn 0.4s ease;
+        }
+
+        .tab-panel.active {
+            display: block;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Layout Cards */
+        .card {
+            background: var(--card-bg);
+            border-radius: 16px;
+            border: 1px solid var(--border-color);
+            padding: 2rem;
+            margin-bottom: 2rem;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            backdrop-filter: blur(12px);
+            transition: border-color 0.3s ease;
+        }
+
+        .card:hover {
+            border-color: rgba(59, 130, 246, 0.25);
+        }
+
+        h2 {
+            font-size: 1.6rem;
+            font-weight: 600;
+            margin-bottom: 1.5rem;
+            color: var(--text-primary);
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        h2::before {
+            content: '';
+            display: inline-block;
+            width: 4px;
+            height: 1.25rem;
+            background: var(--accent-primary);
+            border-radius: 4px;
+        }
+
+        h3 {
+            font-size: 1.2rem;
+            font-weight: 600;
+            margin-top: 1.5rem;
+            margin-bottom: 0.75rem;
+            color: var(--accent-secondary);
+        }
+
+        p {
+            color: var(--text-secondary);
+            margin-bottom: 1rem;
+            font-size: 1rem;
+            font-weight: 400;
+        }
+
+        /* Lists */
+        ul, ol {
+            margin-left: 1.5rem;
+            margin-bottom: 1rem;
+            color: var(--text-secondary);
+        }
+
+        li {
+            margin-bottom: 0.5rem;
+        }
+
+        strong {
+            color: var(--text-primary);
+            font-weight: 500;
+        }
+
+        /* Callouts */
+        .callout {
+            background: rgba(59, 130, 246, 0.08);
+            border-left: 4px solid var(--accent-primary);
+            border-radius: 0 12px 12px 0;
+            padding: 1.25rem;
+            margin: 1.5rem 0;
+        }
+
+        .callout-title {
+            font-weight: 600;
+            color: var(--accent-secondary);
+            margin-bottom: 0.5rem;
+            font-size: 0.95rem;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+        }
+
+        .callout p {
+            margin-bottom: 0;
+            font-size: 0.95rem;
+        }
+
+        /* Diagrams */
+        .diagram-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background: rgba(15, 23, 42, 0.6);
+            border-radius: 12px;
+            padding: 2rem;
+            margin: 1.5rem 0;
+            border: 1px solid var(--border-color);
+        }
+
+        .diagram-title {
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+            margin-top: 1rem;
+            font-weight: 500;
+        }
+
+        /* Tables */
+        .table-responsive {
+            overflow-x: auto;
+            margin: 1.5rem 0;
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            text-align: left;
+            font-size: 0.95rem;
+        }
+
+        th {
+            background-color: rgba(15, 23, 42, 0.8);
+            color: var(--text-primary);
+            font-weight: 600;
+            padding: 1rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        td {
+            padding: 1rem;
+            border-bottom: 1px solid var(--border-color);
+            color: var(--text-secondary);
+        }
+
+        tr:last-child td {
+            border-bottom: none;
+        }
+
+        tr:hover td {
+            background-color: rgba(255, 255, 255, 0.01);
+            color: var(--text-primary);
+        }
+
+        /* Code Blocks */
+        .code-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #111827;
+            padding: 0.5rem 1rem;
+            border-radius: 12px 12px 0 0;
+            border: 1px solid var(--border-color);
+            border-bottom: none;
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            font-family: var(--font-mono);
+        }
+
+        .copy-btn {
+            background: transparent;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            color: var(--text-secondary);
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            cursor: pointer;
+            font-family: var(--font-sans);
+            font-size: 0.75rem;
+            transition: all 0.2s ease;
+        }
+
+        .copy-btn:hover {
+            color: var(--text-primary);
+            border-color: var(--accent-primary);
+            background: rgba(59, 130, 246, 0.1);
+        }
+
+        pre {
+            background-color: var(--code-bg);
+            padding: 1.25rem;
+            border-radius: 0 0 12px 12px;
+            border: 1px solid var(--border-color);
+            overflow-x: auto;
+            margin-bottom: 1.5rem;
+        }
+
+        code {
+            font-family: var(--font-mono);
+            font-size: 0.9rem;
+            color: #e2e8f0;
+        }
+
+        .inline-code {
+            font-family: var(--font-mono);
+            background: rgba(255, 255, 255, 0.05);
+            padding: 0.15rem 0.4rem;
+            border-radius: 4px;
+            font-size: 0.85rem;
+            color: var(--accent-secondary);
+        }
+
+        /* Grid */
+        .grid-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.5rem;
+        }
+
+        @media (max-width: 768px) {
+            .grid-2 {
+                grid-template-columns: 1fr;
+            }
+            body {
+                padding: 1rem 0.5rem;
+            }
+            h1 {
+                font-size: 1.8rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <span class="badge">Architecture & Performance</span>
+            <h1>Chuchu Rendering Portability</h1>
+            <p class="subtitle">Feasibility analysis and optimization path for porting termux-ghostty's incremental canvas system into Chuchu.</p>
+        </header>
+
+        <nav class="tabs-nav">
+            <button class="tab-btn active" onclick="switchTab(event, 'tab-compare')">Architecture Comparison</button>
+            <button class="tab-btn" onclick="switchTab(event, 'tab-feasibility')">Feasibility</button>
+            <button class="tab-btn" onclick="switchTab(event, 'tab-gpu')">GPU Clarification</button>
+            <button class="tab-btn" onclick="switchTab(event, 'tab-roadmap')">Roadmap</button>
+        </nav>
+
+        <!-- TAB 1: COMPARE -->
+        <div id="tab-compare" class="tab-panel active">
+            <div class="card">
+                <h2>Comparison of Rendering Pipelines</h2>
+                <p>Both <strong>Chuchu</strong> and <strong>termux-ghostty</strong> utilize <code>libghostty</code> as their native emulation engine, but they diverge fundamentally in how they bridge cell data to the Android UI layer.</p>
+
+                <div class="grid-2">
+                    <div>
+                        <h3>Chuchu: Rebuild Every Frame</h3>
+                        <p>Chuchu uses a full-screen snapshot serialization method on every draw interval. This architecture incurs high CPU and allocation overhead:</p>
+                        
+                        <div class="diagram-container">
+                            <svg width="240" height="240" viewBox="0 0 240 240" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <rect width="240" height="240" rx="12" fill="#1b253b" />
+                                <rect x="30" y="20" width="180" height="32" rx="6" fill="#e11d48" fill-opacity="0.2" stroke="#e11d48" stroke-width="1.5"/>
+                                <text x="120" y="40" fill="#f8fafc" font-size="10" font-family="sans-serif" font-weight="bold" text-anchor="middle">libghostty VT Engine</text>
+                                
+                                <path d="M120 52V70" stroke="#94a3b8" stroke-width="1.5" />
+                                
+                                <rect x="30" y="75" width="180" height="32" rx="6" fill="#f59e0b" fill-opacity="0.2" stroke="#f59e0b" stroke-width="1.5"/>
+                                <text x="120" y="91" fill="#f8fafc" font-size="9" font-family="sans-serif" text-anchor="middle">chuchu_build_text_snapshot</text>
+                                <text x="120" y="101" fill="#94a3b8" font-size="8" font-family="sans-serif" text-anchor="middle">Serializes ALL cells on screen</text>
+
+                                <path d="M120 107V125" stroke="#94a3b8" stroke-width="1.5" />
+
+                                <rect x="30" y="130" width="180" height="32" rx="6" fill="#3b82f6" fill-opacity="0.2" stroke="#3b82f6" stroke-width="1.5"/>
+                                <text x="120" y="146" fill="#f8fafc" font-size="9" font-family="sans-serif" text-anchor="middle">TerminalSnapshot JVM Allocation</text>
+                                <text x="120" y="156" fill="#94a3b8" font-size="8" font-family="sans-serif" text-anchor="middle">Creates new arrays every frame</text>
+
+                                <path d="M120 162V180" stroke="#94a3b8" stroke-width="1.5" />
+
+                                <rect x="30" y="185" width="180" height="32" rx="6" fill="#10b981" fill-opacity="0.2" stroke="#10b981" stroke-width="1.5"/>
+                                <text x="120" y="201" fill="#f8fafc" font-size="9" font-family="sans-serif" text-anchor="middle">Compose TerminalCanvas</text>
+                                <text x="120" y="211" fill="#94a3b8" font-size="8" font-family="sans-serif" text-anchor="middle">Loops & draws cell-by-cell</text>
+                            </svg>
+                            <div class="diagram-title">Chuchu Monolithic Redraw Pipeline</div>
+                        </div>
+                    </div>
+
+                    <div>
+                        <h3>Termux-Ghostty: Incremental Deltas</h3>
+                        <p>Termux-ghostty updates cells incrementally. The native layer only streams changed rows using pre-allocated memory structures, minimizing Garbage Collection (GC) jitter:</p>
+                        
+                        <div class="diagram-container">
+                            <svg width="240" height="240" viewBox="0 0 240 240" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <rect width="240" height="240" rx="12" fill="#1b253b" />
+                                <rect x="30" y="20" width="180" height="32" rx="6" fill="#10b981" fill-opacity="0.2" stroke="#10b981" stroke-width="1.5"/>
+                                <text x="120" y="40" fill="#f8fafc" font-size="10" font-family="sans-serif" font-weight="bold" text-anchor="middle">libghostty VT Engine</text>
+                                
+                                <path d="M120 52V70" stroke="#94a3b8" stroke-width="1.5" />
+                                
+                                <rect x="30" y="75" width="180" height="32" rx="6" fill="#3b82f6" fill-opacity="0.2" stroke="#3b82f6" stroke-width="1.5"/>
+                                <text x="120" y="91" fill="#f8fafc" font-size="9" font-family="sans-serif" text-anchor="middle">FrameDelta (Only Dirty Rows)</text>
+                                <text x="120" y="101" fill="#94a3b8" font-size="8" font-family="sans-serif" text-anchor="middle">Pre-allocated direct JNI ByteBuffer</text>
+
+                                <path d="M120 107V125" stroke="#94a3b8" stroke-width="1.5" />
+
+                                <rect x="30" y="130" width="180" height="32" rx="6" fill="#f59e0b" fill-opacity="0.2" stroke="#f59e0b" stroke-width="1.5"/>
+                                <text x="120" y="146" fill="#f8fafc" font-size="9" font-family="sans-serif" text-anchor="middle">RenderFrameCache (JVM)</text>
+                                <text x="120" y="156" fill="#94a3b8" font-size="8" font-family="sans-serif" text-anchor="middle">In-place updates, zero GC churn</text>
+
+                                <path d="M120 162V180" stroke="#94a3b8" stroke-width="1.5" />
+
+                                <rect x="30" y="185" width="180" height="32" rx="6" fill="#10b981" fill-opacity="0.2" stroke="#10b981" stroke-width="1.5"/>
+                                <text x="120" y="201" fill="#f8fafc" font-size="9" font-family="sans-serif" text-anchor="middle">TerminalRenderer (View)</text>
+                                <text x="120" y="211" fill="#94a3b8" font-size="8" font-family="sans-serif" text-anchor="middle">RowRenderCache draws dirty rows only</text>
+                            </svg>
+                            <div class="diagram-title">Incremental Caching Pipeline</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>Performance Trade-offs Summary</h2>
+                <div class="table-responsive">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Feature / Metric</th>
+                                <th>Chuchu (Compose Canvas)</th>
+                                <th>Termux-Ghostty (Custom View)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><strong>Rendering Unit</strong></td>
+                                <td>Loops cell-by-cell every frame</td>
+                                <td>RowRenderCache (skips unmodified rows)</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Memory Lifecycle</strong></td>
+                                <td>Re-allocates snapshot arrays per frame</td>
+                                <td>Reuses pre-allocated JVM Direct ByteBuffers</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Touch Gestures</strong></td>
+                                <td>Compose pointerInput mechanics</td>
+                                <td>Gesture & Scale Recognizers</td>
+                            </tr>
+                            <tr>
+                                <td><strong>JNI Snapshot Transfer</strong></td>
+                                <td>Full buffer rebuilds (slow with high throughput)</td>
+                                <td>Incremental FrameDeltas (fast, low IPC overhead)</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 2: FEASIBILITY -->
+        <div id="tab-feasibility" class="tab-panel">
+            <div class="card">
+                <h2>Integration Feasibility Analysis</h2>
+                <p>Porting termux-ghostty's Canvas system into Chuchu is highly feasible. Both applications share identical underlying libraries (Android SDK, Android NDK, Kotlin/Java, Zig-compiled <code>libghostty</code> native libraries).</p>
+                
+                <div class="callout">
+                    <div class="callout-title">Feasibility Rating: 9/10</div>
+                    <p>Both codebases run in the JVM sandbox on Android. Porting the logic is straightforward, but the UI wrapping method needs to be decided based on Chuchu's layout design.</p>
+                </div>
+
+                <h3>Integration Approaches</h3>
+                
+                <h4>1. Hybrid Compose/View Wrapper (Recommended)</h4>
+                <p>Using Compose's <code>AndroidView</code>, we wrap the native <code>TerminalView</code>. This brings over all optimizations, gestures, selection hooks, and scroll metrics without framework friction.</p>
+                <div class="code-header">
+                    <span>Compose Wrapper Example</span>
+                    <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+                </div>
+                <pre><code>@Composable
+fun ChuchuTerminalView(session: TerminalSession, modifier: Modifier = Modifier) {
+    AndroidView(
+        factory = { context ->
+            TerminalView(context).apply {
+                attachSession(session)
+            }
+        },
+        update = { view ->
+            // Apply theme/font-size changes when states update
+        },
+        modifier = modifier
+    )
+}</code></pre>
+
+                <h4>2. Pure Compose Rendering Port</h4>
+                <p>Implement the row-caching algorithms directly in Compose <code>DrawScope.drawIntoCanvas</code> inside the existing <code>TerminalCanvas.kt</code> file. While keeping the application strictly inside the Compose tree, it retains some rendering pipeline overhead and requires rebuilding interaction structures.</p>
+            </div>
+        </div>
+
+        <!-- TAB 3: GPU CLARIFICATION -->
+        <div id="tab-gpu" class="tab-panel">
+            <div class="card">
+                <h2>GPU Rendering & Acceleration on Android</h2>
+                
+                <div class="callout" style="background: rgba(245, 158, 11, 0.08); border-color: var(--warning-color);">
+                    <div class="callout-title" style="color: var(--warning-color);">Crucial Technical Note</div>
+                    <p><strong>Both architectures are already GPU-accelerated!</strong> On modern Android, the <code>Canvas</code> API uses the <strong>HWUI engine</strong> under the hood, translating draw commands into OpenGL ES or Vulkan calls automatically.</p>
+                </div>
+
+                <p>Neither Chuchu nor termux-ghostty runs a custom Vulkan or OpenGL fragment shader rendering engine (like desktop Ghostty does with Metal/OpenGL). The performance bottleneck is on the <strong>CPU side</strong>, not the GPU:</p>
+                
+                <ul>
+                    <li><strong>CPU Bottleneck (Chuchu):</strong> CPU spends time allocating arrays, copying buffer bytes into JVM heaps, running Jetpack Compose layouts, and calling text layout engines for unchanged rows.</li>
+                    <li><strong>Low CPU Overhead (Termux-Ghostty):</strong> CPU skips unchanged lines entirely. Cells are written directly from Zig to direct native buffer memory, bypassing JVM allocations. The GPU receives only the necessary display lists.</li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- TAB 4: ROADMAP -->
+        <div id="tab-roadmap" class="tab-panel">
+            <div class="card">
+                <h2>Porting Implementation Roadmap</h2>
+                <p>To implement termux-ghostty's performance optimizations into Chuchu, follow these phases:</p>
+                
+                <ol>
+                    <li>
+                        <strong>Phase 1: Align Native Serialization (Zig)</strong>
+                        <p>Port the <code>FrameDelta</code> and <code>SnapshotMetadata</code> serializing functions from <a href="file:///Volumes/realme/Dev/termux-ghostty/terminal-emulator/src/main/zig/src/termux_ghostty.zig" class="inline-code">termux_ghostty.zig</a> into Chuchu's bridge code. Update the JNI interface to accept pre-allocated direct ByteBuffers.</p>
+                    </li>
+                    <li>
+                        <strong>Phase 2: Add Glue Caching (Java/Kotlin)</strong>
+                        <p>Import <a href="file:///Volumes/realme/Dev/termux-ghostty/terminal-emulator/src/main/java/com/termux/terminal/ScreenSnapshot.java" class="inline-code">ScreenSnapshot.java</a> and implement a frame cache manager in Chuchu to update snapshots incrementally using frame deltas.</p>
+                    </li>
+                    <li>
+                        <strong>Phase 3: Integrate and Wrap View</strong>
+                        <p>Port <a href="file:///Volumes/realme/Dev/termux-ghostty/terminal-view/src/main/java/com/termux/view/TerminalView.java" class="inline-code">TerminalView.java</a> and <a href="file:///Volumes/realme/Dev/termux-ghostty/terminal-view/src/main/java/com/termux/view/TerminalRenderer.java" class="inline-code">TerminalRenderer.java</a> into Chuchu, wrapping the terminal screen in a Compose <code>AndroidView</code>.</p>
+                    </li>
+                </ol>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function switchTab(event, tabId) {
+            // Remove active classes
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            document.querySelectorAll('.tab-panel').forEach(panel => panel.classList.remove('active'));
+            
+            // Add active class to clicked button and target tab
+            event.target.classList.add('active');
+            document.getElementById(tabId).classList.add('active');
+        }
+
+        function copyCode(btn) {
+            const pre = btn.parentElement.nextElementSibling;
+            const code = pre.querySelector('code');
+            navigator.clipboard.writeText(code.innerText).then(() => {
+                const originalText = btn.innerText;
+                btn.innerText = 'Copied!';
+                btn.style.color = '#10b981';
+                btn.style.borderColor = '#10b981';
+                setTimeout(() => {
+                    btn.innerText = originalText;
+                    btn.style.color = '';
+                    btn.style.borderColor = '';
+                }, 2000);
+            });
+        }
+    </script>
+</body>
+</html>

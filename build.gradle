@@ -5,6 +5,7 @@ buildscript {
     }
     dependencies {
         classpath "com.android.tools.build:gradle:8.13.2"
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.24"
     }
 }
 
@@ -13,5 +14,18 @@ allprojects {
         google()
         mavenCentral()
         maven { url "https://jitpack.io" }
+    }
+    
+    // Resolve global dependency conflicts
+    configurations.all {
+        resolutionStrategy {
+            // Force single version of Guava Android variant to prevent JVM/Android API mismatch
+            // Using 33.6.0-android since MoreFiles was added to the Android flavor in 33.4.0+
+            force 'com.google.guava:guava:33.6.0-android'
+            
+            // Handle Conscrypt/Bouncy Castle version conflicts
+            force 'org.bouncycastle:bcprov-jdk18on:1.78'
+            force 'org.bouncycastle:bcpkix-jdk18on:1.78'
+        }
     }
 }

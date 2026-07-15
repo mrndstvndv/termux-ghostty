@@ -47,6 +47,8 @@
               platforms-android-36
               ndk-29-0-14206865
               cmake-3-22-1
+              emulator
+              system-images-android-34-google-apis-arm64-v8a
             ]);
           });
     in {

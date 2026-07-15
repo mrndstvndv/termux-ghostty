@@ -9,11 +9,45 @@ import com.termux.view.TerminalView
 import com.termux.shared.termux.terminal.TermuxTerminalViewClientBase
 
 import android.view.MotionEvent
+import android.view.View
 import android.view.ViewGroup
+import android.view.ViewTreeObserver
 import com.termux.shared.view.KeyboardUtils
 
 fun TerminalView.detachSession() {
     attachSession(null)
+}
+
+/**
+ * Force the terminal session to resize to match the actual view dimensions.
+ * This bypasses TerminalView.updateSize()'s getWindowVisibility() guard
+ * which blocks resizing when hosted inside Compose's AndroidView.
+ */
+private fun TerminalView.forceUpdateSize() {
+    val viewWidth = width
+    val viewHeight = height
+    val renderer = mRenderer ?: return
+    val session = mTermSession ?: return
+    if (viewWidth == 0 || viewHeight == 0) return
+
+    val fontWidth = renderer.getFontWidth()
+    val fontLineSpacing = renderer.getFontLineSpacing()
+    if (fontWidth <= 0 || fontLineSpacing <= 0) return
+
+    val newColumns = Math.max(4, (viewWidth / fontWidth).toInt())
+    // Approximate row count: use full view height / line spacing.
+    // The original uses (viewHeight - mFontLineSpacingAndAscent) / mFontLineSpacing
+    // which accounts for a single ascent offset. We approximate by subtracting one line spacing.
+    val newRows = Math.max(4, (viewHeight - fontLineSpacing) / fontLineSpacing)
+
+    if (session.columns == newColumns && session.rows == newRows) return
+
+    android.util.Log.i("TerminalWorkspace", "forceUpdateSize: ${newColumns}x${newRows} (view: ${viewWidth}x${viewHeight})")
+    val cellWidth = Math.max(1, Math.round(fontWidth))
+    val cellHeight = Math.max(1, fontLineSpacing)
+    session.updateSize(newColumns, newRows, cellWidth, cellHeight)
+    scrollTo(0, 0)
+    invalidate()
 }
 
 @Composable
@@ -56,16 +90,14 @@ fun TerminalWorkspaceContainer(
                 })
                 attachSession(session)
 
-                // Force a resize once the view is actually laid out with real dimensions
-                addOnLayoutChangeListener(object : android.view.View.OnLayoutChangeListener {
-                    override fun onLayoutChange(
-                        v: android.view.View, left: Int, top: Int, right: Int, bottom: Int,
-                        oldLeft: Int, oldTop: Int, oldRight: Int, oldBottom: Int
-                    ) {
-                        val w = right - left
-                        val h = bottom - top
-                        if (w > 0 && h > 0) {
-                            updateSize(true)
+                // Use OnGlobalLayoutListener to resize once the view has real dimensions.
+                // We call forceUpdateSize() which bypasses the getWindowVisibility() guard
+                // that blocks TerminalView.updateSize() inside Compose's AndroidView.
+                viewTreeObserver.addOnGlobalLayoutListener(object : ViewTreeObserver.OnGlobalLayoutListener {
+                    override fun onGlobalLayout() {
+                        if (width > 0 && height > 0) {
+                            viewTreeObserver.removeOnGlobalLayoutListener(this)
+                            forceUpdateSize()
                         }
                     }
                 })

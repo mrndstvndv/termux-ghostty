@@ -9,6 +9,7 @@ import com.termux.view.TerminalView
 import com.termux.shared.termux.terminal.TermuxTerminalViewClientBase
 
 import android.view.MotionEvent
+import android.view.ViewGroup
 import com.termux.shared.view.KeyboardUtils
 
 fun TerminalView.detachSession() {
@@ -24,14 +25,33 @@ fun TerminalWorkspaceContainer(
 ) {
     AndroidView(
         factory = { context ->
+            var currentFontSize = 14
             TerminalView(context, null).apply {
+                layoutParams = ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT
+                )
                 isFocusable = true
                 isFocusableInTouchMode = true
-                setTextSize(14)
+                setTextSize(currentFontSize)
                 setTerminalViewClient(object : TermuxTerminalViewClientBase() {
                     override fun onSingleTapUp(e: MotionEvent) {
                         this@apply.requestFocus()
                         KeyboardUtils.showSoftKeyboard(context, this@apply)
+                    }
+
+                    override fun onScale(scale: Float): Float {
+                        if (scale < 0.9f || scale > 1.1f) {
+                            val increase = scale > 1.0f
+                            val delta = if (increase) 1 else -1
+                            val newSize = (currentFontSize + delta).coerceIn(4, 40)
+                            if (newSize != currentFontSize) {
+                                currentFontSize = newSize
+                                this@apply.setTextSize(newSize)
+                            }
+                            return 1.0f
+                        }
+                        return scale
                     }
                 })
                 attachSession(session)
@@ -43,6 +63,8 @@ fun TerminalWorkspaceContainer(
                 view.attachSession(session)
             }
             onViewCreated(view)
+            // Force immediate resize so the terminal session knows the real dimensions
+            view.post { view.updateSize(true) }
         },
         onRelease = { view ->
             view.detachSession()

@@ -55,6 +55,7 @@ class MainActivity : ComponentActivity() {
     private var activeTerminalView: TerminalView? = null
     private var sshService: SshSessionService? = null
     private var isBound = false
+    private val sshLock = Any()
     
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(className: ComponentName, service: IBinder) {
@@ -170,22 +171,29 @@ class MainActivity : ComponentActivity() {
                 val sessionIo = object : TerminalSessionIO {
                     override fun write(data: ByteArray?, offset: Int, count: Int) {
                         if (data != null && count > 0) {
+                            val dataCopy = data.copyOfRange(offset, offset + count)
                             lifecycleScope.launch(Dispatchers.IO) {
-                                try {
-                                    channel.outputStream.write(data, offset, count)
-                                    channel.outputStream.flush()
-                                } catch (e: Exception) {
-                                    // ignore
+                                synchronized(sshLock) {
+                                    try {
+                                        channel.outputStream.write(dataCopy)
+                                        channel.outputStream.flush()
+                                    } catch (e: Exception) {
+                                        // ignore
+                                    }
                                 }
                             }
                         }
                     }
 
                     override fun onResize(columns: Int, rows: Int, cellWidth: Int, cellHeight: Int) {
-                        try {
-                            channel.resizeWindow(columns, rows, columns * cellWidth, rows * cellHeight)
-                        } catch (e: Exception) {
-                            android.util.Log.w("MainActivity", "resizeWindow failed", e)
+                        lifecycleScope.launch(Dispatchers.IO) {
+                            synchronized(sshLock) {
+                                try {
+                                    channel.resizeWindow(columns, rows, columns * cellWidth, rows * cellHeight)
+                                } catch (e: Exception) {
+                                    android.util.Log.w("MainActivity", "resizeWindow failed", e)
+                                }
+                            }
                         }
                     }
 
@@ -222,12 +230,16 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     } catch (e: Exception) {
-                        android.util.Log.w("MainActivity", "SSH reader error", e)
+                        if (e !is kotlinx.coroutines.CancellationException) {
+                            android.util.Log.w("MainActivity", "SSH reader error", e)
+                        }
                     } finally {
-                        withContext(Dispatchers.Main) {
-                            if (screenState.value is ScreenState.TerminalWorkspace) {
-                                cleanupConnection()
-                                screenState.value = ScreenState.Dashboard
+                        if (coroutineContext[Job]?.isCancelled != true) {
+                            withContext(Dispatchers.Main) {
+                                if (screenState.value is ScreenState.TerminalWorkspace) {
+                                    cleanupConnection()
+                                    screenState.value = ScreenState.Dashboard
+                                }
                             }
                         }
                     }
@@ -267,18 +279,20 @@ class MainActivity : ComponentActivity() {
             isBound = false
             sshService = null
         }
-        try {
-            shellChannel?.close()
-        } catch (e: Exception) {}
-        shellChannel = null
-        try {
-            sftpClient?.close()
-        } catch (e: Exception) {}
-        sftpClient = null
-        try {
-            sshSession?.disconnect()
-        } catch (e: Exception) {}
-        sshSession = null
+        synchronized(sshLock) {
+            try {
+                shellChannel?.close()
+            } catch (e: Exception) {}
+            shellChannel = null
+            try {
+                sftpClient?.close()
+            } catch (e: Exception) {}
+            sftpClient = null
+            try {
+                sshSession?.disconnect()
+            } catch (e: Exception) {}
+            sshSession = null
+        }
         terminalSessionState.value = null
         sftpViewModelState.value = null
     }

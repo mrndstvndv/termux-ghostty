@@ -275,11 +275,17 @@ fun DashboardScreen(
                                     if (jsonError != null) {
                                         Text(jsonError!!, color = MaterialTheme.colorScheme.error)
                                     } else {
-                                        Text("JSON array of arrays representing the key layout.")
+                                        Text(
+                                            "Examples:\n" +
+                                            "• Simple key: 'ESC'\n" +
+                                            "• Popup: {key: '-', popup: '|'}\n" +
+                                            "• Macro: 'CTRL b n' or {macro: 'CTRL b n', display: 'tmux →'}"
+                                        )
                                     }
                                 },
                                 modifier = Modifier.fillMaxWidth(),
-                                enabled = !isLoading
+                                enabled = !isLoading,
+                                minLines = 3
                             )
                         }
 

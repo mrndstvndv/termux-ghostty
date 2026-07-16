@@ -4,6 +4,8 @@ An experimental Android terminal app using libghostty-vt as the terminal backend
 
 > ⚠️ **NOTICE**: This is an **unofficial** fork and is **not affiliated with ghostty-org or termux**. It combines features from both projects under their respective licenses (GPLv3 and MIT).
 
+> 🤖 **AI Assistance**: This project is developed with the assistance of AI coding tools. All code is reviewed and curated by a human maintainer.
+
 ## Features
 
 - **Ghostty integration** — Uses Ghostty-backed VT parsing and terminal state management inside the app.

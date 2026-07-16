@@ -4,6 +4,7 @@ const c = @cImport({
 });
 const ghostty_log = @import("android_log.zig");
 const core = @import("termux_ghostty.zig");
+const ssh = @import("ssh_native_session.zig");
 
 const jint = c.jint;
 const jlong = c.jlong;
@@ -653,4 +654,167 @@ fn newJStringFromUtf8(env: *c.JNIEnv, utf8: []const u8) c.jstring {
     }
 
     return env.*.*.NewString.?(env, if (units.items.len == 0) null else units.items.ptr, @intCast(units.items.len));
+}
+
+pub export fn Java_com_termux_terminal_GhosttyNative_nativeSshInit(
+    env: ?*c.JNIEnv,
+    clazz: c.jclass,
+    socket_fd: jint,
+    username: c.jstring,
+    password_or_key: c.jstring,
+    is_password: jboolean,
+    term_type: c.jstring,
+    cols: jint,
+    rows: jint,
+) jlong {
+    _ = clazz;
+    const jni = env orelse return 0;
+    if (username == null or password_or_key == null or term_type == null) return 0;
+
+    const username_chars = jni.*.*.GetStringUTFChars.?(jni, username, null);
+    defer jni.*.*.ReleaseStringUTFChars.?(jni, username, username_chars);
+    const username_slice = std.mem.span(username_chars);
+
+    const pass_key_chars = jni.*.*.GetStringUTFChars.?(jni, password_or_key, null);
+    defer jni.*.*.ReleaseStringUTFChars.?(jni, password_or_key, pass_key_chars);
+    const pass_key_slice = std.mem.span(pass_key_chars);
+
+    const term_type_chars = jni.*.*.GetStringUTFChars.?(jni, term_type, null);
+    defer jni.*.*.ReleaseStringUTFChars.?(jni, term_type, term_type_chars);
+    const term_type_slice = std.mem.span(term_type_chars);
+
+    const is_pass = (is_password != c.JNI_FALSE);
+
+    const session = ssh.SshNativeSession.init(
+        std.heap.c_allocator,
+        socket_fd,
+        username_slice,
+        pass_key_slice,
+        is_pass,
+        term_type_slice,
+        cols,
+        rows,
+        65536,
+    ) catch |err| {
+        ghostty_log.err("nativeSshInit failed: {}", .{err});
+        return 0;
+    };
+
+    return @intCast(@intFromPtr(session));
+}
+
+pub export fn Java_com_termux_terminal_GhosttyNative_nativeSshStart(
+    env: ?*c.JNIEnv,
+    clazz: c.jclass,
+    session_handle: jlong,
+) void {
+    _ = env;
+    _ = clazz;
+    if (session_handle <= 0) return;
+    const session = @as(*ssh.SshNativeSession, @ptrFromInt(@as(usize, @intCast(session_handle))));
+    session.start() catch |err| {
+        ghostty_log.err("nativeSshStart failed: {}", .{err});
+    };
+}
+
+pub export fn Java_com_termux_terminal_GhosttyNative_nativeSshDeinit(
+    env: ?*c.JNIEnv,
+    clazz: c.jclass,
+    session_handle: jlong,
+) void {
+    _ = env;
+    _ = clazz;
+    if (session_handle <= 0) return;
+    const session = @as(*ssh.SshNativeSession, @ptrFromInt(@as(usize, @intCast(session_handle))));
+    session.deinit();
+}
+
+pub export fn Java_com_termux_terminal_GhosttyNative_nativeSshWrite(
+    env: ?*c.JNIEnv,
+    clazz: c.jclass,
+    session_handle: jlong,
+    data: c.jbyteArray,
+    offset: jint,
+    length: jint,
+) void {
+    _ = clazz;
+    const jni = env orelse return;
+    if (session_handle <= 0 or data == null or length <= 0) return;
+
+    const session = @as(*ssh.SshNativeSession, @ptrFromInt(@as(usize, @intCast(session_handle))));
+
+    const count = std.math.cast(usize, length) orelse return;
+    var stack_buffer: [2048]u8 = undefined;
+    var heap_buffer: ?[]u8 = null;
+    const bytes: []u8 = if (count <= stack_buffer.len)
+        stack_buffer[0..count]
+    else blk: {
+        const allocated = std.heap.c_allocator.alloc(u8, count) catch return;
+        heap_buffer = allocated;
+        break :blk allocated;
+    };
+    defer if (heap_buffer) |allocated| std.heap.c_allocator.free(allocated);
+
+    jni.*.*.GetByteArrayRegion.?(jni, data, offset, length, @ptrCast(bytes.ptr));
+    session.writeKeystrokes(bytes);
+}
+
+pub export fn Java_com_termux_terminal_GhosttyNative_nativeSshGetJvmWakeFd(
+    env: ?*c.JNIEnv,
+    clazz: c.jclass,
+    session_handle: jlong,
+) jint {
+    _ = env;
+    _ = clazz;
+    if (session_handle <= 0) return -1;
+    const session = @as(*ssh.SshNativeSession, @ptrFromInt(@as(usize, @intCast(session_handle))));
+    return session.jvm_wake_pipe[0];
+}
+
+pub export fn Java_com_termux_terminal_GhosttyNative_nativeSshAckWakeup(
+    env: ?*c.JNIEnv,
+    clazz: c.jclass,
+    session_handle: jlong,
+) void {
+    _ = env;
+    _ = clazz;
+    if (session_handle <= 0) return;
+    const session = @as(*ssh.SshNativeSession, @ptrFromInt(@as(usize, @intCast(session_handle))));
+    session.ackJvmWakeup();
+}
+
+pub export fn Java_com_termux_terminal_GhosttyNative_nativeSshResize(
+    env: ?*c.JNIEnv,
+    clazz: c.jclass,
+    session_handle: jlong,
+    cols: jint,
+    rows: jint,
+) void {
+    _ = env;
+    _ = clazz;
+    if (session_handle <= 0) return;
+    const session = @as(*ssh.SshNativeSession, @ptrFromInt(@as(usize, @intCast(session_handle))));
+    session.resizeChannel(cols, rows);
+}
+
+fn appendCallbackWrapper(session: ?*anyopaque, data: ?[*]const u8, len: usize) callconv(.c) u32 {
+    const term_sess: ?*core.Session = @ptrCast(@alignCast(session));
+    return core.termux_ghostty_session_append(term_sess, data, len);
+}
+
+pub export fn Java_com_termux_terminal_GhosttyNative_nativeSshDrainToSession(
+    env: ?*c.JNIEnv,
+    clazz: c.jclass,
+    terminal_session_handle: jlong,
+    ssh_session_handle: jlong,
+) jint {
+    _ = env;
+    _ = clazz;
+    if (terminal_session_handle <= 0 or ssh_session_handle <= 0) return 0;
+
+    const term_sess = @as(*core.Session, @ptrFromInt(@as(usize, @intCast(terminal_session_handle))));
+    const ssh_sess = @as(*ssh.SshNativeSession, @ptrFromInt(@as(usize, @intCast(ssh_session_handle))));
+
+    const drained = ssh_sess.spsc_buffer.readDirectToSession(term_sess, appendCallbackWrapper);
+    return @intCast(drained);
 }

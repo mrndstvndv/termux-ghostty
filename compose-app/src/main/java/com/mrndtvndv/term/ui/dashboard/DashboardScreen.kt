@@ -62,6 +62,8 @@ fun DashboardScreen(
     onExtraKeysCustomJsonChange: (String) -> Unit,
     fontSize: Int,
     onFontSizeChange: (Int) -> Unit,
+    useNativePiping: Boolean,
+    onUseNativePipingChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
     initialHost: String = "10.0.2.2",
     initialPort: Int = 2222,
@@ -385,6 +387,21 @@ fun DashboardScreen(
                                 Text("+", style = MaterialTheme.typography.titleLarge)
                             }
                         }
+                    }
+
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("Use Native Piping (libssh2)", style = MaterialTheme.typography.bodyLarge)
+                        Switch(
+                            checked = useNativePiping,
+                            onCheckedChange = onUseNativePipingChange,
+                            enabled = !isLoading
+                        )
                     }
                 }
             }

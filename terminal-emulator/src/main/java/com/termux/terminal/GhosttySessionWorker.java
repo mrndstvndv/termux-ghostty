@@ -506,6 +506,10 @@ final class GhosttySessionWorker extends Thread {
             stagingSnapshot.copyPersistentMetadataFrom(publishedSnapshot);
         }
 
+        if (mUIUpdatePending.get()) {
+            mContent.requestFullSnapshotRefresh();
+        }
+
         long buildStartNanos = SystemClock.elapsedRealtimeNanos();
         mContent.fillSnapshot(stagingSnapshot);
         mContent.fillViewportLinks(stagingViewportLinks);

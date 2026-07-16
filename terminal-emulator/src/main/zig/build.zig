@@ -27,6 +27,35 @@ pub fn build(b: *std.Build) !void {
         root_module.addImport("ghostty-vt", ghostty_dep.module("ghostty-vt"));
     }
 
+    var mbedtls_lib: ?*std.Build.Step.Compile = null;
+    if (b.lazyDependency("mbedtls", .{
+        .target = target,
+        .optimize = optimize,
+    })) |mbedtls_dep| {
+        const lib_dep = mbedtls_dep.artifact("mbedtls");
+        if (lib_dep.rootModuleTarget().abi.isAndroid()) {
+            try addAndroidNdkPaths(b, lib_dep);
+        }
+        mbedtls_lib = lib_dep;
+        root_module.linkLibrary(lib_dep);
+    }
+
+    if (b.lazyDependency("libssh2", .{
+        .target = target,
+        .optimize = optimize,
+        .@"crypto-backend" = .mbedtls,
+        .@"link-system-crypto-backend" = false,
+    })) |libssh2_dep| {
+        const lib_dep = libssh2_dep.artifact("ssh2");
+        if (lib_dep.rootModuleTarget().abi.isAndroid()) {
+            try addAndroidNdkPaths(b, lib_dep);
+        }
+        if (mbedtls_lib) |m| {
+            lib_dep.linkLibrary(m);
+        }
+        root_module.linkLibrary(lib_dep);
+    }
+
     const lib = b.addLibrary(.{
         .name = "termux-ghostty",
         .linkage = .dynamic,

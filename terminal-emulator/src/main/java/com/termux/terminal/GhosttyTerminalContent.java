@@ -388,7 +388,7 @@ public final class GhosttyTerminalContent implements TerminalContent, AutoClosea
         return Double.toString(durationNanos / 1_000_000.0d);
     }
 
-    private long requireNativeHandle() {
+    long requireNativeHandle() {
         if (mNativeHandle == 0) {
             throw new IllegalStateException("Ghostty terminal is closed");
         }

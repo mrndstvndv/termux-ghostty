@@ -10,10 +10,12 @@ import androidx.compose.ui.Modifier
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.lifecycleScope
 import com.mrndtvndv.term.data.ssh.jvm.JvmSshSession
+import com.mrndtvndv.term.data.ssh.native.NativeSshSession
 import com.mrndtvndv.term.domain.SftpClient
 import com.mrndtvndv.term.domain.SshAuth
 import com.mrndtvndv.term.domain.SshConfig
 import com.mrndtvndv.term.domain.SshShellChannel
+import com.mrndtvndv.term.domain.SshSession
 import com.mrndtvndv.term.ui.dashboard.DashboardScreen
 import com.mrndtvndv.term.ui.sftp.SftpViewModel
 import com.mrndtvndv.term.ui.theme.TermuxGhosttyTheme
@@ -49,7 +51,8 @@ class MainActivity : ComponentActivity() {
         getSharedPreferences("ssh_prefs", Context.MODE_PRIVATE)
     }
 
-    private var sshSession: JvmSshSession? = null
+    private val useNativePiping = false
+    private var sshSession: SshSession? = null
     private var shellChannel: SshShellChannel? = null
     private var sftpClient: SftpClient? = null
     private var activeTerminalView: TerminalView? = null
@@ -210,7 +213,7 @@ class MainActivity : ComponentActivity() {
         
         lifecycleScope.launch {
             try {
-                val session = JvmSshSession()
+                val session = if (useNativePiping) NativeSshSession() else JvmSshSession()
                 sshSession = session
                 
                 withContext(Dispatchers.IO) {
@@ -275,6 +278,9 @@ class MainActivity : ComponentActivity() {
                 }
                 
                 val termSession = TerminalSession(2000, sessionClient, sessionIo)
+                if (useNativePiping && session is NativeSshSession) {
+                    termSession.setSshSessionHandle(session.nativeSessionHandle)
+                }
                 terminalSessionState.value = termSession
                 
                 val serviceIntent = Intent(this@MainActivity, SshSessionService::class.java)
@@ -285,27 +291,29 @@ class MainActivity : ComponentActivity() {
                 }
                 bindService(serviceIntent, connection, Context.BIND_AUTO_CREATE)
                 
-                readerJob = lifecycleScope.launch(Dispatchers.IO) {
-                    val buffer = ByteArray(16384)
-                    try {
-                        val input = channel.inputStream
-                        while (isActive) {
-                            val bytesRead = input.read(buffer)
-                            if (bytesRead == -1) break
-                            if (bytesRead > 0) {
-                                termSession.appendOutput(buffer, 0, bytesRead)
+                if (!useNativePiping) {
+                    readerJob = lifecycleScope.launch(Dispatchers.IO) {
+                        val buffer = ByteArray(16384)
+                        try {
+                            val input = channel.inputStream
+                            while (isActive) {
+                                val bytesRead = input.read(buffer)
+                                if (bytesRead == -1) break
+                                if (bytesRead > 0) {
+                                    termSession.appendOutput(buffer, 0, bytesRead)
+                                }
                             }
-                        }
-                    } catch (e: Exception) {
-                        if (e !is kotlinx.coroutines.CancellationException) {
-                            android.util.Log.w("MainActivity", "SSH reader error", e)
-                        }
-                    } finally {
-                        if (coroutineContext[Job]?.isCancelled != true) {
-                            withContext(Dispatchers.Main) {
-                                if (screenState.value is ScreenState.TerminalWorkspace) {
-                                    cleanupConnection()
-                                    screenState.value = ScreenState.Dashboard
+                        } catch (e: Exception) {
+                            if (e !is kotlinx.coroutines.CancellationException) {
+                                android.util.Log.w("MainActivity", "SSH reader error", e)
+                            }
+                        } finally {
+                            if (coroutineContext[Job]?.isCancelled != true) {
+                                withContext(Dispatchers.Main) {
+                                    if (screenState.value is ScreenState.TerminalWorkspace) {
+                                        cleanupConnection()
+                                        screenState.value = ScreenState.Dashboard
+                                    }
                                 }
                             }
                         }

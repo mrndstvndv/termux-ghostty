@@ -29,6 +29,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.termux.shared.interact.ShareUtils
 import org.bouncycastle.jce.provider.BouncyCastleProvider
 import org.conscrypt.Conscrypt
 import java.security.Security
@@ -295,8 +296,10 @@ class MainActivity : ComponentActivity() {
                                     extraKeysJson = resolvedJson,
                                     onViewCreated = { view ->
                                         activeTerminalView = view
+                                        registerForContextMenu(view)
                                     },
                                     onViewReleased = {
+                                        activeTerminalView?.let { unregisterForContextMenu(it) }
                                         activeTerminalView = null
                                     },
                                     modifier = Modifier.fillMaxSize()
@@ -346,6 +349,17 @@ class MainActivity : ComponentActivity() {
                 val sessionClient = object : TermuxTerminalSessionClientBase() {
                     override fun onFrameAvailable(changedSession: TerminalSession) {
                         activeTerminalView?.onFrameAvailable()
+                    }
+
+                    override fun onCopyTextToClipboard(session: TerminalSession, text: String) {
+                        ShareUtils.copyTextToClipboard(this@MainActivity, text)
+                    }
+
+                    override fun onPasteTextFromClipboard(session: TerminalSession?) {
+                        val text = ShareUtils.getTextStringFromClipboardIfSet(this@MainActivity, true)
+                        if (text != null) {
+                            session?.paste(text)
+                        }
                     }
                 }
                 val sessionIo = object : TerminalSessionIO {
@@ -437,6 +451,42 @@ class MainActivity : ComponentActivity() {
             sshSession = null
         }
         session?.finishIfRunning()
+    }
+
+    override fun onCreateContextMenu(
+        menu: android.view.ContextMenu,
+        v: android.view.View,
+        menuInfo: android.view.ContextMenu.ContextMenuInfo?
+    ) {
+        super.onCreateContextMenu(menu, v, menuInfo)
+        val view = activeTerminalView ?: return
+        if (v === view) {
+            menu.add(android.view.Menu.NONE, 1, android.view.Menu.NONE, "Share selected text").apply {
+                isEnabled = !view.storedSelectedText.isNullOrEmpty()
+            }
+            menu.add(android.view.Menu.NONE, 2, android.view.Menu.NONE, "Share transcript")
+        }
+    }
+
+    override fun onContextItemSelected(item: android.view.MenuItem): Boolean {
+        val view = activeTerminalView ?: return super.onContextItemSelected(item)
+        val session = terminalSessionState.value ?: return super.onContextItemSelected(item)
+        return when (item.itemId) {
+            1 -> {
+                val selectedText = view.storedSelectedText
+                if (!selectedText.isNullOrEmpty()) {
+                    ShareUtils.shareText(this, "Terminal selection", selectedText)
+                    view.unsetStoredSelectedText()
+                }
+                true
+            }
+            2 -> {
+                val transcript = session.getTerminalContent()?.getTranscriptText(true, true) ?: ""
+                ShareUtils.shareText(this, "Terminal transcript", transcript)
+                true
+            }
+            else -> super.onContextItemSelected(item)
+        }
     }
 
     override fun onDestroy() {

@@ -6,6 +6,11 @@ interface SshSession {
     val isConnected: StateFlow<Boolean>
     suspend fun connect(config: SshConfig)
     suspend fun authenticate(auth: SshAuth)
-    suspend fun openShellChannel(termType: String, cols: Int, rows: Int): SshShellChannel
+    suspend fun openShellChannel(
+        termType: String,
+        cols: Int,
+        rows: Int,
+        herdrIntegration: Boolean = false
+    ): SshShellChannel
     fun disconnect()
 }

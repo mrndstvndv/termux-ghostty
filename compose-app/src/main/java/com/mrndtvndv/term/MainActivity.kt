@@ -426,7 +426,7 @@ class MainActivity : ComponentActivity() {
                 
                 val herdrIntegrationValue = sharedPreferences.getBoolean("herdr_integration", false)
                 val termType = if (herdrIntegrationValue) "xterm-ghostty" else "xterm-256color"
-                val channel = session.openShellChannel(termType, 80, 24)
+                val channel = session.openShellChannel(termType, 80, 24, herdrIntegrationValue)
                 shellChannel = channel
                 
                 sshWriteJob = lifecycleScope.launch(Dispatchers.IO) {

@@ -40,6 +40,16 @@ pub fn build(b: *std.Build) !void {
         root_module.linkLibrary(lib_dep);
     }
 
+    if (b.lazyDependency("zlib", .{
+        .target = target,
+        .optimize = optimize,
+    })) |zlib_dep| {
+        const z_lib = zlib_dep.artifact("z");
+        if (z_lib.rootModuleTarget().abi.isAndroid()) {
+            try addAndroidNdkPaths(b, z_lib);
+        }
+    }
+
     if (b.lazyDependency("libssh2", .{
         .target = target,
         .optimize = optimize,

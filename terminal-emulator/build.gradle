@@ -97,6 +97,14 @@ def resolveTermuxGhosttyZigExecutable = {
     return configuredExecutable ?: 'zig'
 }
 
+def resolveHostTag = {
+    def osName = System.getProperty("os.name").toLowerCase()
+    if (osName.contains("mac")) return "darwin-x86_64"
+    if (osName.contains("linux")) return "linux-x86_64"
+    if (osName.contains("windows")) return "windows-x86_64"
+    return null
+}
+
 def resolveTermuxGhosttyNdkHome = {
     def envNdkHome = System.getenv('ANDROID_NDK_HOME')
     if (envNdkHome) return envNdkHome

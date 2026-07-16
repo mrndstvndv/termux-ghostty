@@ -68,6 +68,11 @@ fun ExtraKeysToolbar(
 
     if (extraKeysInfo == null) return
 
+    // Flush any modifier states that were consumed during key dispatch (readControl/readAlt/etc.)
+    // back to Compose-observable state. Using SideEffect so this runs after every successful
+    // composition, on the main thread, without being inside key-event dispatch.
+    SideEffect { extraKeysController.clearConsumedModifiers() }
+
     Column(
         modifier = modifier
             .fillMaxWidth()

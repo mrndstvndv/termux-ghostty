@@ -2,6 +2,7 @@ package com.mrndtvndv.term.ui.workspace
 
 import android.view.KeyEvent as AndroidKeyEvent
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
@@ -80,7 +81,11 @@ fun TerminalFocusWrapper(
         modifier = modifier
             .fillMaxSize()
             .focusRequester(focusRequester)
-            .focusable()
+            // Pass null interactionSource to prevent Compose registering a pointer-input
+            // intercept node for hover/press indication. The TerminalView (AndroidView child)
+            // manages all touch events via its own GestureAndScaleRecognizer; routing them
+            // through Compose's pointer chain added latency to every swipe and tap.
+            .focusable(interactionSource = null)
             .onPreviewKeyEvent { keyEvent ->
                 session.handleKeyEvent(keyEvent, extraKeysController)
             }

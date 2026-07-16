@@ -146,8 +146,8 @@ fun TerminalWorkspaceContainer(
         update = { view ->
             if (view.mTermSession != session) {
                 view.attachSession(session)
+                onViewCreated(view)
             }
-            onViewCreated(view)
         },
         onRelease = { view ->
             view.detachSession()

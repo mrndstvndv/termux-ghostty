@@ -73,7 +73,6 @@ class MainActivity : ComponentActivity() {
     private var activeTerminalView: TerminalView? = null
     private var sshService: SshSessionService? = null
     private var isBound = false
-    private val sshLock = Any()
     private val sshWriteChannel = kotlinx.coroutines.channels.Channel<ByteArray>(kotlinx.coroutines.channels.Channel.UNLIMITED)
     private var sshWriteJob: Job? = null
     
@@ -432,13 +431,11 @@ class MainActivity : ComponentActivity() {
                 sshWriteJob = lifecycleScope.launch(Dispatchers.IO) {
                     try {
                         for (dataCopy in sshWriteChannel) {
-                            synchronized(sshLock) {
-                                try {
-                                    channel.outputStream.write(dataCopy)
-                                    channel.outputStream.flush()
-                                } catch (e: Exception) {
-                                    // ignore
-                                }
+                            try {
+                                channel.outputStream.write(dataCopy)
+                                channel.outputStream.flush()
+                            } catch (e: Exception) {
+                                // ignore
                             }
                         }
                     } catch (e: Exception) {
@@ -448,6 +445,7 @@ class MainActivity : ComponentActivity() {
 
                 val sessionClient = object : TermuxTerminalSessionClientBase() {
                     override fun onFrameAvailable(changedSession: TerminalSession) {
+                        if (!lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) return
                         activeTerminalView?.onFrameAvailable()
                     }
 
@@ -480,12 +478,10 @@ class MainActivity : ComponentActivity() {
 
                     override fun onResize(columns: Int, rows: Int, cellWidth: Int, cellHeight: Int) {
                         lifecycleScope.launch(Dispatchers.IO) {
-                            synchronized(sshLock) {
-                                try {
-                                    channel.resizeWindow(columns, rows, columns * cellWidth, rows * cellHeight)
-                                } catch (e: Exception) {
-                                    android.util.Log.w("MainActivity", "resizeWindow failed", e)
-                                }
+                            try {
+                                channel.resizeWindow(columns, rows, columns * cellWidth, rows * cellHeight)
+                            } catch (e: Exception) {
+                                android.util.Log.w("MainActivity", "resizeWindow failed", e)
                             }
                         }
                     }
@@ -548,16 +544,14 @@ class MainActivity : ComponentActivity() {
             isBound = false
             sshService = null
         }
-        synchronized(sshLock) {
-            try {
-                shellChannel?.close()
-            } catch (e: Exception) {}
-            shellChannel = null
-            try {
-                sshSession?.disconnect()
-            } catch (e: Exception) {}
-            sshSession = null
-        }
+        try {
+            shellChannel?.close()
+        } catch (e: Exception) {}
+        shellChannel = null
+        try {
+            sshSession?.disconnect()
+        } catch (e: Exception) {}
+        sshSession = null
         session?.finishIfRunning()
     }
 

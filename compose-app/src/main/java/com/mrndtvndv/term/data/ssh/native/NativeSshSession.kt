@@ -1,6 +1,5 @@
 package com.mrndtvndv.term.data.ssh.native
 
-import com.mrndtvndv.term.data.ssh.jvm.JvmSshSession
 import com.mrndtvndv.term.domain.*
 import com.termux.terminal.GhosttyNative
 import kotlinx.coroutines.Dispatchers
@@ -23,22 +22,18 @@ class NativeSshSession : SshSession {
     var nativeSessionHandle: Long = 0L
         private set
 
-    private val jvmFallback = JvmSshSession()
-
     override suspend fun connect(config: SshConfig) {
         this.config = config
         withContext(Dispatchers.IO) {
             val s = Socket()
             s.connect(InetSocketAddress(config.host, config.port), config.connectionTimeoutMs)
             socket = s
-            jvmFallback.connect(config)
         }
     }
 
     override suspend fun authenticate(auth: SshAuth) {
         this.auth = auth
         withContext(Dispatchers.IO) {
-            jvmFallback.authenticate(auth)
             _isConnected.value = true
         }
     }
@@ -80,10 +75,6 @@ class NativeSshSession : SshSession {
         }
     }
 
-    override suspend fun openSftpClient(): SftpClient {
-        return jvmFallback.openSftpClient()
-    }
-
     override fun disconnect() {
         if (nativeSessionHandle != 0L) {
             GhosttyNative.nativeSshDeinit(nativeSessionHandle)
@@ -92,7 +83,6 @@ class NativeSshSession : SshSession {
         try {
             socket?.close()
         } catch (e: Exception) {}
-        jvmFallback.disconnect()
         _isConnected.value = false
     }
 }

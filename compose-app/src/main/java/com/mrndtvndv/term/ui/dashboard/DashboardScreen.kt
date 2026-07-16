@@ -62,8 +62,6 @@ fun DashboardScreen(
     onExtraKeysCustomJsonChange: (String) -> Unit,
     fontSize: Int,
     onFontSizeChange: (Int) -> Unit,
-    useNativePiping: Boolean,
-    onUseNativePipingChange: (Boolean) -> Unit,
     appTheme: String,
     onThemeChange: (String) -> Unit,
     modifier: Modifier = Modifier,
@@ -391,20 +389,7 @@ fun DashboardScreen(
                         }
                     }
 
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
 
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text("Use Native Piping (libssh2)", style = MaterialTheme.typography.bodyLarge)
-                        Switch(
-                            checked = useNativePiping,
-                            onCheckedChange = onUseNativePipingChange,
-                            enabled = !isLoading
-                        )
-                    }
 
                     HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
 

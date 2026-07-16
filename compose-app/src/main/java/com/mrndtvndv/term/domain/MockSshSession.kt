@@ -8,44 +8,6 @@ import java.io.File
 import java.io.InputStream
 import java.io.OutputStream
 
-class MockSftpClient : SftpClient {
-    private val mockFiles = mutableListOf(
-        SftpFile("docs", "/docs", true, 0, 493, System.currentTimeMillis()),
-        SftpFile("src", "/src", true, 0, 493, System.currentTimeMillis()),
-        SftpFile("README.md", "/README.md", false, 1024, 420, System.currentTimeMillis()),
-        SftpFile("build.gradle", "/build.gradle", false, 2048, 420, System.currentTimeMillis())
-    )
-
-    override suspend fun listFiles(path: String): List<SftpFile> {
-        if (path == "/") {
-            return mockFiles
-        }
-        val cleanPath = if (path.endsWith("/")) path.dropLast(1) else path
-        return listOf(
-            SftpFile("..", cleanPath.substringBeforeLast('/').ifEmpty { "/" }, true, 0, 493, System.currentTimeMillis()),
-            SftpFile("subfile.txt", "$cleanPath/subfile.txt", false, 512, 420, System.currentTimeMillis())
-        )
-    }
-
-    override suspend fun createDirectory(path: String) {
-        mockFiles.add(SftpFile(path.substringAfterLast('/'), path, true, 0, 493, System.currentTimeMillis()))
-    }
-
-    override suspend fun deleteFile(path: String) {
-        mockFiles.removeAll { it.path == path }
-    }
-
-    override suspend fun downloadFile(remotePath: String, destination: File, onProgress: (Long) -> Unit) {
-        onProgress(100L)
-    }
-
-    override suspend fun uploadFile(source: File, remotePath: String, onProgress: (Long) -> Unit) {
-        onProgress(100L)
-    }
-
-    override fun close() {}
-}
-
 class MockSshShellChannel : SshShellChannel {
     override val inputStream: InputStream = ByteArrayInputStream("Mock Shell Output\n$ ".toByteArray())
     override val outputStream: OutputStream = ByteArrayOutputStream()
@@ -67,10 +29,6 @@ class MockSshSession : SshSession {
 
     override suspend fun openShellChannel(termType: String, cols: Int, rows: Int): SshShellChannel {
         return MockSshShellChannel()
-    }
-
-    override suspend fun openSftpClient(): SftpClient {
-        return MockSftpClient()
     }
 
     override fun disconnect() {

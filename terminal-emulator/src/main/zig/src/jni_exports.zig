@@ -818,3 +818,16 @@ pub export fn Java_com_termux_terminal_GhosttyNative_nativeSshDrainToSession(
     const drained = ssh_sess.spsc_buffer.readDirectToSession(term_sess, appendCallbackWrapper);
     return @intCast(drained);
 }
+
+pub export fn Java_com_termux_terminal_GhosttyNative_nativeSshIsRunning(
+    env: ?*c.JNIEnv,
+    clazz: c.jclass,
+    session_handle: jlong,
+) jboolean {
+    _ = env;
+    _ = clazz;
+    if (session_handle <= 0) return c.JNI_FALSE;
+    const session = @as(*ssh.SshNativeSession, @ptrFromInt(@as(usize, @intCast(session_handle))));
+    return toJBoolean(session.running.load(.acquire));
+}
+

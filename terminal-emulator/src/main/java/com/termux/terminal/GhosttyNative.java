@@ -153,4 +153,6 @@ public final class GhosttyNative {
     public static native int nativeSshGetJvmWakeFd(long sessionHandle);
     public static native void nativeSshAckWakeup(long sessionHandle);
     public static native int nativeSshDrainToSession(long terminalSessionHandle, long sshSessionHandle);
+    public static native boolean nativeSshIsRunning(long sessionHandle);
 }
+

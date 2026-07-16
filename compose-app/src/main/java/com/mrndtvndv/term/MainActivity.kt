@@ -103,6 +103,12 @@ class MainActivity : ComponentActivity() {
         val savedExtraKeysPreset = sharedPreferences.getString("extra_keys_preset", "Double Row") ?: "Double Row"
         val savedExtraKeysCustomJson = sharedPreferences.getString("extra_keys_custom_json", "[]") ?: "[]"
 
+        val sizes = com.termux.shared.termux.settings.preferences.TermuxAppSharedPreferences.getDefaultFontSizes(this)
+        val defaultFontSize = sizes[0]
+        val minFontSize = sizes[1]
+        val maxFontSize = sizes[2]
+        val savedFontSize = sharedPreferences.getInt("font_size", defaultFontSize).coerceIn(minFontSize, maxFontSize)
+
         setContent {
             TermuxGhosttyTheme {
                 Surface(
@@ -117,6 +123,19 @@ class MainActivity : ComponentActivity() {
                     var extraKeysEnabled by remember { mutableStateOf(savedExtraKeysEnabled) }
                     var extraKeysPreset by remember { mutableStateOf(savedExtraKeysPreset) }
                     var extraKeysCustomJson by remember { mutableStateOf(savedExtraKeysCustomJson) }
+                    var fontSize by remember { mutableStateOf(savedFontSize) }
+
+                    LaunchedEffect(currentScreen) {
+                        if (currentScreen is ScreenState.Dashboard) {
+                            fontSize = sharedPreferences.getInt("font_size", defaultFontSize).coerceIn(minFontSize, maxFontSize)
+                        }
+                    }
+
+                    val onFontSizeChange: (Int) -> Unit = { newSize ->
+                        val clampedSize = newSize.coerceIn(minFontSize, maxFontSize)
+                        fontSize = clampedSize
+                        sharedPreferences.edit().putInt("font_size", clampedSize).apply()
+                    }
 
                     val onExtraKeysEnabledChange: (Boolean) -> Unit = { enabled ->
                         extraKeysEnabled = enabled
@@ -157,7 +176,9 @@ class MainActivity : ComponentActivity() {
                                 extraKeysPreset = extraKeysPreset,
                                 onExtraKeysPresetChange = onExtraKeysPresetChange,
                                 extraKeysCustomJson = extraKeysCustomJson,
-                                onExtraKeysCustomJsonChange = onExtraKeysCustomJsonChange
+                                onExtraKeysCustomJsonChange = onExtraKeysCustomJsonChange,
+                                fontSize = fontSize,
+                                onFontSizeChange = onFontSizeChange
                             )
                         }
                         is ScreenState.TerminalWorkspace -> {
@@ -265,16 +286,14 @@ class MainActivity : ComponentActivity() {
                 bindService(serviceIntent, connection, Context.BIND_AUTO_CREATE)
                 
                 readerJob = lifecycleScope.launch(Dispatchers.IO) {
-                    val buffer = ByteArray(4096)
+                    val buffer = ByteArray(16384)
                     try {
                         val input = channel.inputStream
                         while (isActive) {
                             val bytesRead = input.read(buffer)
                             if (bytesRead == -1) break
                             if (bytesRead > 0) {
-                                withContext(Dispatchers.Main) {
-                                    termSession.appendOutput(buffer, 0, bytesRead)
-                                }
+                                termSession.appendOutput(buffer, 0, bytesRead)
                             }
                         }
                     } catch (e: Exception) {

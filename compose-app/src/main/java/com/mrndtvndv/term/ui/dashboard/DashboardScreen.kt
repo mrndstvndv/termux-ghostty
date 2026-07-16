@@ -60,6 +60,8 @@ fun DashboardScreen(
     onExtraKeysPresetChange: (String) -> Unit,
     extraKeysCustomJson: String,
     onExtraKeysCustomJsonChange: (String) -> Unit,
+    fontSize: Int,
+    onFontSizeChange: (Int) -> Unit,
     modifier: Modifier = Modifier,
     initialHost: String = "10.0.2.2",
     initialPort: Int = 2222,
@@ -306,10 +308,82 @@ fun DashboardScreen(
                         ) {
                             ExtraKeysToolbar(
                                 extraKeysController = previewController,
-                                activeTerminalView = null,
+                                getActiveTerminalView = { null },
                                 session = null,
                                 extraKeysJson = resolvedJson
                             )
+                        }
+                    }
+                }
+            }
+
+            // Card 3: Terminal Font Size Configuration
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                )
+            ) {
+                Column(
+                    modifier = Modifier
+                        .padding(24.dp)
+                        .fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Text(
+                        text = "TERMINAL SETTINGS",
+                        style = MaterialTheme.typography.headlineSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        textAlign = TextAlign.Center
+                    )
+
+                    val context = androidx.compose.ui.platform.LocalContext.current
+                    val sizes = remember(context) {
+                        com.termux.shared.termux.settings.preferences.TermuxAppSharedPreferences.getDefaultFontSizes(context)
+                    }
+                    val minFontSize = sizes[1]
+                    val maxFontSize = sizes[2]
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("Font Size (px)", style = MaterialTheme.typography.bodyLarge)
+
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            IconButton(
+                                onClick = {
+                                    if (fontSize > minFontSize) {
+                                        onFontSizeChange(fontSize - 2)
+                                    }
+                                },
+                                enabled = !isLoading && fontSize > minFontSize
+                            ) {
+                                Text("-", style = MaterialTheme.typography.titleLarge)
+                            }
+
+                            Text(
+                                text = "$fontSize",
+                                style = MaterialTheme.typography.bodyLarge,
+                                modifier = Modifier.width(32.dp),
+                                textAlign = TextAlign.Center
+                            )
+
+                            IconButton(
+                                onClick = {
+                                    if (fontSize < maxFontSize) {
+                                        onFontSizeChange(fontSize + 2)
+                                    }
+                                },
+                                enabled = !isLoading && fontSize < maxFontSize
+                            ) {
+                                Text("+", style = MaterialTheme.typography.titleLarge)
+                            }
                         }
                     }
                 }

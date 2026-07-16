@@ -7,9 +7,7 @@
 -keep class org.bouncycastle.** { *; }
 -dontwarn org.bouncycastle.**
 
-# SSHJ rules
--keep class net.schmizz.sshj.** { *; }
--dontwarn net.schmizz.sshj.**
+
 
 # Prevent warnings for optional security/crypto providers
 -dontwarn org.conscrypt.**

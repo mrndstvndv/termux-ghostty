@@ -7,6 +7,5 @@ interface SshSession {
     suspend fun connect(config: SshConfig)
     suspend fun authenticate(auth: SshAuth)
     suspend fun openShellChannel(termType: String, cols: Int, rows: Int): SshShellChannel
-    suspend fun openSftpClient(): SftpClient
     fun disconnect()
 }

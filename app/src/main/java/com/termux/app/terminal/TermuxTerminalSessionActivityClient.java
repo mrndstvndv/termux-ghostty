@@ -31,6 +31,9 @@ import com.termux.shared.termux.theme.MaterialYouTerminalColors;
 import com.termux.terminal.TerminalColors;
 import com.termux.terminal.TerminalSession;
 import com.termux.terminal.TerminalSessionClient;
+import com.termux.terminal.TextStyle;
+import com.termux.shared.termux.extrakeys.ExtraKeysView;
+import androidx.viewpager.widget.ViewPager;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -550,8 +553,22 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
     public void updateBackgroundColor() {
         if (!mActivity.isVisible()) return;
         TerminalSession session = mActivity.getCurrentSession();
+        int bgColor;
         if (session != null && session.hasActiveTerminalBackend()) {
-            mActivity.getWindow().getDecorView().setBackgroundColor(session.getBackgroundColor());
+            bgColor = session.getBackgroundColor();
+        } else {
+            bgColor = TerminalColors.COLOR_SCHEME.mDefaultColors[TextStyle.COLOR_INDEX_BACKGROUND];
+        }
+        mActivity.getWindow().getDecorView().setBackgroundColor(bgColor);
+
+        ExtraKeysView extraKeysView = mActivity.getExtraKeysView();
+        if (extraKeysView != null) {
+            extraKeysView.setBackgroundColor(bgColor);
+        }
+
+        ViewPager viewPager = mActivity.getTerminalToolbarViewPager();
+        if (viewPager != null) {
+            viewPager.setBackgroundColor(bgColor);
         }
     }
 

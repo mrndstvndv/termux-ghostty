@@ -407,12 +407,19 @@ public final class ExtraKeysView extends GridLayout {
                     if (button == null) return;
                 } else {
                     button = new MaterialButton(getContext(), null, android.R.attr.buttonBarButtonStyle);
+                    button.setBackground(createButtonBackground(mButtonBackgroundColor, 9999));
                 }
 
                 button.setText(buttonInfo.getDisplay());
                 button.setTextColor(mButtonTextColor);
                 button.setAllCaps(mButtonTextAllCaps);
                 button.setPadding(0, 0, 0, 0);
+                button.setMinWidth(0);
+                button.setMinHeight(0);
+                button.setMinimumWidth(0);
+                button.setMinimumHeight(0);
+                button.setInsetTop(0);
+                button.setInsetBottom(0);
 
                 button.setOnClickListener(view -> {
                     performExtraKeyButtonHapticFeedback(view, buttonInfo, button);
@@ -422,7 +429,7 @@ public final class ExtraKeysView extends GridLayout {
                 button.setOnTouchListener((view, event) -> {
                     switch (event.getAction()) {
                         case MotionEvent.ACTION_DOWN:
-                            view.setBackgroundColor(mButtonActiveBackgroundColor);
+                            view.setBackground(createButtonBackground(mButtonActiveBackgroundColor, 9999));
                             // Start long press scheduled executors which will be stopped in next MotionEvent
                             startScheduledExecutors(view, buttonInfo, button);
                             return true;
@@ -432,34 +439,80 @@ public final class ExtraKeysView extends GridLayout {
                                 // Show popup on swipe up
                                 if (mPopupWindow == null && event.getY() < 0) {
                                     stopScheduledExecutors();
-                                    view.setBackgroundColor(mButtonBackgroundColor);
+                                    boolean isActive = false;
+                                    if (isSpecialButton(buttonInfo)) {
+                                        SpecialButtonState state = mSpecialButtons.get(SpecialButton.valueOf(buttonInfo.getKey()));
+                                        if (state != null) {
+                                            isActive = state.isActive;
+                                        }
+                                    }
+                                    view.setBackground(createButtonBackground(
+                                        isActive ? mButtonActiveBackgroundColor : mButtonBackgroundColor,
+                                        9999
+                                    ));
                                     showPopup(view, buttonInfo.getPopup());
                                 }
                                 if (mPopupWindow != null && event.getY() > 0) {
-                                    view.setBackgroundColor(mButtonActiveBackgroundColor);
+                                    view.setBackground(createButtonBackground(mButtonActiveBackgroundColor, 9999));
                                     dismissPopup();
                                 }
                             }
                             return true;
 
                         case MotionEvent.ACTION_CANCEL:
-                            view.setBackgroundColor(mButtonBackgroundColor);
-                            stopScheduledExecutors();
+                            {
+                                boolean isActive = false;
+                                if (isSpecialButton(buttonInfo)) {
+                                    SpecialButtonState state = mSpecialButtons.get(SpecialButton.valueOf(buttonInfo.getKey()));
+                                    if (state != null) {
+                                        isActive = state.isActive;
+                                    }
+                                }
+                                view.setBackground(createButtonBackground(
+                                    isActive ? mButtonActiveBackgroundColor : mButtonBackgroundColor,
+                                    9999
+                                ));
+                                stopScheduledExecutors();
+                            }
                             return true;
 
                         case MotionEvent.ACTION_UP:
-                            view.setBackgroundColor(mButtonBackgroundColor);
-                            stopScheduledExecutors();
-                            // If ACTION_UP up was not from a repetitive key or was with a key with a popup button
-                            if (mLongPressCount == 0 || mPopupWindow != null) {
-                                // Trigger popup button click if swipe up complete
-                                if (mPopupWindow != null) {
-                                    dismissPopup();
-                                    if (buttonInfo.getPopup() != null) {
-                                        onAnyExtraKeyButtonClick(view, buttonInfo.getPopup(), button);
+                            {
+                                stopScheduledExecutors();
+                                // If ACTION_UP up was not from a repetitive key or was with a key with a popup button
+                                if (mLongPressCount == 0 || mPopupWindow != null) {
+                                    // Trigger popup button click if swipe up complete
+                                    if (mPopupWindow != null) {
+                                        dismissPopup();
+                                        if (buttonInfo.getPopup() != null) {
+                                            onAnyExtraKeyButtonClick(view, buttonInfo.getPopup(), button);
+                                        }
+                                        boolean isActive = false;
+                                        if (isSpecialButton(buttonInfo)) {
+                                            SpecialButtonState state = mSpecialButtons.get(SpecialButton.valueOf(buttonInfo.getKey()));
+                                            if (state != null) {
+                                                isActive = state.isActive;
+                                            }
+                                        }
+                                        view.setBackground(createButtonBackground(
+                                            isActive ? mButtonActiveBackgroundColor : mButtonBackgroundColor,
+                                            9999
+                                        ));
+                                    } else {
+                                        view.performClick();
                                     }
                                 } else {
-                                    view.performClick();
+                                    boolean isActive = false;
+                                    if (isSpecialButton(buttonInfo)) {
+                                        SpecialButtonState state = mSpecialButtons.get(SpecialButton.valueOf(buttonInfo.getKey()));
+                                        if (state != null) {
+                                            isActive = state.isActive;
+                                        }
+                                    }
+                                    view.setBackground(createButtonBackground(
+                                        isActive ? mButtonActiveBackgroundColor : mButtonBackgroundColor,
+                                        9999
+                                    ));
                                 }
                             }
                             return true;
@@ -476,7 +529,8 @@ public final class ExtraKeysView extends GridLayout {
                 } else {
                     param.height = 0;
                 }
-                param.setMargins(0, 0, 0, 0);
+                int marginPx = dpToPx(getContext(), 3);
+                param.setMargins(marginPx, marginPx, marginPx, marginPx);
                 param.columnSpec = GridLayout.spec(col, GridLayout.FILL, 1.f);
                 param.rowSpec = GridLayout.spec(row, GridLayout.FILL, 1.f);
                 button.setLayoutParams(param);
@@ -596,6 +650,7 @@ public final class ExtraKeysView extends GridLayout {
         } else {
             button = new MaterialButton(getContext(), null, android.R.attr.buttonBarButtonStyle);
             button.setTextColor(mButtonTextColor);
+            button.setBackground(createButtonBackground(mButtonBackgroundColor, 9999));
         }
         button.setText(extraButton.getDisplay());
         button.setAllCaps(mButtonTextAllCaps);
@@ -604,9 +659,11 @@ public final class ExtraKeysView extends GridLayout {
         button.setMinWidth(0);
         button.setMinimumWidth(0);
         button.setMinimumHeight(0);
+        button.setInsetTop(0);
+        button.setInsetBottom(0);
         button.setWidth(width);
         button.setHeight(height);
-        button.setBackgroundColor(mButtonActiveBackgroundColor);
+        button.setBackground(createButtonBackground(mButtonActiveBackgroundColor, 9999));
         mPopupWindow = new PopupWindow(this);
         mPopupWindow.setWidth(LayoutParams.WRAP_CONTENT);
         mPopupWindow.setHeight(LayoutParams.WRAP_CONTENT);
@@ -660,6 +717,16 @@ public final class ExtraKeysView extends GridLayout {
         state.setIsCreated(true);
         MaterialButton button = new MaterialButton(getContext(), null, android.R.attr.buttonBarButtonStyle);
         button.setTextColor(state.isActive ? mButtonActiveTextColor : mButtonTextColor);
+        button.setBackground(createButtonBackground(
+            state.isActive ? mButtonActiveBackgroundColor : mButtonBackgroundColor,
+            9999
+        ));
+        button.setMinWidth(0);
+        button.setMinHeight(0);
+        button.setMinimumWidth(0);
+        button.setMinimumHeight(0);
+        button.setInsetTop(0);
+        button.setInsetBottom(0);
         if (needUpdate) {
             state.buttons.add(button);
         }
@@ -676,6 +743,18 @@ public final class ExtraKeysView extends GridLayout {
         for (Object[] row : matrix)
             m = Math.max(m, row.length);
         return m;
+    }
+
+    public android.graphics.drawable.Drawable createButtonBackground(int color, int radius) {
+        android.graphics.drawable.GradientDrawable drawable = new android.graphics.drawable.GradientDrawable();
+        drawable.setShape(android.graphics.drawable.GradientDrawable.RECTANGLE);
+        drawable.setColor(color);
+        drawable.setCornerRadius(radius);
+        return drawable;
+    }
+
+    private static int dpToPx(Context context, float dp) {
+        return Math.round(dp * context.getResources().getDisplayMetrics().density);
     }
 
 }

@@ -40,6 +40,10 @@ public class SpecialButtonState {
         isActive = value;
         for (MaterialButton button : buttons) {
             button.setTextColor(value ? mExtraKeysView.getButtonActiveTextColor() : mExtraKeysView.getButtonTextColor());
+            button.setBackground(mExtraKeysView.createButtonBackground(
+                value ? mExtraKeysView.getButtonActiveBackgroundColor() : mExtraKeysView.getButtonBackgroundColor(),
+                9999
+            ));
         }
     }
 

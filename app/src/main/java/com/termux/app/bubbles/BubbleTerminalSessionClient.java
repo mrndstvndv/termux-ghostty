@@ -14,6 +14,8 @@ import com.termux.shared.termux.terminal.TermuxTerminalSessionClientBase;
 import com.termux.shared.termux.theme.MaterialYouTerminalColors;
 import com.termux.terminal.TerminalColors;
 import com.termux.terminal.TerminalSession;
+import com.termux.terminal.TextStyle;
+import com.termux.shared.termux.extrakeys.ExtraKeysView;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -145,10 +147,18 @@ public final class BubbleTerminalSessionClient extends TermuxTerminalSessionClie
         if (!mActivity.isVisible()) return;
 
         TerminalSession session = mActivity.getCurrentSession();
-        if (session == null) return;
-        if (!session.hasActiveTerminalBackend()) return;
+        int bgColor;
+        if (session != null && session.hasActiveTerminalBackend()) {
+            bgColor = session.getBackgroundColor();
+        } else {
+            bgColor = TerminalColors.COLOR_SCHEME.mDefaultColors[TextStyle.COLOR_INDEX_BACKGROUND];
+        }
 
-        mActivity.getWindow().getDecorView().setBackgroundColor(session.getBackgroundColor());
+        mActivity.getWindow().getDecorView().setBackgroundColor(bgColor);
+        ExtraKeysView extraKeysView = mActivity.getExtraKeysView();
+        if (extraKeysView != null) {
+            extraKeysView.setBackgroundColor(bgColor);
+        }
     }
 
 }

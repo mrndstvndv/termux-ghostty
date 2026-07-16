@@ -6,6 +6,7 @@ plugins {
 android {
     namespace 'com.mrndtvndv.term'
     compileSdk project.properties.compileSdkVersion.toInteger()
+    ndkVersion = System.getenv("JITPACK_NDK_VERSION") ?: project.properties.ndkVersion
 
     defaultConfig {
         applicationId "com.mrndtvndv.term"
@@ -47,6 +48,13 @@ android {
                 'META-INF/ASL2.0',
                 'META-INF/*.kotlin_module'
             ]
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
 }

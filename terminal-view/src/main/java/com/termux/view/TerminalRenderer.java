@@ -118,6 +118,8 @@ public final class TerminalRenderer {
 
         if (reverseVideo) {
             canvas.drawColor(screenSnapshot.getPaletteColor(TextStyle.COLOR_INDEX_FOREGROUND), PorterDuff.Mode.SRC);
+        } else {
+            canvas.drawColor(screenSnapshot.getPaletteColor(TextStyle.COLOR_INDEX_BACKGROUND), PorterDuff.Mode.SRC);
         }
 
         float heightOffset = mFontLineSpacingAndAscent;

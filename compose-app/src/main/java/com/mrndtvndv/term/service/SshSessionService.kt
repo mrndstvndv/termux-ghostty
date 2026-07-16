@@ -3,6 +3,7 @@ package com.mrndtvndv.term.service
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
@@ -11,6 +12,7 @@ import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
 import androidx.core.app.NotificationCompat
+import com.mrndtvndv.term.MainActivity
 import com.termux.terminal.TerminalSession
 import java.util.concurrent.ConcurrentHashMap
 
@@ -95,12 +97,21 @@ class SshSessionService : Service() {
     }
 
     private fun buildNotification(): Notification {
+        val intent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        val pendingIntent = PendingIntent.getActivity(
+            this, 0, intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("SSH Session Active")
             .setContentText("Termux Ghostty is maintaining active terminal sessions")
             .setSmallIcon(android.R.drawable.stat_notify_chat)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
+            .setContentIntent(pendingIntent)
             .build()
     }
 }

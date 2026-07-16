@@ -64,6 +64,8 @@ fun DashboardScreen(
     onFontSizeChange: (Int) -> Unit,
     useNativePiping: Boolean,
     onUseNativePipingChange: (Boolean) -> Unit,
+    appTheme: String,
+    onThemeChange: (String) -> Unit,
     modifier: Modifier = Modifier,
     initialHost: String = "10.0.2.2",
     initialPort: Int = 2222,
@@ -402,6 +404,51 @@ fun DashboardScreen(
                             onCheckedChange = onUseNativePipingChange,
                             enabled = !isLoading
                         )
+                    }
+
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("App Theme", style = MaterialTheme.typography.bodyLarge)
+                        
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            val themes = listOf("Light", "Dark", "Black")
+                            themes.forEach { themeName ->
+                                val isSelected = appTheme == themeName
+                                val containerColor = if (isSelected) {
+                                    MaterialTheme.colorScheme.primaryContainer
+                                } else {
+                                    MaterialTheme.colorScheme.surfaceVariant
+                                }
+                                val contentColor = if (isSelected) {
+                                    MaterialTheme.colorScheme.onPrimaryContainer
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                }
+                                
+                                Button(
+                                    onClick = { onThemeChange(themeName) },
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = containerColor,
+                                        contentColor = contentColor
+                                    ),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                                    modifier = Modifier.height(36.dp),
+                                    shape = RoundedCornerShape(18.dp)
+                                ) {
+                                    Text(
+                                        text = themeName,
+                                        style = MaterialTheme.typography.bodyMedium
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             }

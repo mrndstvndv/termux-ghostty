@@ -106,6 +106,7 @@ class MainActivity : ComponentActivity() {
         val savedExtraKeysPreset = sharedPreferences.getString("extra_keys_preset", "Double Row") ?: "Double Row"
         val savedExtraKeysCustomJson = sharedPreferences.getString("extra_keys_custom_json", "[]") ?: "[]"
         val savedUseNativePiping = sharedPreferences.getBoolean("use_native_piping", true)
+        val savedTheme = sharedPreferences.getString("app_theme", "Dark") ?: "Dark"
 
         val sizes = com.termux.shared.termux.settings.preferences.TermuxAppSharedPreferences.getDefaultFontSizes(this)
         val defaultFontSize = sizes[0]
@@ -114,7 +115,9 @@ class MainActivity : ComponentActivity() {
         val savedFontSize = sharedPreferences.getInt("font_size", defaultFontSize).coerceIn(minFontSize, maxFontSize)
 
         setContent {
-            TermuxGhosttyTheme {
+            var appTheme by remember { mutableStateOf(savedTheme) }
+
+            TermuxGhosttyTheme(theme = appTheme) {
                 Surface(
                     modifier = Modifier.fillMaxSize()
                 ) {
@@ -190,7 +193,12 @@ class MainActivity : ComponentActivity() {
                                 fontSize = fontSize,
                                 onFontSizeChange = onFontSizeChange,
                                 useNativePiping = useNativePipingState,
-                                onUseNativePipingChange = onUseNativePipingChange
+                                onUseNativePipingChange = onUseNativePipingChange,
+                                appTheme = appTheme,
+                                onThemeChange = { newTheme ->
+                                    appTheme = newTheme
+                                    sharedPreferences.edit().putString("app_theme", newTheme).apply()
+                                }
                             )
                         }
                         is ScreenState.TerminalWorkspace -> {

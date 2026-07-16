@@ -44,6 +44,18 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import android.net.Uri
 import java.io.File
+import android.app.Notification
+import android.app.NotificationManager
+import android.app.PendingIntent
+import androidx.compose.foundation.layout.Box
+import androidx.compose.ui.Alignment
+import com.mrndtvndv.term.ui.notification.InAppNotificationBanner
+
+data class ActiveNotification(
+    val title: String,
+    val body: String,
+    val timestamp: Long = System.currentTimeMillis()
+)
 
 sealed interface ScreenState {
     object Dashboard : ScreenState
@@ -87,6 +99,74 @@ class MainActivity : ComponentActivity() {
     private val connectionLoading = mutableStateOf(false)
     private val connectionError = mutableStateOf<String?>(null)
 
+    private val activeNotificationState = mutableStateOf<ActiveNotification?>(null)
+    private var nextNotificationId = com.termux.shared.termux.TermuxConstants.TERMUX_TERMINAL_PROTOCOL_NOTIFICATION_ID_BASE
+
+    @Synchronized
+    private fun getNextTerminalProtocolNotificationId(): Int {
+        val id = nextNotificationId
+        nextNotificationId++
+        return id
+    }
+
+    private fun handleNotification(title: String?, body: String?) {
+        val isForeground = lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)
+        if (isForeground) {
+            activeNotificationState.value = ActiveNotification(
+                title = title ?: "Terminal Notification",
+                body = body ?: ""
+            )
+        } else {
+            showSystemNotification(title, body)
+        }
+    }
+
+    private fun showSystemNotification(title: String?, body: String?) {
+        val notificationManager = com.termux.shared.notification.NotificationUtils.getNotificationManager(this) ?: return
+        
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            com.termux.shared.notification.NotificationUtils.setupNotificationChannel(
+                this,
+                com.termux.shared.termux.TermuxConstants.TERMUX_TERMINAL_PROTOCOL_NOTIFICATIONS_NOTIFICATION_CHANNEL_ID,
+                com.termux.shared.termux.TermuxConstants.TERMUX_TERMINAL_PROTOCOL_NOTIFICATIONS_NOTIFICATION_CHANNEL_NAME,
+                NotificationManager.IMPORTANCE_DEFAULT
+            )
+        }
+        
+        val normalizedTitle = title ?: "Terminal Notification"
+        val normalizedBody = body ?: ""
+        
+        val intent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+        }
+        val contentIntent = PendingIntent.getActivity(
+            this,
+            0,
+            intent,
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT else PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        
+        val builder = com.termux.shared.notification.NotificationUtils.geNotificationBuilder(
+            this,
+            com.termux.shared.termux.TermuxConstants.TERMUX_TERMINAL_PROTOCOL_NOTIFICATIONS_NOTIFICATION_CHANNEL_ID,
+            Notification.PRIORITY_DEFAULT,
+            normalizedTitle,
+            normalizedBody,
+            normalizedBody,
+            contentIntent,
+            null,
+            com.termux.shared.notification.NotificationUtils.NOTIFICATION_MODE_ALL
+        ) ?: return
+        
+        builder.setSmallIcon(android.R.drawable.ic_dialog_info)
+        builder.setAutoCancel(true)
+        
+        notificationManager.notify(
+            getNextTerminalProtocolNotificationId(),
+            builder.build()
+        )
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
@@ -124,6 +204,7 @@ class MainActivity : ComponentActivity() {
                     val termSession by terminalSessionState
                     val isLoading by connectionLoading
                     val errorMessage by connectionError
+                    val activeNotification by activeNotificationState
  
                     var extraKeysEnabled by remember { mutableStateOf(savedExtraKeysEnabled) }
                     var extraKeysPreset by remember { mutableStateOf(savedExtraKeysPreset) }
@@ -256,58 +337,66 @@ class MainActivity : ComponentActivity() {
                         }
                     }
 
-                    when (currentScreen) {
-                        is ScreenState.Dashboard -> {
-                            DashboardScreen(
-                                isLoading = isLoading,
-                                errorMessage = errorMessage,
-                                initialHost = savedHost,
-                                initialPort = savedPort,
-                                initialUsername = savedUsername,
-                                initialPassword = savedPassword,
-                                onConnect = { host, port, username, password ->
-                                    connectSsh(host, port, username, password)
-                                },
-                                extraKeysEnabled = extraKeysEnabled,
-                                onExtraKeysEnabledChange = onExtraKeysEnabledChange,
-                                extraKeysPreset = extraKeysPreset,
-                                onExtraKeysPresetChange = onExtraKeysPresetChange,
-                                extraKeysCustomJson = extraKeysCustomJson,
-                                onExtraKeysCustomJsonChange = onExtraKeysCustomJsonChange,
-                                fontSize = fontSize,
-                                onFontSizeChange = onFontSizeChange,
-                                appTheme = appTheme,
-                                onThemeChange = { newTheme ->
-                                    appTheme = newTheme
-                                    sharedPreferences.edit().putString("app_theme", newTheme).apply()
-                                },
-                                customFontName = customFontName,
-                                onSelectFont = {
-                                    pickFontLauncher.launch("*/*")
-                                },
-                                onClearFont = onClearFont
-                            )
-                        }
-                        is ScreenState.TerminalWorkspace -> {
-                            if (termSession != null) {
-                                TerminalWorkspaceScreen(
-                                    session = termSession!!,
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        when (currentScreen) {
+                            is ScreenState.Dashboard -> {
+                                DashboardScreen(
+                                    isLoading = isLoading,
+                                    errorMessage = errorMessage,
+                                    initialHost = savedHost,
+                                    initialPort = savedPort,
+                                    initialUsername = savedUsername,
+                                    initialPassword = savedPassword,
+                                    onConnect = { host, port, username, password ->
+                                        connectSsh(host, port, username, password)
+                                    },
                                     extraKeysEnabled = extraKeysEnabled,
-                                    extraKeysJson = resolvedJson,
-                                    onViewCreated = { view ->
-                                        activeTerminalView = view
-                                        registerForContextMenu(view)
+                                    onExtraKeysEnabledChange = onExtraKeysEnabledChange,
+                                    extraKeysPreset = extraKeysPreset,
+                                    onExtraKeysPresetChange = onExtraKeysPresetChange,
+                                    extraKeysCustomJson = extraKeysCustomJson,
+                                    onExtraKeysCustomJsonChange = onExtraKeysCustomJsonChange,
+                                    fontSize = fontSize,
+                                    onFontSizeChange = onFontSizeChange,
+                                    appTheme = appTheme,
+                                    onThemeChange = { newTheme ->
+                                        appTheme = newTheme
+                                        sharedPreferences.edit().putString("app_theme", newTheme).apply()
                                     },
-                                    onViewReleased = { view ->
-                                        activeTerminalView?.let { unregisterForContextMenu(it) }
-                                        if (activeTerminalView === view) {
-                                            activeTerminalView = null
-                                        }
+                                    customFontName = customFontName,
+                                    onSelectFont = {
+                                        pickFontLauncher.launch("*/*")
                                     },
-                                    modifier = Modifier.fillMaxSize()
+                                    onClearFont = onClearFont
                                 )
                             }
+                            is ScreenState.TerminalWorkspace -> {
+                                if (termSession != null) {
+                                    TerminalWorkspaceScreen(
+                                        session = termSession!!,
+                                        extraKeysEnabled = extraKeysEnabled,
+                                        extraKeysJson = resolvedJson,
+                                        onViewCreated = { view ->
+                                            activeTerminalView = view
+                                            registerForContextMenu(view)
+                                        },
+                                        onViewReleased = { view ->
+                                            activeTerminalView?.let { unregisterForContextMenu(it) }
+                                            if (activeTerminalView === view) {
+                                                activeTerminalView = null
+                                            }
+                                        },
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                }
+                            }
                         }
+
+                        InAppNotificationBanner(
+                            activeNotification = activeNotification,
+                            onDismiss = { activeNotificationState.value = null },
+                            modifier = Modifier.align(Alignment.TopCenter)
+                        )
                     }
                 }
             }
@@ -362,6 +451,14 @@ class MainActivity : ComponentActivity() {
                         if (text != null) {
                             session?.paste(text)
                         }
+                    }
+
+                    override fun onTerminalProtocolNotification(
+                        session: TerminalSession,
+                        title: String?,
+                        body: String?
+                    ) {
+                        handleNotification(title, body)
                     }
                 }
                 val sessionIo = object : TerminalSessionIO {

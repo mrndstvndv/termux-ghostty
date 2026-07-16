@@ -56,6 +56,8 @@ class MainActivity : ComponentActivity() {
     private var sshService: SshSessionService? = null
     private var isBound = false
     private val sshLock = Any()
+    private val sshWriteChannel = kotlinx.coroutines.channels.Channel<ByteArray>(kotlinx.coroutines.channels.Channel.UNLIMITED)
+    private var sshWriteJob: Job? = null
     
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(className: ComponentName, service: IBinder) {
@@ -201,6 +203,23 @@ class MainActivity : ComponentActivity() {
                 val sftp = session.openSftpClient()
                 sftpClient = sftp
                 
+                sshWriteJob = lifecycleScope.launch(Dispatchers.IO) {
+                    try {
+                        for (dataCopy in sshWriteChannel) {
+                            synchronized(sshLock) {
+                                try {
+                                    channel.outputStream.write(dataCopy)
+                                    channel.outputStream.flush()
+                                } catch (e: Exception) {
+                                    // ignore
+                                }
+                            }
+                        }
+                    } catch (e: Exception) {
+                        // ignore
+                    }
+                }
+
                 val sessionClient = object : TermuxTerminalSessionClientBase() {
                     override fun onFrameAvailable(changedSession: TerminalSession) {
                         activeTerminalView?.onFrameAvailable()
@@ -210,16 +229,7 @@ class MainActivity : ComponentActivity() {
                     override fun write(data: ByteArray?, offset: Int, count: Int) {
                         if (data != null && count > 0) {
                             val dataCopy = data.copyOfRange(offset, offset + count)
-                            lifecycleScope.launch(Dispatchers.IO) {
-                                synchronized(sshLock) {
-                                    try {
-                                        channel.outputStream.write(dataCopy)
-                                        channel.outputStream.flush()
-                                    } catch (e: Exception) {
-                                        // ignore
-                                    }
-                                }
-                            }
+                            sshWriteChannel.trySend(dataCopy)
                         }
                     }
 
@@ -308,6 +318,12 @@ class MainActivity : ComponentActivity() {
     private fun cleanupConnection() {
         readerJob?.cancel()
         readerJob = null
+        sshWriteJob?.cancel()
+        sshWriteJob = null
+        while (true) {
+            val result = sshWriteChannel.tryReceive()
+            if (result.isFailure || result.isClosed) break
+        }
         val handle = terminalSessionState.value?.mHandle
         if (handle != null) {
             sshService?.removeSession(handle)

@@ -35,7 +35,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun ExtraKeysToolbar(
     extraKeysController: ExtraKeysController,
-    activeTerminalView: TerminalView?,
+    getActiveTerminalView: () -> TerminalView?,
     session: TerminalSession?,
     extraKeysJson: String?,
     modifier: Modifier = Modifier
@@ -84,7 +84,7 @@ fun ExtraKeysToolbar(
                     ExtraKeyButtonComponent(
                         buttonInfo = buttonInfo,
                         extraKeysController = extraKeysController,
-                        activeTerminalView = activeTerminalView,
+                        getActiveTerminalView = getActiveTerminalView,
                         session = session,
                         modifier = Modifier.weight(1f)
                     )
@@ -98,7 +98,7 @@ fun ExtraKeysToolbar(
 fun ExtraKeyButtonComponent(
     buttonInfo: ExtraKeyButton,
     extraKeysController: ExtraKeysController,
-    activeTerminalView: TerminalView?,
+    getActiveTerminalView: () -> TerminalView?,
     session: TerminalSession?,
     modifier: Modifier = Modifier
 ) {
@@ -183,7 +183,7 @@ fun ExtraKeyButtonComponent(
                                     // Repeat action
                                     while (true) {
                                         if (session != null) {
-                                            dispatchExtraKey(buttonInfo, extraKeysController, activeTerminalView, session)
+                                            dispatchExtraKey(buttonInfo, extraKeysController, getActiveTerminalView(), session)
                                         }
                                         delay(80) // Repeat delay (80ms)
                                     }
@@ -224,7 +224,7 @@ fun ExtraKeyButtonComponent(
 
                                     if (isSwipedUp && buttonInfo.popup != null) {
                                         if (session != null) {
-                                            dispatchExtraKey(buttonInfo.popup!!, extraKeysController, activeTerminalView, session)
+                                            dispatchExtraKey(buttonInfo.popup!!, extraKeysController, getActiveTerminalView(), session)
                                         }
                                     } else if (!isLongPressed || isModifier) {
                                         if (isModifier) {
@@ -234,7 +234,7 @@ fun ExtraKeyButtonComponent(
                                         } else {
                                             view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                                             if (session != null) {
-                                                dispatchExtraKey(buttonInfo, extraKeysController, activeTerminalView, session)
+                                                dispatchExtraKey(buttonInfo, extraKeysController, getActiveTerminalView(), session)
                                             }
                                         }
                                     }

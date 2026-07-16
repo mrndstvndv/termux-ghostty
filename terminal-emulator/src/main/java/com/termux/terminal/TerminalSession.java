@@ -587,9 +587,24 @@ public final class TerminalSession extends TerminalOutput {
 
         mTerminalToProcessIOQueue.close();
         mProcessToTerminalIOQueue.close();
+
+        if (mGhosttySessionWorker != null) {
+            mGhosttySessionWorker.shutdown();
+            mGhosttySessionWorker = null;
+        }
+        if (mGhosttyTerminalContent != null) {
+            try {
+                mGhosttyTerminalContent.close();
+            } catch (Exception ignored) {
+            }
+            mGhosttyTerminalContent = null;
+        }
+
         if (mIsCustomIO) {
             if (mIoHandler != null) {
-                mIoHandler.onClose();
+                TerminalSessionIO io = mIoHandler;
+                mIoHandler = null;
+                io.onClose();
             }
         } else {
             JNI.close(mTerminalFileDescriptor);

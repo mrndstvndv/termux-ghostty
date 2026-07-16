@@ -425,7 +425,10 @@ class MainActivity : ComponentActivity() {
             val result = sshWriteChannel.tryReceive()
             if (result.isFailure || result.isClosed) break
         }
-        val handle = terminalSessionState.value?.mHandle
+        val session = terminalSessionState.value
+        terminalSessionState.value = null
+
+        val handle = session?.mHandle
         if (handle != null) {
             sshService?.removeSession(handle)
         }
@@ -448,7 +451,7 @@ class MainActivity : ComponentActivity() {
             } catch (e: Exception) {}
             sshSession = null
         }
-        terminalSessionState.value = null
+        session?.finishIfRunning()
         sftpViewModelState.value = null
     }
 

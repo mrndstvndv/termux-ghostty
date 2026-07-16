@@ -614,6 +614,10 @@ final class GhosttySessionWorker extends Thread {
             mSnapshotDirty.set(true);
             scheduleSnapshotBuild(false);
         }
+
+        if (!GhosttyNative.nativeSshIsRunning(mSshSessionHandle)) {
+            mMainThreadHandler.post(mSession::finishIfRunning);
+        }
     }
 
     private class WorkerHandler extends Handler {

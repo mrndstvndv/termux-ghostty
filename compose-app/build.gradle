@@ -83,7 +83,7 @@ dependencies {
     implementation 'org.bouncycastle:bcprov-jdk18on:1.78'
     
     // Conscrypt for faster & secure cryptographic operations on Android
-    implementation 'org.conscrypt:conscrypt-android:2.5.2'
+    implementation 'org.conscrypt:conscrypt-android:2.6.0'
 
     coreLibraryDesugaring "com.android.tools:desugar_jdk_libs:1.1.5"
 }

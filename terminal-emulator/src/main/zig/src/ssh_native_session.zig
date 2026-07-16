@@ -33,6 +33,7 @@ pub const SshNativeSession = struct {
         cols: c_int,
         rows: c_int,
         buffer_capacity: usize,
+        herdr_integration: bool,
     ) !*SshNativeSession {
         _ = c.libssh2_init(0);
 
@@ -162,8 +163,36 @@ pub const SshNativeSession = struct {
             }
         }
 
+        // Optional environment variables passing (Approach B)
+        if (herdr_integration) {
+            // Set TERM_PROGRAM and LC_TERM_PROGRAM variables on the channel.
+            // Some servers with lax AcceptEnv config might accept TERM_PROGRAM,
+            // and most accept LC_TERM_PROGRAM.
+            const vars = [_]struct { k: []const u8, v: []const u8 }{
+                .{ .k = "TERM_PROGRAM", .v = "ghostty" },
+                .{ .k = "LC_TERM_PROGRAM", .v = "ghostty" },
+            };
+            for (vars) |v| {
+                var attempt: i32 = 0;
+                while (attempt < 50) : (attempt += 1) {
+                    const rc = c.libssh2_channel_setenv_ex(channel, v.k.ptr, @intCast(v.k.len), v.v.ptr, @intCast(v.v.len));
+                    if (rc == 0) break;
+                    if (rc == c.LIBSSH2_ERROR_EAGAIN) {
+                        try waitSocket(socket_fd, session);
+                        continue;
+                    }
+                    break;
+                }
+            }
+        }
+
         while (true) {
-            const rc = c.libssh2_channel_process_startup(channel, "shell", @intCast("shell".len), null, 0);
+            const rc = if (herdr_integration) blk: {
+                const cmd = "env TERM_PROGRAM=ghostty sh -c \"if command -v herdr >/dev/null 2>&1; then exec herdr; else exec \\${SHELL:-/bin/sh} -l; fi\"";
+                break :blk c.libssh2_channel_process_startup(channel, "exec", 4, cmd.ptr, @intCast(cmd.len));
+            } else blk: {
+                break :blk c.libssh2_channel_process_startup(channel, "shell", @intCast("shell".len), null, 0);
+            };
             if (rc == 0) break;
             if (rc == c.LIBSSH2_ERROR_EAGAIN) {
                 try waitSocket(socket_fd, session);

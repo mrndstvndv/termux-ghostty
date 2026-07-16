@@ -186,6 +186,7 @@ class MainActivity : ComponentActivity() {
         val savedExtraKeysPreset = sharedPreferences.getString("extra_keys_preset", "Double Row") ?: "Double Row"
         val savedExtraKeysCustomJson = sharedPreferences.getString("extra_keys_custom_json", "[]") ?: "[]"
         val savedTheme = sharedPreferences.getString("app_theme", "Dark") ?: "Dark"
+        val savedHerdrIntegration = sharedPreferences.getBoolean("herdr_integration", false)
 
         val sizes = com.termux.shared.termux.settings.preferences.TermuxAppSharedPreferences.getDefaultFontSizes(this)
         val defaultFontSize = sizes[0]
@@ -213,6 +214,7 @@ class MainActivity : ComponentActivity() {
                     var customFontName by remember {
                         mutableStateOf(sharedPreferences.getString("custom_font_name", null))
                     }
+                    var herdrIntegration by remember { mutableStateOf(savedHerdrIntegration) }
 
                     val pickFontLauncher = rememberLauncherForActivityResult(
                         contract = ActivityResultContracts.GetContent()
@@ -363,6 +365,11 @@ class MainActivity : ComponentActivity() {
                                         appTheme = newTheme
                                         sharedPreferences.edit().putString("app_theme", newTheme).apply()
                                     },
+                                    herdrIntegration = herdrIntegration,
+                                    onHerdrIntegrationChange = { enabled ->
+                                        herdrIntegration = enabled
+                                        sharedPreferences.edit().putBoolean("herdr_integration", enabled).apply()
+                                    },
                                     customFontName = customFontName,
                                     onSelectFont = {
                                         pickFontLauncher.launch("*/*")
@@ -417,7 +424,8 @@ class MainActivity : ComponentActivity() {
                     session.authenticate(SshAuth.Password(passwordString.toCharArray()))
                 }
                 
-                val channel = session.openShellChannel("xterm-256color", 80, 24)
+                val herdrIntegrationValue = sharedPreferences.getBoolean("herdr_integration", false)
+                val channel = session.openShellChannel("xterm-256color", 80, 24, herdrIntegrationValue)
                 shellChannel = channel
                 
                 sshWriteJob = lifecycleScope.launch(Dispatchers.IO) {

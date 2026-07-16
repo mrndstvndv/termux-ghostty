@@ -27,7 +27,7 @@ class MockSshSession : SshSession {
         _isConnected.value = true
     }
 
-    override suspend fun openShellChannel(termType: String, cols: Int, rows: Int): SshShellChannel {
+    override suspend fun openShellChannel(termType: String, cols: Int, rows: Int, herdrIntegration: Boolean): SshShellChannel {
         return MockSshShellChannel()
     }
 

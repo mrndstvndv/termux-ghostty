@@ -145,7 +145,7 @@ public final class GhosttyNative {
     @Nullable
     static native String nativeGetTranscriptText(long nativeHandle, int flags);
 
-    public static native long nativeSshInit(int socketFd, String username, String passwordOrKey, boolean isPassword, String termType, int cols, int rows);
+    public static native long nativeSshInit(int socketFd, String username, String passwordOrKey, boolean isPassword, String termType, int cols, int rows, boolean herdrIntegration);
     public static native void nativeSshStart(long sessionHandle);
     public static native void nativeSshDeinit(long sessionHandle);
     public static native void nativeSshWrite(long sessionHandle, byte[] data, int offset, int length);

@@ -666,6 +666,7 @@ pub export fn Java_com_termux_terminal_GhosttyNative_nativeSshInit(
     term_type: c.jstring,
     cols: jint,
     rows: jint,
+    herdr_integration: jboolean,
 ) jlong {
     _ = clazz;
     const jni = env orelse return 0;
@@ -684,6 +685,7 @@ pub export fn Java_com_termux_terminal_GhosttyNative_nativeSshInit(
     const term_type_slice = std.mem.span(term_type_chars);
 
     const is_pass = (is_password != c.JNI_FALSE);
+    const is_herdr = (herdr_integration != c.JNI_FALSE);
 
     const session = ssh.SshNativeSession.init(
         std.heap.c_allocator,
@@ -695,6 +697,7 @@ pub export fn Java_com_termux_terminal_GhosttyNative_nativeSshInit(
         cols,
         rows,
         65536,
+        is_herdr,
     ) catch |err| {
         ghostty_log.err("nativeSshInit failed: {}", .{err});
         return 0;

@@ -64,6 +64,8 @@ fun DashboardScreen(
     onFontSizeChange: (Int) -> Unit,
     appTheme: String,
     onThemeChange: (String) -> Unit,
+    herdrIntegration: Boolean,
+    onHerdrIntegrationChange: (Boolean) -> Unit,
     customFontName: String?,
     onSelectFont: () -> Unit,
     onClearFont: () -> Unit,
@@ -448,6 +450,28 @@ fun DashboardScreen(
                                 }
                             }
                         }
+                    }
+
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Herdr Integration", style = MaterialTheme.typography.bodyLarge)
+                            Text(
+                                text = "Pass environment variables to enable desktop notifications over SSH",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = herdrIntegration,
+                            onCheckedChange = onHerdrIntegrationChange,
+                            enabled = !isLoading
+                        )
                     }
 
                     HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))

@@ -39,7 +39,8 @@ android {
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         externalNativeBuild {
             ndkBuild {
-                cppFlags ''
+                cFlags "-Os", "-fno-stack-protector", "-Wl,--gc-sections"
+                cppFlags "-Os", "-fno-stack-protector", "-Wl,--gc-sections"
             }
         }
     }

@@ -51,7 +51,7 @@ class MainActivity : ComponentActivity() {
         getSharedPreferences("ssh_prefs", Context.MODE_PRIVATE)
     }
 
-    private val useNativePiping = true
+    private var useNativePiping = true
     private var sshSession: SshSession? = null
     private var shellChannel: SshShellChannel? = null
     private var sftpClient: SftpClient? = null
@@ -105,6 +105,7 @@ class MainActivity : ComponentActivity() {
         val savedExtraKeysEnabled = sharedPreferences.getBoolean("extra_keys_enabled", true)
         val savedExtraKeysPreset = sharedPreferences.getString("extra_keys_preset", "Double Row") ?: "Double Row"
         val savedExtraKeysCustomJson = sharedPreferences.getString("extra_keys_custom_json", "[]") ?: "[]"
+        val savedUseNativePiping = sharedPreferences.getBoolean("use_native_piping", true)
 
         val sizes = com.termux.shared.termux.settings.preferences.TermuxAppSharedPreferences.getDefaultFontSizes(this)
         val defaultFontSize = sizes[0]
@@ -127,6 +128,8 @@ class MainActivity : ComponentActivity() {
                     var extraKeysPreset by remember { mutableStateOf(savedExtraKeysPreset) }
                     var extraKeysCustomJson by remember { mutableStateOf(savedExtraKeysCustomJson) }
                     var fontSize by remember { mutableStateOf(savedFontSize) }
+                    var useNativePipingState by remember { mutableStateOf(savedUseNativePiping) }
+                    useNativePiping = useNativePipingState
 
                     LaunchedEffect(currentScreen) {
                         if (currentScreen is ScreenState.Dashboard) {
@@ -151,6 +154,10 @@ class MainActivity : ComponentActivity() {
                     val onExtraKeysCustomJsonChange: (String) -> Unit = { json ->
                         extraKeysCustomJson = json
                         sharedPreferences.edit().putString("extra_keys_custom_json", json).apply()
+                    }
+                    val onUseNativePipingChange: (Boolean) -> Unit = { enabled ->
+                        useNativePipingState = enabled
+                        sharedPreferences.edit().putBoolean("use_native_piping", enabled).apply()
                     }
 
                     val resolvedJson = remember(extraKeysPreset, extraKeysCustomJson) {
@@ -181,7 +188,9 @@ class MainActivity : ComponentActivity() {
                                 extraKeysCustomJson = extraKeysCustomJson,
                                 onExtraKeysCustomJsonChange = onExtraKeysCustomJsonChange,
                                 fontSize = fontSize,
-                                onFontSizeChange = onFontSizeChange
+                                onFontSizeChange = onFontSizeChange,
+                                useNativePiping = useNativePipingState,
+                                onUseNativePipingChange = onUseNativePipingChange
                             )
                         }
                         is ScreenState.TerminalWorkspace -> {

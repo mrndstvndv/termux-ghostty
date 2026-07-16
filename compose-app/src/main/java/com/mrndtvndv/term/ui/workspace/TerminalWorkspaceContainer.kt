@@ -8,6 +8,7 @@ import com.termux.terminal.TerminalSession
 import com.termux.view.TerminalView
 import com.termux.shared.termux.terminal.TermuxTerminalViewClientBase
 import com.termux.shared.termux.settings.preferences.TermuxAppSharedPreferences
+import com.termux.shared.interact.ShareUtils
 
 
 import android.content.Context
@@ -72,8 +73,21 @@ fun TerminalWorkspaceContainer(
                 setTypeface(typeface)
                 setTerminalViewClient(object : TermuxTerminalViewClientBase() {
                     override fun onSingleTapUp(e: MotionEvent) {
+                        val url = getTerminalTranscriptUrlOnTap(e)
+                        if (url != null) {
+                            ShareUtils.openUrl(context, url)
+                            return
+                        }
                         this@apply.requestFocus()
                         KeyboardUtils.showSoftKeyboard(context, this@apply)
+                    }
+
+                    override fun shouldOpenTerminalTranscriptURLOnClick(): Boolean {
+                        return true
+                    }
+
+                    override fun getTerminalTranscriptUrlOnTap(e: MotionEvent): String? {
+                        return this@apply.getVisibleLinkHit(e)?.url
                     }
 
                     override fun onScale(scale: Float): Float {

@@ -683,7 +683,7 @@ pub const Session = struct {
         const cols: usize = self.render_state.cols;
         for (0..self.render_state.rows) |row_index| {
             const pin = row_pins[row_index];
-            const page = &pin.node.data;
+            const page = pin.node.page();
             const cells = row_cells[row_index].slice().items(.raw);
             if (cells.len < cols) {
                 ghostty_log.err("core fillViewportLinks cell data mismatch session=0x{x} row={} renderCols={} raw={}", .{
@@ -1028,6 +1028,7 @@ const Handler = struct {
     ) !void {
         switch (action) {
             .print => try self.session.terminal.print(value.cp),
+            .print_slice => try self.session.terminal.printSlice(value.cps),
             .print_repeat => try self.session.terminal.printRepeat(value),
             .bell => self.session.bell_pending = true,
             .backspace => self.session.terminal.backspace(),
@@ -1116,7 +1117,7 @@ const Handler = struct {
             .kitty_keyboard_set_or => self.session.terminal.screens.active.kitty_keyboard.set(.@"or", value.flags),
             .kitty_keyboard_set_not => self.session.terminal.screens.active.kitty_keyboard.set(.not, value.flags),
             .dcs_hook, .dcs_put, .dcs_unhook => {},
-            .apc_start, .apc_end, .apc_put => {},
+            .apc_start, .apc_end, .apc_put, .apc_put_slice => {},
             .end_hyperlink => self.session.terminal.screens.active.endHyperlink(),
             .active_status_display => self.session.terminal.status_display = value,
             .decaln => try self.session.terminal.decaln(),

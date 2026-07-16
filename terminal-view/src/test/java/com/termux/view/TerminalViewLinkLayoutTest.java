@@ -144,15 +144,38 @@ public final class TerminalViewLinkLayoutTest {
             usedColumns++;
         }
 
+        int pos = buffer.position();
+        int alignedPos = (pos + 7) & ~7;
+        while (buffer.position() < alignedPos) {
+            buffer.put((byte) 0);
+        }
+
         buffer.putInt(text.length());
         buffer.putInt(row.mLineWrap ? 1 : 0);
-        for (int column = 0; column < columns; column++) {
-            buffer.putInt(starts.get(column));
-            buffer.putShort((short) (int) lengths.get(column));
-            buffer.put((byte) (int) widths.get(column));
-            buffer.put((byte) 0);
-            buffer.putLong(styles.get(column));
+        buffer.putLong(0L); // contentHash dummy
+
+        for (int i = 0; i < columns; i++) {
+            buffer.putInt(starts.get(i));
         }
+
+        for (int i = 0; i < columns; i++) {
+            buffer.putShort((short) (int) lengths.get(i));
+        }
+
+        for (int i = 0; i < columns; i++) {
+            buffer.put(widths.get(i).byteValue());
+        }
+
+        int posStyle = buffer.position();
+        int alignedPosStyle = (posStyle + 7) & ~7;
+        while (buffer.position() < alignedPosStyle) {
+            buffer.put((byte) 0);
+        }
+
+        for (int i = 0; i < columns; i++) {
+            buffer.putLong(styles.get(i));
+        }
+
         for (int index = 0; index < text.length(); index++) {
             buffer.putChar(text.charAt(index));
         }

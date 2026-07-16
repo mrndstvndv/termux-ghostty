@@ -8,6 +8,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -70,7 +71,7 @@ fun ExtraKeysToolbar(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .background(MaterialTheme.colorScheme.surface)
             .padding(vertical = 4.dp, horizontal = 4.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
@@ -142,18 +143,19 @@ fun ExtraKeyButtonComponent(
     // Determine colors
     val backgroundColor = when {
         isLocked -> MaterialTheme.colorScheme.primary
-        isActive -> MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)
-        isPressed -> MaterialTheme.colorScheme.surfaceVariant
-        else -> MaterialTheme.colorScheme.surface
+        isActive -> MaterialTheme.colorScheme.primaryContainer
+        isPressed -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.15f)
+        else -> Color.Transparent
     }
 
     val textColor = when {
-        isLocked || isActive -> MaterialTheme.colorScheme.onPrimary
+        isLocked -> MaterialTheme.colorScheme.onPrimary
+        isActive -> MaterialTheme.colorScheme.onPrimaryContainer
         else -> MaterialTheme.colorScheme.onSurface
     }
 
     val borderModifier = if (isLocked) {
-        Modifier.border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(4.dp))
+        Modifier.border(1.dp, MaterialTheme.colorScheme.outline, CircleShape)
     } else {
         Modifier
     }
@@ -161,7 +163,7 @@ fun ExtraKeyButtonComponent(
     Box(
         modifier = modifier
             .then(borderModifier)
-            .clip(RoundedCornerShape(4.dp))
+            .clip(CircleShape)
             .background(backgroundColor)
             .pointerInput(buttonInfo) {
                 coroutineScope {

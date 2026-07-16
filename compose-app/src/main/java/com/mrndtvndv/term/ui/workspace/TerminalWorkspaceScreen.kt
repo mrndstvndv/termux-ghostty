@@ -29,7 +29,7 @@ fun TabbedWorkspace(
     session: TerminalSession,
     sftpViewModel: SftpViewModel,
     extraKeysController: ExtraKeysController,
-    activeTerminalView: TerminalView?,
+    getActiveTerminalView: () -> TerminalView?,
     extraKeysEnabled: Boolean,
     extraKeysJson: String,
     onViewCreated: (TerminalView) -> Unit,
@@ -73,7 +73,7 @@ fun TabbedWorkspace(
                     if (extraKeysEnabled) {
                         ExtraKeysToolbar(
                             extraKeysController = extraKeysController,
-                            activeTerminalView = activeTerminalView,
+                            getActiveTerminalView = getActiveTerminalView,
                             session = session,
                             extraKeysJson = extraKeysJson
                         )
@@ -91,7 +91,7 @@ fun SplitWorkspace(
     sftpViewModel: SftpViewModel,
     foldingFeature: FoldingFeature?,
     extraKeysController: ExtraKeysController,
-    activeTerminalView: TerminalView?,
+    getActiveTerminalView: () -> TerminalView?,
     extraKeysEnabled: Boolean,
     extraKeysJson: String,
     onViewCreated: (TerminalView) -> Unit,
@@ -123,7 +123,7 @@ fun SplitWorkspace(
                 if (extraKeysEnabled) {
                     ExtraKeysToolbar(
                         extraKeysController = extraKeysController,
-                        activeTerminalView = activeTerminalView,
+                        getActiveTerminalView = getActiveTerminalView,
                         session = session,
                         extraKeysJson = extraKeysJson
                     )
@@ -136,6 +136,8 @@ fun SplitWorkspace(
         }
     }
 }
+
+class Ref<T>(var value: T? = null)
 
 @Composable
 fun TerminalWorkspaceScreen(
@@ -152,7 +154,8 @@ fun TerminalWorkspaceScreen(
     val isWideScreen = configuration.screenWidthDp >= 600
 
     val extraKeysController = remember { ExtraKeysController() }
-    var activeTerminalView by remember { mutableStateOf<TerminalView?>(null) }
+    val activeTerminalViewRef = remember { Ref<TerminalView>() }
+    val getActiveTerminalView = remember { { activeTerminalViewRef.value } }
 
     var foldingFeature by remember { mutableStateOf<FoldingFeature?>(null) }
     LaunchedEffect(context) {
@@ -167,12 +170,12 @@ fun TerminalWorkspaceScreen(
     }
 
     val handleViewCreated: (TerminalView) -> Unit = { view ->
-        activeTerminalView = view
+        activeTerminalViewRef.value = view
         onViewCreated(view)
     }
 
     val handleViewReleased: () -> Unit = {
-        activeTerminalView = null
+        activeTerminalViewRef.value = null
         onViewReleased()
     }
 
@@ -182,7 +185,7 @@ fun TerminalWorkspaceScreen(
             sftpViewModel = sftpViewModel,
             foldingFeature = foldingFeature,
             extraKeysController = extraKeysController,
-            activeTerminalView = activeTerminalView,
+            getActiveTerminalView = getActiveTerminalView,
             extraKeysEnabled = extraKeysEnabled,
             extraKeysJson = extraKeysJson,
             onViewCreated = handleViewCreated,
@@ -194,7 +197,7 @@ fun TerminalWorkspaceScreen(
             session = session,
             sftpViewModel = sftpViewModel,
             extraKeysController = extraKeysController,
-            activeTerminalView = activeTerminalView,
+            getActiveTerminalView = getActiveTerminalView,
             extraKeysEnabled = extraKeysEnabled,
             extraKeysJson = extraKeysJson,
             onViewCreated = handleViewCreated,

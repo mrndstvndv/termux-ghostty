@@ -28,30 +28,7 @@ fun TerminalView.detachSession() {
  * which blocks resizing when hosted inside Compose's AndroidView.
  */
 private fun TerminalView.forceUpdateSize() {
-    val viewWidth = width
-    val viewHeight = height
-    val renderer = mRenderer ?: return
-    val session = mTermSession ?: return
-    if (viewWidth == 0 || viewHeight == 0) return
-
-    val fontWidth = renderer.getFontWidth()
-    val fontLineSpacing = renderer.getFontLineSpacing()
-    if (fontWidth <= 0 || fontLineSpacing <= 0) return
-
-    val newColumns = Math.max(4, (viewWidth / fontWidth).toInt())
-    // Approximate row count: use full view height / line spacing.
-    // The original uses (viewHeight - mFontLineSpacingAndAscent) / mFontLineSpacing
-    // which accounts for a single ascent offset. We approximate by subtracting one line spacing.
-    val newRows = Math.max(4, (viewHeight - fontLineSpacing) / fontLineSpacing)
-
-    if (session.columns == newColumns && session.rows == newRows) return
-
-    android.util.Log.i("TerminalWorkspace", "forceUpdateSize: ${newColumns}x${newRows} (view: ${viewWidth}x${viewHeight})")
-    val cellWidth = Math.max(1, Math.round(fontWidth))
-    val cellHeight = Math.max(1, fontLineSpacing)
-    session.updateSize(newColumns, newRows, cellWidth, cellHeight)
-    scrollTo(0, 0)
-    invalidate()
+    updateSize(true)
 }
 
 @Composable
@@ -117,13 +94,18 @@ fun TerminalWorkspaceContainer(
                 })
                 attachSession(session)
 
-                // Use OnGlobalLayoutListener to resize once the view has real dimensions.
+                // Force a resize once the view is actually laid out with real dimensions,
+                // and every time the keyboard toggles, split-screen is resized, or orientation changes.
                 // We call forceUpdateSize() which bypasses the getWindowVisibility() guard
                 // that blocks TerminalView.updateSize() inside Compose's AndroidView.
-                viewTreeObserver.addOnGlobalLayoutListener(object : ViewTreeObserver.OnGlobalLayoutListener {
-                    override fun onGlobalLayout() {
-                        if (width > 0 && height > 0) {
-                            viewTreeObserver.removeOnGlobalLayoutListener(this)
+                addOnLayoutChangeListener(object : View.OnLayoutChangeListener {
+                    override fun onLayoutChange(
+                        v: View, left: Int, top: Int, right: Int, bottom: Int,
+                        oldLeft: Int, oldTop: Int, oldRight: Int, oldBottom: Int
+                    ) {
+                        val w = right - left
+                        val h = bottom - top
+                        if (w > 0 && h > 0 && (w != (oldRight - oldLeft) || h != (oldBottom - oldTop))) {
                             forceUpdateSize()
                         }
                     }

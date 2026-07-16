@@ -64,6 +64,9 @@ fun DashboardScreen(
     onFontSizeChange: (Int) -> Unit,
     appTheme: String,
     onThemeChange: (String) -> Unit,
+    customFontName: String?,
+    onSelectFont: () -> Unit,
+    onClearFont: () -> Unit,
     modifier: Modifier = Modifier,
     initialHost: String = "10.0.2.2",
     initialPort: Int = 2222,
@@ -389,7 +392,63 @@ fun DashboardScreen(
                         }
                     }
 
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
 
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column {
+                            Text("Terminal Font", style = MaterialTheme.typography.bodyLarge)
+                            Text(
+                                text = customFontName ?: "Default (Monospace)",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            if (customFontName == null) {
+                                Button(
+                                    onClick = onSelectFont,
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                    ),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                                    modifier = Modifier.height(36.dp),
+                                    shape = RoundedCornerShape(18.dp)
+                                ) {
+                                    Text("Select Font", style = MaterialTheme.typography.bodyMedium)
+                                }
+                            } else {
+                                OutlinedButton(
+                                    onClick = onSelectFont,
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                                    modifier = Modifier.height(36.dp),
+                                    shape = RoundedCornerShape(18.dp)
+                                ) {
+                                    Text("Change", style = MaterialTheme.typography.bodyMedium)
+                                }
+
+                                Button(
+                                    onClick = onClearFont,
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = MaterialTheme.colorScheme.errorContainer,
+                                        contentColor = MaterialTheme.colorScheme.onErrorContainer
+                                    ),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                                    modifier = Modifier.height(36.dp),
+                                    shape = RoundedCornerShape(18.dp)
+                                ) {
+                                    Text("Reset", style = MaterialTheme.typography.bodyMedium)
+                                }
+                            }
+                        }
+                    }
 
                     HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
 

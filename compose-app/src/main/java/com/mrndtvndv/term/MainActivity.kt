@@ -39,6 +39,10 @@ import android.content.ServiceConnection
 import android.os.Build
 import android.os.IBinder
 import com.mrndtvndv.term.service.SshSessionService
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import android.net.Uri
+import java.io.File
 
 sealed interface ScreenState {
     object Dashboard : ScreenState
@@ -124,6 +128,43 @@ class MainActivity : ComponentActivity() {
                     var extraKeysPreset by remember { mutableStateOf(savedExtraKeysPreset) }
                     var extraKeysCustomJson by remember { mutableStateOf(savedExtraKeysCustomJson) }
                     var fontSize by remember { mutableStateOf(savedFontSize) }
+                    var customFontName by remember {
+                        mutableStateOf(sharedPreferences.getString("custom_font_name", null))
+                    }
+
+                    val pickFontLauncher = rememberLauncherForActivityResult(
+                        contract = ActivityResultContracts.GetContent()
+                    ) { uri: Uri? ->
+                        uri?.let {
+                            try {
+                                val inputStream = contentResolver.openInputStream(uri)
+                                if (inputStream != null) {
+                                    val fontFile = File(filesDir, "font.ttf")
+                                    fontFile.outputStream().use { outputStream ->
+                                        inputStream.copyTo(outputStream)
+                                    }
+                                    val name = getFileName(this@MainActivity, uri) ?: "custom_font.ttf"
+                                    sharedPreferences.edit()
+                                        .putString("custom_font_name", name)
+                                        .apply()
+                                    customFontName = name
+                                }
+                            } catch (e: Exception) {
+                                android.util.Log.e("MainActivity", "Failed to copy custom font", e)
+                            }
+                        }
+                    }
+
+                    val onClearFont: () -> Unit = {
+                        val fontFile = File(filesDir, "font.ttf")
+                        if (fontFile.exists()) {
+                            fontFile.delete()
+                        }
+                        sharedPreferences.edit()
+                            .remove("custom_font_name")
+                            .apply()
+                        customFontName = null
+                    }
 
                     val currentThemeScheme = MaterialTheme.colorScheme
                     val isThemeDark = !appTheme.equals("Light", ignoreCase = true)
@@ -238,7 +279,12 @@ class MainActivity : ComponentActivity() {
                                 onThemeChange = { newTheme ->
                                     appTheme = newTheme
                                     sharedPreferences.edit().putString("app_theme", newTheme).apply()
-                                }
+                                },
+                                customFontName = customFontName,
+                                onSelectFont = {
+                                    pickFontLauncher.launch("*/*")
+                                },
+                                onClearFont = onClearFont
                             )
                         }
                         is ScreenState.TerminalWorkspace -> {
@@ -396,5 +442,32 @@ class MainActivity : ComponentActivity() {
     override fun onDestroy() {
         cleanupConnection()
         super.onDestroy()
+    }
+
+    private fun getFileName(context: Context, uri: Uri): String? {
+        var result: String? = null
+        if (uri.scheme == "content") {
+            val cursor = context.contentResolver.query(uri, null, null, null, null)
+            try {
+                if (cursor != null && cursor.moveToFirst()) {
+                    val index = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                    if (index != -1) {
+                        result = cursor.getString(index)
+                    }
+                }
+            } catch (e: Exception) {
+                // Ignore
+            } finally {
+                cursor?.close()
+            }
+        }
+        if (result == null) {
+            result = uri.path
+            val cut = result?.lastIndexOf('/') ?: -1
+            if (cut != -1) {
+                result = result?.substring(cut + 1)
+            }
+        }
+        return result
     }
 }

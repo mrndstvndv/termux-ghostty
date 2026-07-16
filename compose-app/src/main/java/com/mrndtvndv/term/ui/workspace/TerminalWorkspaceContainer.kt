@@ -11,6 +11,8 @@ import com.termux.shared.termux.settings.preferences.TermuxAppSharedPreferences
 
 
 import android.content.Context
+import android.graphics.Typeface
+import java.io.File
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
@@ -55,6 +57,19 @@ fun TerminalWorkspaceContainer(
                 isFocusable = true
                 isFocusableInTouchMode = true
                 setTextSize(currentFontSize)
+
+                val customFontFile = File(context.filesDir, "font.ttf")
+                val typeface = if (customFontFile.exists() && customFontFile.length() > 0) {
+                    try {
+                        Typeface.createFromFile(customFontFile)
+                    } catch (e: Exception) {
+                        android.util.Log.e("TerminalWorkspace", "Failed to load custom typeface, falling back to MONOSPACE", e)
+                        Typeface.MONOSPACE
+                    }
+                } else {
+                    Typeface.MONOSPACE
+                }
+                setTypeface(typeface)
                 setTerminalViewClient(object : TermuxTerminalViewClientBase() {
                     override fun onSingleTapUp(e: MotionEvent) {
                         this@apply.requestFocus()

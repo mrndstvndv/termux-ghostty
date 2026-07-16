@@ -118,6 +118,50 @@ pub const SshNativeSession = struct {
             return error.PtyRequestFailed;
         }
 
+        // Set locale on remote side so libc's wcwidth() gives correct widths for braille etc.
+        {
+            const env_name = "LC_ALL";
+            const env_val = "en_US.UTF-8";
+            var attempt: i32 = 0;
+            while (attempt < 50) : (attempt += 1) {
+                const rc = c.libssh2_channel_setenv_ex(channel, env_name, @intCast(env_name.len), env_val, @intCast(env_val.len));
+                if (rc == 0) break;
+                if (rc == c.LIBSSH2_ERROR_EAGAIN) {
+                    try waitSocket(socket_fd, session);
+                    continue;
+                }
+                break;
+            }
+        }
+        {
+            const env_name = "LANG";
+            const env_val = "en_US.UTF-8";
+            var attempt: i32 = 0;
+            while (attempt < 50) : (attempt += 1) {
+                const rc = c.libssh2_channel_setenv_ex(channel, env_name, @intCast(env_name.len), env_val, @intCast(env_val.len));
+                if (rc == 0) break;
+                if (rc == c.LIBSSH2_ERROR_EAGAIN) {
+                    try waitSocket(socket_fd, session);
+                    continue;
+                }
+                break;
+            }
+        }
+        {
+            const env_name = "LC_CTYPE";
+            const env_val = "en_US.UTF-8";
+            var attempt: i32 = 0;
+            while (attempt < 50) : (attempt += 1) {
+                const rc = c.libssh2_channel_setenv_ex(channel, env_name, @intCast(env_name.len), env_val, @intCast(env_val.len));
+                if (rc == 0) break;
+                if (rc == c.LIBSSH2_ERROR_EAGAIN) {
+                    try waitSocket(socket_fd, session);
+                    continue;
+                }
+                break;
+            }
+        }
+
         while (true) {
             const rc = c.libssh2_channel_process_startup(channel, "shell", @intCast("shell".len), null, 0);
             if (rc == 0) break;

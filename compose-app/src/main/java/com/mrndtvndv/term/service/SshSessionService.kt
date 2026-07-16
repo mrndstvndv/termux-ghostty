@@ -23,6 +23,7 @@ class SshSessionService : Service() {
     private var wakeLock: PowerManager.WakeLock? = null
 
     companion object {
+        const val ACTION_DISCONNECT = "com.mrndtvndv.term.action.DISCONNECT_SSH"
         private const val CHANNEL_ID = "ssh_session_channel"
         private const val NOTIFICATION_ID = 1001
         private const val WAKE_LOCK_TAG = "TermuxGhostty:SshSessionService"
@@ -40,6 +41,10 @@ class SshSessionService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_DISCONNECT) {
+            disconnectAll()
+            return START_NOT_STICKY
+        }
         return START_STICKY
     }
 
@@ -65,6 +70,12 @@ class SshSessionService : Service() {
         if (sessions.isEmpty()) {
             stopSelf()
         }
+    }
+
+    private fun disconnectAll() {
+        sessions.values.forEach { it.finishIfRunning() }
+        sessions.clear()
+        stopSelf()
     }
 
     private fun acquireWakeLock() {
@@ -97,11 +108,19 @@ class SshSessionService : Service() {
     }
 
     private fun buildNotification(): Notification {
-        val intent = Intent(this, MainActivity::class.java).apply {
+        val openIntent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
         }
-        val pendingIntent = PendingIntent.getActivity(
-            this, 0, intent,
+        val openPendingIntent = PendingIntent.getActivity(
+            this, 0, openIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val disconnectIntent = Intent(this, SshSessionService::class.java).apply {
+            action = ACTION_DISCONNECT
+        }
+        val disconnectPendingIntent = PendingIntent.getService(
+            this, 1, disconnectIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
@@ -111,7 +130,12 @@ class SshSessionService : Service() {
             .setSmallIcon(android.R.drawable.stat_notify_chat)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
-            .setContentIntent(pendingIntent)
+            .setContentIntent(openPendingIntent)
+            .addAction(
+                android.R.drawable.ic_menu_close_clear_cancel,
+                "Disconnect",
+                disconnectPendingIntent
+            )
             .build()
     }
 }

@@ -218,4 +218,4 @@ jobs:
 
           git add app/build.gradle
           git commit -m "chore: bump version to $NEW_VERSION (code $NEW_VERSION_CODE) [skip ci]"
-          git push origin master
+          git push origin HEAD:${{ github.ref_name }}

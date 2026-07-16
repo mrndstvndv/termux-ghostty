@@ -10,11 +10,13 @@ import com.termux.shared.termux.terminal.TermuxTerminalViewClientBase
 import com.termux.shared.termux.settings.preferences.TermuxAppSharedPreferences
 
 
+import android.content.Context
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewTreeObserver
 import com.termux.shared.view.KeyboardUtils
+
 
 fun TerminalView.detachSession() {
     attachSession(null)
@@ -62,11 +64,12 @@ fun TerminalWorkspaceContainer(
 ) {
     AndroidView(
         factory = { context ->
+            val sharedPreferences = context.getSharedPreferences("ssh_prefs", Context.MODE_PRIVATE)
             val sizes = TermuxAppSharedPreferences.getDefaultFontSizes(context)
             val defaultFontSize = sizes[0]
             val minFontSize = sizes[1]
             val maxFontSize = sizes[2]
-            var currentFontSize = defaultFontSize
+            var currentFontSize = sharedPreferences.getInt("font_size", defaultFontSize).coerceIn(minFontSize, maxFontSize)
             TerminalView(context, null).apply {
                 layoutParams = ViewGroup.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
@@ -89,6 +92,7 @@ fun TerminalWorkspaceContainer(
                             if (newSize != currentFontSize) {
                                 currentFontSize = newSize
                                 this@apply.setTextSize(newSize)
+                                sharedPreferences.edit().putInt("font_size", newSize).apply()
                             }
                             return 1.0f
                         }

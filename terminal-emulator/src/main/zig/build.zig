@@ -45,6 +45,7 @@ pub fn build(b: *std.Build) !void {
         .optimize = optimize,
         .@"crypto-backend" = .mbedtls,
         .@"link-system-crypto-backend" = false,
+        .@"zlib" = true,
     })) |libssh2_dep| {
         const lib_dep = libssh2_dep.artifact("ssh2");
         if (lib_dep.rootModuleTarget().abi.isAndroid()) {

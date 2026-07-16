@@ -33,6 +33,7 @@ pub const SshNativeSession = struct {
         cols: c_int,
         rows: c_int,
         buffer_capacity: usize,
+        herdr_integration: bool,
     ) !*SshNativeSession {
         _ = c.libssh2_init(0);
 
@@ -40,6 +41,9 @@ pub const SshNativeSession = struct {
         errdefer _ = c.libssh2_session_free(session);
 
         _ = c.libssh2_session_set_blocking(session, 0);
+
+        // Enable compression — big bandwidth win for terminal escape sequences
+        _ = c.libssh2_session_flag(session, c.LIBSSH2_FLAG_COMPRESS, 1);
 
         // Set underlying socket to non-blocking mode in the OS
         const flags = c.fcntl(socket_fd, c.F_GETFL, @as(c_int, 0));
@@ -163,7 +167,12 @@ pub const SshNativeSession = struct {
         }
 
         while (true) {
-            const rc = c.libssh2_channel_process_startup(channel, "shell", @intCast("shell".len), null, 0);
+            const rc = if (herdr_integration) blk: {
+                const cmd = "sh -c \"if command -v herdr >/dev/null 2>&1; then exec herdr; else exec \\${SHELL:-/bin/sh} -l; fi\"";
+                break :blk c.libssh2_channel_process_startup(channel, "exec", 4, cmd.ptr, @intCast(cmd.len));
+            } else blk: {
+                break :blk c.libssh2_channel_process_startup(channel, "shell", @intCast("shell".len), null, 0);
+            };
             if (rc == 0) break;
             if (rc == c.LIBSSH2_ERROR_EAGAIN) {
                 try waitSocket(socket_fd, session);

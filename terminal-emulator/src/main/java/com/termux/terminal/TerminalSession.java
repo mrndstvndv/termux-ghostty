@@ -48,6 +48,7 @@ public final class TerminalSession extends TerminalOutput {
 
     private GhosttyTerminalContent mGhosttyTerminalContent;
     private GhosttySessionWorker mGhosttySessionWorker;
+    private long mSshSessionHandle = 0L;
 
     private TerminalSessionIO mIoHandler;
     private boolean mIsCustomIO = false;
@@ -146,6 +147,13 @@ public final class TerminalSession extends TerminalOutput {
      */
     public void updateTerminalSessionClient(TerminalSessionClient client) {
         mClient = client;
+    }
+
+    public void setSshSessionHandle(long handle) {
+        mSshSessionHandle = handle;
+        if (mGhosttySessionWorker != null) {
+            mGhosttySessionWorker.setSshSession(handle);
+        }
     }
 
     public void appendOutput(byte[] data, int offset, int count) {
@@ -261,6 +269,9 @@ public final class TerminalSession extends TerminalOutput {
             mGhosttyCursorCol = mGhosttyTerminalContent.getCursorCol();
             mGhosttyCursorStyle = mGhosttyTerminalContent.getCursorStyle();
             mGhosttySessionWorker = new GhosttySessionWorker(this, mGhosttyTerminalContent, mProcessToTerminalIOQueue, mMainThreadHandler, cellWidthPixels, cellHeightPixels);
+            if (mSshSessionHandle != 0L) {
+                mGhosttySessionWorker.setSshSession(mSshSessionHandle);
+            }
             mGhosttySessionWorker.start();
             GhosttyLog.info("Ghostty backend selected for session " + mHandle);
         } catch (Throwable error) {
@@ -281,6 +292,9 @@ public final class TerminalSession extends TerminalOutput {
 
         if (mIsCustomIO) {
             mShellPid = 1; // Dummy positive PID to pass isRunning() check
+            if (mIoHandler != null) {
+                mIoHandler.onResize(columns, rows, cellWidthPixels, cellHeightPixels);
+            }
             return;
         }
 

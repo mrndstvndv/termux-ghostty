@@ -27,3 +27,5 @@ All fork-specific docs go under `docs/fork/`. Do not add `.md` files to the repo
 
 - `docs/fork/` — research, comparisons, guides, architecture docs
 - `docs/fork/plans/` — implementation plans, checklists, stabilization docs
+
+**Note on plans:** Do NOT commit plan files (`.md` files outlining implementation steps/checklists) or updates to plans to the Git repository. Keep plan documents untracked or locally edited only. Do not stage them for commits.

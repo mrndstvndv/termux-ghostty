@@ -292,6 +292,10 @@ fun dispatchExtraKey(
     session: TerminalSession
 ) {
     val key = buttonInfo.key
+    if ("PASTE" == key) {
+        session.onPasteTextFromClipboard()
+        return
+    }
     // Treat as macro if: the ExtraKeyButton is explicitly a macro ({macro: '...'}),
     // OR it's a plain string key that contains spaces (e.g. 'CTRL b n') — convenience format.
     val isMacro = buttonInfo.isMacro ||

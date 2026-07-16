@@ -51,7 +51,7 @@ class MainActivity : ComponentActivity() {
         getSharedPreferences("ssh_prefs", Context.MODE_PRIVATE)
     }
 
-    private val useNativePiping = false
+    private val useNativePiping = true
     private var sshSession: SshSession? = null
     private var shellChannel: SshShellChannel? = null
     private var sftpClient: SftpClient? = null

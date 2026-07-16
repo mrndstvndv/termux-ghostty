@@ -4,7 +4,7 @@ import androidx.annotation.Nullable;
 
 import java.nio.ByteBuffer;
 
-final class GhosttyNative {
+public final class GhosttyNative {
 
     static final int APPEND_RESULT_SCREEN_CHANGED = 1;
     static final int APPEND_RESULT_CURSOR_CHANGED = 1 << 1;
@@ -144,4 +144,13 @@ final class GhosttyNative {
 
     @Nullable
     static native String nativeGetTranscriptText(long nativeHandle, int flags);
+
+    public static native long nativeSshInit(int socketFd, String username, String passwordOrKey, boolean isPassword, String termType, int cols, int rows);
+    public static native void nativeSshStart(long sessionHandle);
+    public static native void nativeSshDeinit(long sessionHandle);
+    public static native void nativeSshWrite(long sessionHandle, byte[] data, int offset, int length);
+    public static native void nativeSshResize(long sessionHandle, int cols, int rows);
+    public static native int nativeSshGetJvmWakeFd(long sessionHandle);
+    public static native void nativeSshAckWakeup(long sessionHandle);
+    public static native int nativeSshDrainToSession(long terminalSessionHandle, long sshSessionHandle);
 }

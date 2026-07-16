@@ -39,7 +39,7 @@ fun TerminalWorkspaceContainer(
     session: TerminalSession,
     extraKeysController: com.mrndtvndv.term.ui.keyboard.ExtraKeysController,
     onViewCreated: (TerminalView) -> Unit,
-    onViewReleased: () -> Unit,
+    onViewReleased: (TerminalView) -> Unit,
     modifier: Modifier = Modifier
 ) {
     AndroidView(
@@ -151,7 +151,7 @@ fun TerminalWorkspaceContainer(
         },
         onRelease = { view ->
             view.detachSession()
-            onViewReleased()
+            onViewReleased(view)
         },
         modifier = modifier.fillMaxSize()
     )

@@ -298,9 +298,11 @@ class MainActivity : ComponentActivity() {
                                         activeTerminalView = view
                                         registerForContextMenu(view)
                                     },
-                                    onViewReleased = {
+                                    onViewReleased = { view ->
                                         activeTerminalView?.let { unregisterForContextMenu(it) }
-                                        activeTerminalView = null
+                                        if (activeTerminalView === view) {
+                                            activeTerminalView = null
+                                        }
                                     },
                                     modifier = Modifier.fillMaxSize()
                                 )

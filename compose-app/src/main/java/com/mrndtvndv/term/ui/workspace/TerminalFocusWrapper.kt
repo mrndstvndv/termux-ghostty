@@ -65,7 +65,7 @@ fun TerminalFocusWrapper(
     extraKeysController: ExtraKeysController,
     isTerminalActive: Boolean,
     onViewCreated: (TerminalView) -> Unit,
-    onViewReleased: () -> Unit,
+    onViewReleased: (TerminalView) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val focusRequester = remember { FocusRequester() }

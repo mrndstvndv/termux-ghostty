@@ -16,7 +16,7 @@ fun TerminalWorkspaceScreen(
     extraKeysEnabled: Boolean,
     extraKeysJson: String,
     onViewCreated: (TerminalView) -> Unit,
-    onViewReleased: () -> Unit,
+    onViewReleased: (TerminalView) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val extraKeysController = remember { ExtraKeysController() }
@@ -28,9 +28,11 @@ fun TerminalWorkspaceScreen(
         onViewCreated(view)
     }
 
-    val handleViewReleased: () -> Unit = {
-        activeTerminalViewRef.value = null
-        onViewReleased()
+    val handleViewReleased: (TerminalView) -> Unit = { view ->
+        if (activeTerminalViewRef.value === view) {
+            activeTerminalViewRef.value = null
+        }
+        onViewReleased(view)
     }
 
     Column(modifier = modifier.fillMaxSize()) {

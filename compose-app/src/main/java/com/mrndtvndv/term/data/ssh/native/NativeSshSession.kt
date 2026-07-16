@@ -38,12 +38,7 @@ class NativeSshSession : SshSession {
         }
     }
 
-    override suspend fun openShellChannel(
-        termType: String,
-        cols: Int,
-        rows: Int,
-        herdrIntegration: Boolean
-    ): SshShellChannel {
+    override suspend fun openShellChannel(termType: String, cols: Int, rows: Int): SshShellChannel {
         return withContext(Dispatchers.IO) {
             val s = socket ?: throw IllegalStateException("Not connected")
             val pfd = ParcelFileDescriptor.fromSocket(s)
@@ -66,8 +61,7 @@ class NativeSshSession : SshSession {
                 isPassword,
                 termType,
                 cols,
-                rows,
-                herdrIntegration
+                rows
             )
 
             if (handle == 0L) {

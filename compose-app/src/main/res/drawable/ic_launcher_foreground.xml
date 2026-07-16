@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Outer soft glow (large neon purple stroke) -->
+    <path
+        android:pathData="M 34,48 C 34,25 74,25 74,48 L 74,56 C 78,56 82,59 82,62 C 82,65 78,66 74,65 L 74,75 Q 67,70 60,75 Q 54,70 48,75 Q 41,70 34,75 L 34,65 C 30,66 26,65 26,62 C 26,59 30,56 34,56 Z"
+        android:strokeWidth="8"
+        android:strokeColor="#208A2BE2"
+        android:fillColor="#00000000" />
+
+    <!-- Inner glowing stroke (cyan) -->
+    <path
+        android:pathData="M 34,48 C 34,25 74,25 74,48 L 74,56 C 78,56 82,59 82,62 C 82,65 78,66 74,65 L 74,75 Q 67,70 60,75 Q 54,70 48,75 Q 41,70 34,75 L 34,65 C 30,66 26,65 26,62 C 26,59 30,56 34,56 Z"
+        android:strokeWidth="4"
+        android:strokeColor="#3500FFCC"
+        android:fillColor="#00000000" />
+
+    <!-- Main ghost body (slight tint white fill) -->
+    <path
+        android:pathData="M 34,48 C 34,25 74,25 74,48 L 74,56 C 78,56 82,59 82,62 C 82,65 78,66 74,65 L 74,75 Q 67,70 60,75 Q 54,70 48,75 Q 41,70 34,75 L 34,65 C 30,66 26,65 26,62 C 26,59 30,56 34,56 Z"
+        android:fillColor="#F0F5FF" />
+
+    <!-- Main ghost sleek outline -->
+    <path
+        android:pathData="M 34,48 C 34,25 74,25 74,48 L 74,56 C 78,56 82,59 82,62 C 82,65 78,66 74,65 L 74,75 Q 67,70 60,75 Q 54,70 48,75 Q 41,70 34,75 L 34,65 C 30,66 26,65 26,62 C 26,59 30,56 34,56 Z"
+        android:strokeWidth="1.8"
+        android:strokeColor="#B08A2BE2"
+        android:fillColor="#00000000" />
+
+    <!-- Left eye prompt '>' -->
+    <path
+        android:pathData="M 41,44 L 47,48 L 41,52"
+        android:strokeWidth="2.8"
+        android:strokeColor="#00E5FF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:fillColor="#00000000" />
+
+    <!-- Right eye cursor '_' -->
+    <path
+        android:pathData="M 61,52 L 67,52"
+        android:strokeWidth="2.8"
+        android:strokeColor="#00E5FF"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000" />
+
+    <!-- Compose logo emblem on chest: outer bracket '<' -->
+    <path
+        android:pathData="M 54,60 L 49,64 L 54,68"
+        android:strokeWidth="1.8"
+        android:strokeColor="#8A2BE2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:fillColor="#00000000" />
+
+    <!-- Compose logo emblem on chest: inner bracket '<' -->
+    <path
+        android:pathData="M 59,60 L 54,64 L 59,68"
+        android:strokeWidth="1.8"
+        android:strokeColor="#00E5FF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:fillColor="#00000000" />
+
+</vector>

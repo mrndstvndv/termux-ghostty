@@ -304,11 +304,11 @@ fun dispatchExtraKey(
         var shift = false
         var fn = false
         for (part in parts) {
-            when (part) {
-                "CTRL" -> ctrl = true
+            when (part.uppercase()) {
+                "CTRL", "CONTROL" -> ctrl = true
                 "ALT" -> alt = true
-                "SHIFT" -> shift = true
-                "FN" -> fn = true
+                "SHIFT", "SHFT" -> shift = true
+                "FN", "FUNCTION" -> fn = true
                 else -> {
                     sendSingleKey(part, ctrl, alt, shift, fn, activeTerminalView, session)
                     ctrl = false; alt = false; shift = false; fn = false
@@ -363,13 +363,41 @@ private fun sendSingleKey(
             }
         }
     } else {
-        if (activeTerminalView != null) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                key.codePoints().forEach { codePoint ->
-                    activeTerminalView.inputCodePoint(TerminalView.KEY_EVENT_SOURCE_VIRTUAL_KEYBOARD, codePoint, ctrl, alt)
+        // Resolve codePoint and apply control character mapping directly if ctrl is true
+        val codePoint = if (key.length == 1) key.codePointAt(0) else -1
+        if (codePoint != -1) {
+            var finalCodePoint = codePoint
+            if (ctrl) {
+                if (finalCodePoint in 'a'.code..'z'.code) {
+                    finalCodePoint = finalCodePoint - 'a'.code + 1
+                } else if (finalCodePoint in 'A'.code..'Z'.code) {
+                    finalCodePoint = finalCodePoint - 'A'.code + 1
+                } else if (finalCodePoint == ' '.code || finalCodePoint == '2'.code) {
+                    finalCodePoint = 0
+                } else if (finalCodePoint == '['.code || finalCodePoint == '3'.code) {
+                    finalCodePoint = 27
+                } else if (finalCodePoint == '\\'.code || finalCodePoint == '4'.code) {
+                    finalCodePoint = 28
+                } else if (finalCodePoint == ']'.code || finalCodePoint == '5'.code) {
+                    finalCodePoint = 29
+                } else if (finalCodePoint == '^'.code || finalCodePoint == '6'.code) {
+                    finalCodePoint = 30
+                } else if (finalCodePoint == '_'.code || finalCodePoint == '7'.code || finalCodePoint == '/'.code) {
+                    finalCodePoint = 31
+                } else if (finalCodePoint == '8'.code) {
+                    finalCodePoint = 127
+                }
+            }
+
+            if (activeTerminalView != null) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                    // Pass false for controlDownFromEvent because finalCodePoint is already converted
+                    activeTerminalView.inputCodePoint(TerminalView.KEY_EVENT_SOURCE_VIRTUAL_KEYBOARD, finalCodePoint, false, alt)
+                } else {
+                    session.writeCodePoint(alt, finalCodePoint)
                 }
             } else {
-                session.write(key)
+                session.writeCodePoint(alt, finalCodePoint)
             }
         } else {
             session.write(key)

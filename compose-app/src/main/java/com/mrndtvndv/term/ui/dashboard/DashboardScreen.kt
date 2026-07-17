@@ -69,6 +69,8 @@ fun DashboardScreen(
     customFontName: String?,
     onSelectFont: () -> Unit,
     onClearFont: () -> Unit,
+    useInAppBrowser: Boolean,
+    onUseInAppBrowserChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
     initialHost: String = "10.0.2.2",
     initialPort: Int = 2222,
@@ -517,6 +519,49 @@ fun DashboardScreen(
                                 }
                             }
                         }
+                    }
+                }
+            }
+
+            // Card 4: Browser Settings
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                )
+            ) {
+                Column(
+                    modifier = Modifier
+                        .padding(24.dp)
+                        .fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Text(
+                        text = "BROWSER SETTINGS",
+                        style = MaterialTheme.typography.headlineSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        textAlign = TextAlign.Center
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Use In-App Browser", style = MaterialTheme.typography.bodyLarge)
+                            Text(
+                                text = "Open URLs clicked in terminal in the in-app browser tab instead of the default phone browser",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = useInAppBrowser,
+                            onCheckedChange = onUseInAppBrowserChange,
+                            enabled = !isLoading
+                        )
                     }
                 }
             }

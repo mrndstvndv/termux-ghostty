@@ -48,6 +48,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import android.net.Uri
 import java.io.File
 import androidx.core.content.FileProvider
+import androidx.activity.compose.BackHandler
 import android.webkit.MimeTypeMap
 import android.app.Notification
 import android.app.NotificationManager
@@ -108,6 +109,7 @@ class MainActivity : ComponentActivity() {
     private var sshUsername: String? = null
     private val sftpActivePageState = mutableIntStateOf(0)
     private val sftpVisibleState = mutableStateOf(false)
+    private val browserUrlState = mutableStateOf("https://google.com")
     
     private val connectionLoading = mutableStateOf(false)
     private val connectionError = mutableStateOf<String?>(null)
@@ -200,6 +202,7 @@ class MainActivity : ComponentActivity() {
         val savedExtraKeysCustomJson = sharedPreferences.getString("extra_keys_custom_json", "[]") ?: "[]"
         val savedTheme = sharedPreferences.getString("app_theme", "Dark") ?: "Dark"
         val savedHerdrIntegration = sharedPreferences.getBoolean("herdr_integration", false)
+        val savedUseInAppBrowser = sharedPreferences.getBoolean("use_in_app_browser", false)
 
         val sizes = com.termux.shared.termux.settings.preferences.TermuxAppSharedPreferences.getDefaultFontSizes(this)
         val defaultFontSize = sizes[0]
@@ -228,6 +231,7 @@ class MainActivity : ComponentActivity() {
                         mutableStateOf(sharedPreferences.getString("custom_font_name", null))
                     }
                     var herdrIntegration by remember { mutableStateOf(savedHerdrIntegration) }
+                    var useInAppBrowser by remember { mutableStateOf(savedUseInAppBrowser) }
 
                     val pickFontLauncher = rememberLauncherForActivityResult(
                         contract = ActivityResultContracts.GetContent()
@@ -387,10 +391,18 @@ class MainActivity : ComponentActivity() {
                                     onSelectFont = {
                                         pickFontLauncher.launch("*/*")
                                     },
-                                    onClearFont = onClearFont
+                                    onClearFont = onClearFont,
+                                    useInAppBrowser = useInAppBrowser,
+                                    onUseInAppBrowserChange = { enabled ->
+                                        useInAppBrowser = enabled
+                                        sharedPreferences.edit().putBoolean("use_in_app_browser", enabled).apply()
+                                    }
                                 )
                             }
                             is ScreenState.TerminalWorkspace -> {
+                                BackHandler(enabled = sftpActivePageState.intValue != 0) {
+                                    sftpActivePageState.intValue = 0
+                                }
                                 if (termSession != null) {
                                      TerminalWorkspaceScreen(
                                          session = termSession!!,
@@ -416,7 +428,7 @@ class MainActivity : ComponentActivity() {
                                          },
                                          onPageSelected = { page ->
                                                sftpActivePageState.intValue = page
-                                               if (page == 1) {
+                                               if (page == 1 && sftpViewModelState.value != null) {
                                                    lifecycleScope.launch(Dispatchers.IO) {
                                                        try {
                                                            val host = sshHost ?: ""
@@ -524,7 +536,18 @@ class MainActivity : ComponentActivity() {
                                                    }
                                                }
                                            },
-                                         sftpVisible = sftpVisibleState.value,
+                                         browserUrl = browserUrlState.value,
+                                         onBrowserUrlChanged = { url ->
+                                             browserUrlState.value = url
+                                         },
+                                         onOpenUrl = { url ->
+                                             if (useInAppBrowser) {
+                                                 browserUrlState.value = url
+                                                 sftpActivePageState.intValue = if (sftpViewModelState.value != null) 2 else 1
+                                             } else {
+                                                 ShareUtils.openUrl(this@MainActivity, url)
+                                             }
+                                         },
                                          modifier = Modifier.fillMaxSize()
                                      )
                                 }
@@ -665,6 +688,7 @@ class MainActivity : ComponentActivity() {
                                 }
                             }
                             sftpViewModelState.value = viewModel
+                            sftpVisibleState.value = true
                         }
                     } catch (e: Exception) {
                         android.util.Log.e("MainActivity", "Failed to initialize native SFTP", e)

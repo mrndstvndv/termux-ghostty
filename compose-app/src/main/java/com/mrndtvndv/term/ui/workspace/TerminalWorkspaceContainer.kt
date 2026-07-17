@@ -40,6 +40,7 @@ fun TerminalWorkspaceContainer(
     extraKeysController: com.mrndtvndv.term.ui.keyboard.ExtraKeysController,
     onViewCreated: (TerminalView) -> Unit,
     onViewReleased: (TerminalView) -> Unit,
+    onOpenUrl: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     AndroidView(
@@ -75,7 +76,7 @@ fun TerminalWorkspaceContainer(
                     override fun onSingleTapUp(e: MotionEvent) {
                         val url = getTerminalTranscriptUrlOnTap(e)
                         if (url != null) {
-                            ShareUtils.openUrl(context, url)
+                            onOpenUrl(url)
                             return
                         }
                         this@apply.requestFocus()

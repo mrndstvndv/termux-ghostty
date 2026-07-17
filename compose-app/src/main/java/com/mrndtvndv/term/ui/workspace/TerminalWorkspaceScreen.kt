@@ -22,6 +22,7 @@ import com.mrndtvndv.term.ui.sftp.SftpViewModel
 import com.mrndtvndv.term.ui.keyboard.ExtraKeysToolbar
 import com.mrndtvndv.term.ui.keyboard.ExtraKeysController
 import com.termux.view.TerminalView
+import com.mrndtvndv.term.ui.browser.InAppBrowser
 import kotlinx.coroutines.flow.filterIsInstance
 import java.io.File
 
@@ -42,9 +43,12 @@ fun TabbedWorkspace(
     onPageSelected: (Int) -> Unit,
     onOpenFile: (File) -> Unit,
     onOpenFileError: (String) -> Unit,
+    browserUrl: String,
+    onBrowserUrlChanged: (String) -> Unit,
+    onOpenUrl: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val pageCount = if (sftpViewModel != null) 2 else 1
+    val pageCount = if (sftpViewModel != null) 3 else 2
     val pagerState = rememberPagerState(
         initialPage = activePage,
         pageCount = { pageCount }
@@ -67,33 +71,33 @@ fun TabbedWorkspace(
     Scaffold(
         modifier = modifier.fillMaxSize(),
         topBar = {
-            if (sftpViewModel != null) {
-                TabRow(
-                    selectedTabIndex = activePage,
-                    containerColor = MaterialTheme.colorScheme.surface,
-                    contentColor = MaterialTheme.colorScheme.onSurface,
-                    indicator = { tabPositions ->
-                        if (activePage < tabPositions.size) {
-                            TabRowDefaults.SecondaryIndicator(
-                                modifier = Modifier.tabIndicatorOffset(tabPositions[activePage]),
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
+            TabRow(
+                selectedTabIndex = activePage,
+                containerColor = MaterialTheme.colorScheme.surface,
+                contentColor = MaterialTheme.colorScheme.onSurface,
+                indicator = { tabPositions ->
+                    if (activePage < tabPositions.size) {
+                        TabRowDefaults.SecondaryIndicator(
+                            modifier = Modifier.tabIndicatorOffset(tabPositions[activePage]),
+                            color = MaterialTheme.colorScheme.primary
+                        )
                     }
-                ) {
-                    Tab(
-                        selected = activePage == 0,
-                        onClick = { onPageSelected(0) },
-                        selectedContentColor = MaterialTheme.colorScheme.primary,
-                        unselectedContentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                        text = {
-                            Text(
-                                text = "Terminal",
-                                color = if (activePage == 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                                fontWeight = if (activePage == 0) FontWeight.Bold else FontWeight.Normal
-                            )
-                        }
-                    )
+                }
+            ) {
+                Tab(
+                    selected = activePage == 0,
+                    onClick = { onPageSelected(0) },
+                    selectedContentColor = MaterialTheme.colorScheme.primary,
+                    unselectedContentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                    text = {
+                        Text(
+                            text = "Terminal",
+                            color = if (activePage == 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                            fontWeight = if (activePage == 0) FontWeight.Bold else FontWeight.Normal
+                        )
+                    }
+                )
+                if (sftpViewModel != null) {
                     Tab(
                         selected = activePage == 1,
                         onClick = { onPageSelected(1) },
@@ -108,6 +112,20 @@ fun TabbedWorkspace(
                         }
                     )
                 }
+                val browserTabIdx = if (sftpViewModel != null) 2 else 1
+                Tab(
+                    selected = activePage == browserTabIdx,
+                    onClick = { onPageSelected(browserTabIdx) },
+                    selectedContentColor = MaterialTheme.colorScheme.primary,
+                    unselectedContentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                    text = {
+                        Text(
+                            text = "Browser",
+                            color = if (activePage == browserTabIdx) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                            fontWeight = if (activePage == browserTabIdx) FontWeight.Bold else FontWeight.Normal
+                        )
+                    }
+                )
             }
         }
     ) { paddingValues ->
@@ -129,7 +147,8 @@ fun TabbedWorkspace(
                                 extraKeysController = extraKeysController,
                                 isTerminalActive = true,
                                 onViewCreated = onViewCreated,
-                                onViewReleased = onViewReleased
+                                onViewReleased = onViewReleased,
+                                onOpenUrl = onOpenUrl
                             )
                         }
                         if (extraKeysEnabled) {
@@ -149,6 +168,21 @@ fun TabbedWorkspace(
                             onOpenFile = onOpenFile,
                             onOpenFileError = onOpenFileError
                         )
+                    } else {
+                        InAppBrowser(
+                            initialUrl = browserUrl,
+                            onUrlChanged = onBrowserUrlChanged,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+                }
+                2 -> {
+                    if (sftpViewModel != null) {
+                        InAppBrowser(
+                            initialUrl = browserUrl,
+                            onUrlChanged = onBrowserUrlChanged,
+                            modifier = Modifier.fillMaxSize()
+                        )
                     }
                 }
             }
@@ -167,16 +201,18 @@ fun SplitWorkspace(
     extraKeysJson: String,
     onViewCreated: (TerminalView) -> Unit,
     onViewReleased: (TerminalView) -> Unit,
-    sftpVisible: Boolean,
     onOpenFile: (File) -> Unit,
     onOpenFileError: (String) -> Unit,
+    browserUrl: String,
+    onBrowserUrlChanged: (String) -> Unit,
+    onOpenUrl: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
         val totalWidth = maxWidth
-        val isSftpOpen = sftpViewModel != null && sftpVisible
+        val hasRightPanel = true // Always has Browser, and optionally SFTP
 
-        val terminalWidth = if (isSftpOpen) {
+        val terminalWidth = if (hasRightPanel) {
             if (foldingFeature != null && foldingFeature.isSeparating) {
                 val foldDp = foldingFeature.bounds.left.dp
                 if (foldDp > 0.dp && foldDp < totalWidth) foldDp else totalWidth * 0.6f
@@ -186,7 +222,7 @@ fun SplitWorkspace(
         } else {
             totalWidth
         }
-        val sftpWidth = totalWidth - terminalWidth
+        val rightPanelWidth = totalWidth - terminalWidth
 
         Row(modifier = Modifier.fillMaxSize()) {
             Column(modifier = Modifier.width(terminalWidth)) {
@@ -196,7 +232,8 @@ fun SplitWorkspace(
                         extraKeysController = extraKeysController,
                         isTerminalActive = true,
                         onViewCreated = onViewCreated,
-                        onViewReleased = onViewReleased
+                        onViewReleased = onViewReleased,
+                        onOpenUrl = onOpenUrl
                     )
                 }
                 if (extraKeysEnabled) {
@@ -208,14 +245,56 @@ fun SplitWorkspace(
                     )
                 }
             }
-            if (isSftpOpen) {
+            if (hasRightPanel) {
                 VerticalDivider(modifier = Modifier.fillMaxHeight(), thickness = 1.dp, color = MaterialTheme.colorScheme.outline)
-                Box(modifier = Modifier.width(sftpWidth)) {
-                    SftpFileBrowser(
-                        viewModel = sftpViewModel!!,
-                        onOpenFile = onOpenFile,
-                        onOpenFileError = onOpenFileError
-                    )
+                Column(modifier = Modifier.width(rightPanelWidth).fillMaxHeight()) {
+                    if (sftpViewModel != null) {
+                        var rightActivePage by remember { mutableIntStateOf(0) }
+                        LaunchedEffect(browserUrl) {
+                            if (browserUrl.isNotEmpty() && browserUrl != "https://google.com") {
+                                rightActivePage = 1
+                            }
+                        }
+                        
+                        TabRow(
+                            selectedTabIndex = rightActivePage,
+                            containerColor = MaterialTheme.colorScheme.surface,
+                            contentColor = MaterialTheme.colorScheme.onSurface
+                        ) {
+                            Tab(
+                                selected = rightActivePage == 0,
+                                onClick = { rightActivePage = 0 },
+                                text = { Text("SFTP Explorer") }
+                            )
+                            Tab(
+                                selected = rightActivePage == 1,
+                                onClick = { rightActivePage = 1 },
+                                text = { Text("Browser") }
+                            )
+                        }
+                        
+                        Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                            if (rightActivePage == 0) {
+                                SftpFileBrowser(
+                                    viewModel = sftpViewModel,
+                                    onOpenFile = onOpenFile,
+                                    onOpenFileError = onOpenFileError
+                                )
+                            } else {
+                                InAppBrowser(
+                                    initialUrl = browserUrl,
+                                    onUrlChanged = onBrowserUrlChanged,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            }
+                        }
+                    } else {
+                        InAppBrowser(
+                            initialUrl = browserUrl,
+                            onUrlChanged = onBrowserUrlChanged,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
                 }
             }
         }
@@ -232,9 +311,11 @@ fun TerminalWorkspaceScreen(
     onViewReleased: (TerminalView) -> Unit,
     activePage: Int,
     onPageSelected: (Int) -> Unit,
-    sftpVisible: Boolean,
     onOpenFile: (File) -> Unit,
     onOpenFileError: (String) -> Unit,
+    browserUrl: String,
+    onBrowserUrlChanged: (String) -> Unit,
+    onOpenUrl: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -280,9 +361,11 @@ fun TerminalWorkspaceScreen(
             extraKeysJson = extraKeysJson,
             onViewCreated = handleViewCreated,
             onViewReleased = handleViewReleased,
-            sftpVisible = sftpVisible,
             onOpenFile = onOpenFile,
             onOpenFileError = onOpenFileError,
+            browserUrl = browserUrl,
+            onBrowserUrlChanged = onBrowserUrlChanged,
+            onOpenUrl = onOpenUrl,
             modifier = modifier
         )
     } else {
@@ -299,6 +382,9 @@ fun TerminalWorkspaceScreen(
             onPageSelected = onPageSelected,
             onOpenFile = onOpenFile,
             onOpenFileError = onOpenFileError,
+            browserUrl = browserUrl,
+            onBrowserUrlChanged = onBrowserUrlChanged,
+            onOpenUrl = onOpenUrl,
             modifier = modifier
         )
     }

@@ -67,6 +67,7 @@ fun TerminalFocusWrapper(
     isTerminalActive: Boolean,
     onViewCreated: (TerminalView) -> Unit,
     onViewReleased: (TerminalView) -> Unit,
+    onOpenUrl: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val focusRequester = remember { FocusRequester() }
@@ -94,7 +95,8 @@ fun TerminalFocusWrapper(
             session = session,
             extraKeysController = extraKeysController,
             onViewCreated = onViewCreated,
-            onViewReleased = onViewReleased
+            onViewReleased = onViewReleased,
+            onOpenUrl = onOpenUrl
         )
     }
 }

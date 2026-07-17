@@ -19,6 +19,8 @@ import com.mrndtvndv.term.domain.SshSession
 import com.mrndtvndv.term.ui.dashboard.DashboardScreen
 import com.mrndtvndv.term.ui.theme.TermuxGhosttyTheme
 import com.mrndtvndv.term.ui.workspace.TerminalWorkspaceScreen
+import com.mrndtvndv.term.ui.sftp.SftpViewModel
+import com.mrndtvndv.term.domain.SftpClient
 import com.termux.shared.termux.terminal.TermuxTerminalSessionClientBase
 import com.termux.terminal.TerminalSession
 import com.termux.terminal.TerminalColors
@@ -94,6 +96,11 @@ class MainActivity : ComponentActivity() {
 
     private val terminalSessionState = mutableStateOf<TerminalSession?>(null)
     private val screenState = mutableStateOf<ScreenState>(ScreenState.Dashboard)
+    
+    private var sftpClient: SftpClient? = null
+    private val sftpViewModelState = mutableStateOf<SftpViewModel?>(null)
+    private val sftpActivePageState = mutableIntStateOf(0)
+    private val sftpVisibleState = mutableStateOf(false)
     
     private val connectionLoading = mutableStateOf(false)
     private val connectionError = mutableStateOf<String?>(null)
@@ -378,22 +385,26 @@ class MainActivity : ComponentActivity() {
                             }
                             is ScreenState.TerminalWorkspace -> {
                                 if (termSession != null) {
-                                    TerminalWorkspaceScreen(
-                                        session = termSession!!,
-                                        extraKeysEnabled = extraKeysEnabled,
-                                        extraKeysJson = resolvedJson,
-                                        onViewCreated = { view ->
-                                            activeTerminalView = view
-                                            registerForContextMenu(view)
-                                        },
-                                        onViewReleased = { view ->
-                                            activeTerminalView?.let { unregisterForContextMenu(it) }
-                                            if (activeTerminalView === view) {
-                                                activeTerminalView = null
-                                            }
-                                        },
-                                        modifier = Modifier.fillMaxSize()
-                                    )
+                                     TerminalWorkspaceScreen(
+                                         session = termSession!!,
+                                         sftpViewModel = sftpViewModelState.value,
+                                         extraKeysEnabled = extraKeysEnabled,
+                                         extraKeysJson = resolvedJson,
+                                         onViewCreated = { view ->
+                                             activeTerminalView = view
+                                             registerForContextMenu(view)
+                                         },
+                                         onViewReleased = { view ->
+                                             activeTerminalView?.let { unregisterForContextMenu(it) }
+                                             if (activeTerminalView === view) {
+                                                 activeTerminalView = null
+                                             }
+                                         },
+                                         activePage = sftpActivePageState.intValue,
+                                         onPageSelected = { sftpActivePageState.intValue = it },
+                                         sftpVisible = sftpVisibleState.value,
+                                         modifier = Modifier.fillMaxSize()
+                                     )
                                 }
                             }
                         }
@@ -514,6 +525,19 @@ class MainActivity : ComponentActivity() {
                     apply()
                 }
 
+                // Connect native SFTP client in background
+                lifecycleScope.launch(Dispatchers.IO) {
+                    try {
+                        val sftp = session.openSftpClient()
+                        sftpClient = sftp
+                        withContext(Dispatchers.Main) {
+                            sftpViewModelState.value = SftpViewModel(sftp, SavedStateHandle())
+                        }
+                    } catch (e: Exception) {
+                        android.util.Log.e("MainActivity", "Failed to initialize native SFTP", e)
+                    }
+                }
+
                 connectionLoading.value = false
                 screenState.value = ScreenState.TerminalWorkspace
                 
@@ -548,6 +572,13 @@ class MainActivity : ComponentActivity() {
             shellChannel?.close()
         } catch (e: Exception) {}
         shellChannel = null
+        try {
+            sftpClient?.close()
+        } catch (e: Exception) {}
+        sftpClient = null
+        sftpViewModelState.value = null
+        sftpActivePageState.intValue = 0
+        sftpVisibleState.value = false
         try {
             sshSession?.disconnect()
         } catch (e: Exception) {}

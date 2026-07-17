@@ -1,6 +1,7 @@
 plugins {
     id 'com.android.application'
     id 'org.jetbrains.kotlin.android'
+    id 'org.jetbrains.kotlin.plugin.compose'
 }
 
 android {
@@ -31,9 +32,7 @@ android {
         compose true
     }
 
-    composeOptions {
-        kotlinCompilerExtensionVersion '1.5.14' // Matches Kotlin 1.9.24
-    }
+
 
     packaging {
         resources {
@@ -81,6 +80,9 @@ dependencies {
     
     // Conscrypt for faster & secure cryptographic operations on Android
     implementation 'org.conscrypt:conscrypt-android:2.6.0'
+
+    // Syntax Highlighting
+    implementation 'dev.hossain:compose-highlight:0.20.0'
 
     coreLibraryDesugaring "com.android.tools:desugar_jdk_libs:1.1.5"
 

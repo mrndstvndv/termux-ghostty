@@ -160,7 +160,7 @@ fun TabbedWorkspace(
         HorizontalPager(
             state = pagerState,
             userScrollEnabled = false, // Disable swipe so terminal selection / scrolling works
-            beyondBoundsPageCount = 2,
+            beyondViewportPageCount = 2,
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)

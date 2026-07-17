@@ -121,7 +121,7 @@ fun GitReviewScreen(
         if (selectedFile != null) {
             Scaffold(
                 topBar = {
-                    SmallTopAppBar(
+                    TopAppBar(
                         title = {
                             Column {
                                 Text(
@@ -145,7 +145,7 @@ fun GitReviewScreen(
                                 )
                             }
                         },
-                        colors = TopAppBarDefaults.smallTopAppBarColors(
+                        colors = TopAppBarDefaults.topAppBarColors(
                             containerColor = MaterialTheme.colorScheme.surface
                         )
                     )

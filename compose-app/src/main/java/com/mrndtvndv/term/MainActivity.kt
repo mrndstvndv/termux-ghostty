@@ -400,8 +400,42 @@ class MainActivity : ComponentActivity() {
                                                  activeTerminalView = null
                                              }
                                          },
+
                                          activePage = sftpActivePageState.intValue,
-                                         onPageSelected = { sftpActivePageState.intValue = it },
+                                         onPageSelected = { page ->
+                                             if (page == 1 && sftpViewModelState.value != null) {
+                                                 lifecycleScope.launch {
+                                                     val herdrIntegration = sharedPreferences.getBoolean("herdr_integration", false)
+                                                     var resolvedCwd = "/"
+                                                     if (herdrIntegration) {
+                                                         try {
+                                                             val output = sshSession?.execCommand("herdr pane current") ?: ""
+                                                             val match = Regex("(?i)cwd[:=]\\s*([^\\n\\r]+)").find(output)
+                                                                 ?: Regex("\"cwd\"\\s*:\\s*\"([^\"]+)\"").find(output)
+                                                             val path = match?.groupValues?.get(1)?.trim()
+                                                             if (!path.isNullOrEmpty()) {
+                                                                 resolvedCwd = path
+                                                             } else if (output.trim().startsWith("/")) {
+                                                                 resolvedCwd = output.trim()
+                                                             } else {
+                                                                 val termCwd = termSession?.cwd
+                                                                 if (!termCwd.isNullOrEmpty()) resolvedCwd = termCwd
+                                                             }
+                                                         } catch (e: Exception) {
+                                                             val termCwd = termSession?.cwd
+                                                             if (!termCwd.isNullOrEmpty()) resolvedCwd = termCwd
+                                                         }
+                                                     } else {
+                                                         val termCwd = termSession?.cwd
+                                                         if (!termCwd.isNullOrEmpty()) resolvedCwd = termCwd
+                                                     }
+                                                     sftpViewModelState.value?.navigateTo(resolvedCwd)
+                                                     sftpActivePageState.intValue = page
+                                                 }
+                                             } else {
+                                                 sftpActivePageState.intValue = page
+                                             }
+                                         },
                                          sftpVisible = sftpVisibleState.value,
                                          modifier = Modifier.fillMaxSize()
                                      )

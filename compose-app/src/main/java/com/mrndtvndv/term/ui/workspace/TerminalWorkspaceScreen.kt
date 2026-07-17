@@ -26,6 +26,12 @@ import com.mrndtvndv.term.ui.browser.InAppBrowser
 import kotlinx.coroutines.flow.filterIsInstance
 import java.io.File
 
+sealed interface WorkspaceTab {
+    object Terminal : WorkspaceTab
+    object Sftp : WorkspaceTab
+    object Browser : WorkspaceTab
+}
+
 class Ref<T>(var value: T? = null)
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -48,23 +54,64 @@ fun TabbedWorkspace(
     onOpenUrl: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val pageCount = if (sftpViewModel != null) 3 else 2
+    val activeTabs = remember(sftpViewModel) {
+        buildList {
+            add(WorkspaceTab.Terminal)
+            if (sftpViewModel != null) {
+                add(WorkspaceTab.Sftp)
+            }
+            add(WorkspaceTab.Browser)
+        }
+    }
+
     val pagerState = rememberPagerState(
         initialPage = activePage,
-        pageCount = { pageCount }
+        pageCount = { activeTabs.size }
     )
+
+    var lastSelectedTabType by remember { mutableStateOf<WorkspaceTab>(WorkspaceTab.Terminal) }
+
+    // Sync lastSelectedTabType when activePage or activeTabs change
+    LaunchedEffect(activePage, activeTabs) {
+        if (activePage in activeTabs.indices) {
+            lastSelectedTabType = activeTabs[activePage]
+        }
+    }
+
+    // Align activePage when the activeTabs list changes to keep the same tab type focused
+    LaunchedEffect(activeTabs) {
+        val targetIndex = activeTabs.indexOf(lastSelectedTabType)
+        if (targetIndex != -1 && targetIndex != activePage) {
+            onPageSelected(targetIndex)
+        }
+    }
 
     // Synchronize pagerState with activePage selected from TabRow
     LaunchedEffect(activePage) {
-        if (pagerState.currentPage != activePage && activePage < pageCount) {
+        if (pagerState.currentPage != activePage && activePage < activeTabs.size) {
             pagerState.scrollToPage(activePage)
         }
     }
 
     // Synchronize activePage with pagerState (e.g. when page is selected)
     LaunchedEffect(pagerState.currentPage) {
-        if (pagerState.currentPage != activePage) {
+        if (pagerState.currentPage != activePage && pagerState.currentPage < activeTabs.size) {
             onPageSelected(pagerState.currentPage)
+        }
+    }
+
+    // Synchronize activePage to Browser tab when a URL is loaded (skip first composition)
+    var isFirstCompose by remember { mutableStateOf(true) }
+    LaunchedEffect(browserUrl) {
+        if (isFirstCompose) {
+            isFirstCompose = false
+            return@LaunchedEffect
+        }
+        if (browserUrl.isNotEmpty()) {
+            val browserIndex = activeTabs.indexOf(WorkspaceTab.Browser)
+            if (browserIndex != -1 && pagerState.currentPage != browserIndex) {
+                onPageSelected(browserIndex)
+            }
         }
     }
 
@@ -84,48 +131,27 @@ fun TabbedWorkspace(
                     }
                 }
             ) {
-                Tab(
-                    selected = activePage == 0,
-                    onClick = { onPageSelected(0) },
-                    selectedContentColor = MaterialTheme.colorScheme.primary,
-                    unselectedContentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                    text = {
-                        Text(
-                            text = "Terminal",
-                            color = if (activePage == 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                            fontWeight = if (activePage == 0) FontWeight.Bold else FontWeight.Normal
-                        )
-                    }
-                )
-                if (sftpViewModel != null) {
+                activeTabs.forEachIndexed { index, tab ->
+                    val isSelected = activePage == index
                     Tab(
-                        selected = activePage == 1,
-                        onClick = { onPageSelected(1) },
+                        selected = isSelected,
+                        onClick = { onPageSelected(index) },
                         selectedContentColor = MaterialTheme.colorScheme.primary,
                         unselectedContentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                         text = {
+                            val title = when (tab) {
+                                WorkspaceTab.Terminal -> "Terminal"
+                                WorkspaceTab.Sftp -> "SFTP Explorer"
+                                WorkspaceTab.Browser -> "Browser"
+                            }
                             Text(
-                                text = "SFTP Explorer",
-                                color = if (activePage == 1) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                                fontWeight = if (activePage == 1) FontWeight.Bold else FontWeight.Normal
+                                text = title,
+                                color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
                             )
                         }
                     )
                 }
-                val browserTabIdx = if (sftpViewModel != null) 2 else 1
-                Tab(
-                    selected = activePage == browserTabIdx,
-                    onClick = { onPageSelected(browserTabIdx) },
-                    selectedContentColor = MaterialTheme.colorScheme.primary,
-                    unselectedContentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                    text = {
-                        Text(
-                            text = "Browser",
-                            color = if (activePage == browserTabIdx) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                            fontWeight = if (activePage == browserTabIdx) FontWeight.Bold else FontWeight.Normal
-                        )
-                    }
-                )
             }
         }
     ) { paddingValues ->
@@ -138,46 +164,40 @@ fun TabbedWorkspace(
                 .padding(paddingValues)
                 .clipToBounds()
         ) { page ->
-            when (page) {
-                0 -> {
-                    Column(modifier = Modifier.fillMaxSize()) {
-                        Box(modifier = Modifier.weight(1f)) {
-                            TerminalFocusWrapper(
-                                session = session,
-                                extraKeysController = extraKeysController,
-                                isTerminalActive = true,
-                                onViewCreated = onViewCreated,
-                                onViewReleased = onViewReleased,
-                                onOpenUrl = onOpenUrl
-                            )
+            if (page < activeTabs.size) {
+                when (activeTabs[page]) {
+                    WorkspaceTab.Terminal -> {
+                        Column(modifier = Modifier.fillMaxSize()) {
+                            Box(modifier = Modifier.weight(1f)) {
+                                TerminalFocusWrapper(
+                                    session = session,
+                                    extraKeysController = extraKeysController,
+                                    isTerminalActive = true,
+                                    onViewCreated = onViewCreated,
+                                    onViewReleased = onViewReleased,
+                                    onOpenUrl = onOpenUrl
+                                )
+                            }
+                            if (extraKeysEnabled) {
+                                ExtraKeysToolbar(
+                                    extraKeysController = extraKeysController,
+                                    getActiveTerminalView = getActiveTerminalView,
+                                    session = session,
+                                    extraKeysJson = extraKeysJson
+                                )
+                            }
                         }
-                        if (extraKeysEnabled) {
-                            ExtraKeysToolbar(
-                                extraKeysController = extraKeysController,
-                                getActiveTerminalView = getActiveTerminalView,
-                                session = session,
-                                extraKeysJson = extraKeysJson
+                    }
+                    WorkspaceTab.Sftp -> {
+                        if (sftpViewModel != null) {
+                            SftpFileBrowser(
+                                viewModel = sftpViewModel,
+                                onOpenFile = onOpenFile,
+                                onOpenFileError = onOpenFileError
                             )
                         }
                     }
-                }
-                1 -> {
-                    if (sftpViewModel != null) {
-                        SftpFileBrowser(
-                            viewModel = sftpViewModel,
-                            onOpenFile = onOpenFile,
-                            onOpenFileError = onOpenFileError
-                        )
-                    } else {
-                        InAppBrowser(
-                            initialUrl = browserUrl,
-                            onUrlChanged = onBrowserUrlChanged,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    }
-                }
-                2 -> {
-                    if (sftpViewModel != null) {
+                    WorkspaceTab.Browser -> {
                         InAppBrowser(
                             initialUrl = browserUrl,
                             onUrlChanged = onBrowserUrlChanged,
@@ -250,7 +270,12 @@ fun SplitWorkspace(
                 Column(modifier = Modifier.width(rightPanelWidth).fillMaxHeight()) {
                     if (sftpViewModel != null) {
                         var rightActivePage by remember { mutableIntStateOf(0) }
+                        var isFirstCompose by remember { mutableStateOf(true) }
                         LaunchedEffect(browserUrl) {
+                            if (isFirstCompose) {
+                                isFirstCompose = false
+                                return@LaunchedEffect
+                            }
                             if (browserUrl.isNotEmpty() && browserUrl != "https://google.com") {
                                 rightActivePage = 1
                             }

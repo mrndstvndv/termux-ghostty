@@ -26,6 +26,12 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 
+fun urlsMatch(url1: String?, url2: String?): Boolean {
+    if (url1 == url2) return true
+    if (url1 == null || url2 == null) return false
+    return url1.trim().removeSuffix("/") == url2.trim().removeSuffix("/")
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
@@ -52,7 +58,7 @@ fun InAppBrowser(
     // Handle initialUrl changes from external sources (e.g. terminal click)
     LaunchedEffect(initialUrl) {
         webView?.let {
-            if (it.url != initialUrl) {
+            if (!urlsMatch(it.url, initialUrl)) {
                 it.loadUrl(initialUrl)
             }
         }
@@ -201,8 +207,12 @@ fun InAppBrowser(
                             isLoading = true
                             progress = 0
                             url?.let {
-                                currentUrl = it
-                                onUrlChanged(it)
+                                if (!urlsMatch(currentUrl, it)) {
+                                    currentUrl = it
+                                }
+                                if (!urlsMatch(initialUrl, it)) {
+                                    onUrlChanged(it)
+                                }
                             }
                         }
 
@@ -211,8 +221,12 @@ fun InAppBrowser(
                             canGoBack = view?.canGoBack() ?: false
                             canGoForward = view?.canGoForward() ?: false
                             url?.let {
-                                currentUrl = it
-                                onUrlChanged(it)
+                                if (!urlsMatch(currentUrl, it)) {
+                                    currentUrl = it
+                                }
+                                if (!urlsMatch(initialUrl, it)) {
+                                    onUrlChanged(it)
+                                }
                             }
                         }
 

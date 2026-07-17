@@ -426,128 +426,23 @@ class MainActivity : ComponentActivity() {
                                          onOpenFileError = { errorMsg ->
                                              handleNotification("SFTP Error", errorMsg)
                                          },
-                                         onPageSelected = { page ->
+                                          onPageSelected = { page ->
                                                sftpActivePageState.intValue = page
-                                               if (page == 1 && sftpViewModelState.value != null) {
-                                                   lifecycleScope.launch(Dispatchers.IO) {
-                                                       try {
-                                                           val host = sshHost ?: ""
-                                                           val username = sshUsername ?: ""
-                                                           val port = sshPort
-                                                           val isHerdrEnabled = sharedPreferences.getBoolean("herdr_integration", false)
-                                                           var resolvedCwd = "/"
-                                                           var workspaceName: String? = null
-                                                           
-                                                           if (isHerdrEnabled) {
-                                                               try {
-                                                                   val output = sshSession?.execCommand("export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; herdr workspace list; herdr pane list") ?: ""
-                                                                   
-                                                                   var focusedWsId: String? = null
-                                                                   var wsLabel: String? = null
-                                                                   val panes = mutableListOf<JSONObject>()
-                                                                   
-                                                                   output.split("\n").forEach { line ->
-                                                                       val trimmed = line.trim()
-                                                                       if (trimmed.isNotEmpty()) {
-                                                                           try {
-                                                                               val json = JSONObject(trimmed)
-                                                                               val id = json.optString("id")
-                                                                               val result = json.optJSONObject("result")
-                                                                               if (result != null) {
-                                                                                   if (id == "cli:workspace:list") {
-                                                                                       val wsArray = result.optJSONArray("workspaces")
-                                                                                       if (wsArray != null) {
-                                                                                           for (i in 0 until wsArray.length()) {
-                                                                                               val ws = wsArray.optJSONObject(i)
-                                                                                               if (ws != null && ws.optBoolean("focused", false)) {
-                                                                                                   focusedWsId = ws.optString("workspace_id").takeIf { it.isNotEmpty() }
-                                                                                                   wsLabel = ws.optString("label").takeIf { it.isNotEmpty() }
-                                                                                                   break
-                                                                                               }
-                                                                                           }
-                                                                                       }
-                                                                                   } else if (id == "cli:pane:list") {
-                                                                                       val paneArray = result.optJSONArray("panes")
-                                                                                       if (paneArray != null) {
-                                                                                           for (i in 0 until paneArray.length()) {
-                                                                                               val pane = paneArray.optJSONObject(i)
-                                                                                               if (pane != null) {
-                                                                                                   panes.add(pane)
-                                                                                               }
-                                                                                           }
-                                                                                       }
-                                                                                   }
-                                                                               }
-                                                                           } catch (je: Exception) {
-                                                                               // ignore invalid JSON lines
-                                                                           }
-                                                                       }
-                                                                   }
-                                                                   
-                                                                   var paneCwd: String? = null
-                                                                   if (!focusedWsId.isNullOrEmpty()) {
-                                                                       for (pane in panes) {
-                                                                           if (pane.optString("workspace_id") == focusedWsId && pane.optBoolean("focused", false)) {
-                                                                               paneCwd = pane.optString("cwd").takeIf { it.isNotEmpty() }
-                                                                               break
-                                                                           }
-                                                                       }
-                                                                   }
-                                                                   
-                                                                   if (!paneCwd.isNullOrEmpty()) {
-                                                                       resolvedCwd = paneCwd
-                                                                   } else {
-                                                                       val termCwd = terminalSessionState.value?.cwd
-                                                                       if (!termCwd.isNullOrEmpty()) resolvedCwd = termCwd
-                                                                   }
-                                                                   
-                                                                   if (!wsLabel.isNullOrEmpty()) {
-                                                                       workspaceName = wsLabel
-                                                                   } else if (!focusedWsId.isNullOrEmpty()) {
-                                                                       workspaceName = focusedWsId
-                                                                   }
-                                                               } catch (e: Exception) {
-                                                                   val termCwd = terminalSessionState.value?.cwd
-                                                                   if (!termCwd.isNullOrEmpty()) resolvedCwd = termCwd
-                                                               }
-                                                           } else {
-                                                               val termCwd = terminalSessionState.value?.cwd
-                                                               if (!termCwd.isNullOrEmpty()) resolvedCwd = termCwd
-                                                           }
-                                                           
-                                                           val key = if (!workspaceName.isNullOrEmpty()) {
-                                                               "${workspaceName}_${host}_$username"
-                                                           } else {
-                                                               "$username@$host:$port"
-                                                           }
-                                                           
-                                                           if (activeWorkspaceKey != key) {
-                                                               activeWorkspaceKey = key
-                                                               val savedDir = sharedPreferences.getString("sftp_last_dir_$key", null)
-                                                               val targetDir = if (!savedDir.isNullOrEmpty()) savedDir else resolvedCwd
-                                                               
-                                                               withContext(Dispatchers.Main) {
-                                                                   sftpViewModelState.value?.navigateTo(targetDir)
-                                                               }
-                                                           }
-                                                       } catch (e: Exception) {
-                                                           android.util.Log.e("MainActivity", "Failed to resolve CWD/workspace for SFTP", e)
-                                                       }
-                                                   }
-                                               }
-                                           },
-                                         browserUrl = browserUrlState.value,
-                                         onBrowserUrlChanged = { url ->
-                                             browserUrlState.value = url
-                                         },
-                                         onOpenUrl = { url ->
-                                             if (useInAppBrowser) {
-                                                 browserUrlState.value = url
-                                                 sftpActivePageState.intValue = if (sftpViewModelState.value != null) 2 else 1
-                                             } else {
-                                                 ShareUtils.openUrl(this@MainActivity, url)
-                                             }
-                                         },
+                                          },
+                                          browserUrl = browserUrlState.value,
+                                          onBrowserUrlChanged = { url ->
+                                              browserUrlState.value = url
+                                              activeWorkspaceKey?.let { key ->
+                                                  sharedPreferences.edit().putString("browser_last_url_$key", url).apply()
+                                              }
+                                          },
+                                          onOpenUrl = { url ->
+                                              if (useInAppBrowser) {
+                                                  browserUrlState.value = url
+                                              } else {
+                                                  ShareUtils.openUrl(this@MainActivity, url)
+                                              }
+                                          },
                                          modifier = Modifier.fillMaxSize()
                                      )
                                 }
@@ -674,26 +569,113 @@ class MainActivity : ComponentActivity() {
                     apply()
                 }
 
-                // Connect native SFTP client in background
-                lifecycleScope.launch(Dispatchers.IO) {
-                    try {
-                        val sftp = session.openSftpClient()
-                        sftpClient = sftp
-                        
-                        withContext(Dispatchers.Main) {
-                            val viewModel = SftpViewModel(sftp, SavedStateHandle(), "/")
-                            viewModel.onPathChanged = { path ->
-                                activeWorkspaceKey?.let { k ->
-                                    sharedPreferences.edit().putString("sftp_last_dir_$k", path).apply()
+                // Resolve workspace and configure browser/SFTP in background
+                                lifecycleScope.launch(Dispatchers.IO) {
+                                    val isHerdrEnabled = sharedPreferences.getBoolean("herdr_integration", false)
+                                    var workspaceName: String? = null
+                                    var resolvedCwd = "/"
+
+                                    if (isHerdrEnabled) {
+                                        try {
+                                            val output = session.execCommand("export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; herdr workspace list; herdr pane list")
+                                            var focusedWsId: String? = null
+                                            var wsLabel: String? = null
+                                            val panes = mutableListOf<JSONObject>()
+
+                                            output.split("\n").forEach { line ->
+                                                val trimmed = line.trim()
+                                                if (trimmed.isNotEmpty()) {
+                                                    try {
+                                                        val json = JSONObject(trimmed)
+                                                        val id = json.optString("id")
+                                                        val result = json.optJSONObject("result")
+                                                        if (result != null) {
+                                                            if (id == "cli:workspace:list") {
+                                                                val wsArray = result.optJSONArray("workspaces")
+                                                                if (wsArray != null) {
+                                                                    for (i in 0 until wsArray.length()) {
+                                                                        val ws = wsArray.optJSONObject(i)
+                                                                        if (ws != null && ws.optBoolean("focused", false)) {
+                                                                            focusedWsId = ws.optString("workspace_id").takeIf { it.isNotEmpty() }
+                                                                            wsLabel = ws.optString("label").takeIf { it.isNotEmpty() }
+                                                                            break
+                                                                        }
+                                                                    }
+                                                                }
+                                                            } else if (id == "cli:pane:list") {
+                                                                val paneArray = result.optJSONArray("panes")
+                                                                if (paneArray != null) {
+                                                                    for (i in 0 until paneArray.length()) {
+                                                                        val pane = paneArray.optJSONObject(i)
+                                                                        if (pane != null) {
+                                                                            panes.add(pane)
+                                                                        }
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    } catch (je: Exception) {
+                                                        // ignore
+                                                    }
+                                                }
+                                            }
+
+                                            var paneCwd: String? = null
+                                            if (!focusedWsId.isNullOrEmpty()) {
+                                                for (pane in panes) {
+                                                    if (pane.optString("workspace_id") == focusedWsId && pane.optBoolean("focused", false)) {
+                                                        paneCwd = pane.optString("cwd").takeIf { it.isNotEmpty() }
+                                                        break
+                                                    }
+                                                }
+                                            }
+                                            if (!paneCwd.isNullOrEmpty()) {
+                                                resolvedCwd = paneCwd
+                                            }
+                                            if (!wsLabel.isNullOrEmpty()) {
+                                                workspaceName = wsLabel
+                                            } else if (!focusedWsId.isNullOrEmpty()) {
+                                                workspaceName = focusedWsId
+                                            }
+                                        } catch (e: Exception) {
+                                            // ignore
+                                        }
+                                    }
+
+                                    val key = if (!workspaceName.isNullOrEmpty()) {
+                                        "${workspaceName}_${host}_$username"
+                                    } else {
+                                        "$username@$host:$port"
+                                    }
+
+                                    activeWorkspaceKey = key
+
+                                    val savedUrl = sharedPreferences.getString("browser_last_url_$key", "https://google.com") ?: "https://google.com"
+                                    withContext(Dispatchers.Main) {
+                                        browserUrlState.value = savedUrl
+                                    }
+
+                                    try {
+                                        val sftp = session.openSftpClient()
+                                        sftpClient = sftp
+                                        
+                                        val savedDir = sharedPreferences.getString("sftp_last_dir_$key", null)
+                                        val initialDir = if (!savedDir.isNullOrEmpty()) savedDir else resolvedCwd
+
+                                        withContext(Dispatchers.Main) {
+                                            val viewModel = SftpViewModel(sftp, SavedStateHandle(), initialDir)
+                                            viewModel.onPathChanged = { path ->
+                                                activeWorkspaceKey?.let { k ->
+                                                    sharedPreferences.edit().putString("sftp_last_dir_$k", path).apply()
+                                                }
+                                            }
+                                            sftpViewModelState.value = viewModel
+                                            sftpVisibleState.value = true
+                                        }
+                                    } catch (e: Exception) {
+                                        android.util.Log.e("MainActivity", "Failed to initialize native SFTP", e)
+                                    }
                                 }
-                            }
-                            sftpViewModelState.value = viewModel
-                            sftpVisibleState.value = true
-                        }
-                    } catch (e: Exception) {
-                        android.util.Log.e("MainActivity", "Failed to initialize native SFTP", e)
-                    }
-                }
 
                 connectionLoading.value = false
                 screenState.value = ScreenState.TerminalWorkspace
@@ -736,6 +718,7 @@ class MainActivity : ComponentActivity() {
         sftpViewModelState.value = null
         sftpActivePageState.intValue = 0
         sftpVisibleState.value = false
+        activeWorkspaceKey = null
         try {
             sshSession?.disconnect()
         } catch (e: Exception) {}

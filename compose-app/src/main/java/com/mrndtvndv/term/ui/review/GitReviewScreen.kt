@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -479,59 +480,187 @@ fun DiffViewer(
                 }
             } else {
                 val scrollState = rememberScrollState()
+                val horizScrollState = rememberScrollState()
                 val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+                val fallbackColor = MaterialTheme.colorScheme.onSurface
 
-                Column(
+                val parsedLines = remember(diffText) {
+                    var currentOldLine = 0
+                    var currentNewLine = 0
+                    diffText.split("\n").map { line ->
+                        when {
+                            line.startsWith("@@ ") -> {
+                                val match = Regex("""@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@""").find(line)
+                                if (match != null) {
+                                    currentOldLine = match.groupValues[1].toInt()
+                                    currentNewLine = match.groupValues[2].toInt()
+                                }
+                                ParsedDiffLine(line, "", "", DiffLineType.HUNK_HEADER)
+                            }
+                            line.startsWith("+") && !line.startsWith("+++") -> {
+                                val lineNum = currentNewLine.toString()
+                                currentNewLine++
+                                ParsedDiffLine(line, "", lineNum, DiffLineType.ADDITION)
+                            }
+                            line.startsWith("-") && !line.startsWith("---") -> {
+                                val lineNum = currentOldLine.toString()
+                                currentOldLine++
+                                ParsedDiffLine(line, lineNum, "", DiffLineType.DELETION)
+                            }
+                            line.startsWith(" ") -> {
+                                val oldNum = currentOldLine.toString()
+                                val newNum = currentNewLine.toString()
+                                currentOldLine++
+                                currentNewLine++
+                                ParsedDiffLine(line, oldNum, newNum, DiffLineType.CONTEXT)
+                            }
+                            line.startsWith("diff --git") || line.startsWith("index ") || line.startsWith("--- ") || line.startsWith("+++ ") -> {
+                                ParsedDiffLine(line, "", "", DiffLineType.METADATA)
+                            }
+                            else -> {
+                                if (currentOldLine > 0) {
+                                    val oldNum = currentOldLine.toString()
+                                    val newNum = currentNewLine.toString()
+                                    currentOldLine++
+                                    currentNewLine++
+                                    ParsedDiffLine(line, oldNum, newNum, DiffLineType.CONTEXT)
+                                } else {
+                                    ParsedDiffLine(line, "", "", DiffLineType.METADATA)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Row(
                     modifier = Modifier
                         .fillMaxSize()
                         .verticalScroll(scrollState)
-                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
-                        .padding(8.dp)
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.1f))
                 ) {
-                    diffText.split("\n").forEach { line ->
-                        val (bgColor, textColor) = when {
-                            line.startsWith("+") && !line.startsWith("+++") -> {
-                                if (isDark) {
-                                    Color(0x222EA043) to Color(0xFF56D364)
-                                } else {
-                                    Color(0xFFE6FFEC) to Color(0xFF22863A)
-                                }
-                            }
-                            line.startsWith("-") && !line.startsWith("---") -> {
-                                if (isDark) {
-                                    Color(0x22F85149) to Color(0xFFF85149)
-                                } else {
-                                    Color(0xFFFFEEEE) to Color(0xFFCB2431)
-                                }
-                            }
-                            line.startsWith("@@") -> {
-                                if (isDark) {
-                                    Color(0x15388BFD) to Color(0xFF79C0FF)
-                                } else {
-                                    Color(0xFFF1F8FF) to Color(0xFF032F62)
-                                }
-                            }
-                            else -> {
-                                Color.Transparent to MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f)
+                    // 1. Line Numbers Column (Fixed on the Left)
+                    Column(
+                        modifier = Modifier
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
+                            .width(80.dp)
+                    ) {
+                        parsedLines.forEach { parsedLine ->
+                            val (bgColor, _) = getColors(parsedLine.type, isDark, fallbackColor)
+                            
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(20.dp)
+                                    .background(bgColor)
+                                    .padding(horizontal = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.End
+                            ) {
+                                Text(
+                                    text = parsedLine.oldLineNum,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                                    fontSize = 10.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    modifier = Modifier.width(32.dp),
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.End
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = parsedLine.newLineNum,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                                    fontSize = 10.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    modifier = Modifier.width(32.dp),
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.End
+                                )
                             }
                         }
+                    }
 
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(bgColor)
-                                .padding(horizontal = 4.dp, vertical = 2.dp)
-                        ) {
-                            Text(
-                                text = line,
-                                color = textColor,
-                                fontSize = 12.sp,
-                                fontFamily = FontFamily.Monospace
-                            )
+                    // Vertical Divider
+                    Box(
+                        modifier = Modifier
+                            .width(1.dp)
+                            .height((parsedLines.size * 20).dp)
+                            .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+                    )
+
+                    // 2. Code Lines Column (Horizontally Scrollable)
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .horizontalScroll(horizScrollState)
+                    ) {
+                        parsedLines.forEach { parsedLine ->
+                            val (bgColor, textColor) = getColors(parsedLine.type, isDark, fallbackColor)
+                            
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(20.dp)
+                                    .background(bgColor)
+                                    .padding(horizontal = 8.dp),
+                                contentAlignment = Alignment.CenterStart
+                            ) {
+                                Text(
+                                    text = parsedLine.text,
+                                    color = textColor,
+                                    fontSize = 12.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    softWrap = false
+                                )
+                            }
                         }
                     }
                 }
             }
+        }
+    }
+}
+
+data class ParsedDiffLine(
+    val text: String,
+    val oldLineNum: String,
+    val newLineNum: String,
+    val type: DiffLineType
+)
+
+enum class DiffLineType {
+    METADATA,
+    HUNK_HEADER,
+    CONTEXT,
+    ADDITION,
+    DELETION
+}
+
+private fun getColors(type: DiffLineType, isDark: Boolean, fallbackColor: Color): Pair<Color, Color> {
+    return when (type) {
+        DiffLineType.ADDITION -> {
+            if (isDark) {
+                Color(0x222EA043) to Color(0xFF56D364)
+            } else {
+                Color(0xFFE6FFEC) to Color(0xFF22863A)
+            }
+        }
+        DiffLineType.DELETION -> {
+            if (isDark) {
+                Color(0x22F85149) to Color(0xFFF85149)
+            } else {
+                Color(0xFFFFEEEE) to Color(0xFFCB2431)
+            }
+        }
+        DiffLineType.HUNK_HEADER -> {
+            if (isDark) {
+                Color(0x15388BFD) to Color(0xFF79C0FF)
+            } else {
+                Color(0xFFF1F8FF) to Color(0xFF032F62)
+            }
+        }
+        DiffLineType.METADATA -> {
+            Color.Transparent to fallbackColor.copy(alpha = 0.5f)
+        }
+        DiffLineType.CONTEXT -> {
+            Color.Transparent to fallbackColor.copy(alpha = 0.85f)
         }
     }
 }

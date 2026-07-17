@@ -74,6 +74,96 @@ fun InAppBrowser(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
     ) {
+        // WebView
+        AndroidView(
+            factory = { context ->
+                WebView(context).apply {
+                    layoutParams = ViewGroup.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT
+                    )
+                    settings.javaScriptEnabled = true
+                    settings.domStorageEnabled = true
+                    settings.useWideViewPort = true
+                    settings.loadWithOverviewMode = true
+                    settings.supportZoom()
+                    settings.builtInZoomControls = true
+                    settings.displayZoomControls = false
+
+                    webViewClient = object : WebViewClient() {
+                        override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
+                            isLoading = true
+                            progress = 0
+                            url?.let {
+                                if (!urlsMatch(currentUrl, it)) {
+                                    currentUrl = it
+                                }
+                                if (!urlsMatch(initialUrl, it)) {
+                                    onUrlChanged(it)
+                                }
+                            }
+                        }
+
+                        override fun onPageFinished(view: WebView?, url: String?) {
+                            isLoading = false
+                            canGoBack = view?.canGoBack() ?: false
+                            canGoForward = view?.canGoForward() ?: false
+                            url?.let {
+                                if (!urlsMatch(currentUrl, it)) {
+                                    currentUrl = it
+                                }
+                                if (!urlsMatch(initialUrl, it)) {
+                                    onUrlChanged(it)
+                                }
+                            }
+                        }
+
+                        override fun shouldOverrideUrlLoading(
+                            view: WebView?,
+                            request: WebResourceRequest?
+                        ): Boolean {
+                            // Load inside WebView
+                            return false
+                        }
+                    }
+
+                    webChromeClient = object : WebChromeClient() {
+                        override fun onProgressChanged(view: WebView?, newProgress: Int) {
+                            progress = newProgress
+                            if (newProgress == 100) {
+                                isLoading = false
+                            }
+                        }
+                    }
+
+                    loadUrl(currentUrl)
+                    webView = this
+                }
+            },
+            update = {
+                // Handled in LaunchedEffect
+            },
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+        )
+
+        // Progress Bar
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(3.dp)
+        ) {
+            if (isLoading) {
+                LinearProgressIndicator(
+                    progress = { progress / 100f },
+                    modifier = Modifier.fillMaxWidth(),
+                    color = MaterialTheme.colorScheme.primary,
+                    trackColor = MaterialTheme.colorScheme.surfaceVariant
+                )
+            }
+        }
+
         // Control Bar
         Row(
             modifier = Modifier
@@ -169,95 +259,5 @@ fun InAppBrowser(
                 }
             )
         }
-
-        // Progress Bar
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(3.dp)
-        ) {
-            if (isLoading) {
-                LinearProgressIndicator(
-                    progress = { progress / 100f },
-                    modifier = Modifier.fillMaxWidth(),
-                    color = MaterialTheme.colorScheme.primary,
-                    trackColor = MaterialTheme.colorScheme.surfaceVariant
-                )
-            }
-        }
-
-        // WebView
-        AndroidView(
-            factory = { context ->
-                WebView(context).apply {
-                    layoutParams = ViewGroup.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        ViewGroup.LayoutParams.MATCH_PARENT
-                    )
-                    settings.javaScriptEnabled = true
-                    settings.domStorageEnabled = true
-                    settings.useWideViewPort = true
-                    settings.loadWithOverviewMode = true
-                    settings.supportZoom()
-                    settings.builtInZoomControls = true
-                    settings.displayZoomControls = false
-
-                    webViewClient = object : WebViewClient() {
-                        override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
-                            isLoading = true
-                            progress = 0
-                            url?.let {
-                                if (!urlsMatch(currentUrl, it)) {
-                                    currentUrl = it
-                                }
-                                if (!urlsMatch(initialUrl, it)) {
-                                    onUrlChanged(it)
-                                }
-                            }
-                        }
-
-                        override fun onPageFinished(view: WebView?, url: String?) {
-                            isLoading = false
-                            canGoBack = view?.canGoBack() ?: false
-                            canGoForward = view?.canGoForward() ?: false
-                            url?.let {
-                                if (!urlsMatch(currentUrl, it)) {
-                                    currentUrl = it
-                                }
-                                if (!urlsMatch(initialUrl, it)) {
-                                    onUrlChanged(it)
-                                }
-                            }
-                        }
-
-                        override fun shouldOverrideUrlLoading(
-                            view: WebView?,
-                            request: WebResourceRequest?
-                        ): Boolean {
-                            // Load inside WebView
-                            return false
-                        }
-                    }
-
-                    webChromeClient = object : WebChromeClient() {
-                        override fun onProgressChanged(view: WebView?, newProgress: Int) {
-                            progress = newProgress
-                            if (newProgress == 100) {
-                                isLoading = false
-                            }
-                        }
-                    }
-
-                    loadUrl(currentUrl)
-                    webView = this
-                }
-            },
-            update = {
-                // Handled in LaunchedEffect
-            },
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth()
-        )
     }
 }

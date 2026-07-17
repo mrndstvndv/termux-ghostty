@@ -532,6 +532,17 @@ fun DiffViewer(
                     }
                 }
 
+                val maxLineNum = remember(parsedLines) {
+                    parsedLines.maxOfOrNull { 
+                        maxOf(it.oldLineNum.toIntOrNull() ?: 0, it.newLineNum.toIntOrNull() ?: 0) 
+                    } ?: 0
+                }
+                val digitCount = remember(maxLineNum) {
+                    maxLineNum.toString().length.coerceAtLeast(1)
+                }
+                val numWidth = remember(digitCount) { (digitCount * 7 + 4).dp }
+                val columnWidth = remember(numWidth) { numWidth * 2 + 8.dp }
+
                 Row(
                     modifier = Modifier
                         .fillMaxSize()
@@ -542,7 +553,7 @@ fun DiffViewer(
                     Column(
                         modifier = Modifier
                             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
-                            .width(80.dp)
+                            .width(columnWidth)
                     ) {
                         parsedLines.forEach { parsedLine ->
                             val (bgColor, _) = getColors(parsedLine.type, isDark, fallbackColor)
@@ -561,16 +572,16 @@ fun DiffViewer(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
                                     fontSize = 10.sp,
                                     fontFamily = FontFamily.Monospace,
-                                    modifier = Modifier.width(32.dp),
+                                    modifier = Modifier.width(numWidth),
                                     textAlign = androidx.compose.ui.text.style.TextAlign.End
                                 )
-                                Spacer(modifier = Modifier.width(8.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
                                 Text(
                                     text = parsedLine.newLineNum,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
                                     fontSize = 10.sp,
                                     fontFamily = FontFamily.Monospace,
-                                    modifier = Modifier.width(32.dp),
+                                    modifier = Modifier.width(numWidth),
                                     textAlign = androidx.compose.ui.text.style.TextAlign.End
                                 )
                             }

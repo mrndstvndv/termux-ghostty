@@ -671,7 +671,7 @@ class MainActivity : ComponentActivity() {
                                         sftpClient = sftp
                                         
                                         val savedDir = sharedPreferences.getString("sftp_last_dir_$key", null)
-                                        val initialDir = if (!savedDir.isNullOrEmpty()) savedDir else resolvedCwd
+                                        val initialDir = if (isHerdrEnabled) resolvedCwd else (if (!savedDir.isNullOrEmpty()) savedDir else resolvedCwd)
 
                                         withContext(Dispatchers.Main) {
                                             if (isHerdrEnabled) {

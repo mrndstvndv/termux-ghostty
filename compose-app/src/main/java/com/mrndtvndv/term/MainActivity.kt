@@ -430,7 +430,8 @@ class MainActivity : ComponentActivity() {
                                                                try {
                                                                    val output = sshSession?.execCommand("export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; herdr workspace list; herdr pane list") ?: ""
                                                                    
-                                                                   val workspaces = mutableListOf<JSONObject>()
+                                                                   var focusedWsId: String? = null
+                                                                   var wsLabel: String? = null
                                                                    val panes = mutableListOf<JSONObject>()
                                                                    
                                                                    output.split("\n").forEach { line ->
@@ -438,16 +439,32 @@ class MainActivity : ComponentActivity() {
                                                                        if (trimmed.isNotEmpty()) {
                                                                            try {
                                                                                val json = JSONObject(trimmed)
-                                                                               val event = when {
-                                                                                   json.has("event") -> json.getString("event")
-                                                                                   json.has("type") -> json.getString("type")
-                                                                                   json.has("command") -> json.getString("command")
-                                                                                   else -> ""
-                                                                               }
-                                                                               if (event == "cli:workspace:list") {
-                                                                                   workspaces.add(json)
-                                                                               } else if (event == "cli:pane:list") {
-                                                                                   panes.add(json)
+                                                                               val id = json.optString("id")
+                                                                               val result = json.optJSONObject("result")
+                                                                               if (result != null) {
+                                                                                   if (id == "cli:workspace:list") {
+                                                                                       val wsArray = result.optJSONArray("workspaces")
+                                                                                       if (wsArray != null) {
+                                                                                           for (i in 0 until wsArray.length()) {
+                                                                                               val ws = wsArray.optJSONObject(i)
+                                                                                               if (ws != null && ws.optBoolean("focused", false)) {
+                                                                                                   focusedWsId = ws.optString("workspace_id").takeIf { it.isNotEmpty() }
+                                                                                                   wsLabel = ws.optString("label").takeIf { it.isNotEmpty() }
+                                                                                                   break
+                                                                                               }
+                                                                                           }
+                                                                                       }
+                                                                                   } else if (id == "cli:pane:list") {
+                                                                                       val paneArray = result.optJSONArray("panes")
+                                                                                       if (paneArray != null) {
+                                                                                           for (i in 0 until paneArray.length()) {
+                                                                                               val pane = paneArray.optJSONObject(i)
+                                                                                               if (pane != null) {
+                                                                                                   panes.add(pane)
+                                                                                               }
+                                                                                           }
+                                                                                       }
+                                                                                   }
                                                                                }
                                                                            } catch (je: Exception) {
                                                                                // ignore invalid JSON lines
@@ -455,25 +472,15 @@ class MainActivity : ComponentActivity() {
                                                                        }
                                                                    }
                                                                    
-                                                                    var focusedWsId: String? = null
-                                                                    var wsLabel: String? = null
-                                                                    for (ws in workspaces) {
-                                                                        if (ws.optBoolean("focused", false)) {
-                                                                            focusedWsId = ws.optString("workspace_id").takeIf { it.isNotEmpty() }
-                                                                            wsLabel = ws.optString("label").takeIf { it.isNotEmpty() }
-                                                                            break
-                                                                        }
-                                                                    }
-                                                                    
-                                                                    var paneCwd: String? = null
-                                                                    if (!focusedWsId.isNullOrEmpty()) {
-                                                                        for (pane in panes) {
-                                                                            if (pane.optString("workspace_id") == focusedWsId && pane.optBoolean("focused", false)) {
-                                                                                paneCwd = pane.optString("cwd").takeIf { it.isNotEmpty() }
-                                                                                break
-                                                                            }
-                                                                        }
-                                                                    }
+                                                                   var paneCwd: String? = null
+                                                                   if (!focusedWsId.isNullOrEmpty()) {
+                                                                       for (pane in panes) {
+                                                                           if (pane.optString("workspace_id") == focusedWsId && pane.optBoolean("focused", false)) {
+                                                                               paneCwd = pane.optString("cwd").takeIf { it.isNotEmpty() }
+                                                                               break
+                                                                           }
+                                                                       }
+                                                                   }
                                                                    
                                                                    if (!paneCwd.isNullOrEmpty()) {
                                                                        resolvedCwd = paneCwd

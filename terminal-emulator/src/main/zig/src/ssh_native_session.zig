@@ -331,7 +331,7 @@ pub const SshNativeSession = struct {
         if ((directions & c.LIBSSH2_SESSION_BLOCK_OUTBOUND) != 0) {
             fds[0].events |= c.POLLOUT;
         }
-        _ = c.poll(&fds, 1, -1);
+        _ = c.poll(&fds, 1, 50);
     }
 
     fn runLoop(self: *SshNativeSession) void {

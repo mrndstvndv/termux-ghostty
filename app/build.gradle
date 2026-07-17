@@ -18,7 +18,7 @@ android {
     compileSdkVersion project.properties.compileSdkVersion.toInteger()
     ndkVersion = System.getenv("JITPACK_NDK_VERSION") ?: project.properties.ndkVersion
     def appVersionName = System.getenv("TERMUX_APP_VERSION_NAME") ?: ""
-    def apkVersionTag = System.getenv("TERMUX_APK_VERSION_TAG") ?: ""
+    project.ext.apkVersionTag = System.getenv("TERMUX_APK_VERSION_TAG") ?: ""
     def splitAPKsForDebugBuilds = System.getenv("TERMUX_SPLIT_APKS_FOR_DEBUG_BUILDS") ?: "1"
     def splitAPKsForReleaseBuilds = System.getenv("TERMUX_SPLIT_APKS_FOR_RELEASE_BUILDS") ?: "0" // F-Droid does not support split APKs #1904
 
@@ -90,7 +90,7 @@ android {
         release {
             minifyEnabled true
             shrinkResources false // Reproducible builds
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
 
         debug {
@@ -130,20 +130,22 @@ android {
         }
     }
 
-    applicationVariants.all { variant ->
-        variant.outputs.all { output ->
-            if (variant.buildType.name == "debug") {
-                def abi = output.getFilter(com.android.build.OutputFile.ABI)
-                outputFileName = new File("termux-app_" + (apkVersionTag ? apkVersionTag : project.ext.packageVariant + "-" + "debug") + "_" + (abi ? abi : "universal") + ".apk")
-            } else if (variant.buildType.name == "release") {
-                def abi = output.getFilter(com.android.build.OutputFile.ABI)
-                outputFileName = new File("termux-app_" + (apkVersionTag ? apkVersionTag : project.ext.packageVariant + "-" + "release") + "_" + (abi ? abi : "universal") + ".apk")
-            }
-        }
-    }
+
 
     buildFeatures {
         buildConfig true
+    }
+}
+
+androidComponents {
+    onVariants(selector().all()) { variant ->
+        variant.outputs.each { output ->
+            def abi = output.filters.find { it.filterType.name() == "ABI" }?.identifier
+            def buildTypeName = variant.buildType
+            def nameTag = buildTypeName == "debug" ? "debug" : "release"
+            def filename = "termux-app_" + (project.ext.apkVersionTag ? project.ext.apkVersionTag : project.ext.packageVariant + "-" + nameTag) + "_" + (abi ? abi : "universal") + ".apk"
+            output.outputFileName.set(filename)
+        }
     }
 }
 
@@ -238,12 +240,9 @@ task downloadBootstraps() {
     }
 }
 
-afterEvaluate {
-    android.applicationVariants.all { variant ->
-        variant.javaCompileProvider.get().dependsOn(downloadBootstraps)
-        // Also ensure native build waits for bootstrap download
-        tasks.matching { it.name.startsWith("buildNdkBuild") }.all {
-            dependsOn downloadBootstraps
-        }
-    }
+tasks.matching { it.name.startsWith("compile") && it.name.endsWith("JavaWithJavac") }.all {
+    dependsOn downloadBootstraps
+}
+tasks.matching { it.name.startsWith("buildNdkBuild") }.all {
+    dependsOn downloadBootstraps
 }

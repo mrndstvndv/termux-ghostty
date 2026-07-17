@@ -1,6 +1,5 @@
 plugins {
     id 'com.android.application'
-    id 'org.jetbrains.kotlin.android'
     id 'org.jetbrains.kotlin.plugin.compose'
 }
 
@@ -23,10 +22,7 @@ android {
         targetCompatibility JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
-        freeCompilerArgs += ["-opt-in=kotlin.RequiresOptIn"]
-    }
+
 
     buildFeatures {
         compose true
@@ -58,6 +54,13 @@ android {
     }
 }
 
+kotlin {
+    compilerOptions {
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
+        freeCompilerArgs.add("-opt-in=kotlin.RequiresOptIn")
+    }
+}
+
 dependencies {
     implementation project(':terminal-view')
     implementation project(':terminal-emulator')
@@ -82,7 +85,7 @@ dependencies {
     implementation 'org.conscrypt:conscrypt-android:2.6.0'
 
     // Syntax Highlighting
-    implementation 'dev.hossain:compose-highlight:0.20.0'
+    implementation 'dev.hossain:compose-highlight:0.31.0'
 
     coreLibraryDesugaring "com.android.tools:desugar_jdk_libs:1.1.5"
 

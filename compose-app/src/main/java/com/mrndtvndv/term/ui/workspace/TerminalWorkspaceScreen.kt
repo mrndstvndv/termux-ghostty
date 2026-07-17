@@ -25,12 +25,15 @@ import com.mrndtvndv.term.ui.keyboard.ExtraKeysToolbar
 import com.mrndtvndv.term.ui.keyboard.ExtraKeysController
 import com.termux.view.TerminalView
 import com.mrndtvndv.term.ui.browser.InAppBrowser
+import com.mrndtvndv.term.ui.review.ReviewViewModel
+import com.mrndtvndv.term.ui.review.GitReviewScreen
 import kotlinx.coroutines.flow.filterIsInstance
 import java.io.File
 
 sealed interface WorkspaceTab {
     object Terminal : WorkspaceTab
     object Sftp : WorkspaceTab
+    object Review : WorkspaceTab
     object Browser : WorkspaceTab
 }
 
@@ -42,6 +45,7 @@ fun TabbedWorkspace(
     webView: WebView,
     session: TerminalSession,
     sftpViewModel: SftpViewModel?,
+    reviewViewModel: ReviewViewModel?,
     extraKeysController: ExtraKeysController,
     getActiveTerminalView: () -> TerminalView?,
     extraKeysEnabled: Boolean,
@@ -57,11 +61,14 @@ fun TabbedWorkspace(
     onOpenUrl: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val activeTabs = remember(sftpViewModel) {
+    val activeTabs = remember(sftpViewModel, reviewViewModel) {
         buildList {
             add(WorkspaceTab.Terminal)
             if (sftpViewModel != null) {
                 add(WorkspaceTab.Sftp)
+            }
+            if (reviewViewModel != null) {
+                add(WorkspaceTab.Review)
             }
             add(WorkspaceTab.Browser)
         }
@@ -145,6 +152,7 @@ fun TabbedWorkspace(
                             val title = when (tab) {
                                 WorkspaceTab.Terminal -> "Terminal"
                                 WorkspaceTab.Sftp -> "SFTP Explorer"
+                                WorkspaceTab.Review -> "Review"
                                 WorkspaceTab.Browser -> "Browser"
                             }
                             Text(
@@ -200,6 +208,14 @@ fun TabbedWorkspace(
                             )
                         }
                     }
+                    WorkspaceTab.Review -> {
+                        if (reviewViewModel != null) {
+                            GitReviewScreen(
+                                viewModel = reviewViewModel,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+                    }
                     WorkspaceTab.Browser -> {
                         InAppBrowser(
                             webView = webView,
@@ -219,6 +235,7 @@ fun SplitWorkspace(
     webView: WebView,
     session: TerminalSession,
     sftpViewModel: SftpViewModel?,
+    reviewViewModel: ReviewViewModel?,
     foldingFeature: FoldingFeature?,
     extraKeysController: ExtraKeysController,
     getActiveTerminalView: () -> TerminalView?,
@@ -235,7 +252,7 @@ fun SplitWorkspace(
 ) {
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
         val totalWidth = maxWidth
-        val hasRightPanel = true // Always has Browser, and optionally SFTP
+        val hasRightPanel = true // Always has Browser, and optionally SFTP/Review
 
         val terminalWidth = if (hasRightPanel) {
             if (foldingFeature != null && foldingFeature.isSeparating) {
@@ -273,44 +290,77 @@ fun SplitWorkspace(
             if (hasRightPanel) {
                 VerticalDivider(modifier = Modifier.fillMaxHeight(), thickness = 1.dp, color = MaterialTheme.colorScheme.outline)
                 Column(modifier = Modifier.width(rightPanelWidth).fillMaxHeight()) {
-                    if (sftpViewModel != null) {
-                        var rightActivePage by remember { mutableIntStateOf(0) }
-                        var isFirstCompose by remember { mutableStateOf(true) }
-                        LaunchedEffect(browserUrl) {
-                            if (isFirstCompose) {
-                                isFirstCompose = false
-                                return@LaunchedEffect
+                    val rightTabs = remember(sftpViewModel, reviewViewModel) {
+                        buildList {
+                            if (sftpViewModel != null) {
+                                add("SFTP Explorer")
                             }
-                            if (browserUrl.isNotEmpty() && browserUrl != "https://google.com") {
-                                rightActivePage = 1
+                            if (reviewViewModel != null) {
+                                add("Review")
+                            }
+                            add("Browser")
+                        }
+                    }
+
+                    var rightActivePage by remember { mutableIntStateOf(0) }
+                    var isFirstCompose by remember { mutableStateOf(true) }
+
+                    LaunchedEffect(rightTabs) {
+                        if (rightActivePage >= rightTabs.size) {
+                            rightActivePage = 0
+                        }
+                    }
+
+                    LaunchedEffect(browserUrl) {
+                        if (isFirstCompose) {
+                            isFirstCompose = false
+                            return@LaunchedEffect
+                        }
+                        if (browserUrl.isNotEmpty() && browserUrl != "https://google.com") {
+                            val idx = rightTabs.indexOf("Browser")
+                            if (idx != -1) {
+                                rightActivePage = idx
                             }
                         }
-                        
+                    }
+
+                    if (rightTabs.size > 1) {
                         TabRow(
                             selectedTabIndex = rightActivePage,
                             containerColor = MaterialTheme.colorScheme.surface,
                             contentColor = MaterialTheme.colorScheme.onSurface
                         ) {
-                            Tab(
-                                selected = rightActivePage == 0,
-                                onClick = { rightActivePage = 0 },
-                                text = { Text("SFTP Explorer") }
-                            )
-                            Tab(
-                                selected = rightActivePage == 1,
-                                onClick = { rightActivePage = 1 },
-                                text = { Text("Browser") }
-                            )
-                        }
-                        
-                        Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                            if (rightActivePage == 0) {
-                                SftpFileBrowser(
-                                    viewModel = sftpViewModel,
-                                    onOpenFile = onOpenFile,
-                                    onOpenFileError = onOpenFileError
+                            rightTabs.forEachIndexed { index, title ->
+                                Tab(
+                                    selected = rightActivePage == index,
+                                    onClick = { rightActivePage = index },
+                                    text = { Text(title) }
                                 )
-                            } else {
+                            }
+                        }
+                    }
+
+                    Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                        val activeTab = rightTabs.getOrNull(rightActivePage)
+                        when (activeTab) {
+                            "SFTP Explorer" -> {
+                                if (sftpViewModel != null) {
+                                    SftpFileBrowser(
+                                        viewModel = sftpViewModel,
+                                        onOpenFile = onOpenFile,
+                                        onOpenFileError = onOpenFileError
+                                    )
+                                }
+                            }
+                            "Review" -> {
+                                if (reviewViewModel != null) {
+                                    GitReviewScreen(
+                                        viewModel = reviewViewModel,
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                }
+                            }
+                            "Browser" -> {
                                 InAppBrowser(
                                     webView = webView,
                                     initialUrl = browserUrl,
@@ -319,13 +369,6 @@ fun SplitWorkspace(
                                 )
                             }
                         }
-                    } else {
-                        InAppBrowser(
-                            webView = webView,
-                            initialUrl = browserUrl,
-                            onUrlChanged = onBrowserUrlChanged,
-                            modifier = Modifier.fillMaxSize()
-                        )
                     }
                 }
             }
@@ -337,6 +380,7 @@ fun SplitWorkspace(
 fun TerminalWorkspaceScreen(
     session: TerminalSession,
     sftpViewModel: SftpViewModel?,
+    reviewViewModel: ReviewViewModel?,
     extraKeysEnabled: Boolean,
     extraKeysJson: String,
     onViewCreated: (TerminalView) -> Unit,
@@ -402,6 +446,7 @@ fun TerminalWorkspaceScreen(
             webView = browserWebView,
             session = session,
             sftpViewModel = sftpViewModel,
+            reviewViewModel = reviewViewModel,
             foldingFeature = foldingFeature,
             extraKeysController = extraKeysController,
             getActiveTerminalView = getActiveTerminalView,
@@ -421,6 +466,7 @@ fun TerminalWorkspaceScreen(
             webView = browserWebView,
             session = session,
             sftpViewModel = sftpViewModel,
+            reviewViewModel = reviewViewModel,
             extraKeysController = extraKeysController,
             getActiveTerminalView = getActiveTerminalView,
             extraKeysEnabled = extraKeysEnabled,

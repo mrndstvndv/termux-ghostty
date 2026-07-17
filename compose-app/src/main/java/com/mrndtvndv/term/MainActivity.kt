@@ -21,6 +21,7 @@ import com.mrndtvndv.term.ui.theme.TermuxGhosttyTheme
 import com.mrndtvndv.term.ui.workspace.TerminalWorkspaceScreen
 import com.mrndtvndv.term.ui.sftp.SftpViewModel
 import com.mrndtvndv.term.domain.SftpClient
+import com.mrndtvndv.term.ui.review.ReviewViewModel
 import com.termux.shared.termux.terminal.TermuxTerminalSessionClientBase
 import com.termux.terminal.TerminalSession
 import com.termux.terminal.TerminalColors
@@ -103,6 +104,8 @@ class MainActivity : ComponentActivity() {
     
     private var sftpClient: SftpClient? = null
     private val sftpViewModelState = mutableStateOf<SftpViewModel?>(null)
+    private val reviewViewModelState = mutableStateOf<ReviewViewModel?>(null)
+    private val workspaceDirState = kotlinx.coroutines.flow.MutableStateFlow("/")
     private var activeWorkspaceKey: String? = null
     private var sshHost: String? = null
     private var sshPort: Int = 22
@@ -407,6 +410,7 @@ class MainActivity : ComponentActivity() {
                                      TerminalWorkspaceScreen(
                                          session = termSession!!,
                                          sftpViewModel = sftpViewModelState.value,
+                                         reviewViewModel = reviewViewModelState.value,
                                          extraKeysEnabled = extraKeysEnabled,
                                          extraKeysJson = resolvedJson,
                                          onViewCreated = { view ->
@@ -653,6 +657,13 @@ class MainActivity : ComponentActivity() {
                                     val savedUrl = sharedPreferences.getString("browser_last_url_$key", "https://google.com") ?: "https://google.com"
                                     withContext(Dispatchers.Main) {
                                         browserUrlState.value = savedUrl
+                                        if (isHerdrEnabled) {
+                                            workspaceDirState.value = resolvedCwd
+                                            reviewViewModelState.value = ReviewViewModel(
+                                                execCommand = { cmd -> session.execCommand(cmd) },
+                                                workspaceDir = workspaceDirState
+                                            )
+                                        }
                                     }
 
                                     try {
@@ -663,11 +674,15 @@ class MainActivity : ComponentActivity() {
                                         val initialDir = if (!savedDir.isNullOrEmpty()) savedDir else resolvedCwd
 
                                         withContext(Dispatchers.Main) {
+                                            if (isHerdrEnabled) {
+                                                workspaceDirState.value = initialDir
+                                            }
                                             val viewModel = SftpViewModel(sftp, SavedStateHandle(), initialDir)
                                             viewModel.onPathChanged = { path ->
                                                 activeWorkspaceKey?.let { k ->
                                                     sharedPreferences.edit().putString("sftp_last_dir_$k", path).apply()
                                                 }
+                                                workspaceDirState.value = path
                                             }
                                             sftpViewModelState.value = viewModel
                                             sftpVisibleState.value = true
@@ -716,6 +731,7 @@ class MainActivity : ComponentActivity() {
         } catch (e: Exception) {}
         sftpClient = null
         sftpViewModelState.value = null
+        reviewViewModelState.value = null
         sftpActivePageState.intValue = 0
         sftpVisibleState.value = false
         activeWorkspaceKey = null

@@ -111,21 +111,6 @@ fun TabbedWorkspace(
         }
     }
 
-    // Synchronize activePage to Browser tab when a URL is loaded (skip first composition)
-    var isFirstCompose by remember { mutableStateOf(true) }
-    LaunchedEffect(browserUrl) {
-        if (isFirstCompose) {
-            isFirstCompose = false
-            return@LaunchedEffect
-        }
-        if (browserUrl.isNotEmpty()) {
-            val browserIndex = activeTabs.indexOf(WorkspaceTab.Browser)
-            if (browserIndex != -1 && pagerState.currentPage != browserIndex) {
-                onPageSelected(browserIndex)
-            }
-        }
-    }
-
     Scaffold(
         modifier = modifier.fillMaxSize(),
         topBar = {
@@ -192,7 +177,13 @@ fun TabbedWorkspace(
                                     isTerminalActive = true,
                                     onViewCreated = onViewCreated,
                                     onViewReleased = onViewReleased,
-                                    onOpenUrl = onOpenUrl
+                                    onOpenUrl = { url ->
+                                        onOpenUrl(url)
+                                        val browserIndex = activeTabs.indexOf(WorkspaceTab.Browser)
+                                        if (browserIndex != -1) {
+                                            onPageSelected(browserIndex)
+                                        }
+                                    }
                                 )
                             }
                             if (extraKeysEnabled) {
@@ -261,6 +252,26 @@ fun SplitWorkspace(
         val totalWidth = maxWidth
         val hasRightPanel = true // Always has Browser, and optionally SFTP/Review
 
+        val rightTabs = remember(sftpViewModel, reviewViewModel) {
+            buildList {
+                if (sftpViewModel != null) {
+                    add("SFTP Explorer")
+                }
+                if (reviewViewModel != null) {
+                    add("Review")
+                }
+                add("Browser")
+            }
+        }
+
+        var rightActivePage by remember { mutableIntStateOf(0) }
+
+        LaunchedEffect(rightTabs) {
+            if (rightActivePage >= rightTabs.size) {
+                rightActivePage = 0
+            }
+        }
+
         val terminalWidth = if (hasRightPanel) {
             if (foldingFeature != null && foldingFeature.isSeparating) {
                 val foldDp = foldingFeature.bounds.left.dp
@@ -282,7 +293,13 @@ fun SplitWorkspace(
                         isTerminalActive = true,
                         onViewCreated = onViewCreated,
                         onViewReleased = onViewReleased,
-                        onOpenUrl = onOpenUrl
+                        onOpenUrl = { url ->
+                            onOpenUrl(url)
+                            val idx = rightTabs.indexOf("Browser")
+                            if (idx != -1) {
+                                rightActivePage = idx
+                            }
+                        }
                     )
                 }
                 if (extraKeysEnabled) {
@@ -297,40 +314,6 @@ fun SplitWorkspace(
             if (hasRightPanel) {
                 VerticalDivider(modifier = Modifier.fillMaxHeight(), thickness = 1.dp, color = MaterialTheme.colorScheme.outline)
                 Column(modifier = Modifier.width(rightPanelWidth).fillMaxHeight()) {
-                    val rightTabs = remember(sftpViewModel, reviewViewModel) {
-                        buildList {
-                            if (sftpViewModel != null) {
-                                add("SFTP Explorer")
-                            }
-                            if (reviewViewModel != null) {
-                                add("Review")
-                            }
-                            add("Browser")
-                        }
-                    }
-
-                    var rightActivePage by remember { mutableIntStateOf(0) }
-                    var isFirstCompose by remember { mutableStateOf(true) }
-
-                    LaunchedEffect(rightTabs) {
-                        if (rightActivePage >= rightTabs.size) {
-                            rightActivePage = 0
-                        }
-                    }
-
-                    LaunchedEffect(browserUrl) {
-                        if (isFirstCompose) {
-                            isFirstCompose = false
-                            return@LaunchedEffect
-                        }
-                        if (browserUrl.isNotEmpty() && browserUrl != "https://duckduckgo.com") {
-                            val idx = rightTabs.indexOf("Browser")
-                            if (idx != -1) {
-                                rightActivePage = idx
-                            }
-                        }
-                    }
-
                     if (rightTabs.size > 1) {
                         TabRow(
                             selectedTabIndex = rightActivePage,

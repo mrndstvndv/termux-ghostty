@@ -430,11 +430,12 @@ class MainActivity : ComponentActivity() {
                                                          if (isHerdrEnabled) {
                                                              try {
                                                                  val output = sshSession?.execCommand("herdr pane current") ?: ""
-                                                                 val match = Regex("(?i)cwd[:=]\\s*([^\\n\\r]+)").find(output)
-                                                                     ?: Regex("\"cwd\"\\s*:\\s*\"([^\"]+)\"").find(output)
-                                                                 val path = match?.groupValues?.get(1)?.trim()
-                                                                 if (!path.isNullOrEmpty()) {
-                                                                     resolvedCwd = path
+                                                                 
+                                                                 val cwdMatch = Regex("\"cwd\"\\s*:\\s*\"([^\"]+)\"").find(output)
+                                                                     ?: Regex("(?i)cwd[:=]\\s*([^\\n\\r,]+)").find(output)
+                                                                 val cwdPath = cwdMatch?.groupValues?.get(1)?.trim()?.removeSurrounding("\"")
+                                                                 if (!cwdPath.isNullOrEmpty()) {
+                                                                     resolvedCwd = cwdPath
                                                                  } else if (output.trim().startsWith("/")) {
                                                                      resolvedCwd = output.trim()
                                                                  } else {
@@ -442,9 +443,12 @@ class MainActivity : ComponentActivity() {
                                                                      if (!termCwd.isNullOrEmpty()) resolvedCwd = termCwd
                                                                  }
                                                                  
-                                                                 val wsMatch = Regex("(?i)workspace[:=]\\s*([^\\n\\r]+)").find(output)
-                                                                     ?: Regex("\"workspace\"\\s*:\\s*\"([^\"]+)\"").find(output)
-                                                                 workspaceName = wsMatch?.groupValues?.get(1)?.trim()
+                                                                 val wsMatch = Regex("\"workspace(?:_?id)?\"\\s*:\\s*\"([^\"]+)\"").find(output)
+                                                                     ?: Regex("(?i)workspace(?:_?id)?[:=]\\s*([^\\n\\r,]+)").find(output)
+                                                                 val wsName = wsMatch?.groupValues?.get(1)?.trim()?.removeSurrounding("\"")
+                                                                 if (!wsName.isNullOrEmpty()) {
+                                                                     workspaceName = wsName
+                                                                 }
                                                              } catch (e: Exception) {
                                                                  val termCwd = terminalSessionState.value?.cwd
                                                                  if (!termCwd.isNullOrEmpty()) resolvedCwd = termCwd

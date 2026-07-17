@@ -56,9 +56,9 @@ fun SftpFileBrowser(
                     )
                     
                     val bytesText = if (state.totalBytes > 0) {
-                        "${state.bytesDownloaded / 1024} KB / ${state.totalBytes / 1024} KB"
+                        "${formatBytes(state.bytesDownloaded)} / ${formatBytes(state.totalBytes)}"
                     } else {
-                        "${state.bytesDownloaded / 1024} KB"
+                        formatBytes(state.bytesDownloaded)
                     }
                     Text(
                         text = bytesText,
@@ -132,8 +132,15 @@ fun SftpFileBrowser(
                                 )
                             },
                             supportingContent = {
+                                val lastModified = formatLastModified(file.modifiedTime)
+                                val desc = if (file.isDirectory) {
+                                    if (lastModified.isNotEmpty()) "Directory • $lastModified" else "Directory"
+                                } else {
+                                    val sizeStr = formatBytes(file.size)
+                                    if (lastModified.isNotEmpty()) "$sizeStr • $lastModified" else sizeStr
+                                }
                                 Text(
-                                    text = if (file.isDirectory) "Directory" else "${file.size} bytes",
+                                    text = desc,
                                     style = MaterialTheme.typography.bodySmall
                                 )
                             },
@@ -200,4 +207,21 @@ fun SftpFileBrowser(
             }
         }
     }
+}
+
+private fun formatBytes(bytes: Long): String {
+    if (bytes <= 0) return "0 B"
+    val units = arrayOf("B", "KB", "MB", "GB", "TB", "PB", "EB")
+    val digitGroups = (Math.log10(bytes.toDouble()) / Math.log10(1024.0)).toInt().coerceIn(0, units.size - 1)
+    if (digitGroups == 0) return "$bytes B"
+    return String.format(java.util.Locale.US, "%.2f %s", bytes / Math.pow(1024.0, digitGroups.toDouble()), units[digitGroups])
+}
+
+private fun formatLastModified(mtime: Long): String {
+    if (mtime <= 0) return ""
+    val date = java.util.Date(mtime)
+    val sdf = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault()).apply {
+        timeZone = java.util.TimeZone.getDefault()
+    }
+    return sdf.format(date)
 }

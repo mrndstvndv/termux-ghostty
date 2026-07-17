@@ -29,3 +29,11 @@ All fork-specific docs go under `docs/fork/`. Do not add `.md` files to the repo
 - `docs/fork/plans/` — implementation plans, checklists, stabilization docs
 
 **Note on plans:** Do NOT commit plan files (`.md` files outlining implementation steps/checklists) or updates to plans to the Git repository. Keep plan documents untracked or locally edited only. Do not stage them for commits.
+
+## Core Behaviors to Preserve
+
+### SFTP & Review Workspace Tracking (Herdr Integration)
+- The app integrates with `herdr` to persist navigation state per workspace for the SFTP and Review tabs.
+- When tapping the SFTP or Review tabs, the app queries `herdr workspace list` and `herdr pane list`.
+- **If the workspace has NOT changed:** The app MUST NOT overwrite `workspaceDirState.value`. It must respect the user's manual navigation state (which is stored in `SharedPreferences` under `sftp_last_dir_<workspace_key>`).
+- **If the workspace HAS changed:** The app must update the active workspace key, load the saved directory for the *new* workspace (or default to the active pane's `cwd`), and update the SFTP/Review panels to point to this new location.

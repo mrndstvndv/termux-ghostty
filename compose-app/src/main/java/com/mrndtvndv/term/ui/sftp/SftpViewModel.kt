@@ -12,7 +12,11 @@ import java.io.File
 
 sealed interface SftpUiState {
     object Loading : SftpUiState
-    data class Success(val currentPath: String, val files: List<SftpFile>) : SftpUiState
+    data class Success(
+        val currentPath: String,
+        val files: List<SftpFile>,
+        val gitStatuses: Map<String, String> = emptyMap()
+    ) : SftpUiState
     data class Error(val message: String) : SftpUiState
 }
 
@@ -26,7 +30,8 @@ data class SftpDownloadState(
 class SftpViewModel(
     private val client: SftpClient,
     private val savedStateHandle: SavedStateHandle,
-    private val initialPath: String = "/"
+    private val initialPath: String = "/",
+    private val execCommand: (suspend (String) -> String)? = null
 ) : ViewModel() {
     private val _uiState = MutableStateFlow<SftpUiState>(SftpUiState.Loading)
     val uiState = _uiState.asStateFlow()
@@ -52,7 +57,28 @@ class SftpViewModel(
                 val list = client.listFiles(path).sortedWith(
                     compareBy<SftpFile> { !it.isDirectory }.thenBy { it.name.lowercase() }
                 )
-                _uiState.value = SftpUiState.Success(path, list)
+                val gitStatuses = mutableMapOf<String, String>()
+                try {
+                    val statusOutput = execCommand?.invoke("git -C \"$path\" status --porcelain --ignored=no .")
+                    statusOutput?.lines()?.forEach { line ->
+                        if (line.length >= 4) { // Status (2 chars), space, then filename
+                            val status = line.substring(0, 2)
+                            val file = line.substring(3).removeSurrounding("\"")
+                            val parts = file.split("/")
+                            if (parts.isNotEmpty()) {
+                                val topLevelName = parts[0]
+                                if (parts.size == 1) {
+                                    gitStatuses[topLevelName] = status
+                                } else {
+                                    gitStatuses[topLevelName] = "M"
+                                }
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    // Ignore git errors (e.g. not a git repo or git not installed)
+                }
+                _uiState.value = SftpUiState.Success(path, list, gitStatuses)
                 onPathChanged?.invoke(path)
             } catch (e: Exception) {
                 _uiState.value = SftpUiState.Error(e.localizedMessage ?: "Failed to load directory")

@@ -125,11 +125,33 @@ fun SftpFileBrowser(
                     items(state.files) { file ->
                         ListItem(
                             headlineContent = {
-                                Text(
-                                    text = file.name,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = file.name,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    val gitStatus = state.gitStatuses[file.name]?.trim()
+                                    if (!gitStatus.isNullOrEmpty()) {
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        val color = when {
+                                            gitStatus == "??" || gitStatus.contains("A") -> androidx.compose.ui.graphics.Color(0xFF4CAF50) // Green
+                                            gitStatus.contains("D") -> androidx.compose.ui.graphics.Color(0xFFF44336) // Red
+                                            else -> androidx.compose.ui.graphics.Color(0xFFFF9800) // Orange for Modified/Renamed
+                                        }
+                                        Surface(
+                                            color = color.copy(alpha = 0.2f),
+                                            shape = androidx.compose.foundation.shape.RoundedCornerShape(4.dp)
+                                        ) {
+                                            Text(
+                                                text = gitStatus,
+                                                color = color,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                            )
+                                        }
+                                    }
+                                }
                             },
                             supportingContent = {
                                 val lastModified = formatLastModified(file.modifiedTime)

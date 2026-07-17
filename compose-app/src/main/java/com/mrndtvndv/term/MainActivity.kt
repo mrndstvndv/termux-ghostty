@@ -117,6 +117,8 @@ class MainActivity : ComponentActivity() {
     private val connectionLoading = mutableStateOf(false)
     private val connectionError = mutableStateOf<String?>(null)
 
+    private val viewingFileState = mutableStateOf<File?>(null)
+
     private val activeNotificationState = mutableStateOf<ActiveNotification?>(null)
     private var nextNotificationId = com.termux.shared.termux.TermuxConstants.TERMUX_TERMINAL_PROTOCOL_NOTIFICATION_ID_BASE
 
@@ -534,6 +536,13 @@ class MainActivity : ComponentActivity() {
                             }
                         }
 
+                        viewingFileState.value?.let { file ->
+                            com.mrndtvndv.term.ui.sftp.SftpFileViewerScreen(
+                                file = file,
+                                onClose = { viewingFileState.value = null }
+                            )
+                        }
+
                         InAppNotificationBanner(
                             activeNotification = activeNotification,
                             onDismiss = { activeNotificationState.value = null },
@@ -758,7 +767,12 @@ class MainActivity : ComponentActivity() {
                                             if (isHerdrEnabled) {
                                                 workspaceDirState.value = initialDir
                                             }
-                                            val viewModel = SftpViewModel(sftp, SavedStateHandle(), initialDir)
+                                            val viewModel = SftpViewModel(
+                                                client = sftp,
+                                                savedStateHandle = SavedStateHandle(),
+                                                initialPath = initialDir,
+                                                execCommand = { cmd -> session.execCommand(cmd) }
+                                            )
                                             viewModel.onPathChanged = { path ->
                                                 activeWorkspaceKey?.let { k ->
                                                     sharedPreferences.edit().putString("sftp_last_dir_$k", path).apply()
@@ -866,14 +880,20 @@ class MainActivity : ComponentActivity() {
 
     private fun openDownloadedFile(file: File) {
         try {
+            val extension = file.extension.lowercase()
+            val mimeType = MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension)
+            val sourceCodeExts = listOf("kt", "java", "py", "js", "md", "rs", "zig", "c", "cpp", "h", "hpp", "sh", "txt", "xml", "json", "yml", "yaml", "gradle", "kts", "go")
+            
+            if (mimeType?.startsWith("text/") == true || sourceCodeExts.contains(extension)) {
+                viewingFileState.value = file
+                return
+            }
+
             val authority = "${packageName}.fileprovider"
             val uri = FileProvider.getUriForFile(this, authority, file)
             
-            val extension = file.extension.lowercase()
-            val mimeType = MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension) ?: "*/*"
-            
             val intent = Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(uri, mimeType)
+                setDataAndType(uri, mimeType ?: "*/*")
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
             

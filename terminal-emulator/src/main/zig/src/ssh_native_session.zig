@@ -16,6 +16,10 @@ pub const SshNativeSession = struct {
     wake_pipe: [2]c_int,
     jvm_wake_pipe: [2]c_int,
     spsc_buffer: *SpscRingBuffer,
+    /// Guards all libssh2 session/channel/sftp operations.
+    /// libssh2 is not thread-safe: runLoop and JNI callers must never
+    /// concurrently touch the same LIBSSH2_SESSION.
+    session_lock: std.Thread.Mutex,
     write_lock: std.Thread.Mutex,
     write_queue: std.ArrayList(u8),
     thread: ?std.Thread,
@@ -211,6 +215,7 @@ pub const SshNativeSession = struct {
             .wake_pipe = wake_p,
             .jvm_wake_pipe = jvm_wake_p,
             .spsc_buffer = spsc_buffer,
+            .session_lock = .{},
             .write_lock = .{},
             .write_queue = .empty,
             .thread = null,
@@ -290,7 +295,9 @@ pub const SshNativeSession = struct {
 
         if (cols != -1 and rows != -1) {
             while (self.running.load(.acquire)) {
+                self.session_lock.lock();
                 const rc = c.libssh2_channel_request_pty_size_ex(self.channel, cols, rows, 0, 0);
+                self.session_lock.unlock();
                 if (rc == 0) {
                     break;
                 } else if (rc == c.LIBSSH2_ERROR_EAGAIN) {
@@ -309,7 +316,7 @@ pub const SshNativeSession = struct {
         }
     }
 
-    fn waitSocket(socket_fd: c_int, session: *c.LIBSSH2_SESSION) !void {
+    pub fn waitSocket(socket_fd: c_int, session: *c.LIBSSH2_SESSION) !void {
         var fds = [_]c.struct_pollfd{
             .{
                 .fd = socket_fd,
@@ -343,9 +350,13 @@ pub const SshNativeSession = struct {
 
         while (self.running.load(.acquire)) {
             fds[0].events = c.POLLIN;
-            const directions = c.libssh2_session_block_directions(self.session);
-            if ((directions & c.LIBSSH2_SESSION_BLOCK_OUTBOUND) != 0) {
-                fds[0].events |= c.POLLOUT;
+            {
+                self.session_lock.lock();
+                const directions = c.libssh2_session_block_directions(self.session);
+                self.session_lock.unlock();
+                if ((directions & c.LIBSSH2_SESSION_BLOCK_OUTBOUND) != 0) {
+                    fds[0].events |= c.POLLOUT;
+                }
             }
 
             const poll_res = c.poll(&fds, 2, -1);
@@ -363,7 +374,9 @@ pub const SshNativeSession = struct {
             if ((fds[0].revents & (c.POLLIN | c.POLLOUT | c.POLLERR | c.POLLHUP)) != 0) {
                 var temp_buf: [16384]u8 = undefined;
                 while (self.running.load(.acquire)) {
+                    self.session_lock.lock();
                     const read_bytes = c.libssh2_channel_read(self.channel, &temp_buf, temp_buf.len);
+                    self.session_lock.unlock();
                     if (read_bytes > 0) {
                         const written = self.spsc_buffer.write(temp_buf[0..@intCast(read_bytes)]);
                         if (written > 0) {
@@ -400,7 +413,9 @@ pub const SshNativeSession = struct {
 
         var written: usize = 0;
         while (written < copy.len and self.running.load(.acquire)) {
+            self.session_lock.lock();
             const res = c.libssh2_channel_write(self.channel, copy[written..].ptr, copy.len - written);
+            self.session_lock.unlock();
             if (res > 0) {
                 written += @intCast(res);
             } else if (res == c.LIBSSH2_ERROR_EAGAIN) {
@@ -415,6 +430,85 @@ pub const SshNativeSession = struct {
             } else {
                 break;
             }
+        }
+    }
+
+    pub fn execCommand(self: *SshNativeSession, command: []const u8, out_list: *std.ArrayList(u8)) !void {
+        const cmd_c = try self.allocator.dupeZ(u8, command);
+        defer self.allocator.free(cmd_c);
+
+        // Open a dedicated exec channel, serialised under session_lock.
+        // We release the lock before each blocking waitSocket() to avoid
+        // deadlocking the runLoop thread.
+        const channel = while (true) {
+            self.session_lock.lock();
+            const ch = c.libssh2_channel_open_ex(self.session, "session", @intCast("session".len), c.LIBSSH2_CHANNEL_WINDOW_DEFAULT, c.LIBSSH2_CHANNEL_PACKET_DEFAULT, null, 0);
+            const open_err = if (ch == null) c.libssh2_session_last_error(self.session, null, null, 0) else 0;
+            self.session_lock.unlock();
+            if (ch) |val| break val;
+            if (open_err == c.LIBSSH2_ERROR_EAGAIN) {
+                try waitSocket(self.socket_fd, self.session);
+                continue;
+            }
+            return error.ChannelOpenFailed;
+        };
+        defer {
+            self.session_lock.lock();
+            _ = c.libssh2_channel_free(channel);
+            self.session_lock.unlock();
+        }
+
+        while (true) {
+            self.session_lock.lock();
+            const rc = c.libssh2_channel_process_startup(channel, "exec", 4, cmd_c.ptr, @intCast(command.len));
+            self.session_lock.unlock();
+            if (rc == 0) break;
+            if (rc == c.LIBSSH2_ERROR_EAGAIN) {
+                try waitSocket(self.socket_fd, self.session);
+                continue;
+            }
+            return error.CommandExecFailed;
+        }
+
+        var temp_buf: [4096]u8 = undefined;
+        while (true) {
+            self.session_lock.lock();
+            const rc = c.libssh2_channel_read(channel, &temp_buf, temp_buf.len);
+            self.session_lock.unlock();
+            if (rc > 0) {
+                try out_list.appendSlice(self.allocator, temp_buf[0..@intCast(rc)]);
+            } else if (rc == c.LIBSSH2_ERROR_EAGAIN) {
+                try waitSocket(self.socket_fd, self.session);
+                continue;
+            } else if (rc == 0 or rc == c.LIBSSH2_ERROR_CHANNEL_CLOSED) {
+                break;
+            } else {
+                return error.ReadFailed;
+            }
+        }
+
+        while (true) {
+            self.session_lock.lock();
+            const rc = c.libssh2_channel_wait_eof(channel);
+            self.session_lock.unlock();
+            if (rc == 0) break;
+            if (rc == c.LIBSSH2_ERROR_EAGAIN) {
+                try waitSocket(self.socket_fd, self.session);
+                continue;
+            }
+            break;
+        }
+
+        while (true) {
+            self.session_lock.lock();
+            const rc = c.libssh2_channel_close(channel);
+            self.session_lock.unlock();
+            if (rc == 0) break;
+            if (rc == c.LIBSSH2_ERROR_EAGAIN) {
+                try waitSocket(self.socket_fd, self.session);
+                continue;
+            }
+            break;
         }
     }
 

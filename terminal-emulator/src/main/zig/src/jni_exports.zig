@@ -1,6 +1,8 @@
 const std = @import("std");
 const c = @cImport({
     @cInclude("jni.h");
+    @cInclude("libssh2.h");
+    @cInclude("libssh2_sftp.h");
 });
 const ghostty_log = @import("android_log.zig");
 const core = @import("termux_ghostty.zig");
@@ -834,3 +836,483 @@ pub export fn Java_com_termux_terminal_GhosttyNative_nativeSshIsRunning(
     return toJBoolean(session.running.load(.acquire));
 }
 
+
+// --- SSH Exec & SFTP Support ---
+
+pub export fn Java_com_termux_terminal_GhosttyNative_nativeSshExec(
+    env: ?*c.JNIEnv,
+    clazz: c.jclass,
+    session_handle: jlong,
+    command: c.jstring,
+) c.jstring {
+    _ = clazz;
+    const jni = env orelse return null;
+    if (session_handle <= 0 or command == null) return null;
+
+    const session = @as(*ssh.SshNativeSession, @ptrFromInt(@as(usize, @intCast(session_handle))));
+
+    const cmd_chars = jni.*.*.GetStringUTFChars.?(jni, command, null);
+    defer jni.*.*.ReleaseStringUTFChars.?(jni, command, cmd_chars);
+    const cmd_slice = std.mem.span(cmd_chars);
+
+    var out_list: std.ArrayList(u8) = .empty;
+    defer out_list.deinit(std.heap.c_allocator);
+
+    session.execCommand(cmd_slice, &out_list) catch |err| {
+        ghostty_log.err("nativeSshExec failed: {}", .{err});
+        return null;
+    };
+
+    return newJStringFromUtf8(jni, out_list.items);
+}
+
+pub export fn Java_com_termux_terminal_GhosttyNative_nativeSftpInit(
+    env: ?*c.JNIEnv,
+    clazz: c.jclass,
+    session_handle: jlong,
+) jlong {
+    _ = env;
+    _ = clazz;
+    if (session_handle <= 0) return 0;
+    const session = @as(*ssh.SshNativeSession, @ptrFromInt(@as(usize, @intCast(session_handle))));
+
+    const sftp = while (true) {
+        session.session_lock.lock();
+        const s = c.libssh2_sftp_init(@ptrCast(session.session));
+        const err = if (s == null) c.libssh2_session_last_error(@ptrCast(session.session), null, null, 0) else 0;
+        session.session_lock.unlock();
+        if (s) |val| break val;
+        if (err == c.LIBSSH2_ERROR_EAGAIN) {
+            ssh.SshNativeSession.waitSocket(session.socket_fd, session.session) catch return 0;
+            continue;
+        }
+        ghostty_log.err("nativeSftpInit failed: {}", .{err});
+        return 0;
+    };
+
+    return @intCast(@intFromPtr(sftp));
+}
+
+pub export fn Java_com_termux_terminal_GhosttyNative_nativeSftpClose(
+    env: ?*c.JNIEnv,
+    clazz: c.jclass,
+    session_handle: jlong,
+    sftp_handle: jlong,
+) void {
+    _ = env;
+    _ = clazz;
+    if (session_handle <= 0 or sftp_handle <= 0) return;
+    const session = @as(*ssh.SshNativeSession, @ptrFromInt(@as(usize, @intCast(session_handle))));
+    const sftp = @as(*c.LIBSSH2_SFTP, @ptrFromInt(@as(usize, @intCast(sftp_handle))));
+
+    while (true) {
+        session.session_lock.lock();
+        const rc = c.libssh2_sftp_shutdown(sftp);
+        session.session_lock.unlock();
+        if (rc == 0) break;
+        if (rc == c.LIBSSH2_ERROR_EAGAIN) {
+            ssh.SshNativeSession.waitSocket(session.socket_fd, session.session) catch break;
+            continue;
+        }
+        break;
+    }
+}
+
+pub export fn Java_com_termux_terminal_GhosttyNative_nativeSftpListFiles(
+    env: ?*c.JNIEnv,
+    clazz: c.jclass,
+    session_handle: jlong,
+    sftp_handle: jlong,
+    path: c.jstring,
+) c.jstring {
+    _ = clazz;
+    const jni = env orelse return null;
+    if (session_handle <= 0 or sftp_handle <= 0 or path == null) return null;
+
+    const session = @as(*ssh.SshNativeSession, @ptrFromInt(@as(usize, @intCast(session_handle))));
+    const sftp = @as(*c.LIBSSH2_SFTP, @ptrFromInt(@as(usize, @intCast(sftp_handle))));
+
+    const path_chars = jni.*.*.GetStringUTFChars.?(jni, path, null);
+    defer jni.*.*.ReleaseStringUTFChars.?(jni, path, path_chars);
+    const path_slice = std.mem.span(path_chars);
+
+    const dir = while (true) {
+        session.session_lock.lock();
+        const d = c.libssh2_sftp_opendir(sftp, path_slice.ptr);
+        const err = if (d == null) c.libssh2_session_last_error(@ptrCast(session.session), null, null, 0) else 0;
+        session.session_lock.unlock();
+        if (d) |val| break val;
+        if (err == c.LIBSSH2_ERROR_EAGAIN) {
+            ssh.SshNativeSession.waitSocket(session.socket_fd, session.session) catch return null;
+            continue;
+        }
+        ghostty_log.err("nativeSftpListFiles opendir failed: {}", .{err});
+        return null;
+    };
+    defer {
+        while (true) {
+            session.session_lock.lock();
+            const rc = c.libssh2_sftp_closedir(dir);
+            session.session_lock.unlock();
+            if (rc == 0) break;
+            if (rc == c.LIBSSH2_ERROR_EAGAIN) {
+                ssh.SshNativeSession.waitSocket(session.socket_fd, session.session) catch break;
+                continue;
+            }
+            break;
+        }
+    }
+
+    var output: std.ArrayList(u8) = .empty;
+    defer output.deinit(std.heap.c_allocator);
+
+    output.appendSlice(std.heap.c_allocator, "[") catch return null;
+
+    var filename_buf: [1024]u8 = undefined;
+    var longentry_buf: [1024]u8 = undefined;
+    var attrs: c.LIBSSH2_SFTP_ATTRIBUTES = undefined;
+    var first = true;
+
+    while (true) {
+        session.session_lock.lock();
+        const rc = c.libssh2_sftp_readdir_ex(
+            dir,
+            &filename_buf,
+            filename_buf.len,
+            &longentry_buf,
+            longentry_buf.len,
+            &attrs,
+        );
+        session.session_lock.unlock();
+        if (rc > 0) {
+            const name = filename_buf[0..@intCast(rc)];
+            if (std.mem.eql(u8, name, ".") or std.mem.eql(u8, name, "..")) {
+                continue;
+            }
+
+            const is_dir = if ((attrs.flags & c.LIBSSH2_SFTP_ATTR_PERMISSIONS) != 0)
+                ((attrs.permissions & 0xF000) == 0x4000)
+            else if (longentry_buf.len > 0)
+                longentry_buf[0] == 'd'
+            else
+                false;
+
+            const size = if (is_dir) 0 else (if ((attrs.flags & c.LIBSSH2_SFTP_ATTR_SIZE) != 0) attrs.filesize else 0);
+            const permissions = if ((attrs.flags & c.LIBSSH2_SFTP_ATTR_PERMISSIONS) != 0) attrs.permissions else 0;
+            const mtime = if ((attrs.flags & c.LIBSSH2_SFTP_ATTR_ACMODTIME) != 0) attrs.mtime else 0;
+
+            if (!first) {
+                output.appendSlice(std.heap.c_allocator, ",") catch return null;
+            }
+            first = false;
+
+            output.appendSlice(std.heap.c_allocator, "{\"name\":\"") catch return null;
+            for (name) |char| {
+                if (char == '"') {
+                    output.appendSlice(std.heap.c_allocator, "\\\"") catch return null;
+                } else if (char == '\\') {
+                    output.appendSlice(std.heap.c_allocator, "\\\\") catch return null;
+                } else {
+                    output.append(std.heap.c_allocator, char) catch return null;
+                }
+            }
+            output.appendSlice(std.heap.c_allocator, "\",\"path\":\"") catch return null;
+            const needs_slash = !std.mem.eql(u8, path_slice, "/");
+            const full_path_prefix = if (needs_slash) path_slice else "";
+
+            for (full_path_prefix) |char| {
+                if (char == '"') {
+                    output.appendSlice(std.heap.c_allocator, "\\\"") catch return null;
+                } else if (char == '\\') {
+                    output.appendSlice(std.heap.c_allocator, "\\\\") catch return null;
+                } else {
+                    output.append(std.heap.c_allocator, char) catch return null;
+                }
+            }
+            if (needs_slash) {
+                output.append(std.heap.c_allocator, '/') catch return null;
+            }
+            for (name) |char| {
+                if (char == '"') {
+                    output.appendSlice(std.heap.c_allocator, "\\\"") catch return null;
+                } else if (char == '\\') {
+                    output.appendSlice(std.heap.c_allocator, "\\\\") catch return null;
+                } else {
+                    output.append(std.heap.c_allocator, char) catch return null;
+                }
+            }
+
+            output.appendSlice(std.heap.c_allocator, "\",\"isDir\":") catch return null;
+            output.appendSlice(std.heap.c_allocator, if (is_dir) "true" else "false") catch return null;
+            output.appendSlice(std.heap.c_allocator, ",\"size\":") catch return null;
+            std.fmt.format(output.writer(std.heap.c_allocator), "{}", .{size}) catch return null;
+            output.appendSlice(std.heap.c_allocator, ",\"permissions\":") catch return null;
+            std.fmt.format(output.writer(std.heap.c_allocator), "{}", .{permissions}) catch return null;
+            output.appendSlice(std.heap.c_allocator, ",\"mtime\":") catch return null;
+            std.fmt.format(output.writer(std.heap.c_allocator), "{}", .{mtime * 1000}) catch return null;
+            output.appendSlice(std.heap.c_allocator, "}") catch return null;
+        } else if (rc == c.LIBSSH2_ERROR_EAGAIN) {
+            ssh.SshNativeSession.waitSocket(session.socket_fd, session.session) catch break;
+            continue;
+        } else if (rc == 0) {
+            break;
+        } else {
+            ghostty_log.err("nativeSftpListFiles readdir failed: {}", .{rc});
+            break;
+        }
+    }
+
+    output.appendSlice(std.heap.c_allocator, "]") catch return null;
+
+    return newJStringFromUtf8(jni, output.items);
+}
+
+pub export fn Java_com_termux_terminal_GhosttyNative_nativeSftpMkdir(
+    env: ?*c.JNIEnv,
+    clazz: c.jclass,
+    session_handle: jlong,
+    sftp_handle: jlong,
+    path: c.jstring,
+    permissions: jint,
+) jboolean {
+    _ = clazz;
+    const jni = env orelse return c.JNI_FALSE;
+    if (session_handle <= 0 or sftp_handle <= 0 or path == null) return c.JNI_FALSE;
+
+    const session = @as(*ssh.SshNativeSession, @ptrFromInt(@as(usize, @intCast(session_handle))));
+    const sftp = @as(*c.LIBSSH2_SFTP, @ptrFromInt(@as(usize, @intCast(sftp_handle))));
+
+    const path_chars = jni.*.*.GetStringUTFChars.?(jni, path, null);
+    defer jni.*.*.ReleaseStringUTFChars.?(jni, path, path_chars);
+    const path_slice = std.mem.span(path_chars);
+
+    while (true) {
+        session.session_lock.lock();
+        const rc = c.libssh2_sftp_mkdir_ex(
+            sftp,
+            path_slice.ptr,
+            @intCast(path_slice.len),
+            @intCast(permissions),
+        );
+        session.session_lock.unlock();
+        if (rc == 0) return c.JNI_TRUE;
+        if (rc == c.LIBSSH2_ERROR_EAGAIN) {
+            ssh.SshNativeSession.waitSocket(session.socket_fd, session.session) catch return c.JNI_FALSE;
+            continue;
+        }
+        ghostty_log.err("nativeSftpMkdir failed: {}", .{rc});
+        return c.JNI_FALSE;
+    }
+}
+
+pub export fn Java_com_termux_terminal_GhosttyNative_nativeSftpDelete(
+    env: ?*c.JNIEnv,
+    clazz: c.jclass,
+    session_handle: jlong,
+    sftp_handle: jlong,
+    path: c.jstring,
+) jboolean {
+    _ = clazz;
+    const jni = env orelse return c.JNI_FALSE;
+    if (session_handle <= 0 or sftp_handle <= 0 or path == null) return c.JNI_FALSE;
+
+    const session = @as(*ssh.SshNativeSession, @ptrFromInt(@as(usize, @intCast(session_handle))));
+    const sftp = @as(*c.LIBSSH2_SFTP, @ptrFromInt(@as(usize, @intCast(sftp_handle))));
+
+    const path_chars = jni.*.*.GetStringUTFChars.?(jni, path, null);
+    defer jni.*.*.ReleaseStringUTFChars.?(jni, path, path_chars);
+    const path_slice = std.mem.span(path_chars);
+
+    // Try unlink first
+    while (true) {
+        session.session_lock.lock();
+        const rc = c.libssh2_sftp_unlink_ex(sftp, path_slice.ptr, @intCast(path_slice.len));
+        session.session_lock.unlock();
+        if (rc == 0) return c.JNI_TRUE;
+        if (rc == c.LIBSSH2_ERROR_EAGAIN) {
+            ssh.SshNativeSession.waitSocket(session.socket_fd, session.session) catch return c.JNI_FALSE;
+            continue;
+        }
+        break;
+    }
+
+    // Try rmdir
+    while (true) {
+        session.session_lock.lock();
+        const rc = c.libssh2_sftp_rmdir_ex(sftp, path_slice.ptr, @intCast(path_slice.len));
+        session.session_lock.unlock();
+        if (rc == 0) return c.JNI_TRUE;
+        if (rc == c.LIBSSH2_ERROR_EAGAIN) {
+            ssh.SshNativeSession.waitSocket(session.socket_fd, session.session) catch return c.JNI_FALSE;
+            continue;
+        }
+        ghostty_log.err("nativeSftpDelete failed: {}", .{rc});
+        return c.JNI_FALSE;
+    }
+}
+
+pub export fn Java_com_termux_terminal_GhosttyNative_nativeSftpFileOpen(
+    env: ?*c.JNIEnv,
+    clazz: c.jclass,
+    session_handle: jlong,
+    sftp_handle: jlong,
+    path: c.jstring,
+    flags: jint,
+    mode: jint,
+) jlong {
+    _ = clazz;
+    const jni = env orelse return 0;
+    if (session_handle <= 0 or sftp_handle <= 0 or path == null) return 0;
+
+    const session = @as(*ssh.SshNativeSession, @ptrFromInt(@as(usize, @intCast(session_handle))));
+    const sftp = @as(*c.LIBSSH2_SFTP, @ptrFromInt(@as(usize, @intCast(sftp_handle))));
+
+    const path_chars = jni.*.*.GetStringUTFChars.?(jni, path, null);
+    defer jni.*.*.ReleaseStringUTFChars.?(jni, path, path_chars);
+    const path_slice = std.mem.span(path_chars);
+
+    const file_handle = while (true) {
+        session.session_lock.lock();
+        const h = c.libssh2_sftp_open_ex(
+            sftp,
+            path_slice.ptr,
+            @intCast(path_slice.len),
+            @intCast(flags),
+            @intCast(mode),
+            c.LIBSSH2_SFTP_OPENFILE,
+        );
+        const err = if (h == null) c.libssh2_session_last_error(@ptrCast(session.session), null, null, 0) else 0;
+        session.session_lock.unlock();
+        if (h) |val| break val;
+        if (err == c.LIBSSH2_ERROR_EAGAIN) {
+            ssh.SshNativeSession.waitSocket(session.socket_fd, session.session) catch return 0;
+            continue;
+        }
+        ghostty_log.err("nativeSftpFileOpen failed: {}", .{err});
+        return 0;
+    };
+
+    return @intCast(@intFromPtr(file_handle));
+}
+
+pub export fn Java_com_termux_terminal_GhosttyNative_nativeSftpFileClose(
+    env: ?*c.JNIEnv,
+    clazz: c.jclass,
+    session_handle: jlong,
+    file_handle: jlong,
+) void {
+    _ = env;
+    _ = clazz;
+    if (session_handle <= 0 or file_handle <= 0) return;
+
+    const session = @as(*ssh.SshNativeSession, @ptrFromInt(@as(usize, @intCast(session_handle))));
+    const file = @as(*c.LIBSSH2_SFTP_HANDLE, @ptrFromInt(@as(usize, @intCast(file_handle))));
+
+    while (true) {
+        session.session_lock.lock();
+        const rc = c.libssh2_sftp_close_handle(file);
+        session.session_lock.unlock();
+        if (rc == 0) break;
+        if (rc == c.LIBSSH2_ERROR_EAGAIN) {
+            ssh.SshNativeSession.waitSocket(session.socket_fd, session.session) catch break;
+            continue;
+        }
+        break;
+    }
+}
+
+pub export fn Java_com_termux_terminal_GhosttyNative_nativeSftpFileRead(
+    env: ?*c.JNIEnv,
+    clazz: c.jclass,
+    session_handle: jlong,
+    file_handle: jlong,
+    buffer: c.jbyteArray,
+    offset: jint,
+    length: jint,
+) jint {
+    _ = clazz;
+    const jni = env orelse return -1;
+    if (session_handle <= 0 or file_handle <= 0 or buffer == null or length <= 0) return 0;
+
+    const session = @as(*ssh.SshNativeSession, @ptrFromInt(@as(usize, @intCast(session_handle))));
+    const file = @as(*c.LIBSSH2_SFTP_HANDLE, @ptrFromInt(@as(usize, @intCast(file_handle))));
+
+    const count = std.math.cast(usize, length) orelse return 0;
+    var stack_buffer: [8192]u8 = undefined;
+    var heap_buffer: ?[]u8 = null;
+    const bytes: []u8 = if (count <= stack_buffer.len)
+        stack_buffer[0..count]
+    else blk: {
+        const allocated = std.heap.c_allocator.alloc(u8, count) catch return -1;
+        heap_buffer = allocated;
+        break :blk allocated;
+    };
+    defer if (heap_buffer) |allocated| std.heap.c_allocator.free(allocated);
+
+    while (true) {
+        session.session_lock.lock();
+        const rc = c.libssh2_sftp_read(file, bytes.ptr, bytes.len);
+        session.session_lock.unlock();
+        if (rc >= 0) {
+            if (rc > 0) {
+                jni.*.*.SetByteArrayRegion.?(jni, buffer, offset, @intCast(rc), @ptrCast(bytes.ptr));
+            }
+            return @intCast(rc);
+        }
+        if (rc == c.LIBSSH2_ERROR_EAGAIN) {
+            ssh.SshNativeSession.waitSocket(session.socket_fd, session.session) catch return -1;
+            continue;
+        }
+        ghostty_log.err("nativeSftpFileRead failed: {}", .{rc});
+        return -1;
+    }
+}
+
+pub export fn Java_com_termux_terminal_GhosttyNative_nativeSftpFileWrite(
+    env: ?*c.JNIEnv,
+    clazz: c.jclass,
+    session_handle: jlong,
+    file_handle: jlong,
+    buffer: c.jbyteArray,
+    offset: jint,
+    length: jint,
+) jint {
+    _ = clazz;
+    const jni = env orelse return -1;
+    if (session_handle <= 0 or file_handle <= 0 or buffer == null or length <= 0) return 0;
+
+    const session = @as(*ssh.SshNativeSession, @ptrFromInt(@as(usize, @intCast(session_handle))));
+    const file = @as(*c.LIBSSH2_SFTP_HANDLE, @ptrFromInt(@as(usize, @intCast(file_handle))));
+
+    const count = std.math.cast(usize, length) orelse return 0;
+    var stack_buffer: [8192]u8 = undefined;
+    var heap_buffer: ?[]u8 = null;
+    const bytes: []u8 = if (count <= stack_buffer.len)
+        stack_buffer[0..count]
+    else blk: {
+        const allocated = std.heap.c_allocator.alloc(u8, count) catch return -1;
+        heap_buffer = allocated;
+        break :blk allocated;
+    };
+    defer if (heap_buffer) |allocated| std.heap.c_allocator.free(allocated);
+
+    jni.*.*.GetByteArrayRegion.?(jni, buffer, offset, length, @ptrCast(bytes.ptr));
+
+    var total_written: usize = 0;
+    while (total_written < bytes.len) {
+        session.session_lock.lock();
+        const rc = c.libssh2_sftp_write(file, bytes[total_written..].ptr, bytes.len - total_written);
+        session.session_lock.unlock();
+        if (rc >= 0) {
+            total_written += @intCast(rc);
+            if (total_written == bytes.len) break;
+        } else if (rc == c.LIBSSH2_ERROR_EAGAIN) {
+            ssh.SshNativeSession.waitSocket(session.socket_fd, session.session) catch return -1;
+            continue;
+        } else {
+            ghostty_log.err("nativeSftpFileWrite failed: {}", .{rc});
+            return -1;
+        }
+    }
+    return @intCast(total_written);
+}

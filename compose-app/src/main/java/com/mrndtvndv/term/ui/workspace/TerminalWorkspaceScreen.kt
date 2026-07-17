@@ -1,7 +1,10 @@
 package com.mrndtvndv.term.ui.workspace
 
 import android.app.Activity
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.*
 import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.runtime.*
@@ -21,6 +24,7 @@ import kotlinx.coroutines.flow.filterIsInstance
 
 class Ref<T>(var value: T? = null)
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun TabbedWorkspace(
     session: TerminalSession,
@@ -35,6 +39,26 @@ fun TabbedWorkspace(
     onPageSelected: (Int) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val pageCount = if (sftpViewModel != null) 2 else 1
+    val pagerState = rememberPagerState(
+        initialPage = activePage,
+        pageCount = { pageCount }
+    )
+
+    // Synchronize pagerState with activePage selected from TabRow
+    LaunchedEffect(activePage) {
+        if (pagerState.currentPage != activePage && activePage < pageCount) {
+            pagerState.scrollToPage(activePage)
+        }
+    }
+
+    // Synchronize activePage with pagerState (e.g. when page is selected)
+    LaunchedEffect(pagerState.currentPage) {
+        if (pagerState.currentPage != activePage) {
+            onPageSelected(pagerState.currentPage)
+        }
+    }
+
     Column(modifier = modifier.fillMaxSize()) {
         if (sftpViewModel != null) {
             TabRow(
@@ -67,29 +91,39 @@ fun TabbedWorkspace(
             }
         }
 
-        Box(modifier = Modifier.weight(1f)) {
-            if (activePage == 0) {
-                Column(modifier = Modifier.fillMaxSize()) {
-                    Box(modifier = Modifier.weight(1f)) {
-                        TerminalFocusWrapper(
-                            session = session,
-                            extraKeysController = extraKeysController,
-                            isTerminalActive = true,
-                            onViewCreated = onViewCreated,
-                            onViewReleased = onViewReleased
-                        )
-                    }
-                    if (extraKeysEnabled) {
-                        ExtraKeysToolbar(
-                            extraKeysController = extraKeysController,
-                            getActiveTerminalView = getActiveTerminalView,
-                            session = session,
-                            extraKeysJson = extraKeysJson
-                        )
+        HorizontalPager(
+            state = pagerState,
+            userScrollEnabled = false, // Disable swipe so terminal selection / scrolling works
+            beyondBoundsPageCount = 1,
+            modifier = Modifier.weight(1f)
+        ) { page ->
+            when (page) {
+                0 -> {
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        Box(modifier = Modifier.weight(1f)) {
+                            TerminalFocusWrapper(
+                                session = session,
+                                extraKeysController = extraKeysController,
+                                isTerminalActive = true,
+                                onViewCreated = onViewCreated,
+                                onViewReleased = onViewReleased
+                            )
+                        }
+                        if (extraKeysEnabled) {
+                            ExtraKeysToolbar(
+                                extraKeysController = extraKeysController,
+                                getActiveTerminalView = getActiveTerminalView,
+                                session = session,
+                                extraKeysJson = extraKeysJson
+                            )
+                        }
                     }
                 }
-            } else if (activePage == 1 && sftpViewModel != null) {
-                SftpFileBrowser(viewModel = sftpViewModel!!)
+                1 -> {
+                    if (sftpViewModel != null) {
+                        SftpFileBrowser(viewModel = sftpViewModel)
+                    }
+                }
             }
         }
     }

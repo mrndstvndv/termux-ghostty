@@ -66,38 +66,10 @@ fun TermuxGhosttyTheme(
     theme: String = "Dark",
     content: @Composable () -> Unit
 ) {
-    val context = LocalContext.current
-    val supportsDynamic = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
-
     val colorScheme = when (theme) {
-        "Light" -> {
-            if (supportsDynamic) {
-                dynamicLightColorScheme(context)
-            } else {
-                LightColorScheme
-            }
-        }
-        "Black" -> {
-            val baseDark = if (supportsDynamic) {
-                dynamicDarkColorScheme(context)
-            } else {
-                BlackColorScheme
-            }
-            baseDark.copy(
-                background = Color.Black,
-                surface = Color.Black,
-                surfaceVariant = Color(0xFF121212),
-                onBackground = Color.White,
-                onSurface = Color.White
-            )
-        }
-        else -> { // "Dark"
-            if (supportsDynamic) {
-                dynamicDarkColorScheme(context)
-            } else {
-                DarkColorScheme
-            }
-        }
+        "Light" -> LightColorScheme
+        "Black" -> BlackColorScheme
+        else -> DarkColorScheme
     }
 
     MaterialTheme(

@@ -25,7 +25,8 @@ data class SftpDownloadState(
 
 class SftpViewModel(
     private val client: SftpClient,
-    private val savedStateHandle: SavedStateHandle
+    private val savedStateHandle: SavedStateHandle,
+    private val initialPath: String = "/"
 ) : ViewModel() {
     private val _uiState = MutableStateFlow<SftpUiState>(SftpUiState.Loading)
     val uiState = _uiState.asStateFlow()
@@ -36,7 +37,7 @@ class SftpViewModel(
     var onPathChanged: ((String) -> Unit)? = null
 
     var currentPath: String
-        get() = savedStateHandle["current_path"] ?: "/"
+        get() = savedStateHandle["current_path"] ?: initialPath
         set(value) { savedStateHandle["current_path"] = value }
 
     init {

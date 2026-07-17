@@ -22,6 +22,7 @@ import com.mrndtvndv.term.ui.keyboard.ExtraKeysToolbar
 import com.mrndtvndv.term.ui.keyboard.ExtraKeysController
 import com.termux.view.TerminalView
 import kotlinx.coroutines.flow.filterIsInstance
+import java.io.File
 
 class Ref<T>(var value: T? = null)
 
@@ -38,6 +39,8 @@ fun TabbedWorkspace(
     onViewReleased: (TerminalView) -> Unit,
     activePage: Int,
     onPageSelected: (Int) -> Unit,
+    onOpenFile: (File) -> Unit,
+    onOpenFileError: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val pageCount = if (sftpViewModel != null) 2 else 1
@@ -134,7 +137,11 @@ fun TabbedWorkspace(
                 }
                 1 -> {
                     if (sftpViewModel != null) {
-                        SftpFileBrowser(viewModel = sftpViewModel)
+                        SftpFileBrowser(
+                            viewModel = sftpViewModel,
+                            onOpenFile = onOpenFile,
+                            onOpenFileError = onOpenFileError
+                        )
                     }
                 }
             }
@@ -154,6 +161,8 @@ fun SplitWorkspace(
     onViewCreated: (TerminalView) -> Unit,
     onViewReleased: (TerminalView) -> Unit,
     sftpVisible: Boolean,
+    onOpenFile: (File) -> Unit,
+    onOpenFileError: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
@@ -195,7 +204,11 @@ fun SplitWorkspace(
             if (isSftpOpen) {
                 VerticalDivider(modifier = Modifier.fillMaxHeight(), thickness = 1.dp, color = MaterialTheme.colorScheme.outline)
                 Box(modifier = Modifier.width(sftpWidth)) {
-                    SftpFileBrowser(viewModel = sftpViewModel!!)
+                    SftpFileBrowser(
+                        viewModel = sftpViewModel!!,
+                        onOpenFile = onOpenFile,
+                        onOpenFileError = onOpenFileError
+                    )
                 }
             }
         }
@@ -213,6 +226,8 @@ fun TerminalWorkspaceScreen(
     activePage: Int,
     onPageSelected: (Int) -> Unit,
     sftpVisible: Boolean,
+    onOpenFile: (File) -> Unit,
+    onOpenFileError: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -259,6 +274,8 @@ fun TerminalWorkspaceScreen(
             onViewCreated = handleViewCreated,
             onViewReleased = handleViewReleased,
             sftpVisible = sftpVisible,
+            onOpenFile = onOpenFile,
+            onOpenFileError = onOpenFileError,
             modifier = modifier
         )
     } else {
@@ -273,6 +290,8 @@ fun TerminalWorkspaceScreen(
             onViewReleased = handleViewReleased,
             activePage = activePage,
             onPageSelected = onPageSelected,
+            onOpenFile = onOpenFile,
+            onOpenFileError = onOpenFileError,
             modifier = modifier
         )
     }

@@ -46,6 +46,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import android.net.Uri
 import java.io.File
+import androidx.core.content.FileProvider
+import android.webkit.MimeTypeMap
 import android.app.Notification
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -400,8 +402,13 @@ class MainActivity : ComponentActivity() {
                                                  activeTerminalView = null
                                              }
                                          },
-
                                          activePage = sftpActivePageState.intValue,
+                                         onOpenFile = { file ->
+                                             openDownloadedFile(file)
+                                         },
+                                         onOpenFileError = { errorMsg ->
+                                             handleNotification("SFTP Error", errorMsg)
+                                         },
                                          onPageSelected = { page ->
                                              if (page == 1 && sftpViewModelState.value != null) {
                                                  lifecycleScope.launch {
@@ -659,6 +666,27 @@ class MainActivity : ComponentActivity() {
     override fun onDestroy() {
         cleanupConnection()
         super.onDestroy()
+    }
+
+    private fun openDownloadedFile(file: File) {
+        try {
+            val authority = "${packageName}.fileprovider"
+            val uri = FileProvider.getUriForFile(this, authority, file)
+            
+            val extension = file.extension.lowercase()
+            val mimeType = MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension) ?: "*/*"
+            
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, mimeType)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            
+            val chooser = Intent.createChooser(intent, "Open file with...")
+            startActivity(chooser)
+        } catch (e: Exception) {
+            android.util.Log.e("MainActivity", "Failed to open file", e)
+            handleNotification("Error", "Failed to open file: ${e.localizedMessage}")
+        }
     }
 
     private fun getFileName(context: Context, uri: Uri): String? {

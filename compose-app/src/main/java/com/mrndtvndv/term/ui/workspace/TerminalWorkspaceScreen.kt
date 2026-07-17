@@ -1,6 +1,8 @@
 package com.mrndtvndv.term.ui.workspace
 
 import android.app.Activity
+import android.view.ViewGroup
+import android.webkit.WebView
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
@@ -37,6 +39,7 @@ class Ref<T>(var value: T? = null)
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun TabbedWorkspace(
+    webView: WebView,
     session: TerminalSession,
     sftpViewModel: SftpViewModel?,
     extraKeysController: ExtraKeysController,
@@ -158,7 +161,7 @@ fun TabbedWorkspace(
         HorizontalPager(
             state = pagerState,
             userScrollEnabled = false, // Disable swipe so terminal selection / scrolling works
-            beyondBoundsPageCount = 1,
+            beyondBoundsPageCount = 2,
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
@@ -199,6 +202,7 @@ fun TabbedWorkspace(
                     }
                     WorkspaceTab.Browser -> {
                         InAppBrowser(
+                            webView = webView,
                             initialUrl = browserUrl,
                             onUrlChanged = onBrowserUrlChanged,
                             modifier = Modifier.fillMaxSize()
@@ -212,6 +216,7 @@ fun TabbedWorkspace(
 
 @Composable
 fun SplitWorkspace(
+    webView: WebView,
     session: TerminalSession,
     sftpViewModel: SftpViewModel?,
     foldingFeature: FoldingFeature?,
@@ -307,6 +312,7 @@ fun SplitWorkspace(
                                 )
                             } else {
                                 InAppBrowser(
+                                    webView = webView,
                                     initialUrl = browserUrl,
                                     onUrlChanged = onBrowserUrlChanged,
                                     modifier = Modifier.fillMaxSize()
@@ -315,6 +321,7 @@ fun SplitWorkspace(
                         }
                     } else {
                         InAppBrowser(
+                            webView = webView,
                             initialUrl = browserUrl,
                             onUrlChanged = onBrowserUrlChanged,
                             modifier = Modifier.fillMaxSize()
@@ -344,6 +351,21 @@ fun TerminalWorkspaceScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val browserWebView = remember(context) {
+        WebView(context).apply {
+            layoutParams = ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            )
+            settings.javaScriptEnabled = true
+            settings.domStorageEnabled = true
+            settings.useWideViewPort = true
+            settings.loadWithOverviewMode = true
+            settings.supportZoom()
+            settings.builtInZoomControls = true
+            settings.displayZoomControls = false
+        }
+    }
     val configuration = LocalConfiguration.current
     val isWideScreen = configuration.screenWidthDp >= 600
 
@@ -377,6 +399,7 @@ fun TerminalWorkspaceScreen(
 
     if (isWideScreen) {
         SplitWorkspace(
+            webView = browserWebView,
             session = session,
             sftpViewModel = sftpViewModel,
             foldingFeature = foldingFeature,
@@ -395,6 +418,7 @@ fun TerminalWorkspaceScreen(
         )
     } else {
         TabbedWorkspace(
+            webView = browserWebView,
             session = session,
             sftpViewModel = sftpViewModel,
             extraKeysController = extraKeysController,

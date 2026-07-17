@@ -36,11 +36,11 @@ fun urlsMatch(url1: String?, url2: String?): Boolean {
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun InAppBrowser(
+    webView: WebView,
     initialUrl: String,
     onUrlChanged: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var webView: WebView? by remember { mutableStateOf(null) }
     var currentUrl by remember(initialUrl) { mutableStateOf(initialUrl) }
     var inputUrl by remember { mutableStateOf(initialUrl) }
     var isLoading by remember { mutableStateOf(false) }
@@ -56,17 +56,87 @@ fun InAppBrowser(
     }
 
     // Handle initialUrl changes from external sources (e.g. terminal click)
-    LaunchedEffect(initialUrl) {
-        webView?.let {
-            if (!urlsMatch(it.url, initialUrl)) {
-                it.loadUrl(initialUrl)
+    LaunchedEffect(initialUrl, webView) {
+        if (!urlsMatch(webView.url, initialUrl)) {
+            webView.loadUrl(initialUrl)
+        }
+    }
+
+    LaunchedEffect(webView) {
+        if (webView.url == null) {
+            webView.loadUrl(currentUrl)
+        }
+    }
+
+    val currentOnUrlChanged by rememberUpdatedState(onUrlChanged)
+    val currentInitialUrl by rememberUpdatedState(initialUrl)
+
+    DisposableEffect(webView) {
+        val client = object : WebViewClient() {
+            override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
+                isLoading = true
+                progress = 0
+                url?.let {
+                    if (!urlsMatch(currentUrl, it)) {
+                        currentUrl = it
+                    }
+                    if (!urlsMatch(currentInitialUrl, it)) {
+                        currentOnUrlChanged(it)
+                    }
+                }
             }
+
+            override fun onPageFinished(view: WebView?, url: String?) {
+                isLoading = false
+                canGoBack = view?.canGoBack() ?: false
+                canGoForward = view?.canGoForward() ?: false
+                url?.let {
+                    if (!urlsMatch(currentUrl, it)) {
+                        currentUrl = it
+                    }
+                    if (!urlsMatch(currentInitialUrl, it)) {
+                        currentOnUrlChanged(it)
+                    }
+                }
+            }
+
+            override fun shouldOverrideUrlLoading(
+                view: WebView?,
+                request: WebResourceRequest?
+            ): Boolean {
+                return false
+            }
+        }
+
+        val chromeClient = object : WebChromeClient() {
+            override fun onProgressChanged(view: WebView?, newProgress: Int) {
+                progress = newProgress
+                if (newProgress == 100) {
+                    isLoading = false
+                }
+            }
+        }
+
+        webView.webViewClient = client
+        webView.webChromeClient = chromeClient
+
+        canGoBack = webView.canGoBack()
+        canGoForward = webView.canGoForward()
+        webView.url?.let {
+            if (!urlsMatch(currentUrl, it)) {
+                currentUrl = it
+            }
+        }
+
+        onDispose {
+            webView.webViewClient = WebViewClient()
+            webView.webChromeClient = null
         }
     }
 
     // Intercept back button if webview can navigate back
     BackHandler(enabled = canGoBack) {
-        webView?.goBack()
+        webView.goBack()
     }
 
     Column(
@@ -76,68 +146,9 @@ fun InAppBrowser(
     ) {
         // WebView
         AndroidView(
-            factory = { context ->
-                WebView(context).apply {
-                    layoutParams = ViewGroup.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        ViewGroup.LayoutParams.MATCH_PARENT
-                    )
-                    settings.javaScriptEnabled = true
-                    settings.domStorageEnabled = true
-                    settings.useWideViewPort = true
-                    settings.loadWithOverviewMode = true
-                    settings.supportZoom()
-                    settings.builtInZoomControls = true
-                    settings.displayZoomControls = false
-
-                    webViewClient = object : WebViewClient() {
-                        override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
-                            isLoading = true
-                            progress = 0
-                            url?.let {
-                                if (!urlsMatch(currentUrl, it)) {
-                                    currentUrl = it
-                                }
-                                if (!urlsMatch(initialUrl, it)) {
-                                    onUrlChanged(it)
-                                }
-                            }
-                        }
-
-                        override fun onPageFinished(view: WebView?, url: String?) {
-                            isLoading = false
-                            canGoBack = view?.canGoBack() ?: false
-                            canGoForward = view?.canGoForward() ?: false
-                            url?.let {
-                                if (!urlsMatch(currentUrl, it)) {
-                                    currentUrl = it
-                                }
-                                if (!urlsMatch(initialUrl, it)) {
-                                    onUrlChanged(it)
-                                }
-                            }
-                        }
-
-                        override fun shouldOverrideUrlLoading(
-                            view: WebView?,
-                            request: WebResourceRequest?
-                        ): Boolean {
-                            // Load inside WebView
-                            return false
-                        }
-                    }
-
-                    webChromeClient = object : WebChromeClient() {
-                        override fun onProgressChanged(view: WebView?, newProgress: Int) {
-                            progress = newProgress
-                            if (newProgress == 100) {
-                                isLoading = false
-                            }
-                        }
-                    }
-
-                    loadUrl(currentUrl)
-                    webView = this
+            factory = { _ ->
+                webView.apply {
+                    (parent as? ViewGroup)?.removeView(this)
                 }
             },
             update = {
@@ -173,7 +184,7 @@ fun InAppBrowser(
             horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             IconButton(
-                onClick = { webView?.goBack() },
+                onClick = { webView.goBack() },
                 enabled = canGoBack
             ) {
                 Icon(
@@ -184,7 +195,7 @@ fun InAppBrowser(
             }
 
             IconButton(
-                onClick = { webView?.goForward() },
+                onClick = { webView.goForward() },
                 enabled = canGoForward
             ) {
                 Icon(
@@ -197,9 +208,9 @@ fun InAppBrowser(
             IconButton(
                 onClick = {
                     if (isLoading) {
-                        webView?.stopLoading()
+                        webView.stopLoading()
                     } else {
-                        webView?.reload()
+                        webView.reload()
                     }
                 }
             ) {
@@ -211,7 +222,7 @@ fun InAppBrowser(
 
             IconButton(
                 onClick = {
-                    webView?.loadUrl("https://google.com")
+                    webView.loadUrl("https://google.com")
                 }
             ) {
                 Icon(
@@ -250,7 +261,7 @@ fun InAppBrowser(
                             } else if (!target.startsWith("http://") && !target.startsWith("https://")) {
                                 target = "https://$target"
                             }
-                            webView?.loadUrl(target)
+                            webView.loadUrl(target)
                         }
                     }
                 ),

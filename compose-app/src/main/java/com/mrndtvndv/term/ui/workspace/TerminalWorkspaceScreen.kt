@@ -9,6 +9,7 @@ import androidx.compose.material3.*
 import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
@@ -63,55 +64,61 @@ fun TabbedWorkspace(
         }
     }
 
-    Column(modifier = modifier.fillMaxSize()) {
-        if (sftpViewModel != null) {
-            TabRow(
-                selectedTabIndex = activePage,
-                containerColor = MaterialTheme.colorScheme.surface,
-                contentColor = MaterialTheme.colorScheme.onSurface,
-                indicator = { tabPositions ->
-                    if (activePage < tabPositions.size) {
-                        TabRowDefaults.SecondaryIndicator(
-                            modifier = Modifier.tabIndicatorOffset(tabPositions[activePage]),
-                            color = MaterialTheme.colorScheme.primary
-                        )
+    Scaffold(
+        modifier = modifier.fillMaxSize(),
+        topBar = {
+            if (sftpViewModel != null) {
+                TabRow(
+                    selectedTabIndex = activePage,
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    contentColor = MaterialTheme.colorScheme.onSurface,
+                    indicator = { tabPositions ->
+                        if (activePage < tabPositions.size) {
+                            TabRowDefaults.SecondaryIndicator(
+                                modifier = Modifier.tabIndicatorOffset(tabPositions[activePage]),
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
                     }
+                ) {
+                    Tab(
+                        selected = activePage == 0,
+                        onClick = { onPageSelected(0) },
+                        selectedContentColor = MaterialTheme.colorScheme.primary,
+                        unselectedContentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                        text = {
+                            Text(
+                                text = "Terminal",
+                                color = if (activePage == 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                                fontWeight = if (activePage == 0) FontWeight.Bold else FontWeight.Normal
+                            )
+                        }
+                    )
+                    Tab(
+                        selected = activePage == 1,
+                        onClick = { onPageSelected(1) },
+                        selectedContentColor = MaterialTheme.colorScheme.primary,
+                        unselectedContentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                        text = {
+                            Text(
+                                text = "SFTP Explorer",
+                                color = if (activePage == 1) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                                fontWeight = if (activePage == 1) FontWeight.Bold else FontWeight.Normal
+                            )
+                        }
+                    )
                 }
-            ) {
-                Tab(
-                    selected = activePage == 0,
-                    onClick = { onPageSelected(0) },
-                    selectedContentColor = MaterialTheme.colorScheme.primary,
-                    unselectedContentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                    text = {
-                        Text(
-                            text = "Terminal",
-                            color = if (activePage == 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                            fontWeight = if (activePage == 0) FontWeight.Bold else FontWeight.Normal
-                        )
-                    }
-                )
-                Tab(
-                    selected = activePage == 1,
-                    onClick = { onPageSelected(1) },
-                    selectedContentColor = MaterialTheme.colorScheme.primary,
-                    unselectedContentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                    text = {
-                        Text(
-                            text = "SFTP Explorer",
-                            color = if (activePage == 1) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                            fontWeight = if (activePage == 1) FontWeight.Bold else FontWeight.Normal
-                        )
-                    }
-                )
             }
         }
-
+    ) { paddingValues ->
         HorizontalPager(
             state = pagerState,
             userScrollEnabled = false, // Disable swipe so terminal selection / scrolling works
             beyondBoundsPageCount = 1,
-            modifier = Modifier.weight(1f)
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+                .clipToBounds()
         ) { page ->
             when (page) {
                 0 -> {

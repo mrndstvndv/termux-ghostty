@@ -154,5 +154,16 @@ public final class GhosttyNative {
     public static native void nativeSshAckWakeup(long sessionHandle);
     public static native int nativeSshDrainToSession(long terminalSessionHandle, long sshSessionHandle);
     public static native boolean nativeSshIsRunning(long sessionHandle);
+
+    public static native String nativeSshExec(long sessionHandle, String command);
+    public static native long nativeSftpInit(long sessionHandle);
+    public static native void nativeSftpClose(long sessionHandle, long sftpHandle);
+    public static native String nativeSftpListFiles(long sessionHandle, long sftpHandle, String path);
+    public static native boolean nativeSftpMkdir(long sessionHandle, long sftpHandle, String path, int permissions);
+    public static native boolean nativeSftpDelete(long sessionHandle, long sftpHandle, String path);
+    public static native long nativeSftpFileOpen(long sessionHandle, long sftpHandle, String path, int flags, int mode);
+    public static native void nativeSftpFileClose(long sessionHandle, long fileHandle);
+    public static native int nativeSftpFileRead(long sessionHandle, long fileHandle, byte[] buffer, int offset, int length);
+    public static native int nativeSftpFileWrite(long sessionHandle, long fileHandle, byte[] buffer, int offset, int length);
 }
 

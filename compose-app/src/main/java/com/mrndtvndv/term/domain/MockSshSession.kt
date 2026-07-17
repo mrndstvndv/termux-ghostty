@@ -31,6 +31,19 @@ class MockSshSession : SshSession {
         return MockSshShellChannel()
     }
 
+    override suspend fun openSftpClient(): SftpClient {
+        return object : SftpClient {
+            override suspend fun listFiles(path: String): List<SftpFile> = emptyList()
+            override suspend fun createDirectory(path: String) {}
+            override suspend fun deleteFile(path: String) {}
+            override suspend fun downloadFile(remotePath: String, destination: File, onProgress: (Long) -> Unit) {}
+            override suspend fun uploadFile(source: File, remotePath: String, onProgress: (Long) -> Unit) {}
+            override fun close() {}
+        }
+    }
+
+    override suspend fun execCommand(command: String): String = ""
+
     override fun disconnect() {
         _isConnected.value = false
     }

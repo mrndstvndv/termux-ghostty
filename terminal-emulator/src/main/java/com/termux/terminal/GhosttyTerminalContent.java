@@ -34,7 +34,7 @@ public final class GhosttyTerminalContent implements TerminalContent, AutoClosea
     }
 
     @Override
-    public void close() {
+    public synchronized void close() {
         long nativeHandle = mNativeHandle;
         if (nativeHandle == 0) {
             return;
@@ -46,21 +46,33 @@ public final class GhosttyTerminalContent implements TerminalContent, AutoClosea
     }
 
     public synchronized void reset() {
-        long nativeHandle = requireNativeHandle();
+        if (mNativeHandle == 0) {
+            GhosttyLog.warn("reset called on a closed terminal content");
+            return;
+        }
+        long nativeHandle = mNativeHandle;
         GhosttyLog.debug("Resetting Ghostty terminal handle=0x" + Long.toHexString(nativeHandle));
         GhosttyNative.nativeReset(nativeHandle);
     }
 
     public synchronized void applyColorScheme(int[] colors) {
         validateColorScheme(colors);
-        int result = GhosttyNative.nativeSetColorScheme(requireNativeHandle(), colors);
+        if (mNativeHandle == 0) {
+            GhosttyLog.warn("applyColorScheme called on a closed terminal content");
+            return;
+        }
+        int result = GhosttyNative.nativeSetColorScheme(mNativeHandle, colors);
         if (result != 0) {
             throw new IllegalStateException("Failed to apply Ghostty color scheme: " + result);
         }
     }
 
     public synchronized int resize(int columns, int rows, int cellWidthPixels, int cellHeightPixels) {
-        long nativeHandle = requireNativeHandle();
+        if (mNativeHandle == 0) {
+            GhosttyLog.warn("resize called on a closed terminal content");
+            return 0;
+        }
+        long nativeHandle = mNativeHandle;
         int result = GhosttyNative.nativeResize(nativeHandle, columns, rows, cellWidthPixels, cellHeightPixels);
         if (result != 0) {
             GhosttyLog.error("nativeResize failed handle=0x" + Long.toHexString(nativeHandle) + " columns=" + columns + " rows=" + rows + " cellWidth=" + cellWidthPixels + " cellHeight=" + cellHeightPixels + " result=" + result);
@@ -71,12 +83,19 @@ public final class GhosttyTerminalContent implements TerminalContent, AutoClosea
     }
 
     public synchronized int setViewportTopRow(int topRow) {
-        long nativeHandle = requireNativeHandle();
-        return GhosttyNative.nativeSetViewportTopRow(nativeHandle, topRow);
+        if (mNativeHandle == 0) {
+            GhosttyLog.warn("setViewportTopRow called on a closed terminal content");
+            return 0;
+        }
+        return GhosttyNative.nativeSetViewportTopRow(mNativeHandle, topRow);
     }
 
     public synchronized void requestFullSnapshotRefresh() {
-        GhosttyNative.nativeRequestFullSnapshotRefresh(requireNativeHandle());
+        if (mNativeHandle == 0) {
+            GhosttyLog.warn("requestFullSnapshotRefresh called on a closed terminal content");
+            return;
+        }
+        GhosttyNative.nativeRequestFullSnapshotRefresh(mNativeHandle);
     }
 
     public synchronized int append(byte[] data, int offset, int length) {
@@ -84,13 +103,21 @@ public final class GhosttyTerminalContent implements TerminalContent, AutoClosea
         if (length == 0) {
             return 0;
         }
+        if (mNativeHandle == 0) {
+            GhosttyLog.warn("append called on a closed terminal content");
+            return 0;
+        }
 
-        return GhosttyNative.nativeAppend(requireNativeHandle(), data, offset, length);
+        return GhosttyNative.nativeAppend(mNativeHandle, data, offset, length);
     }
 
     public synchronized int queueMouseEvent(GhosttyMouseEvent event) {
+        if (mNativeHandle == 0) {
+            GhosttyLog.warn("queueMouseEvent called on a closed terminal content");
+            return 0;
+        }
         return GhosttyNative.nativeQueueMouseEvent(
-            requireNativeHandle(),
+            mNativeHandle,
             event.action,
             event.button,
             event.modifiers,
@@ -112,44 +139,72 @@ public final class GhosttyTerminalContent implements TerminalContent, AutoClosea
         if (length == 0) {
             return 0;
         }
+        if (mNativeHandle == 0) {
+            GhosttyLog.warn("drainPendingOutput called on a closed terminal content");
+            return 0;
+        }
 
-        return GhosttyNative.nativeDrainPendingOutput(requireNativeHandle(), buffer, offset, length);
+        return GhosttyNative.nativeDrainPendingOutput(mNativeHandle, buffer, offset, length);
     }
 
     @Nullable
     public synchronized String consumePendingTitle() {
-        return GhosttyNative.nativeConsumeTitle(requireNativeHandle());
+        if (mNativeHandle == 0) {
+            return null;
+        }
+        return GhosttyNative.nativeConsumeTitle(mNativeHandle);
     }
 
     @Nullable
     public synchronized String consumePendingClipboardText() {
-        return GhosttyNative.nativeConsumeClipboardText(requireNativeHandle());
+        if (mNativeHandle == 0) {
+            return null;
+        }
+        return GhosttyNative.nativeConsumeClipboardText(mNativeHandle);
     }
 
     @Nullable
     public synchronized String consumePendingNotificationTitle() {
-        return GhosttyNative.nativeConsumeNotificationTitle(requireNativeHandle());
+        if (mNativeHandle == 0) {
+            return null;
+        }
+        return GhosttyNative.nativeConsumeNotificationTitle(mNativeHandle);
     }
 
     @Nullable
     public synchronized String consumePendingNotificationBody() {
-        return GhosttyNative.nativeConsumeNotificationBody(requireNativeHandle());
+        if (mNativeHandle == 0) {
+            return null;
+        }
+        return GhosttyNative.nativeConsumeNotificationBody(mNativeHandle);
     }
 
     public synchronized int getProgressState() {
-        return GhosttyNative.nativeGetProgressState(requireNativeHandle());
+        if (mNativeHandle == 0) {
+            return 0;
+        }
+        return GhosttyNative.nativeGetProgressState(mNativeHandle);
     }
 
     public synchronized int getProgressValue() {
-        return GhosttyNative.nativeGetProgressValue(requireNativeHandle());
+        if (mNativeHandle == 0) {
+            return 0;
+        }
+        return GhosttyNative.nativeGetProgressValue(mNativeHandle);
     }
 
     public synchronized long getProgressGeneration() {
-        return GhosttyNative.nativeGetProgressGeneration(requireNativeHandle());
+        if (mNativeHandle == 0) {
+            return 0L;
+        }
+        return GhosttyNative.nativeGetProgressGeneration(mNativeHandle);
     }
 
     public synchronized void clearProgress() {
-        GhosttyNative.nativeClearProgress(requireNativeHandle());
+        if (mNativeHandle == 0) {
+            return;
+        }
+        GhosttyNative.nativeClearProgress(mNativeHandle);
     }
 
     public synchronized boolean isCursorKeysApplicationMode() {
@@ -177,36 +232,57 @@ public final class GhosttyTerminalContent implements TerminalContent, AutoClosea
     }
 
     public synchronized boolean isCursorEnabled() {
-        return GhosttyNative.nativeIsCursorVisible(requireNativeHandle());
+        if (mNativeHandle == 0) {
+            return false;
+        }
+        return GhosttyNative.nativeIsCursorVisible(mNativeHandle);
     }
 
     @Override
     public synchronized int getColumns() {
-        return GhosttyNative.nativeGetColumns(requireNativeHandle());
+        if (mNativeHandle == 0) {
+            return 0;
+        }
+        return GhosttyNative.nativeGetColumns(mNativeHandle);
     }
 
     @Override
     public synchronized int getRows() {
-        return GhosttyNative.nativeGetRows(requireNativeHandle());
+        if (mNativeHandle == 0) {
+            return 0;
+        }
+        return GhosttyNative.nativeGetRows(mNativeHandle);
     }
 
     @Override
     public synchronized int getActiveRows() {
-        return GhosttyNative.nativeGetActiveRows(requireNativeHandle());
+        if (mNativeHandle == 0) {
+            return 0;
+        }
+        return GhosttyNative.nativeGetActiveRows(mNativeHandle);
     }
 
     @Override
     public synchronized int getActiveTranscriptRows() {
-        return GhosttyNative.nativeGetActiveTranscriptRows(requireNativeHandle());
+        if (mNativeHandle == 0) {
+            return 0;
+        }
+        return GhosttyNative.nativeGetActiveTranscriptRows(mNativeHandle);
     }
 
     public synchronized int getModeBits() {
-        return GhosttyNative.nativeGetModeBits(requireNativeHandle());
+        if (mNativeHandle == 0) {
+            return 0;
+        }
+        return GhosttyNative.nativeGetModeBits(mNativeHandle);
     }
 
     @Override
     public synchronized boolean isAlternateBufferActive() {
-        return GhosttyNative.nativeIsAlternateBufferActive(requireNativeHandle());
+        if (mNativeHandle == 0) {
+            return false;
+        }
+        return GhosttyNative.nativeIsAlternateBufferActive(mNativeHandle);
     }
 
     @Override
@@ -216,27 +292,42 @@ public final class GhosttyTerminalContent implements TerminalContent, AutoClosea
 
     @Override
     public synchronized boolean isReverseVideo() {
-        return GhosttyNative.nativeIsReverseVideo(requireNativeHandle());
+        if (mNativeHandle == 0) {
+            return false;
+        }
+        return GhosttyNative.nativeIsReverseVideo(mNativeHandle);
     }
 
     @Override
     public synchronized int getCursorRow() {
-        return GhosttyNative.nativeGetCursorRow(requireNativeHandle());
+        if (mNativeHandle == 0) {
+            return 0;
+        }
+        return GhosttyNative.nativeGetCursorRow(mNativeHandle);
     }
 
     @Override
     public synchronized int getCursorCol() {
-        return GhosttyNative.nativeGetCursorCol(requireNativeHandle());
+        if (mNativeHandle == 0) {
+            return 0;
+        }
+        return GhosttyNative.nativeGetCursorCol(mNativeHandle);
     }
 
     @Override
     public synchronized int getCursorStyle() {
-        return GhosttyNative.nativeGetCursorStyle(requireNativeHandle());
+        if (mNativeHandle == 0) {
+            return 0;
+        }
+        return GhosttyNative.nativeGetCursorStyle(mNativeHandle);
     }
 
     @Override
     public synchronized boolean shouldCursorBeVisible() {
-        if (!GhosttyNative.nativeIsCursorVisible(requireNativeHandle())) {
+        if (mNativeHandle == 0) {
+            return false;
+        }
+        if (!GhosttyNative.nativeIsCursorVisible(mNativeHandle)) {
             return false;
         }
 
@@ -246,18 +337,27 @@ public final class GhosttyTerminalContent implements TerminalContent, AutoClosea
     @Nullable
     @Override
     public synchronized String getSelectedText(int startColumn, int startRow, int endColumn, int endRow) {
-        return GhosttyNative.nativeGetSelectedText(requireNativeHandle(), startColumn, startRow, endColumn, endRow, 0);
+        if (mNativeHandle == 0) {
+            return null;
+        }
+        return GhosttyNative.nativeGetSelectedText(mNativeHandle, startColumn, startRow, endColumn, endRow, 0);
     }
 
     @Nullable
     @Override
     public synchronized String getWordAtLocation(int column, int row) {
-        return GhosttyNative.nativeGetWordAtLocation(requireNativeHandle(), column, row);
+        if (mNativeHandle == 0) {
+            return null;
+        }
+        return GhosttyNative.nativeGetWordAtLocation(mNativeHandle, column, row);
     }
 
     @Nullable
     @Override
     public synchronized String getTranscriptText(boolean joinLines, boolean trim) {
+        if (mNativeHandle == 0) {
+            return null;
+        }
         int flags = 0;
         if (joinLines) {
             flags |= GhosttyNative.TRANSCRIPT_FLAG_JOIN_LINES;
@@ -266,7 +366,7 @@ public final class GhosttyTerminalContent implements TerminalContent, AutoClosea
             flags |= GhosttyNative.TRANSCRIPT_FLAG_TRIM;
         }
 
-        return GhosttyNative.nativeGetTranscriptText(requireNativeHandle(), flags);
+        return GhosttyNative.nativeGetTranscriptText(mNativeHandle, flags);
     }
 
     @Override
@@ -281,7 +381,11 @@ public final class GhosttyTerminalContent implements TerminalContent, AutoClosea
         int requiredBytes;
 
         synchronized (this) {
-            nativeHandle = requireNativeHandle();
+            if (mNativeHandle == 0) {
+                GhosttyLog.warn("fillSnapshot called on a closed terminal content");
+                return 0;
+            }
+            nativeHandle = mNativeHandle;
             snapshot.getBuffer().clear();
 
             requiredBytes = GhosttyNative.nativeFillSnapshotCurrentViewport(nativeHandle, snapshot.getBuffer(), snapshot.getCapacityBytes());
@@ -319,7 +423,11 @@ public final class GhosttyTerminalContent implements TerminalContent, AutoClosea
         long nativeHandle;
         int requiredBytes;
         synchronized (this) {
-            nativeHandle = requireNativeHandle();
+            if (mNativeHandle == 0) {
+                GhosttyLog.warn("fillViewportLinks called on a closed terminal content");
+                return 0;
+            }
+            nativeHandle = mNativeHandle;
             snapshot.getBuffer().clear();
 
             requiredBytes = GhosttyNative.nativeFillViewportLinks(nativeHandle, snapshot.getBuffer(), snapshot.getCapacityBytes());
@@ -389,10 +497,6 @@ public final class GhosttyTerminalContent implements TerminalContent, AutoClosea
     }
 
     long requireNativeHandle() {
-        if (mNativeHandle == 0) {
-            throw new IllegalStateException("Ghostty terminal is closed");
-        }
-
         return mNativeHandle;
     }
 

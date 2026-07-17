@@ -12,5 +12,7 @@ interface SshSession {
         rows: Int,
         herdrIntegration: Boolean = false
     ): SshShellChannel
+    suspend fun openSftpClient(): SftpClient
+    suspend fun execCommand(command: String): String
     fun disconnect()
 }

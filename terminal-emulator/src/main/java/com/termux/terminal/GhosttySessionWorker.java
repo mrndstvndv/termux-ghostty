@@ -56,7 +56,7 @@ final class GhosttySessionWorker extends Thread {
     private final byte[] mReadBuffer = new byte[32 * 1024];
     private final byte[] mDrainBuffer = new byte[4096];
 
-    private long mSshSessionHandle = 0L;
+    private volatile long mSshSessionHandle = 0L;
     private android.os.MessageQueue.OnFileDescriptorEventListener mFdListener;
     private android.os.ParcelFileDescriptor mWakePfd;
 
@@ -128,13 +128,17 @@ final class GhosttySessionWorker extends Thread {
         try {
             mWakePfd = android.os.ParcelFileDescriptor.adoptFd(wakeFd);
             final java.io.FileDescriptor fd = mWakePfd.getFileDescriptor();
-            mFdListener = new android.os.MessageQueue.OnFileDescriptorEventListener() {
+             mFdListener = new android.os.MessageQueue.OnFileDescriptorEventListener() {
                 @Override
                 public int onFileDescriptorEvents(java.io.FileDescriptor fdObj, int events) {
                     if (mContent.requireNativeHandle() == 0) {
                         return 0; // stop listening
                     }
-                    GhosttyNative.nativeSshAckWakeup(mSshSessionHandle);
+                    long sshHandle = mSshSessionHandle;
+                    if (sshHandle == 0) {
+                        return 0; // stop listening
+                    }
+                    GhosttyNative.nativeSshAckWakeup(sshHandle);
                     mWorkerHandler.sendEmptyMessage(MSG_SSH_DRAIN);
                     return android.os.MessageQueue.OnFileDescriptorEventListener.EVENT_INPUT;
                 }
@@ -215,6 +219,7 @@ final class GhosttySessionWorker extends Thread {
     }
 
     void shutdown() {
+        mSshSessionHandle = 0L;
         getWorkerHandler().sendEmptyMessage(MSG_SHUTDOWN);
     }
 

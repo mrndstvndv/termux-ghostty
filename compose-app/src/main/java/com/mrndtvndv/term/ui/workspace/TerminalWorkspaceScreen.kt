@@ -59,6 +59,7 @@ fun TabbedWorkspace(
     browserUrl: String,
     onBrowserUrlChanged: (String) -> Unit,
     onOpenUrl: (String) -> Unit,
+    onRefreshWorkspace: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val activeTabs = remember(sftpViewModel, reviewViewModel) {
@@ -145,7 +146,12 @@ fun TabbedWorkspace(
                     val isSelected = activePage == index
                     Tab(
                         selected = isSelected,
-                        onClick = { onPageSelected(index) },
+                        onClick = {
+                            if (tab == WorkspaceTab.Sftp || tab == WorkspaceTab.Review) {
+                                onRefreshWorkspace()
+                            }
+                            onPageSelected(index)
+                        },
                         selectedContentColor = MaterialTheme.colorScheme.primary,
                         unselectedContentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                         text = {
@@ -248,6 +254,7 @@ fun SplitWorkspace(
     browserUrl: String,
     onBrowserUrlChanged: (String) -> Unit,
     onOpenUrl: (String) -> Unit,
+    onRefreshWorkspace: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
@@ -333,7 +340,12 @@ fun SplitWorkspace(
                             rightTabs.forEachIndexed { index, title ->
                                 Tab(
                                     selected = rightActivePage == index,
-                                    onClick = { rightActivePage = index },
+                                    onClick = {
+                                        if (title == "SFTP Explorer" || title == "Review") {
+                                            onRefreshWorkspace()
+                                        }
+                                        rightActivePage = index
+                                    },
                                     text = { Text(title) }
                                 )
                             }
@@ -392,6 +404,7 @@ fun TerminalWorkspaceScreen(
     browserUrl: String,
     onBrowserUrlChanged: (String) -> Unit,
     onOpenUrl: (String) -> Unit,
+    onRefreshWorkspace: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -459,6 +472,7 @@ fun TerminalWorkspaceScreen(
             browserUrl = browserUrl,
             onBrowserUrlChanged = onBrowserUrlChanged,
             onOpenUrl = onOpenUrl,
+            onRefreshWorkspace = onRefreshWorkspace,
             modifier = modifier
         )
     } else {
@@ -480,6 +494,7 @@ fun TerminalWorkspaceScreen(
             browserUrl = browserUrl,
             onBrowserUrlChanged = onBrowserUrlChanged,
             onOpenUrl = onOpenUrl,
+            onRefreshWorkspace = onRefreshWorkspace,
             modifier = modifier
         )
     }

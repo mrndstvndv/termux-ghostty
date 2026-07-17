@@ -447,6 +447,87 @@ class MainActivity : ComponentActivity() {
                                                   ShareUtils.openUrl(this@MainActivity, url)
                                               }
                                           },
+                                          onRefreshWorkspace = {
+                                              if (sharedPreferences.getBoolean("herdr_integration", false)) {
+                                                  sshSession?.let { currentSession ->
+                                                      lifecycleScope.launch(Dispatchers.IO) {
+                                                          try {
+                                                              val output = currentSession.execCommand("export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; herdr workspace list; herdr pane list")
+                                                              var focusedWsId: String? = null
+                                                              var wsLabel: String? = null
+                                                              val panes = mutableListOf<JSONObject>()
+
+                                                              output.split("\n").forEach { line ->
+                                                                  val trimmed = line.trim()
+                                                                  if (trimmed.isNotEmpty()) {
+                                                                      try {
+                                                                          val json = JSONObject(trimmed)
+                                                                          val id = json.optString("id")
+                                                                          val result = json.optJSONObject("result")
+                                                                          if (result != null) {
+                                                                              if (id == "cli:workspace:list") {
+                                                                                  val wsArray = result.optJSONArray("workspaces")
+                                                                                  if (wsArray != null) {
+                                                                                      for (i in 0 until wsArray.length()) {
+                                                                                          val ws = wsArray.optJSONObject(i)
+                                                                                          if (ws != null && ws.optBoolean("focused", false)) {
+                                                                                              focusedWsId = ws.optString("workspace_id").takeIf { it.isNotEmpty() }
+                                                                                              wsLabel = ws.optString("label").takeIf { it.isNotEmpty() }
+                                                                                              break
+                                                                                          }
+                                                                                      }
+                                                                                  }
+                                                                              } else if (id == "cli:pane:list") {
+                                                                                  val paneArray = result.optJSONArray("panes")
+                                                                                  if (paneArray != null) {
+                                                                                      for (i in 0 until paneArray.length()) {
+                                                                                          val pane = paneArray.optJSONObject(i)
+                                                                                          if (pane != null) panes.add(pane)
+                                                                                      }
+                                                                                  }
+                                                                              }
+                                                                          }
+                                                                      } catch (je: Exception) {}
+                                                                  }
+                                                              }
+
+                                                              val workspaceName = wsLabel ?: focusedWsId
+                                                              val newWorkspaceKey = if (!workspaceName.isNullOrEmpty()) {
+                                                                  "${workspaceName}_${sshHost}_$sshUsername"
+                                                              } else {
+                                                                  "$sshUsername@$sshHost:$sshPort"
+                                                              }
+
+                                                              var paneCwd: String? = null
+                                                              if (!focusedWsId.isNullOrEmpty()) {
+                                                                  for (pane in panes) {
+                                                                      if (pane.optString("workspace_id") == focusedWsId && pane.optBoolean("focused", false)) {
+                                                                          paneCwd = pane.optString("cwd").takeIf { it.isNotEmpty() }
+                                                                          break
+                                                                      }
+                                                                  }
+                                                              }
+
+                                                              withContext(Dispatchers.Main) {
+                                                                  if (newWorkspaceKey != activeWorkspaceKey) {
+                                                                      activeWorkspaceKey = newWorkspaceKey
+                                                                      val savedDir = sharedPreferences.getString("sftp_last_dir_$newWorkspaceKey", null)
+                                                                      val finalCwd = if (!savedDir.isNullOrEmpty()) savedDir else (paneCwd ?: "/")
+                                                                      
+                                                                      workspaceDirState.value = finalCwd
+                                                                      sftpViewModelState.value?.navigateTo(finalCwd)
+                                                                      
+                                                                      val savedUrl = sharedPreferences.getString("browser_last_url_$newWorkspaceKey", "https://duckduckgo.com") ?: "https://duckduckgo.com"
+                                                                      browserUrlState.value = savedUrl
+                                                                  }
+                                                              }
+                                                          } catch (e: Exception) {
+                                                              // ignore
+                                                          }
+                                                      }
+                                                  }
+                                              }
+                                          },
                                          modifier = Modifier.fillMaxSize()
                                      )
                                 }

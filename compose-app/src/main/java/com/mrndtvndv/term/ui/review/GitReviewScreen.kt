@@ -112,10 +112,7 @@ fun GitReviewScreen(
                 DiffViewer(
                     selectedFile = selectedFile,
                     diffText = selectedFileDiff,
-                    isLoading = isDiffLoading,
-                    onStage = { file -> viewModel.stageFile(file) },
-                    onUnstage = { file -> viewModel.unstageFile(file) },
-                    onDiscard = { file -> discardConfirmFile = file }
+                    isLoading = isDiffLoading
                 )
             }
         }
@@ -158,10 +155,7 @@ fun GitReviewScreen(
                     DiffViewer(
                         selectedFile = selectedFile,
                         diffText = selectedFileDiff,
-                        isLoading = isDiffLoading,
-                        onStage = { file -> viewModel.stageFile(file) },
-                        onUnstage = { file -> viewModel.unstageFile(file) },
-                        onDiscard = { file -> discardConfirmFile = file }
+                        isLoading = isDiffLoading
                     )
                 }
             }
@@ -413,10 +407,7 @@ fun FileItem(
 fun DiffViewer(
     selectedFile: GitFileStatus?,
     diffText: String?,
-    isLoading: Boolean,
-    onStage: (GitFileStatus) -> Unit,
-    onUnstage: (GitFileStatus) -> Unit,
-    onDiscard: (GitFileStatus) -> Unit
+    isLoading: Boolean
 ) {
     if (selectedFile == null) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -429,42 +420,6 @@ fun DiffViewer(
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        // Diff Control Header
-        Surface(
-            tonalElevation = 4.dp,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = selectedFile.path,
-                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f).padding(start = 8.dp)
-                )
-                
-                Button(
-                    onClick = { if (selectedFile.isStaged) onUnstage(selectedFile) else onStage(selectedFile) },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (selectedFile.isStaged) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
-                    ),
-                    modifier = Modifier.padding(horizontal = 4.dp)
-                ) {
-                    Text(if (selectedFile.isStaged) "Unstage" else "Stage")
-                }
-                
-                OutlinedButton(
-                    onClick = { onDiscard(selectedFile) },
-                    modifier = Modifier.padding(horizontal = 4.dp)
-                ) {
-                    Text("Discard")
-                }
-            }
-        }
-
         Box(modifier = Modifier.fillMaxSize().weight(1f)) {
             if (isLoading) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {

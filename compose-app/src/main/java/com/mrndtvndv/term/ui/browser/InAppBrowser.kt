@@ -222,7 +222,7 @@ fun InAppBrowser(
 
             IconButton(
                 onClick = {
-                    webView.loadUrl("https://google.com")
+                    webView.loadUrl("https://duckduckgo.com")
                 }
             ) {
                 Icon(

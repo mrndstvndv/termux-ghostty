@@ -316,7 +316,7 @@ fun SplitWorkspace(
                             isFirstCompose = false
                             return@LaunchedEffect
                         }
-                        if (browserUrl.isNotEmpty() && browserUrl != "https://google.com") {
+                        if (browserUrl.isNotEmpty() && browserUrl != "https://duckduckgo.com") {
                             val idx = rightTabs.indexOf("Browser")
                             if (idx != -1) {
                                 rightActivePage = idx

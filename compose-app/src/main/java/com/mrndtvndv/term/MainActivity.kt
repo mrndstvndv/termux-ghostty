@@ -112,7 +112,7 @@ class MainActivity : ComponentActivity() {
     private var sshUsername: String? = null
     private val sftpActivePageState = mutableIntStateOf(0)
     private val sftpVisibleState = mutableStateOf(false)
-    private val browserUrlState = mutableStateOf("https://google.com")
+    private val browserUrlState = mutableStateOf("https://duckduckgo.com")
     
     private val connectionLoading = mutableStateOf(false)
     private val connectionError = mutableStateOf<String?>(null)
@@ -654,7 +654,7 @@ class MainActivity : ComponentActivity() {
 
                                     activeWorkspaceKey = key
 
-                                    val savedUrl = sharedPreferences.getString("browser_last_url_$key", "https://google.com") ?: "https://google.com"
+                                    val savedUrl = sharedPreferences.getString("browser_last_url_$key", "https://duckduckgo.com") ?: "https://duckduckgo.com"
                                     withContext(Dispatchers.Main) {
                                         browserUrlState.value = savedUrl
                                         if (isHerdrEnabled) {

@@ -216,6 +216,11 @@ class ReviewViewModel(
         }
     }
 
+    fun deselectFile() {
+        _selectedFile.value = null
+        _selectedFileDiff.value = null
+    }
+
     fun clearErrorMessage() {
         _errorMessage.value = null
     }

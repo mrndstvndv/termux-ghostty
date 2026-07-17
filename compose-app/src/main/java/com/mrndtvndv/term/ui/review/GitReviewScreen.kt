@@ -138,7 +138,7 @@ fun GitReviewScreen(
                             }
                         },
                         navigationIcon = {
-                            IconButton(onClick = { viewModel.refresh() }) {
+                            IconButton(onClick = { viewModel.deselectFile() }) {
                                 Icon(
                                     imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                                     contentDescription = "Back"

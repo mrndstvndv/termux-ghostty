@@ -51,6 +51,20 @@ class ReviewViewModel(
         }
     }
 
+    private suspend fun getRepoRoot(dir: String): String {
+        return try {
+            val command = "export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; cd \"$dir\" && git rev-parse --show-toplevel"
+            val output = execCommand(command).trim()
+            if (output.isNotEmpty() && !output.startsWith("fatal:") && !output.contains("error")) {
+                output
+            } else {
+                dir
+            }
+        } catch (e: Exception) {
+            dir
+        }
+    }
+
     fun refresh() {
         viewModelScope.launch {
             _uiState.value = ReviewUiState.Loading
@@ -58,8 +72,9 @@ class ReviewViewModel(
             _selectedFileDiff.value = null
             val dir = workspaceDir.value
             try {
+                val repoRoot = getRepoRoot(dir)
                 // Ensure we handle PATH correctly on remote machines
-                val command = "export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; cd \"$dir\" && git status --porcelain"
+                val command = "export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; cd \"$repoRoot\" && git status --porcelain"
                 val output = execCommand(command)
                 
                 val staged = mutableListOf<GitFileStatus>()
@@ -120,18 +135,19 @@ class ReviewViewModel(
             _selectedFileDiff.value = null
             val dir = workspaceDir.value
             try {
+                val repoRoot = getRepoRoot(dir)
                 val command = when {
                     file.status == "??" -> {
                         // Untracked file: use git diff --no-index /dev/null <file>
-                        "export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; cd \"$dir\" && git diff --no-index -- /dev/null \"${file.path}\""
+                        "export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; cd \"$repoRoot\" && git diff --no-index -- /dev/null \"${file.path}\""
                     }
                     file.isStaged -> {
                         // Staged file: use git diff --cached
-                        "export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; cd \"$dir\" && git diff --cached -- \"${file.path}\""
+                        "export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; cd \"$repoRoot\" && git diff --cached -- \"${file.path}\""
                     }
                     else -> {
                         // Unstaged file: use git diff
-                        "export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; cd \"$dir\" && git diff -- \"${file.path}\""
+                        "export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; cd \"$repoRoot\" && git diff -- \"${file.path}\""
                     }
                 }
                 val diffOutput = execCommand(command)
@@ -148,7 +164,8 @@ class ReviewViewModel(
         viewModelScope.launch {
             val dir = workspaceDir.value
             try {
-                val command = "export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; cd \"$dir\" && git add \"${file.path}\""
+                val repoRoot = getRepoRoot(dir)
+                val command = "export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; cd \"$repoRoot\" && git add \"${file.path}\""
                 execCommand(command)
                 refresh()
             } catch (e: Exception) {
@@ -161,8 +178,9 @@ class ReviewViewModel(
         viewModelScope.launch {
             val dir = workspaceDir.value
             try {
+                val repoRoot = getRepoRoot(dir)
                 // Try restore first, fallback to reset
-                val command = "export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; cd \"$dir\" && (git restore --staged -- \"${file.path}\" || git reset HEAD -- \"${file.path}\")"
+                val command = "export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; cd \"$repoRoot\" && (git restore --staged -- \"${file.path}\" || git reset HEAD -- \"${file.path}\")"
                 execCommand(command)
                 refresh()
             } catch (e: Exception) {
@@ -175,18 +193,19 @@ class ReviewViewModel(
         viewModelScope.launch {
             val dir = workspaceDir.value
             try {
+                val repoRoot = getRepoRoot(dir)
                 val command = when {
                     file.status == "??" -> {
                         // Delete untracked file
-                        "cd \"$dir\" && rm -rf \"${file.path}\""
+                        "cd \"$repoRoot\" && rm -rf \"${file.path}\""
                     }
                     file.isStaged -> {
                         // First unstage, then restore
-                        "export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; cd \"$dir\" && (git restore --staged -- \"${file.path}\" || git reset HEAD -- \"${file.path}\") && (git restore -- \"${file.path}\" || git checkout -- \"${file.path}\")"
+                        "export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; cd \"$repoRoot\" && (git restore --staged -- \"${file.path}\" || git reset HEAD -- \"${file.path}\") && (git restore -- \"${file.path}\" || git checkout -- \"${file.path}\")"
                     }
                     else -> {
                         // Restore unstaged file
-                        "export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; cd \"$dir\" && (git restore -- \"${file.path}\" || git checkout -- \"${file.path}\")"
+                        "export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; cd \"$repoRoot\" && (git restore -- \"${file.path}\" || git checkout -- \"${file.path}\")"
                     }
                 }
                 execCommand(command)

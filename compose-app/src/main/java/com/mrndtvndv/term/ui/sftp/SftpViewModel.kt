@@ -49,7 +49,9 @@ class SftpViewModel(
         viewModelScope.launch {
             _uiState.value = SftpUiState.Loading
             try {
-                val list = client.listFiles(path)
+                val list = client.listFiles(path).sortedWith(
+                    compareBy<SftpFile> { !it.isDirectory }.thenBy { it.name.lowercase() }
+                )
                 _uiState.value = SftpUiState.Success(path, list)
                 onPathChanged?.invoke(path)
             } catch (e: Exception) {

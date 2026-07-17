@@ -47,3 +47,6 @@ terminal-emulator/src/main/zig/.zig-cache/
 
 # Local emulator runtime state and tools
 .android/
+
+# direnv
+.direnv/

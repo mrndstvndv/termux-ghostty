@@ -101,6 +101,7 @@ class MainActivity : ComponentActivity() {
     
     private var sftpClient: SftpClient? = null
     private val sftpViewModelState = mutableStateOf<SftpViewModel?>(null)
+    private var activeWorkspaceKey: String? = null
     private val sftpActivePageState = mutableIntStateOf(0)
     private val sftpVisibleState = mutableStateOf(false)
     
@@ -412,31 +413,45 @@ class MainActivity : ComponentActivity() {
                                          onPageSelected = { page ->
                                              if (page == 1 && sftpViewModelState.value != null) {
                                                  lifecycleScope.launch {
-                                                     val herdrIntegration = sharedPreferences.getBoolean("herdr_integration", false)
-                                                     var resolvedCwd = "/"
-                                                     if (herdrIntegration) {
-                                                         try {
-                                                             val output = sshSession?.execCommand("herdr pane current") ?: ""
-                                                             val match = Regex("(?i)cwd[:=]\\s*([^\\n\\r]+)").find(output)
-                                                                 ?: Regex("\"cwd\"\\s*:\\s*\"([^\"]+)\"").find(output)
-                                                             val path = match?.groupValues?.get(1)?.trim()
-                                                             if (!path.isNullOrEmpty()) {
-                                                                 resolvedCwd = path
-                                                             } else if (output.trim().startsWith("/")) {
-                                                                 resolvedCwd = output.trim()
+                                                     val vm = sftpViewModelState.value
+                                                     if (vm != null) {
+                                                         val key = activeWorkspaceKey
+                                                         val savedDir = if (key != null) sharedPreferences.getString("sftp_last_dir_$key", null) else null
+                                                         
+                                                         val targetDir: String
+                                                         if (!savedDir.isNullOrEmpty()) {
+                                                             targetDir = savedDir
+                                                         } else {
+                                                             val herdrIntegration = sharedPreferences.getBoolean("herdr_integration", false)
+                                                             var resolvedCwd = "/"
+                                                             if (herdrIntegration) {
+                                                                 try {
+                                                                     val output = sshSession?.execCommand("herdr pane current") ?: ""
+                                                                     val match = Regex("(?i)cwd[:=]\\s*([^\\n\\r]+)").find(output)
+                                                                         ?: Regex("\"cwd\"\\s*:\\s*\"([^\"]+)\"").find(output)
+                                                                     val path = match?.groupValues?.get(1)?.trim()
+                                                                     if (!path.isNullOrEmpty()) {
+                                                                         resolvedCwd = path
+                                                                     } else if (output.trim().startsWith("/")) {
+                                                                         resolvedCwd = output.trim()
+                                                                     } else {
+                                                                         val termCwd = termSession?.cwd
+                                                                         if (!termCwd.isNullOrEmpty()) resolvedCwd = termCwd
+                                                                     }
+                                                                 } catch (e: Exception) {
+                                                                     val termCwd = termSession?.cwd
+                                                                     if (!termCwd.isNullOrEmpty()) resolvedCwd = termCwd
+                                                                 }
                                                              } else {
                                                                  val termCwd = termSession?.cwd
                                                                  if (!termCwd.isNullOrEmpty()) resolvedCwd = termCwd
                                                              }
-                                                         } catch (e: Exception) {
-                                                             val termCwd = termSession?.cwd
-                                                             if (!termCwd.isNullOrEmpty()) resolvedCwd = termCwd
+                                                             targetDir = resolvedCwd
                                                          }
-                                                     } else {
-                                                         val termCwd = termSession?.cwd
-                                                         if (!termCwd.isNullOrEmpty()) resolvedCwd = termCwd
+                                                         if (vm.currentPath != targetDir) {
+                                                             vm.navigateTo(targetDir)
+                                                         }
                                                      }
-                                                     sftpViewModelState.value?.navigateTo(resolvedCwd)
                                                      sftpActivePageState.intValue = page
                                                  }
                                              } else {
@@ -462,6 +477,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun connectSsh(host: String, port: Int, username: String, passwordString: String) {
+        activeWorkspaceKey = "$username@$host:$port"
         connectionLoading.value = true
         connectionError.value = null
         
@@ -572,7 +588,13 @@ class MainActivity : ComponentActivity() {
                         val sftp = session.openSftpClient()
                         sftpClient = sftp
                         withContext(Dispatchers.Main) {
-                            sftpViewModelState.value = SftpViewModel(sftp, SavedStateHandle())
+                            val viewModel = SftpViewModel(sftp, SavedStateHandle())
+                            viewModel.onPathChanged = { path ->
+                                activeWorkspaceKey?.let { key ->
+                                    sharedPreferences.edit().putString("sftp_last_dir_$key", path).apply()
+                                }
+                            }
+                            sftpViewModelState.value = viewModel
                         }
                     } catch (e: Exception) {
                         android.util.Log.e("MainActivity", "Failed to initialize native SFTP", e)

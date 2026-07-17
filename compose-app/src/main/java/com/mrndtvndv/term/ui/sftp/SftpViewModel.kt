@@ -33,6 +33,8 @@ class SftpViewModel(
     private val _downloadState = MutableStateFlow<SftpDownloadState?>(null)
     val downloadState = _downloadState.asStateFlow()
 
+    var onPathChanged: ((String) -> Unit)? = null
+
     var currentPath: String
         get() = savedStateHandle["current_path"] ?: "/"
         set(value) { savedStateHandle["current_path"] = value }
@@ -48,6 +50,7 @@ class SftpViewModel(
             try {
                 val list = client.listFiles(path)
                 _uiState.value = SftpUiState.Success(path, list)
+                onPathChanged?.invoke(path)
             } catch (e: Exception) {
                 _uiState.value = SftpUiState.Error(e.localizedMessage ?: "Failed to load directory")
             }

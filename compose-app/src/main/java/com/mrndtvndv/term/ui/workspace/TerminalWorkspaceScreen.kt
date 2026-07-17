@@ -3,6 +3,7 @@ package com.mrndtvndv.term.ui.workspace
 import android.app.Activity
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
+import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
@@ -36,15 +37,31 @@ fun TabbedWorkspace(
 ) {
     Column(modifier = modifier.fillMaxSize()) {
         if (sftpViewModel != null) {
-            TabRow(selectedTabIndex = activePage) {
+            TabRow(
+                selectedTabIndex = activePage,
+                containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                indicator = { tabPositions ->
+                    if (activePage < tabPositions.size) {
+                        TabRowDefaults.SecondaryIndicator(
+                            modifier = Modifier.tabIndicatorOffset(tabPositions[activePage]),
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+            ) {
                 Tab(
                     selected = activePage == 0,
                     onClick = { onPageSelected(0) },
+                    selectedContentColor = MaterialTheme.colorScheme.primary,
+                    unselectedContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                     text = { Text("Terminal") }
                 )
                 Tab(
                     selected = activePage == 1,
                     onClick = { onPageSelected(1) },
+                    selectedContentColor = MaterialTheme.colorScheme.primary,
+                    unselectedContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                     text = { Text("SFTP Explorer") }
                 )
             }

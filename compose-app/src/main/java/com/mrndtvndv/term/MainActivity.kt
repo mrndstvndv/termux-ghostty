@@ -34,6 +34,7 @@ import kotlinx.coroutines.withContext
 import com.termux.shared.interact.ShareUtils
 import org.bouncycastle.jce.provider.BouncyCastleProvider
 import org.conscrypt.Conscrypt
+import org.json.JSONObject
 import java.security.Security
 import android.content.ComponentName
 import android.content.Context
@@ -414,76 +415,108 @@ class MainActivity : ComponentActivity() {
                                              handleNotification("SFTP Error", errorMsg)
                                          },
                                          onPageSelected = { page ->
-                                              sftpActivePageState.intValue = page
-                                              if (page == 1) {
-                                                  lifecycleScope.launch(Dispatchers.IO) {
-                                                      try {
-                                                          val host = sshHost ?: ""
-                                                          val username = sshUsername ?: ""
-                                                          val port = sshPort
-                                                          val isHerdrEnabled = sharedPreferences.getBoolean("herdr_integration", false)
-                                                          var resolvedCwd = "/"
-                                                          var workspaceName: String? = null
-                                                          
-                                                          if (isHerdrEnabled) {
-                                                              try {
-                                                                  val output = sshSession?.execCommand("export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; herdr pane current; herdr workspace list") ?: ""
-                                                                  
-                                                                  val cwdMatch = Regex("\"cwd\"\\s*:\\s*\"([^\"]+)\"").find(output)
-                                                                      ?: Regex("(?i)cwd[:=]\\s*([^\\n\\r,]+)").find(output)
-                                                                  val cwdPath = cwdMatch?.groupValues?.get(1)?.trim()?.removeSurrounding("\"")
-                                                                  if (!cwdPath.isNullOrEmpty()) {
-                                                                      resolvedCwd = cwdPath
-                                                                  } else if (output.trim().startsWith("/")) {
-                                                                      resolvedCwd = output.trim()
-                                                                  } else {
-                                                                      val termCwd = terminalSessionState.value?.cwd
-                                                                      if (!termCwd.isNullOrEmpty()) resolvedCwd = termCwd
-                                                                  }
-                                                                  
-                                                                  val wsIdMatch = Regex("\"workspace_id\"\\s*:\\s*\"([^\"]+)\"").find(output)
-                                                                      ?: Regex("(?i)workspace_id[:=]\\s*([^\\n\\r,]+)").find(output)
-                                                                  val wsId = wsIdMatch?.groupValues?.get(1)?.trim()?.removeSurrounding("\"")
-                                                                  if (!wsId.isNullOrEmpty()) {
-                                                                      val wsPattern = Regex("\"label\"\\s*:\\s*\"([^\"]+)\"[^\\]]*\"workspace_id\"\\s*:\\s*\"$wsId\"").find(output)
-                                                                          ?: Regex("\"workspace_id\"\\s*:\\s*\"$wsId\"[^\\]]*\"label\"\\s*:\\s*\"([^\"]+)\"").find(output)
-                                                                      val label = wsPattern?.groupValues?.get(1)?.trim()?.removeSurrounding("\"")
-                                                                      if (!label.isNullOrEmpty()) {
-                                                                          workspaceName = label
-                                                                      } else {
-                                                                          workspaceName = wsId
-                                                                      }
-                                                                  }
-                                                              } catch (e: Exception) {
-                                                                  val termCwd = terminalSessionState.value?.cwd
-                                                                  if (!termCwd.isNullOrEmpty()) resolvedCwd = termCwd
-                                                              }
-                                                          } else {
-                                                              val termCwd = terminalSessionState.value?.cwd
-                                                              if (!termCwd.isNullOrEmpty()) resolvedCwd = termCwd
-                                                          }
-                                                          
-                                                          val key = if (!workspaceName.isNullOrEmpty()) {
-                                                              "${workspaceName}_${host}_$username"
-                                                          } else {
-                                                              "$username@$host:$port"
-                                                          }
-                                                          
-                                                          if (activeWorkspaceKey != key) {
-                                                              activeWorkspaceKey = key
-                                                              val savedDir = sharedPreferences.getString("sftp_last_dir_$key", null)
-                                                              val targetDir = if (!savedDir.isNullOrEmpty()) savedDir else resolvedCwd
-                                                              
-                                                              withContext(Dispatchers.Main) {
-                                                                  sftpViewModelState.value?.navigateTo(targetDir)
-                                                              }
-                                                          }
-                                                      } catch (e: Exception) {
-                                                          android.util.Log.e("MainActivity", "Failed to resolve CWD/workspace for SFTP", e)
-                                                      }
-                                                  }
-                                              }
-                                          },
+                                               sftpActivePageState.intValue = page
+                                               if (page == 1) {
+                                                   lifecycleScope.launch(Dispatchers.IO) {
+                                                       try {
+                                                           val host = sshHost ?: ""
+                                                           val username = sshUsername ?: ""
+                                                           val port = sshPort
+                                                           val isHerdrEnabled = sharedPreferences.getBoolean("herdr_integration", false)
+                                                           var resolvedCwd = "/"
+                                                           var workspaceName: String? = null
+                                                           
+                                                           if (isHerdrEnabled) {
+                                                               try {
+                                                                   val output = sshSession?.execCommand("export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; herdr workspace list; herdr pane list") ?: ""
+                                                                   
+                                                                   val workspaces = mutableListOf<JSONObject>()
+                                                                   val panes = mutableListOf<JSONObject>()
+                                                                   
+                                                                   output.split("\n").forEach { line ->
+                                                                       val trimmed = line.trim()
+                                                                       if (trimmed.isNotEmpty()) {
+                                                                           try {
+                                                                               val json = JSONObject(trimmed)
+                                                                               val event = when {
+                                                                                   json.has("event") -> json.getString("event")
+                                                                                   json.has("type") -> json.getString("type")
+                                                                                   json.has("command") -> json.getString("command")
+                                                                                   else -> ""
+                                                                               }
+                                                                               if (event == "cli:workspace:list") {
+                                                                                   workspaces.add(json)
+                                                                               } else if (event == "cli:pane:list") {
+                                                                                   panes.add(json)
+                                                                               }
+                                                                           } catch (je: Exception) {
+                                                                               // ignore invalid JSON lines
+                                                                           }
+                                                                       }
+                                                                   }
+                                                                   
+                                                                    var focusedWsId: String? = null
+                                                                    var wsLabel: String? = null
+                                                                    for (ws in workspaces) {
+                                                                        if (ws.optBoolean("focused", false)) {
+                                                                            focusedWsId = ws.optString("workspace_id").takeIf { it.isNotEmpty() }
+                                                                            wsLabel = ws.optString("label").takeIf { it.isNotEmpty() }
+                                                                            break
+                                                                        }
+                                                                    }
+                                                                    
+                                                                    var paneCwd: String? = null
+                                                                    if (!focusedWsId.isNullOrEmpty()) {
+                                                                        for (pane in panes) {
+                                                                            if (pane.optString("workspace_id") == focusedWsId && pane.optBoolean("focused", false)) {
+                                                                                paneCwd = pane.optString("cwd").takeIf { it.isNotEmpty() }
+                                                                                break
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                   
+                                                                   if (!paneCwd.isNullOrEmpty()) {
+                                                                       resolvedCwd = paneCwd
+                                                                   } else {
+                                                                       val termCwd = terminalSessionState.value?.cwd
+                                                                       if (!termCwd.isNullOrEmpty()) resolvedCwd = termCwd
+                                                                   }
+                                                                   
+                                                                   if (!wsLabel.isNullOrEmpty()) {
+                                                                       workspaceName = wsLabel
+                                                                   } else if (!focusedWsId.isNullOrEmpty()) {
+                                                                       workspaceName = focusedWsId
+                                                                   }
+                                                               } catch (e: Exception) {
+                                                                   val termCwd = terminalSessionState.value?.cwd
+                                                                   if (!termCwd.isNullOrEmpty()) resolvedCwd = termCwd
+                                                               }
+                                                           } else {
+                                                               val termCwd = terminalSessionState.value?.cwd
+                                                               if (!termCwd.isNullOrEmpty()) resolvedCwd = termCwd
+                                                           }
+                                                           
+                                                           val key = if (!workspaceName.isNullOrEmpty()) {
+                                                               "${workspaceName}_${host}_$username"
+                                                           } else {
+                                                               "$username@$host:$port"
+                                                           }
+                                                           
+                                                           if (activeWorkspaceKey != key) {
+                                                               activeWorkspaceKey = key
+                                                               val savedDir = sharedPreferences.getString("sftp_last_dir_$key", null)
+                                                               val targetDir = if (!savedDir.isNullOrEmpty()) savedDir else resolvedCwd
+                                                               
+                                                               withContext(Dispatchers.Main) {
+                                                                   sftpViewModelState.value?.navigateTo(targetDir)
+                                                               }
+                                                           }
+                                                       } catch (e: Exception) {
+                                                           android.util.Log.e("MainActivity", "Failed to resolve CWD/workspace for SFTP", e)
+                                                       }
+                                                   }
+                                               }
+                                           },
                                          sftpVisible = sftpVisibleState.value,
                                          modifier = Modifier.fillMaxSize()
                                      )

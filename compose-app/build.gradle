@@ -13,7 +13,7 @@ android {
         minSdk project.properties.minSdkVersion.toInteger()
         targetSdk project.properties.targetSdkVersion.toInteger()
         versionCode 2
-        versionName "1.1.0"
+        versionName "1.1.1"
     }
 
     compileOptions {

@@ -92,7 +92,7 @@ public final class FrameDelta {
         return mViewportLinkSnapshot;
     }
 
-    ScreenSnapshot getTransportSnapshot() {
+    public ScreenSnapshot getTransportSnapshot() {
         return mTransportSnapshot;
     }
 

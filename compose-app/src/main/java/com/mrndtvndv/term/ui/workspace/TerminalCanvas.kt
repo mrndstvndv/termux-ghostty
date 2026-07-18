@@ -317,14 +317,31 @@ fun TerminalCanvas(
             }
     ) {
         // Native Keyboard Input (Hidden BasicTextField)
-        var textFieldValue by remember { mutableStateOf(TextFieldValue(" ", selection = androidx.compose.ui.text.TextRange(1))) }
+        var textFieldValue by remember { mutableStateOf(TextFieldValue("  ", selection = androidx.compose.ui.text.TextRange(2))) }
 
         BasicTextField(
             value = textFieldValue,
             onValueChange = { newValue ->
                 val textVal = newValue.text
-                if (textVal.length < 1) {
-                    // Backspace: sentinel was deleted
+                val sentinelLen = 2
+
+                // Detect Gboard spacebar swipe → arrow keys via cursor movement
+                if (textVal.length == sentinelLen) {
+                    val selStart = newValue.selection.start
+                    if (selStart != sentinelLen) {
+                        val diff = selStart - sentinelLen
+                        val keyCode = if (diff < 0) KeyEvent.KEYCODE_DPAD_LEFT else KeyEvent.KEYCODE_DPAD_RIGHT
+                        repeat(Math.abs(diff)) {
+                            val code = KeyHandler.getCode(
+                                keyCode, 0,
+                                session.isCursorKeysApplicationMode,
+                                session.isKeypadApplicationMode
+                            )
+                            if (code != null) session.write(code)
+                        }
+                    }
+                } else if (textVal.length < sentinelLen) {
+                    // Backspace: characters removed from sentinel
                     val code = KeyHandler.getCode(
                         KeyEvent.KEYCODE_DEL, 0,
                         session.isCursorKeysApplicationMode,
@@ -332,18 +349,14 @@ fun TerminalCanvas(
                     )
                     if (code != null) session.write(code)
                     else inputCodePoint(127, false, false, session, extraKeysController)
-                } else if (textVal.length == 1 && textVal != " ") {
-                    // IME replaced the sentinel space with a single char
-                    val codePoint = if (textVal[0] == '\n') 13 else textVal[0].code
-                    inputCodePoint(codePoint, false, false, session, extraKeysController)
-                } else if (textVal.length > 1) {
-                    val addedText = textVal.substring(1)
+                } else if (textVal.length > sentinelLen) {
+                    val addedText = textVal.substring(sentinelLen)
                     for (char in addedText) {
                         val codePoint = if (char == '\n') 13 else char.code
                         inputCodePoint(codePoint, false, false, session, extraKeysController)
                     }
                 }
-                textFieldValue = TextFieldValue(" ", selection = androidx.compose.ui.text.TextRange(1))
+                textFieldValue = TextFieldValue("  ", selection = androidx.compose.ui.text.TextRange(sentinelLen))
             },
             keyboardOptions = KeyboardOptions.Default,
             modifier = Modifier

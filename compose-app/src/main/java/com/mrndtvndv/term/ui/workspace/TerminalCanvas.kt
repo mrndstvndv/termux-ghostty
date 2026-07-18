@@ -753,8 +753,8 @@ fun TerminalCanvas(
                 val fontLineSpacing = renderer.getFontLineSpacing()
                 val fontWidth = renderer.getFontWidth()
 
-                // Estimate toolbar popup dimensions: ~220dp × 56dp for 3 buttons
-                val toolbarWidth = with(density) { 220.dp.toPx() }
+                // Estimate toolbar popup dimensions: ~160dp × 56dp for 2 buttons
+                val toolbarWidth = with(density) { 160.dp.toPx() }
                 val toolbarHeight = with(density) { 56.dp.toPx() }
 
                 // Selection bounds in viewport pixel space
@@ -825,23 +825,7 @@ fun TerminalCanvas(
                                 Text("Paste")
                             }
 
-                            TextButton(onClick = {
-                                val content = session.terminalContent
-                                if (content != null) {
-                                    try {
-                                        inputView.showContextMenu()
-                                    } catch (_: NullPointerException) {
-                                        // View is detached from hierarchy, context menu unavailable
-                                    }
-                                }
-                                selectionStartRow = null
-                                selectionStartCol = null
-                                selectionEndRow = null
-                                selectionEndCol = null
-                                showToolbar = false
-                            }) {
-                                Text("More")
-                            }
+
                         }
                     }
                 }

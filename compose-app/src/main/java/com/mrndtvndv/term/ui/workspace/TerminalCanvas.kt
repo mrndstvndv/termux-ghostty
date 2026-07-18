@@ -482,25 +482,34 @@ fun TerminalCanvas(
                 }
                 is SetComposingTextCommand -> {
                     val current = cmd.text
-                    // Send only the NEW characters since the last composing update
-                    if (current.length > composingText.length && current.startsWith(composingText)) {
-                        val delta = current.substring(composingText.length)
-                        for (char in delta) {
-                            val cp = if (char == '\n') 13 else char.code
-                            inputCodePoint(cp, false, false, session, extraKeysController)
+                    when {
+                        // Append: composing text grew (new characters typed)
+                        current.length > composingText.length && current.startsWith(composingText) -> {
+                            val delta = current.substring(composingText.length)
+                            for (char in delta) {
+                                val cp = if (char == '\n') 13 else char.code
+                                inputCodePoint(cp, false, false, session, extraKeysController)
+                            }
                         }
-                    } else if (composingText.isNotEmpty()) {
-                        // Text was corrected/replaced — backspace old, type new
-                        for (ch in composingText) { sendDelete(session, extraKeysController) }
-                        for (char in current) {
-                            val cp = if (char == '\n') 13 else char.code
-                            inputCodePoint(cp, false, false, session, extraKeysController)
+                        // Backspace: composing text shrunk (character removed)
+                        composingText.length > current.length && composingText.startsWith(current) -> {
+                            val removed = composingText.length - current.length
+                            repeat(removed) { sendDelete(session, extraKeysController) }
                         }
-                    } else {
+                        // Replacement: text was corrected/replaced entirely (auto-correct, suggestion)
+                        composingText.isNotEmpty() -> {
+                            for (ch in composingText) { sendDelete(session, extraKeysController) }
+                            for (char in current) {
+                                val cp = if (char == '\n') 13 else char.code
+                                inputCodePoint(cp, false, false, session, extraKeysController)
+                            }
+                        }
                         // First composition character
-                        for (char in current) {
-                            val cp = if (char == '\n') 13 else char.code
-                            inputCodePoint(cp, false, false, session, extraKeysController)
+                        else -> {
+                            for (char in current) {
+                                val cp = if (char == '\n') 13 else char.code
+                                inputCodePoint(cp, false, false, session, extraKeysController)
+                            }
                         }
                     }
                     composingText = current

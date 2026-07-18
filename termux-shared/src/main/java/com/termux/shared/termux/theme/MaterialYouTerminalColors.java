@@ -1,5 +1,6 @@
 package com.termux.shared.termux.theme;
 
+import android.annotation.SuppressLint;
 import android.content.Context;
 import android.graphics.Color;
 
@@ -91,6 +92,7 @@ public final class MaterialYouTerminalColors {
         return ThemeUtils.getSystemAttrColor(context, attr, fallback);
     }
 
+    @SuppressLint("RestrictedApi")
     private static int shiftTone(int color, double tone) {
         Hct hct = Hct.fromInt(color);
         hct.setTone(tone);

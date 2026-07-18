@@ -1,6 +1,6 @@
 package com.mrndtvndv.term.ui.theme
 
-import androidx.compose.material3.ColorScheme
+import android.annotation.SuppressLint
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -35,6 +35,7 @@ fun TerminalThemeSync(
         val errorContainer = currentThemeScheme.errorContainer.toArgb()
         val surfaceContainerHighest = currentThemeScheme.surfaceVariant.toArgb()
 
+        @SuppressLint("RestrictedApi")
         fun shiftTone(colorVal: Int, toneVal: Double): Int {
             val hct = com.google.android.material.color.utilities.Hct.fromInt(colorVal)
             hct.setTone(toneVal)

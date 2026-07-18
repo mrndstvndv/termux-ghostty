@@ -115,9 +115,11 @@ def resolveTermuxGhosttyNdkHome = {
         if (ndkFromSdk.isDirectory()) return ndkFromSdk.absolutePath
     }
 
+    /*
     if (android.ndkDirectory != null && android.ndkDirectory.isDirectory()) {
         return android.ndkDirectory.absolutePath
     }
+    */
 
     throw new GradleException("Android NDK ${android.ndkVersion} not found. Run inside `nix develop` or set ANDROID_NDK_HOME.")
 }

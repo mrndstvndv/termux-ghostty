@@ -1,0 +1,172 @@
+<?xml version="1.0" ?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>CyclomaticComplexMethod:ExtraKeysToolbar.kt$@Composable fun ExtraKeyButtonComponent( buttonInfo: ExtraKeyButton, extraKeysController: ExtraKeysController, getActiveTerminalView: () -&gt; TerminalView?, session: TerminalSession?, modifier: Modifier = Modifier )</ID>
+    <ID>CyclomaticComplexMethod:ExtraKeysToolbar.kt$private fun sendSingleKey( key: String, ctrl: Boolean, alt: Boolean, shift: Boolean, fn: Boolean, activeTerminalView: TerminalView?, session: TerminalSession )</ID>
+    <ID>CyclomaticComplexMethod:GitReviewScreen.kt$@Composable fun DiffViewer( selectedFile: GitFileStatus?, diffText: String?, isLoading: Boolean )</ID>
+    <ID>CyclomaticComplexMethod:MainViewModel.kt$MainViewModel$fun connectSsh( host: String, port: Int, username: String, passwordString: String, herdrEnabled: Boolean, onSessionClientCreated: () -&gt; com.termux.shared.termux.terminal.TermuxTerminalSessionClientBase, onSuccess: (String, Int, String, String) -&gt; Unit, onServiceBind: (TerminalSession) -&gt; Unit, getSavedDir: (String) -&gt; String?, getSavedUrl: (String) -&gt; String, onPathChanged: (String, String) -&gt; Unit )</ID>
+    <ID>CyclomaticComplexMethod:MainViewModel.kt$MainViewModel$fun refreshWorkspace(herdrEnabled: Boolean, getSavedDir: (String) -&gt; String?, getSavedUrl: (String) -&gt; String?)</ID>
+    <ID>CyclomaticComplexMethod:SftpFileBrowser.kt$@Composable fun SftpFileBrowser( viewModel: SftpViewModel, modifier: Modifier = Modifier, onOpenFile: (File) -&gt; Unit, onOpenFileError: (String) -&gt; Unit, onDownloadFile: ((SftpFile) -&gt; Unit)? = null, onDeleteFile: ((SftpFile) -&gt; Unit)? = null )</ID>
+    <ID>CyclomaticComplexMethod:SplitWorkspace.kt$@Composable fun SplitWorkspace( getWebView: () -&gt; WebView, session: TerminalSession, sftpViewModel: SftpViewModel?, reviewViewModel: ReviewViewModel?, foldingFeature: FoldingFeature?, extraKeysController: ExtraKeysController, getActiveTerminalView: () -&gt; TerminalView?, extraKeysEnabled: Boolean, extraKeysJson: String, onViewCreated: (TerminalView) -&gt; Unit, onViewReleased: (TerminalView) -&gt; Unit, activeTab: WorkspaceTab, onTabSelected: (WorkspaceTab) -&gt; Unit, onOpenFile: (File) -&gt; Unit, onOpenFileError: (String) -&gt; Unit, browserUrl: String, onBrowserUrlChanged: (String) -&gt; Unit, onOpenUrl: (String) -&gt; Unit, onRefreshWorkspace: () -&gt; Unit, modifier: Modifier = Modifier )</ID>
+    <ID>CyclomaticComplexMethod:TabbedWorkspace.kt$@OptIn(ExperimentalFoundationApi::class) @Composable fun TabbedWorkspace( getWebView: () -&gt; WebView, session: TerminalSession, sftpViewModel: SftpViewModel?, reviewViewModel: ReviewViewModel?, extraKeysController: ExtraKeysController, getActiveTerminalView: () -&gt; TerminalView?, extraKeysEnabled: Boolean, extraKeysJson: String, onViewCreated: (TerminalView) -&gt; Unit, onViewReleased: (TerminalView) -&gt; Unit, activeTab: WorkspaceTab, onTabSelected: (WorkspaceTab) -&gt; Unit, onOpenFile: (File) -&gt; Unit, onOpenFileError: (String) -&gt; Unit, browserUrl: String, onBrowserUrlChanged: (String) -&gt; Unit, onOpenUrl: (String) -&gt; Unit, onRefreshWorkspace: () -&gt; Unit, modifier: Modifier = Modifier )</ID>
+    <ID>CyclomaticComplexMethod:TerminalCanvas.kt$@Composable fun TerminalCanvas( session: TerminalSession, extraKeysController: com.mrndtvndv.term.ui.keyboard.ExtraKeysController, onOpenUrl: (String) -&gt; Unit, onViewCreated: (com.termux.view.TerminalView) -&gt; Unit, onViewReleased: (com.termux.view.TerminalView) -&gt; Unit, modifier: Modifier = Modifier )</ID>
+    <ID>CyclomaticComplexMethod:TerminalCanvas.kt$fun inputCodePoint( codePoint: Int, ctrlHeldFromEvent: Boolean, altHeldFromEvent: Boolean, session: TerminalSession, extraKeysController: com.mrndtvndv.term.ui.keyboard.ExtraKeysController )</ID>
+    <ID>EmptyCatchBlock:MainViewModel.kt$MainViewModel${}</ID>
+    <ID>EmptyCatchBlock:MainViewModel.kt$MainViewModel.&lt;no name provided&gt;${}</ID>
+    <ID>EmptyCatchBlock:NativeSshSession.kt$NativeSshSession${}</ID>
+    <ID>EmptyFunctionBlock:MockSshSession.kt$MockSshSession.&lt;no name provided&gt;${}</ID>
+    <ID>EmptyFunctionBlock:MockSshSession.kt$MockSshShellChannel${}</ID>
+    <ID>EmptyFunctionBlock:SftpViewModelTest.kt$SftpViewModelTest.MockSftpClient${}</ID>
+    <ID>LongMethod:ExtraKeysToolbar.kt$@Composable fun ExtraKeyButtonComponent( buttonInfo: ExtraKeyButton, extraKeysController: ExtraKeysController, getActiveTerminalView: () -&gt; TerminalView?, session: TerminalSession?, modifier: Modifier = Modifier )</ID>
+    <ID>LongMethod:ExtraKeysToolbar.kt$private fun sendSingleKey( key: String, ctrl: Boolean, alt: Boolean, shift: Boolean, fn: Boolean, activeTerminalView: TerminalView?, session: TerminalSession )</ID>
+    <ID>LongMethod:GitReviewScreen.kt$@Composable fun DiffViewer( selectedFile: GitFileStatus?, diffText: String?, isLoading: Boolean )</ID>
+    <ID>LongMethod:GitReviewScreen.kt$@Composable fun FileChangesList( uiState: ReviewUiState, selectedFile: GitFileStatus?, onFileSelected: (GitFileStatus) -&gt; Unit, onStage: (GitFileStatus) -&gt; Unit, onUnstage: (GitFileStatus) -&gt; Unit, onDiscard: (GitFileStatus) -&gt; Unit, onRefresh: () -&gt; Unit, modifier: Modifier = Modifier )</ID>
+    <ID>LongMethod:GitReviewScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun GitReviewScreen( viewModel: ReviewViewModel, modifier: Modifier = Modifier )</ID>
+    <ID>LongMethod:InAppBrowser.kt$@OptIn(ExperimentalMaterial3Api::class) @SuppressLint("SetJavaScriptEnabled") @Composable fun InAppBrowser( getWebView: () -&gt; WebView, initialUrl: String, onUrlChanged: (String) -&gt; Unit, modifier: Modifier = Modifier )</ID>
+    <ID>LongMethod:InAppNotificationBanner.kt$@Composable fun InAppNotificationBanner( activeNotification: ActiveNotification?, onDismiss: () -&gt; Unit, modifier: Modifier = Modifier )</ID>
+    <ID>LongMethod:MainActivity.kt$MainActivity$override fun onCreate(savedInstanceState: Bundle?)</ID>
+    <ID>LongMethod:MainViewModel.kt$MainViewModel$fun connectSsh( host: String, port: Int, username: String, passwordString: String, herdrEnabled: Boolean, onSessionClientCreated: () -&gt; com.termux.shared.termux.terminal.TermuxTerminalSessionClientBase, onSuccess: (String, Int, String, String) -&gt; Unit, onServiceBind: (TerminalSession) -&gt; Unit, getSavedDir: (String) -&gt; String?, getSavedUrl: (String) -&gt; String, onPathChanged: (String, String) -&gt; Unit )</ID>
+    <ID>LongMethod:MainViewModel.kt$MainViewModel$fun refreshWorkspace(herdrEnabled: Boolean, getSavedDir: (String) -&gt; String?, getSavedUrl: (String) -&gt; String?)</ID>
+    <ID>LongMethod:SftpFileBrowser.kt$@Composable fun SftpFileBrowser( viewModel: SftpViewModel, modifier: Modifier = Modifier, onOpenFile: (File) -&gt; Unit, onOpenFileError: (String) -&gt; Unit, onDownloadFile: ((SftpFile) -&gt; Unit)? = null, onDeleteFile: ((SftpFile) -&gt; Unit)? = null )</ID>
+    <ID>LongMethod:SplitWorkspace.kt$@Composable fun SplitWorkspace( getWebView: () -&gt; WebView, session: TerminalSession, sftpViewModel: SftpViewModel?, reviewViewModel: ReviewViewModel?, foldingFeature: FoldingFeature?, extraKeysController: ExtraKeysController, getActiveTerminalView: () -&gt; TerminalView?, extraKeysEnabled: Boolean, extraKeysJson: String, onViewCreated: (TerminalView) -&gt; Unit, onViewReleased: (TerminalView) -&gt; Unit, activeTab: WorkspaceTab, onTabSelected: (WorkspaceTab) -&gt; Unit, onOpenFile: (File) -&gt; Unit, onOpenFileError: (String) -&gt; Unit, browserUrl: String, onBrowserUrlChanged: (String) -&gt; Unit, onOpenUrl: (String) -&gt; Unit, onRefreshWorkspace: () -&gt; Unit, modifier: Modifier = Modifier )</ID>
+    <ID>LongMethod:TabbedWorkspace.kt$@OptIn(ExperimentalFoundationApi::class) @Composable fun TabbedWorkspace( getWebView: () -&gt; WebView, session: TerminalSession, sftpViewModel: SftpViewModel?, reviewViewModel: ReviewViewModel?, extraKeysController: ExtraKeysController, getActiveTerminalView: () -&gt; TerminalView?, extraKeysEnabled: Boolean, extraKeysJson: String, onViewCreated: (TerminalView) -&gt; Unit, onViewReleased: (TerminalView) -&gt; Unit, activeTab: WorkspaceTab, onTabSelected: (WorkspaceTab) -&gt; Unit, onOpenFile: (File) -&gt; Unit, onOpenFileError: (String) -&gt; Unit, browserUrl: String, onBrowserUrlChanged: (String) -&gt; Unit, onOpenUrl: (String) -&gt; Unit, onRefreshWorkspace: () -&gt; Unit, modifier: Modifier = Modifier )</ID>
+    <ID>LongMethod:TerminalCanvas.kt$@Composable fun TerminalCanvas( session: TerminalSession, extraKeysController: com.mrndtvndv.term.ui.keyboard.ExtraKeysController, onOpenUrl: (String) -&gt; Unit, onViewCreated: (com.termux.view.TerminalView) -&gt; Unit, onViewReleased: (com.termux.view.TerminalView) -&gt; Unit, modifier: Modifier = Modifier )</ID>
+    <ID>LongMethod:TerminalCanvas.kt$fun handleNativeKeyEvent(nativeEvent: android.view.KeyEvent): Boolean</ID>
+    <ID>LongMethod:TerminalWorkspaceScreen.kt$@Composable fun TerminalWorkspaceScreen( session: TerminalSession, sftpViewModel: SftpViewModel?, reviewViewModel: ReviewViewModel?, extraKeysEnabled: Boolean, extraKeysJson: String, onViewCreated: (TerminalView) -&gt; Unit, onViewReleased: (TerminalView) -&gt; Unit, activeTab: WorkspaceTab, onTabSelected: (WorkspaceTab) -&gt; Unit, onOpenFile: (File) -&gt; Unit, onOpenFileError: (String) -&gt; Unit, browserUrl: String, onBrowserUrlChanged: (String) -&gt; Unit, onOpenUrl: (String) -&gt; Unit, onRefreshWorkspace: () -&gt; Unit, modifier: Modifier = Modifier )</ID>
+    <ID>LongMethod:Theme.kt$@Composable fun TermuxGhosttyTheme( theme: String = "Dark", customFontFamily: androidx.compose.ui.text.font.FontFamily? = null, content: @Composable () -&gt; Unit )</ID>
+    <ID>LongParameterList:GitReviewScreen.kt$( uiState: ReviewUiState, selectedFile: GitFileStatus?, onFileSelected: (GitFileStatus) -&gt; Unit, onStage: (GitFileStatus) -&gt; Unit, onUnstage: (GitFileStatus) -&gt; Unit, onDiscard: (GitFileStatus) -&gt; Unit, onRefresh: () -&gt; Unit, modifier: Modifier = Modifier )</ID>
+    <ID>LongParameterList:MainViewModel.kt$MainViewModel$( host: String, port: Int, username: String, passwordString: String, herdrEnabled: Boolean, onSessionClientCreated: () -&gt; com.termux.shared.termux.terminal.TermuxTerminalSessionClientBase, onSuccess: (String, Int, String, String) -&gt; Unit, onServiceBind: (TerminalSession) -&gt; Unit, getSavedDir: (String) -&gt; String?, getSavedUrl: (String) -&gt; String, onPathChanged: (String, String) -&gt; Unit )</ID>
+    <ID>LongParameterList:MainViewModel.kt$MainViewModel$( session: SshSession, workspaceName: String?, resolvedCwd: String, key: String, isHerdrEnabled: Boolean, savedUrl: String, savedDir: String?, onPathChanged: (String) -&gt; Unit )</ID>
+    <ID>LongParameterList:SplitWorkspace.kt$( getWebView: () -&gt; WebView, session: TerminalSession, sftpViewModel: SftpViewModel?, reviewViewModel: ReviewViewModel?, foldingFeature: FoldingFeature?, extraKeysController: ExtraKeysController, getActiveTerminalView: () -&gt; TerminalView?, extraKeysEnabled: Boolean, extraKeysJson: String, onViewCreated: (TerminalView) -&gt; Unit, onViewReleased: (TerminalView) -&gt; Unit, activeTab: WorkspaceTab, onTabSelected: (WorkspaceTab) -&gt; Unit, onOpenFile: (File) -&gt; Unit, onOpenFileError: (String) -&gt; Unit, browserUrl: String, onBrowserUrlChanged: (String) -&gt; Unit, onOpenUrl: (String) -&gt; Unit, onRefreshWorkspace: () -&gt; Unit, modifier: Modifier = Modifier )</ID>
+    <ID>LongParameterList:TabbedWorkspace.kt$( getWebView: () -&gt; WebView, session: TerminalSession, sftpViewModel: SftpViewModel?, reviewViewModel: ReviewViewModel?, extraKeysController: ExtraKeysController, getActiveTerminalView: () -&gt; TerminalView?, extraKeysEnabled: Boolean, extraKeysJson: String, onViewCreated: (TerminalView) -&gt; Unit, onViewReleased: (TerminalView) -&gt; Unit, activeTab: WorkspaceTab, onTabSelected: (WorkspaceTab) -&gt; Unit, onOpenFile: (File) -&gt; Unit, onOpenFileError: (String) -&gt; Unit, browserUrl: String, onBrowserUrlChanged: (String) -&gt; Unit, onOpenUrl: (String) -&gt; Unit, onRefreshWorkspace: () -&gt; Unit, modifier: Modifier = Modifier )</ID>
+    <ID>LongParameterList:TerminalWorkspaceScreen.kt$( session: TerminalSession, sftpViewModel: SftpViewModel?, reviewViewModel: ReviewViewModel?, extraKeysEnabled: Boolean, extraKeysJson: String, onViewCreated: (TerminalView) -&gt; Unit, onViewReleased: (TerminalView) -&gt; Unit, activeTab: WorkspaceTab, onTabSelected: (WorkspaceTab) -&gt; Unit, onOpenFile: (File) -&gt; Unit, onOpenFileError: (String) -&gt; Unit, browserUrl: String, onBrowserUrlChanged: (String) -&gt; Unit, onOpenUrl: (String) -&gt; Unit, onRefreshWorkspace: () -&gt; Unit, modifier: Modifier = Modifier )</ID>
+    <ID>MaxLineLength:DashboardScreen.kt$const val PRESET_DOUBLE_ROW = "[['ESC','/',{key: '-', popup: '|'},'HOME','UP','END','PGUP'], ['TAB','CTRL','ALT','LEFT','DOWN','RIGHT','PGDN']]"</ID>
+    <ID>MaxLineLength:ExtraKeysToolbar.kt$"[['ESC','/',{key: '-', popup: '|'},'HOME','UP','END','PGUP'], ['TAB','CTRL','ALT','LEFT','DOWN','RIGHT','PGDN']]"</ID>
+    <ID>MaxLineLength:ExtraKeysToolbar.kt$activeTerminalView.inputCodePoint(TerminalView.KEY_EVENT_SOURCE_VIRTUAL_KEYBOARD, finalCodePoint, false, alt)</ID>
+    <ID>MaxLineLength:ExtraKeysToolbar.kt$dispatchExtraKey(buttonInfo, extraKeysController, getActiveTerminalView(), session)</ID>
+    <ID>MaxLineLength:ExtraKeysToolbar.kt$dispatchExtraKey(buttonInfo.popup!!, extraKeysController, getActiveTerminalView(), session)</ID>
+    <ID>MaxLineLength:ExtraKeysToolbar.kt$val isModifier = buttonInfo.key == "CTRL" || buttonInfo.key == "ALT" || buttonInfo.key == "SHIFT" || buttonInfo.key == "FN"</ID>
+    <ID>MaxLineLength:GitReviewScreen.kt$TokenRule(TokenType.KEYWORD, Regex("\\b(val|var|fun|class|interface|object|import|package|return|if|else|for|while|do|when|is|as|in|out|try|catch|finally|throw|this|super|new|private|protected|public|internal|lateinit|init|companion|const|null|true|false|void|int|double|float|long|short|byte|char|boolean|string|def|elif|from|lambda|pass|global|nonlocal|async|await|let|const|var|function|export|default|extends|implements|struct|enum|fn|mut|impl|use|pub|sizeof|typeof)\\b"))</ID>
+    <ID>MaxLineLength:GitReviewScreen.kt$TokenRule(TokenType.STRING, Regex("\"[^\"\\\\]*(?:\\\\.[^\"\\\\]*)*\"|'[^'\\\\]*(?:\\\\.[^'\\\\]*)*'|`[^`\\\\]*(?:\\\\.[^`\\\\]*)*`"))</ID>
+    <ID>MaxLineLength:GitReviewScreen.kt$TokenType.COMMENT -&gt; androidx.compose.ui.text.SpanStyle(color = Color(0xFF808080), fontStyle = androidx.compose.ui.text.font.FontStyle.Italic)</ID>
+    <ID>MaxLineLength:GitReviewScreen.kt$TokenType.COMMENT -&gt; androidx.compose.ui.text.SpanStyle(color = Color(0xFF8C8C8C), fontStyle = androidx.compose.ui.text.font.FontStyle.Italic)</ID>
+    <ID>MaxLineLength:GitReviewScreen.kt$TokenType.KEYWORD -&gt; androidx.compose.ui.text.SpanStyle(color = Color(0xFF0033B0), fontWeight = FontWeight.Bold)</ID>
+    <ID>MaxLineLength:GitReviewScreen.kt$TokenType.KEYWORD -&gt; androidx.compose.ui.text.SpanStyle(color = Color(0xFFCC7832), fontWeight = FontWeight.Bold)</ID>
+    <ID>MaxLineLength:GitReviewScreen.kt$if</ID>
+    <ID>MaxLineLength:GitReviewScreen.kt$imageVector = if (file.isStaged) Icons.Default.RemoveCircleOutline else Icons.Default.AddCircleOutline</ID>
+    <ID>MaxLineLength:GitReviewScreen.kt$line.startsWith("diff --git") || line.startsWith("index ") || line.startsWith("--- ") || line.startsWith("+++ ")</ID>
+    <ID>MaxLineLength:InAppBrowser.kt$target = "https://www.google.com/search?q=" + java.net.URLEncoder.encode(target, "UTF-8")</ID>
+    <ID>MaxLineLength:InAppBrowser.kt$tint = if (canGoBack) MaterialTheme.colorScheme.onBackground else MaterialTheme.colorScheme.onBackground.copy(alpha = 0.38f)</ID>
+    <ID>MaxLineLength:InAppBrowser.kt$tint = if (canGoForward) MaterialTheme.colorScheme.onBackground else MaterialTheme.colorScheme.onBackground.copy(alpha = 0.38f)</ID>
+    <ID>MaxLineLength:MainActivity.kt$MainActivity$androidx.compose.ui.text.font.FontFamily(androidx.compose.ui.text.font.Typeface(android.graphics.Typeface.createFromFile(file)))</ID>
+    <ID>MaxLineLength:MainActivity.kt$MainActivity$com.termux.shared.termux.TermuxConstants.TERMUX_TERMINAL_PROTOCOL_NOTIFICATIONS_NOTIFICATION_CHANNEL_NAME</ID>
+    <ID>MaxLineLength:MainActivity.kt$MainActivity$if (Build.VERSION.SDK_INT &gt;= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT else PendingIntent.FLAG_UPDATE_CURRENT</ID>
+    <ID>MaxLineLength:MainActivity.kt$MainActivity$private var nextNotificationId = com.termux.shared.termux.TermuxConstants.TERMUX_TERMINAL_PROTOCOL_NOTIFICATION_ID_BASE</ID>
+    <ID>MaxLineLength:MainActivity.kt$MainActivity$val notificationManager = com.termux.shared.notification.NotificationUtils.getNotificationManager(this) ?: return</ID>
+    <ID>MaxLineLength:MainActivity.kt$MainActivity$val sourceCodeExts = listOf("kt", "java", "py", "js", "md", "rs", "zig", "c", "cpp", "h", "hpp", "sh", "txt", "xml", "json", "yml", "yaml", "gradle", "kts", "go")</ID>
+    <ID>MaxLineLength:MainActivity.kt$MainActivity.&lt;no name provided&gt;$override</ID>
+    <ID>MaxLineLength:MainContent.kt$androidx.compose.material3.CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))</ID>
+    <ID>MaxLineLength:MainViewModel.kt$MainViewModel$_uiState.value = _uiState.value.copy(isLoading = false, error = e.localizedMessage ?: "Failed to connect")</ID>
+    <ID>MaxLineLength:MainViewModel.kt$MainViewModel$_uiState.value = _uiState.value.copy(isLoading = false, screen = ScreenState.TerminalWorkspace(termSession))</ID>
+    <ID>MaxLineLength:MainViewModel.kt$MainViewModel$focusedWsId = ws.optString("workspace_id").takeIf { it.isNotEmpty() }</ID>
+    <ID>MaxLineLength:MainViewModel.kt$MainViewModel$if</ID>
+    <ID>MaxLineLength:MainViewModel.kt$MainViewModel$if (!wsLabel.isNullOrEmpty()) workspaceName = wsLabel else if (!focusedWsId.isNullOrEmpty()) workspaceName = focusedWsId</ID>
+    <ID>MaxLineLength:MainViewModel.kt$MainViewModel$val output = currentSession.execCommand("export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; herdr workspace list; herdr pane list")</ID>
+    <ID>MaxLineLength:MainViewModel.kt$MainViewModel$val output = session.execCommand("export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; herdr workspace list; herdr pane list")</ID>
+    <ID>MaxLineLength:MockSshSession.kt$MockSshSession$override suspend</ID>
+    <ID>MaxLineLength:ReviewViewModel.kt$ReviewViewModel$"export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; cd \"$repoRoot\" &amp;&amp; (git restore -- \"${file.path}\" || git checkout -- \"${file.path}\")"</ID>
+    <ID>MaxLineLength:ReviewViewModel.kt$ReviewViewModel$"export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; cd \"$repoRoot\" &amp;&amp; (git restore --staged -- \"${file.path}\" || git reset HEAD -- \"${file.path}\") &amp;&amp; (git restore -- \"${file.path}\" || git checkout -- \"${file.path}\")"</ID>
+    <ID>MaxLineLength:ReviewViewModel.kt$ReviewViewModel$"export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; cd \"$repoRoot\" &amp;&amp; git diff -- \"${file.path}\""</ID>
+    <ID>MaxLineLength:ReviewViewModel.kt$ReviewViewModel$"export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; cd \"$repoRoot\" &amp;&amp; git diff --cached -- \"${file.path}\""</ID>
+    <ID>MaxLineLength:ReviewViewModel.kt$ReviewViewModel$"export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; cd \"$repoRoot\" &amp;&amp; git diff --no-index -- /dev/null \"${file.path}\""</ID>
+    <ID>MaxLineLength:ReviewViewModel.kt$ReviewViewModel$val command = "export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; cd \"$dir\" &amp;&amp; git rev-parse --show-toplevel"</ID>
+    <ID>MaxLineLength:ReviewViewModel.kt$ReviewViewModel$val command = "export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; cd \"$repoRoot\" &amp;&amp; (git restore --staged -- \"${file.path}\" || git reset HEAD -- \"${file.path}\")"</ID>
+    <ID>MaxLineLength:ReviewViewModel.kt$ReviewViewModel$val command = "export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; cd \"$repoRoot\" &amp;&amp; git add \"${file.path}\""</ID>
+    <ID>MaxLineLength:ReviewViewModel.kt$ReviewViewModel$val command = "export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; cd \"$repoRoot\" &amp;&amp; git status --porcelain"</ID>
+    <ID>MaxLineLength:SettingsScreen.kt$com.termux.shared.termux.settings.preferences.TermuxAppSharedPreferences.getDefaultFontSizes(context)</ID>
+    <ID>MaxLineLength:SettingsScreen.kt$text = "Open URLs clicked in terminal in the in-app browser tab instead of the default phone browser"</ID>
+    <ID>MaxLineLength:SftpFileBrowser.kt$HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))</ID>
+    <ID>MaxLineLength:SftpFileBrowser.kt$Text(state.fileName, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)</ID>
+    <ID>MaxLineLength:SftpFileBrowser.kt$else -&gt; androidx.compose.ui.graphics.Color(0xFFFF9800)</ID>
+    <ID>MaxLineLength:SftpFileBrowser.kt$gitStatus == "??" || gitStatus.contains("A") -&gt; androidx.compose.ui.graphics.Color(0xFF4CAF50)</ID>
+    <ID>MaxLineLength:SftpFileBrowser.kt$gitStatus.contains("D") -&gt; androidx.compose.ui.graphics.Color(0xFFF44336)</ID>
+    <ID>MaxLineLength:SftpFileBrowser.kt$imageVector = if (file.isDirectory) Icons.Default.Folder else Icons.AutoMirrored.Filled.InsertDriveFile</ID>
+    <ID>MaxLineLength:SftpFileBrowser.kt$return String.format(java.util.Locale.US, "%.2f %s", bytes / Math.pow(1024.0, digitGroups.toDouble()), units[digitGroups])</ID>
+    <ID>MaxLineLength:SftpFileBrowser.kt$tint = if (file.isDirectory) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary</ID>
+    <ID>MaxLineLength:SplitWorkspace.kt$VerticalDivider(modifier = Modifier.fillMaxHeight(), thickness = 1.dp, color = MaterialTheme.colorScheme.outline)</ID>
+    <ID>MaxLineLength:TabbedWorkspace.kt$color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)</ID>
+    <ID>MaxLineLength:TerminalCanvas.kt$val text = content.getSelectedText(selectionStartCol!!, selectionStartRow!!, selectionEndCol!!, selectionEndRow!!)</ID>
+    <ID>MaxLineLength:TerminalThemeSync.kt$properties.setProperty("color14", toTerminalColor(shiftTone(tertiaryContainer, if (isThemeDark) 92.0 else 24.0)))</ID>
+    <ID>MaxLineLength:TerminalThemeSync.kt$return String.format(Locale.US, "#%02x%02x%02x", android.graphics.Color.red(color), android.graphics.Color.green(color), android.graphics.Color.blue(color))</ID>
+    <ID>NestedBlockDepth:DashboardScreen.kt$fun validateExtraKeysJson(json: String): String?</ID>
+    <ID>NestedBlockDepth:ExtraKeysToolbar.kt$private fun sendSingleKey( key: String, ctrl: Boolean, alt: Boolean, shift: Boolean, fn: Boolean, activeTerminalView: TerminalView?, session: TerminalSession )</ID>
+    <ID>NestedBlockDepth:MainActivity.kt$MainActivity$private fun getFileName(context: Context, uri: Uri): String?</ID>
+    <ID>NestedBlockDepth:TerminalCanvas.kt$@Composable fun TerminalCanvas( session: TerminalSession, extraKeysController: com.mrndtvndv.term.ui.keyboard.ExtraKeysController, onOpenUrl: (String) -&gt; Unit, onViewCreated: (com.termux.view.TerminalView) -&gt; Unit, onViewReleased: (com.termux.view.TerminalView) -&gt; Unit, modifier: Modifier = Modifier )</ID>
+    <ID>ReturnCount:DashboardScreen.kt$fun validateExtraKeysJson(json: String): String?</ID>
+    <ID>ReturnCount:MainViewModel.kt$MainViewModel$fun refreshWorkspace(herdrEnabled: Boolean, getSavedDir: (String) -&gt; String?, getSavedUrl: (String) -&gt; String?)</ID>
+    <ID>ReturnCount:TerminalCanvas.kt$fun handleNativeKeyEvent(nativeEvent: android.view.KeyEvent): Boolean</ID>
+    <ID>ReturnCount:TerminalFocusWrapper.kt$fun TerminalSession.handleKeyEvent(keyEvent: KeyEvent, extraKeysController: ExtraKeysController): Boolean</ID>
+    <ID>SwallowedException:ExtraKeysToolbar.kt$e2: Exception</ID>
+    <ID>SwallowedException:ExtraKeysToolbar.kt$e: Exception</ID>
+    <ID>SwallowedException:MainActivity.kt$MainActivity$e: Exception</ID>
+    <ID>SwallowedException:MainViewModel.kt$MainViewModel$e: Exception</ID>
+    <ID>SwallowedException:MainViewModel.kt$MainViewModel$je: Exception</ID>
+    <ID>SwallowedException:MainViewModel.kt$MainViewModel.&lt;no name provided&gt;$e: Exception</ID>
+    <ID>SwallowedException:NativeSshSession.kt$NativeSshSession$e: Exception</ID>
+    <ID>SwallowedException:ReviewViewModel.kt$ReviewViewModel$e: Exception</ID>
+    <ID>SwallowedException:SftpViewModel.kt$SftpViewModel$e: Exception</ID>
+    <ID>SwallowedException:TerminalCanvas.kt$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:DashboardScreen.kt$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:ExtraKeysToolbar.kt$e2: Exception</ID>
+    <ID>TooGenericExceptionCaught:ExtraKeysToolbar.kt$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:MainActivity.kt$MainActivity$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:MainViewModel.kt$MainViewModel$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:MainViewModel.kt$MainViewModel$je: Exception</ID>
+    <ID>TooGenericExceptionCaught:MainViewModel.kt$MainViewModel.&lt;no name provided&gt;$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:NativeSshSession.kt$NativeSshSession$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:ReviewViewModel.kt$ReviewViewModel$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:SftpFileViewerScreen.kt$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:SftpViewModel.kt$SftpViewModel$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:TerminalCanvas.kt$e: Exception</ID>
+    <ID>TooGenericExceptionThrown:SftpViewModelTest.kt$SftpViewModelTest.MockSftpClient$throw Exception("Directory not found")</ID>
+    <ID>TopLevelPropertyNaming:DashboardScreen.kt$const val PRESET_ARROWS_ONLY = "[[ESC, TAB, CTRL, ALT, UP, LEFT, DOWN, RIGHT]]"</ID>
+    <ID>TopLevelPropertyNaming:DashboardScreen.kt$const val PRESET_DOUBLE_ROW = "[['ESC','/',{key: '-', popup: '|'},'HOME','UP','END','PGUP'], ['TAB','CTRL','ALT','LEFT','DOWN','RIGHT','PGDN']]"</ID>
+    <ID>TopLevelPropertyNaming:DashboardScreen.kt$const val PRESET_SINGLE_ROW = "[[ESC, TAB, CTRL, ALT, {key: '-', popup: '|'}, DOWN, UP]]"</ID>
+    <ID>UnusedImports:ComposeInputTerminalView.kt$import android.graphics.Canvas</ID>
+    <ID>UnusedImports:ExtraKeysToolbar.kt$import androidx.compose.foundation.clickable</ID>
+    <ID>UnusedImports:ExtraKeysToolbar.kt$import androidx.compose.foundation.interaction.MutableInteractionSource</ID>
+    <ID>UnusedImports:MainViewModel.kt$import java.io.File</ID>
+    <ID>UnusedImports:TabbedWorkspace.kt$import androidx.compose.ui.unit.dp</ID>
+    <ID>UnusedImports:TerminalCanvas.kt$import com.termux.terminal.TerminalConstants</ID>
+    <ID>UnusedImports:TerminalCanvas.kt$import com.termux.view.TerminalRenderer</ID>
+    <ID>UnusedImports:TerminalFocusWrapper.kt$import androidx.compose.foundation.interaction.MutableInteractionSource</ID>
+    <ID>UnusedImports:TerminalThemeSync.kt$import androidx.compose.material3.ColorScheme</ID>
+    <ID>UnusedImports:TerminalWorkspaceContainer.kt$import android.content.Context</ID>
+    <ID>UnusedImports:TerminalWorkspaceContainer.kt$import android.graphics.Paint</ID>
+    <ID>UnusedImports:TerminalWorkspaceContainer.kt$import android.graphics.Typeface</ID>
+    <ID>UnusedImports:TerminalWorkspaceContainer.kt$import android.view.MotionEvent</ID>
+    <ID>UnusedImports:TerminalWorkspaceContainer.kt$import android.view.View</ID>
+    <ID>UnusedImports:TerminalWorkspaceContainer.kt$import android.view.ViewGroup</ID>
+    <ID>UnusedImports:TerminalWorkspaceContainer.kt$import android.view.ViewTreeObserver</ID>
+    <ID>UnusedImports:TerminalWorkspaceContainer.kt$import androidx.compose.foundation.Canvas</ID>
+    <ID>UnusedImports:TerminalWorkspaceContainer.kt$import androidx.compose.foundation.layout.fillMaxSize</ID>
+    <ID>UnusedImports:TerminalWorkspaceContainer.kt$import androidx.compose.ui.graphics.nativeCanvas</ID>
+    <ID>UnusedImports:TerminalWorkspaceContainer.kt$import androidx.compose.ui.viewinterop.AndroidView</ID>
+    <ID>UnusedImports:TerminalWorkspaceContainer.kt$import com.termux.shared.interact.ShareUtils</ID>
+    <ID>UnusedImports:TerminalWorkspaceContainer.kt$import com.termux.shared.termux.settings.preferences.TermuxAppSharedPreferences</ID>
+    <ID>UnusedImports:TerminalWorkspaceContainer.kt$import com.termux.shared.termux.terminal.TermuxTerminalViewClientBase</ID>
+    <ID>UnusedImports:TerminalWorkspaceContainer.kt$import com.termux.shared.view.KeyboardUtils</ID>
+    <ID>UnusedImports:TerminalWorkspaceContainer.kt$import java.io.File</ID>
+    <ID>UnusedParameter:MainContent.kt$fontFileExists: () -&gt; Boolean</ID>
+    <ID>UnusedParameter:MainContent.kt$getFileName: (Uri) -&gt; String?</ID>
+    <ID>UnusedParameter:MainViewModel.kt$MainViewModel$workspaceName: String?</ID>
+    <ID>UnusedPrivateMember:TerminalCanvas.kt$private fun sendTouchAsMouseMove( session: TerminalSession, inputView: ComposeInputTerminalView, x: Float, y: Float )</ID>
+    <ID>UnusedPrivateMember:TerminalWorkspaceContainer.kt$private fun TerminalView.forceUpdateSize()</ID>
+    <ID>UnusedPrivateProperty:TerminalCanvas.kt$ch</ID>
+    <ID>UseCheckOrError:NativeSshSession.kt$NativeSshSession$throw IllegalStateException("Auth missing")</ID>
+    <ID>UseCheckOrError:NativeSshSession.kt$NativeSshSession$throw IllegalStateException("Config missing")</ID>
+    <ID>UseCheckOrError:NativeSshSession.kt$NativeSshSession$throw IllegalStateException("Failed to initialize native SSH session")</ID>
+    <ID>UseCheckOrError:NativeSshSession.kt$NativeSshSession$throw IllegalStateException("Not connected")</ID>
+  </CurrentIssues>
+</SmellBaseline>

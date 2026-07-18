@@ -291,6 +291,7 @@ fun TerminalCanvas(
     var selectionStartRow by remember { mutableStateOf<Int?>(null) }
     var selectionEndCol by remember { mutableStateOf<Int?>(null) }
     var selectionEndRow by remember { mutableStateOf<Int?>(null) }
+    var showToolbar by remember { mutableStateOf(false) }
 
     val isSelectingText = remember {
         derivedStateOf {
@@ -390,6 +391,7 @@ fun TerminalCanvas(
                             selectionStartRow = null
                             selectionEndCol = null
                             selectionEndRow = null
+                            showToolbar = false
                         }
 
                         val ctrl = nativeEvent.isCtrlPressed || extraKeysController.readControl()
@@ -503,6 +505,7 @@ fun TerminalCanvas(
                                 selectionStartRow = null
                                 selectionEndCol = null
                                 selectionEndRow = null
+                                showToolbar = false
                             } else {
                                 // Forward tap as mouse click when terminal mouse tracking is active
                                 sendTouchAsMouseClick(session, inputView, offset.x, offset.y)
@@ -548,6 +551,7 @@ fun TerminalCanvas(
                                     selectionStartRow = row
                                     selectionEndCol = x2
                                     selectionEndRow = row
+                                    showToolbar = true
                                 }
                             }
                         }
@@ -627,6 +631,9 @@ fun TerminalCanvas(
                                 accumDragX = sx
                                 accumDragY = sy
                             },
+                            onDragEnd = {
+                                showToolbar = true
+                            },
                             onDrag = { change, dragAmount ->
                                 change.consume()
                                 accumDragX += dragAmount.x
@@ -690,6 +697,9 @@ fun TerminalCanvas(
                                 accumDragX = ex
                                 accumDragY = ey
                             },
+                            onDragEnd = {
+                                showToolbar = true
+                            },
                             onDrag = { change, dragAmount ->
                                 change.consume()
                                 accumDragX += dragAmount.x
@@ -734,7 +744,7 @@ fun TerminalCanvas(
 
             // Action Mode Floating Popup Toolbar
             val renderer = inputView.mRenderer
-            if (renderer != null) {
+            if (renderer != null && showToolbar) {
                 val menuY = ((minOf(selectionStartRow!!, selectionEndRow!!) - topRow) * renderer.getFontLineSpacing()).coerceAtLeast(0)
                 val menuX = (((selectionStartCol!! + selectionEndCol!!) / 2f) * renderer.getFontWidth()).coerceAtLeast(0f)
 
@@ -742,10 +752,7 @@ fun TerminalCanvas(
                     alignment = Alignment.TopCenter,
                     offset = IntOffset(menuX.toInt(), menuY),
                     onDismissRequest = {
-                        selectionStartRow = null
-                        selectionStartCol = null
-                        selectionEndRow = null
-                        selectionEndCol = null
+                        showToolbar = false
                     }
                 ) {
                     Surface(
@@ -770,6 +777,7 @@ fun TerminalCanvas(
                                 selectionStartCol = null
                                 selectionEndRow = null
                                 selectionEndCol = null
+                                showToolbar = false
                             }) {
                                 Text("Copy")
                             }
@@ -779,6 +787,7 @@ fun TerminalCanvas(
                                 selectionStartCol = null
                                 selectionEndRow = null
                                 selectionEndCol = null
+                                showToolbar = false
                                 session.onPasteTextFromClipboard()
                             }) {
                                 Text("Paste")
@@ -793,6 +802,7 @@ fun TerminalCanvas(
                                 selectionStartCol = null
                                 selectionEndRow = null
                                 selectionEndCol = null
+                                showToolbar = false
                             }) {
                                 Text("More")
                             }

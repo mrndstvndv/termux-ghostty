@@ -25,6 +25,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.withStyle
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -221,6 +222,75 @@ fun StatusBadge(status: String) {
             )
         }
     }
+}
+
+private enum class TokenType {
+    COMMENT, STRING, KEYWORD, NUMBER, ANNOTATION, TYPE
+}
+
+private data class TokenRule(val type: TokenType, val regex: Regex)
+
+private data class Match(val type: TokenType, val range: IntRange)
+
+private val syntaxRules = listOf(
+    // Comments (single line and multi line)
+    TokenRule(TokenType.COMMENT, Regex("//.*|/\\*[\\s\\S]*?\\*/|#.*")),
+    // Strings
+    TokenRule(TokenType.STRING, Regex("\"[^\"\\\\]*(?:\\\\.[^\"\\\\]*)*\"|'[^'\\\\]*(?:\\\\.[^'\\\\]*)*'|`[^`\\\\]*(?:\\\\.[^`\\\\]*)*`")),
+    // Keywords
+    TokenRule(TokenType.KEYWORD, Regex("\\b(val|var|fun|class|interface|object|import|package|return|if|else|for|while|do|when|is|as|in|out|try|catch|finally|throw|this|super|new|private|protected|public|internal|lateinit|init|companion|const|null|true|false|void|int|double|float|long|short|byte|char|boolean|string|def|elif|from|lambda|pass|global|nonlocal|async|await|let|const|var|function|export|default|extends|implements|struct|enum|fn|mut|impl|use|pub|sizeof|typeof)\\b")),
+    // Numbers (decimal and hex)
+    TokenRule(TokenType.NUMBER, Regex("\\b(0x[0-9a-fA-F]+|\\d+(\\.\\d+)?)\\b")),
+    // Annotations
+    TokenRule(TokenType.ANNOTATION, Regex("@[A-Za-z0-9_]+")),
+    // Types (Capitalized words)
+    TokenRule(TokenType.TYPE, Regex("\\b[A-Z][A-Za-z0-9_]*\\b"))
+)
+
+private fun highlightCode(code: String, isDark: Boolean): androidx.compose.ui.text.AnnotatedString {
+    val matches = mutableListOf<Match>()
+    for (rule in syntaxRules) {
+        rule.regex.findAll(code).forEach { result ->
+            matches.add(Match(rule.type, result.range))
+        }
+    }
+    
+    // Sort matches: first by start index ascending, then by length descending
+    matches.sortWith(compareBy<Match> { it.range.first }.thenByDescending { it.range.last - it.range.first })
+    
+    val nonOverlapping = mutableListOf<Match>()
+    var lastEnd = -1
+    for (match in matches) {
+        if (match.range.first > lastEnd) {
+            nonOverlapping.add(match)
+            lastEnd = match.range.last
+        }
+    }
+    
+    val builder = androidx.compose.ui.text.AnnotatedString.Builder(code)
+    for (match in nonOverlapping) {
+        val style = if (isDark) {
+            when (match.type) {
+                TokenType.COMMENT -> androidx.compose.ui.text.SpanStyle(color = Color(0xFF808080), fontStyle = androidx.compose.ui.text.font.FontStyle.Italic)
+                TokenType.STRING -> androidx.compose.ui.text.SpanStyle(color = Color(0xFF6A8759))
+                TokenType.KEYWORD -> androidx.compose.ui.text.SpanStyle(color = Color(0xFFCC7832), fontWeight = FontWeight.Bold)
+                TokenType.NUMBER -> androidx.compose.ui.text.SpanStyle(color = Color(0xFF6897BB))
+                TokenType.ANNOTATION -> androidx.compose.ui.text.SpanStyle(color = Color(0xFFBBB529))
+                TokenType.TYPE -> androidx.compose.ui.text.SpanStyle(color = Color(0xFF287BDE))
+            }
+        } else {
+            when (match.type) {
+                TokenType.COMMENT -> androidx.compose.ui.text.SpanStyle(color = Color(0xFF8C8C8C), fontStyle = androidx.compose.ui.text.font.FontStyle.Italic)
+                TokenType.STRING -> androidx.compose.ui.text.SpanStyle(color = Color(0xFF067D17))
+                TokenType.KEYWORD -> androidx.compose.ui.text.SpanStyle(color = Color(0xFF0033B0), fontWeight = FontWeight.Bold)
+                TokenType.NUMBER -> androidx.compose.ui.text.SpanStyle(color = Color(0xFF1750EB))
+                TokenType.ANNOTATION -> androidx.compose.ui.text.SpanStyle(color = Color(0xFF9E880D))
+                TokenType.TYPE -> androidx.compose.ui.text.SpanStyle(color = Color(0xFF007F7F))
+            }
+        }
+        builder.addStyle(style, match.range.first, match.range.last + 1)
+    }
+    return builder.toAnnotatedString()
 }
 
 @Composable
@@ -499,10 +569,10 @@ fun DiffViewer(
                 val columnWidth = remember(numWidth) { numWidth * 2 + 8.dp }
 
                 Row(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .verticalScroll(scrollState)
-                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.1f))
+                     modifier = Modifier
+                         .fillMaxSize()
+                         .verticalScroll(scrollState)
+                         .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.1f))
                 ) {
                     // 1. Line Numbers Column (Fixed on the Left)
                     Column(
@@ -568,9 +638,31 @@ fun DiffViewer(
                                     .padding(horizontal = 8.dp),
                                 contentAlignment = Alignment.CenterStart
                             ) {
+                                val annotatedText = remember(parsedLine.text, parsedLine.type, isDark, textColor) {
+                                    val type = parsedLine.type
+                                    if (type == DiffLineType.ADDITION || type == DiffLineType.DELETION || type == DiffLineType.CONTEXT) {
+                                        val prefix = parsedLine.text.take(1)
+                                        val remainingText = parsedLine.text.drop(1)
+                                        
+                                        androidx.compose.ui.text.buildAnnotatedString {
+                                            // The prefix (+, -,  ) gets styled with the base text color of the line
+                                            withStyle(androidx.compose.ui.text.SpanStyle(color = textColor)) {
+                                                append(prefix)
+                                            }
+                                            // The rest of the line gets highlighted
+                                            append(highlightCode(remainingText, isDark))
+                                        }
+                                    } else {
+                                        androidx.compose.ui.text.buildAnnotatedString {
+                                            withStyle(androidx.compose.ui.text.SpanStyle(color = textColor)) {
+                                                append(parsedLine.text)
+                                            }
+                                        }
+                                    }
+                                }
+
                                 Text(
-                                    text = parsedLine.text,
-                                    color = textColor,
+                                    text = annotatedText,
                                     fontSize = 12.sp,
                                     fontFamily = FontFamily.Monospace,
                                     softWrap = false
@@ -630,3 +722,4 @@ private fun getColors(type: DiffLineType, isDark: Boolean, fallbackColor: Color)
         }
     }
 }
+

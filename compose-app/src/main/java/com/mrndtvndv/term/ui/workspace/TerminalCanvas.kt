@@ -52,6 +52,7 @@ import com.termux.shared.termux.settings.preferences.TermuxAppSharedPreferences
 import com.termux.terminal.TerminalSession
 import com.termux.terminal.KeyHandler
 import com.termux.terminal.TerminalConstants
+import com.termux.terminal.GhosttyMouseEvent
 import com.termux.view.TerminalRenderer
 import java.io.File
 
@@ -137,6 +138,67 @@ fun inputCodePoint(
     if (cp > -1) {
         session.writeCodePoint(altHeld, cp)
     }
+}
+
+private fun sendTouchAsMouseClick(
+    session: TerminalSession,
+    inputView: ComposeInputTerminalView,
+    x: Float,
+    y: Float
+) {
+    val renderer = inputView.mRenderer ?: return
+    if (!session.hasActiveTerminalBackend()) return
+    if (!session.isMouseTrackingActive()) return
+
+    val cellW = Math.max(1, Math.round(renderer.getFontWidth()))
+    val cellH = Math.max(1, renderer.getFontLineSpacing())
+
+    val press = GhosttyMouseEvent(
+        GhosttyMouseEvent.PRESS,
+        GhosttyMouseEvent.BUTTON_LEFT,
+        0, x, y,
+        inputView.width, inputView.height,
+        cellW, cellH,
+        renderer.mFontLineSpacingAndAscent,
+        0, 0, 0
+    )
+    session.sendGhosttyMouseEvent(press)
+
+    val release = GhosttyMouseEvent(
+        GhosttyMouseEvent.RELEASE,
+        GhosttyMouseEvent.BUTTON_LEFT,
+        0, x, y,
+        inputView.width, inputView.height,
+        cellW, cellH,
+        renderer.mFontLineSpacingAndAscent,
+        0, 0, 0
+    )
+    session.sendGhosttyMouseEvent(release)
+}
+
+private fun sendTouchAsMouseMove(
+    session: TerminalSession,
+    inputView: ComposeInputTerminalView,
+    x: Float,
+    y: Float
+) {
+    val renderer = inputView.mRenderer ?: return
+    if (!session.hasActiveTerminalBackend()) return
+    if (!session.isMouseTrackingActive()) return
+
+    val cellW = Math.max(1, Math.round(renderer.getFontWidth()))
+    val cellH = Math.max(1, renderer.getFontLineSpacing())
+
+    val move = GhosttyMouseEvent(
+        GhosttyMouseEvent.MOTION,
+        GhosttyMouseEvent.BUTTON_LEFT,
+        0, x, y,
+        inputView.width, inputView.height,
+        cellW, cellH,
+        renderer.mFontLineSpacingAndAscent,
+        0, 0, 0
+    )
+    session.sendGhosttyMouseEvent(move)
 }
 
 @Composable
@@ -419,6 +481,8 @@ fun TerminalCanvas(
                                 }
                             }
 
+                            // Touch drag always scrolls (same as original GestureAndScaleRecognizer behavior)
+                            // MOTION events via touch are only for real mice, never for touch input
                             if (pan.y != 0f) {
                                 dragAccumulator += pan.y
                                 val fontHeight = renderer.getFontLineSpacing()
@@ -440,6 +504,9 @@ fun TerminalCanvas(
                                 selectionEndCol = null
                                 selectionEndRow = null
                             } else {
+                                // Forward tap as mouse click when terminal mouse tracking is active
+                                sendTouchAsMouseClick(session, inputView, offset.x, offset.y)
+
                                 focusRequester.requestFocus()
                                 keyboardController?.show()
 
@@ -545,13 +612,20 @@ fun TerminalCanvas(
                 contentDescription = "Start Selection Handle",
                 modifier = Modifier
                     .offset { IntOffset(leftHandleX.toInt(), leftHandleY.toInt()) }
+                    .size(with(density) { leftHandlePainter.intrinsicSize.toDpSize() })
+                    .pointerInput(Unit) {
+                        detectTapGestures { /* consume tap, prevent passthrough to Canvas */ }
+                    }
                     .pointerInput(session, inputView) {
                         var accumDragX = 0f
                         var accumDragY = 0f
                         detectDragGestures(
                             onDragStart = {
-                                accumDragX = startX
-                                accumDragY = startY
+                                // Read current handle position from live state
+                                val sx = inputView.getPointX(selectionStartCol!!).toFloat()
+                                val sy = inputView.getPointY(selectionStartRow!!).toFloat()
+                                accumDragX = sx
+                                accumDragY = sy
                             },
                             onDrag = { change, dragAmount ->
                                 change.consume()
@@ -567,11 +641,13 @@ fun TerminalCanvas(
                                     var newY1 = curY.coerceIn(-scrollRows, content.rows - 1)
                                     var newX1 = curX.coerceIn(0, content.columns - 1)
 
-                                    if (newY1 > selectionEndRow!!) {
-                                        newY1 = selectionEndRow!!
+                                    val endRow = selectionEndRow!!
+                                    val endCol = selectionEndCol!!
+                                    if (newY1 > endRow) {
+                                        newY1 = endRow
                                     }
-                                    if (newY1 == selectionEndRow!! && newX1 > selectionEndCol!!) {
-                                        newX1 = selectionEndCol!!
+                                    if (newY1 == endRow && newX1 > endCol) {
+                                        newX1 = endCol
                                     }
 
                                     if (!content.isAlternateBufferActive) {
@@ -599,13 +675,20 @@ fun TerminalCanvas(
                 contentDescription = "End Selection Handle",
                 modifier = Modifier
                     .offset { IntOffset(rightHandleX.toInt(), rightHandleY.toInt()) }
+                    .size(with(density) { rightHandlePainter.intrinsicSize.toDpSize() })
+                    .pointerInput(Unit) {
+                        detectTapGestures { /* consume tap, prevent passthrough to Canvas */ }
+                    }
                     .pointerInput(session, inputView) {
                         var accumDragX = 0f
                         var accumDragY = 0f
                         detectDragGestures(
                             onDragStart = {
-                                accumDragX = endX
-                                accumDragY = endY
+                                // Read current handle position from live state
+                                val ex = inputView.getPointX(selectionEndCol!! + 1).toFloat()
+                                val ey = inputView.getPointY(selectionEndRow!!).toFloat()
+                                accumDragX = ex
+                                accumDragY = ey
                             },
                             onDrag = { change, dragAmount ->
                                 change.consume()
@@ -621,11 +704,13 @@ fun TerminalCanvas(
                                     var newY2 = curY.coerceIn(-scrollRows, content.rows - 1)
                                     var newX2 = curX.coerceIn(0, content.columns - 1)
 
-                                    if (newY2 < selectionStartRow!!) {
-                                        newY2 = selectionStartRow!!
+                                    val startRow = selectionStartRow!!
+                                    val startCol = selectionStartCol!!
+                                    if (newY2 < startRow) {
+                                        newY2 = startRow
                                     }
-                                    if (newY2 == selectionStartRow!! && newX2 < selectionStartCol!!) {
-                                        newX2 = selectionStartCol!!
+                                    if (newY2 == startRow && newX2 < startCol) {
+                                        newX2 = startCol
                                     }
 
                                     if (!content.isAlternateBufferActive) {

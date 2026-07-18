@@ -36,7 +36,7 @@ public final class TerminalRenderer {
     /** The {@link Paint#ascent()}. See http://www.fampennings.nl/maarten/android/08numgrid/font.png */
     private final int mFontAscent;
     /** The {@link #mFontLineSpacing} + {@link #mFontAscent}. */
-    final int mFontLineSpacingAndAscent;
+    public final int mFontLineSpacingAndAscent;
 
     private final float[] asciiMeasures = new float[127];
     private RowRenderCache[] mRowRenderCaches = new RowRenderCache[0];

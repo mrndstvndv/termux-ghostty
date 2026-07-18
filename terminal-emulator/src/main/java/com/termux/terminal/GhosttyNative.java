@@ -151,6 +151,7 @@ public final class GhosttyNative {
     public static native void nativeSshWrite(long sessionHandle, byte[] data, int offset, int length);
     public static native void nativeSshResize(long sessionHandle, int cols, int rows);
     public static native void nativeSshSetOutputCallback(long sessionHandle, Object callback);
+    public static native int nativeGetKittyKeyboardFlags(long terminalHandle);
     public static native boolean nativeSshIsRunning(long sessionHandle);
 
     public static native String nativeSshExec(long sessionHandle, String command);

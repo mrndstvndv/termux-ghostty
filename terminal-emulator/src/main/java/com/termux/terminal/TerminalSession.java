@@ -363,6 +363,18 @@ public final class TerminalSession extends TerminalOutput {
         return mGhosttyTerminalContent;
     }
 
+    /**
+     * Current kitty keyboard protocol flags (0 = disabled). Used by the input
+     * layer to decide whether to encode keys (notably ESC) as CSI-u so the
+     * remote does not wait an escape-sequence disambiguation timeout.
+     */
+    public int getKittyKeyboardFlags() {
+        if (mGhosttyTerminalContent == null) {
+            return 0;
+        }
+        return mGhosttyTerminalContent.getKittyKeyboardFlags();
+    }
+
     /** Write data to the shell process. */
     @Override
     public void write(byte[] data, int offset, int count) {

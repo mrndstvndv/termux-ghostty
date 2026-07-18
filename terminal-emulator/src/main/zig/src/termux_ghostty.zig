@@ -1489,6 +1489,23 @@ pub export fn termux_ghostty_session_create(
     };
     errdefer session.terminal.deinit(session.alloc);
 
+    // Default-enable the kitty keyboard protocol (Ghostty's `keyboard-enhanced`
+    // default: disambiguate escape codes + report event types) on both the
+    // primary and alternate screens. This makes us answer the `CSI ? u` query
+    // with non-zero flags so remote programs (tmux, vim, etc.) enable extended
+    // keys and stop waiting `escape-time` / `timeoutlen` on a lone ESC. The
+    // input layer then encodes ESC as `CSI 27u` (see TerminalView.handleKeyCode).
+    session.terminal.screens.get(.primary).?.kitty_keyboard.push(.{
+        .disambiguate = true,
+        .report_events = true,
+    });
+    if (session.terminal.screens.get(.alternate)) |alt_screen| {
+        alt_screen.kitty_keyboard.push(.{
+            .disambiguate = true,
+            .report_events = true,
+        });
+    }
+
     session.handler = .{ .session = session };
     session.stream = ghostty.Stream(*Handler).initAlloc(session.alloc, &session.handler);
     session.render_state = .empty;

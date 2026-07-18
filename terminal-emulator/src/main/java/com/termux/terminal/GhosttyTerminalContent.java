@@ -90,6 +90,20 @@ public final class GhosttyTerminalContent implements TerminalContent, AutoClosea
         return GhosttyNative.nativeSetViewportTopRow(mNativeHandle, topRow);
     }
 
+    /**
+     * Current kitty keyboard protocol flags (0 = disabled). Bit 0 is
+     * "disambiguate escape codes"; when set the input layer should encode keys
+     * such as ESC as CSI-u (e.g. ESC -> "\e[27u") so the remote does not wait
+     * an escape-sequence disambiguation timeout on a lone ESC.
+     */
+    public synchronized int getKittyKeyboardFlags() {
+        if (mNativeHandle == 0) {
+            return 0;
+        }
+        return GhosttyNative.nativeGetKittyKeyboardFlags(mNativeHandle);
+    }
+
+
     public synchronized void requestFullSnapshotRefresh() {
         if (mNativeHandle == 0) {
             GhosttyLog.warn("requestFullSnapshotRefresh called on a closed terminal content");

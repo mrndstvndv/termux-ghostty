@@ -762,6 +762,25 @@ pub export fn Java_com_termux_terminal_GhosttyNative_nativeSshWrite(
     session.writeKeystrokes(bytes);
 }
 
+pub export fn Java_com_termux_terminal_GhosttyNative_nativeGetKittyKeyboardFlags(
+    env: ?*c.JNIEnv,
+    clazz: c.jclass,
+    native_handle: jlong,
+) c_int {
+    _ = env;
+    _ = clazz;
+    const session = sessionFromHandle(native_handle) orelse return 0;
+    const screens = &session.terminal.screens;
+    // OR primary + alternate so kitty is considered active whenever either
+    // screen has it (the alternate screen may be created fresh by a full-screen
+    // app such as tmux without inheriting the default we push at init).
+    var flags: u5 = screens.get(.primary).?.kitty_keyboard.current().int();
+    if (screens.get(.alternate)) |alt_screen| {
+        flags |= alt_screen.kitty_keyboard.current().int();
+    }
+    return @intCast(flags);
+}
+
 pub export fn Java_com_termux_terminal_GhosttyNative_nativeSshSetOutputCallback(
     env: ?*c.JNIEnv,
     clazz: c.jclass,

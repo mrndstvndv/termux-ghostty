@@ -373,6 +373,23 @@ private fun sendSingleKey(
         val codePoint = if (key.length == 1) key.codePointAt(0) else -1
         if (codePoint != -1) {
             var finalCodePoint = codePoint
+            var isUpperCase = finalCodePoint in 'A'.code..'Z'.code
+
+            if (shift) {
+                if (finalCodePoint in 'a'.code..'z'.code) {
+                    finalCodePoint -= 32
+                    isUpperCase = true
+                }
+            }
+
+            if (ctrl && isUpperCase && shift) {
+                // Kitty Keyboard Protocol for Ctrl+Shift+Letter
+                val modifier = if (alt) 14 else 6
+                val sequence = "\u001b[${finalCodePoint};${modifier}u"
+                session.write(sequence)
+                return
+            }
+
             if (ctrl) {
                 if (finalCodePoint in 'a'.code..'z'.code) {
                     finalCodePoint = finalCodePoint - 'a'.code + 1

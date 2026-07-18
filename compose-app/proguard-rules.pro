@@ -3,6 +3,12 @@
 # Keep symbol name mappings matching the main app structure
 -dontobfuscate
 
+# These methods are invoked from the native SSH dispatcher through JNI.
+-keep class com.termux.terminal.GhosttySessionWorker {
+    public void onNativeSshOutput(byte[]);
+    public void onNativeSshClosed();
+}
+
 # Bouncy Castle cryptography keep rules
 -keep class org.bouncycastle.** { *; }
 -dontwarn org.bouncycastle.**

@@ -37,7 +37,6 @@ final class GhosttySessionWorker extends Thread {
     private static final int MSG_MOUSE_EVENT = 9;
     private static final int MSG_PROGRESS_TIMEOUT = 10;
     private static final int MSG_APPLY_COLOR_SCHEME = 11;
-    private static final int MSG_SSH_DRAIN = 12;
 
     private static final long SNAPSHOT_INTERVAL_MILLIS = 16; // ~60fps
     private static final long SNAPSHOT_INTERVAL_BUSY_MILLIS = 33; // ~30fps under sustained backlog
@@ -57,8 +56,6 @@ final class GhosttySessionWorker extends Thread {
     private final byte[] mDrainBuffer = new byte[4096];
 
     private volatile long mSshSessionHandle = 0L;
-    private android.os.MessageQueue.OnFileDescriptorEventListener mFdListener;
-    private android.os.ParcelFileDescriptor mWakePfd;
 
     private final AtomicReference<ScreenSnapshot> mPublishedSnapshot = new AtomicReference<>();
     private final AtomicReference<FrameDelta> mPublishedFrameDelta = new AtomicReference<>();
@@ -112,46 +109,17 @@ final class GhosttySessionWorker extends Thread {
 
     void setSshSession(long sshSessionHandle) {
         mSshSessionHandle = sshSessionHandle;
+        if (sshSessionHandle != 0L && mWorkerHandler != null) {
+            GhosttyNative.nativeSshSetOutputCallback(sshSessionHandle, this);
+        }
     }
 
-    private void registerSshWakeupListener() {
+    private void registerSshOutputCallback() {
         if (mSshSessionHandle == 0L) {
             return;
         }
 
-        final int wakeFd = GhosttyNative.nativeSshGetJvmWakeFd(mSshSessionHandle);
-        if (wakeFd < 0) {
-            GhosttyLog.error("Invalid JvmWakeFd: " + wakeFd);
-            return;
-        }
-
-        try {
-            mWakePfd = android.os.ParcelFileDescriptor.adoptFd(wakeFd);
-            final java.io.FileDescriptor fd = mWakePfd.getFileDescriptor();
-             mFdListener = new android.os.MessageQueue.OnFileDescriptorEventListener() {
-                @Override
-                public int onFileDescriptorEvents(java.io.FileDescriptor fdObj, int events) {
-                    if (mContent.requireNativeHandle() == 0) {
-                        return 0; // stop listening
-                    }
-                    long sshHandle = mSshSessionHandle;
-                    if (sshHandle == 0) {
-                        return 0; // stop listening
-                    }
-                    GhosttyNative.nativeSshAckWakeup(sshHandle);
-                    mWorkerHandler.sendEmptyMessage(MSG_SSH_DRAIN);
-                    return android.os.MessageQueue.OnFileDescriptorEventListener.EVENT_INPUT;
-                }
-            };
-            android.os.Looper.myQueue().addOnFileDescriptorEventListener(
-                fd,
-                android.os.MessageQueue.OnFileDescriptorEventListener.EVENT_INPUT,
-                mFdListener
-            );
-            GhosttyLog.info("Registered JvmWakeFd listener: fd=" + wakeFd);
-        } catch (Exception e) {
-            GhosttyLog.error("Failed to register JvmWakeFd", e);
-        }
+        GhosttyNative.nativeSshSetOutputCallback(mSshSessionHandle, this);
     }
  
     @Override
@@ -161,19 +129,11 @@ final class GhosttySessionWorker extends Thread {
         synchronized (this) {
             mWorkerHandler = new WorkerHandler(Looper.myLooper());
             if (mSshSessionHandle != 0L) {
-                registerSshWakeupListener();
+                registerSshOutputCallback();
             }
             notifyAll();
         }
         Looper.loop();
-        if (mWakePfd != null) {
-            try {
-                mWakePfd.close();
-            } catch (java.io.IOException e) {
-                // ignore
-            }
-            mWakePfd = null;
-        }
         GhosttyLog.info("Ghostty worker thread exiting: " + getName());
     }
 
@@ -225,6 +185,19 @@ final class GhosttySessionWorker extends Thread {
 
     void appendDirect(byte[] data) {
         getWorkerHandler().obtainMessage(MSG_APPEND_DIRECT, data).sendToTarget();
+    }
+
+    public void onNativeSshOutput(byte[] data) {
+        if (data == null || data.length == 0 || mSshSessionHandle == 0L) {
+            return;
+        }
+        getWorkerHandler().obtainMessage(MSG_APPEND_DIRECT, data).sendToTarget();
+    }
+
+    public void onNativeSshClosed() {
+        if (mSshSessionHandle != 0L) {
+            mMainThreadHandler.post(mSession::finishIfRunning);
+        }
     }
 
     void requestFullSnapshotRefresh() {
@@ -604,31 +577,6 @@ final class GhosttySessionWorker extends Thread {
         return Double.toString(durationNanos / 1_000_000.0d);
     }
 
-    private void handleSshDrain() {
-        long termHandle = mContent.requireNativeHandle();
-        if (termHandle == 0 || mSshSessionHandle == 0) {
-            return;
-        }
-
-        int previousTranscriptRows = mSession.mLastKnownGhosttyTranscriptRows;
-        int appendResult = GhosttyNative.nativeSshDrainToSession(termHandle, mSshSessionHandle);
-        if (appendResult > 0) {
-            updateCachedState();
-            if (mSession.mLastKnownGhosttyTranscriptRows > previousTranscriptRows) {
-                mSession.mScrollCounter.addAndGet(mSession.mLastKnownGhosttyTranscriptRows - previousTranscriptRows);
-            }
-            processAppendResult(appendResult);
-
-            addPendingFrameReason(FrameDelta.REASON_APPEND);
-            mSnapshotDirty.set(true);
-            scheduleSnapshotBuild(false);
-        }
-
-        if (!GhosttyNative.nativeSshIsRunning(mSshSessionHandle)) {
-            mMainThreadHandler.post(mSession::finishIfRunning);
-        }
-    }
-
     private class WorkerHandler extends Handler {
         WorkerHandler(Looper looper) {
             super(looper);
@@ -646,9 +594,6 @@ final class GhosttySessionWorker extends Thread {
                     addPendingFrameReason(FrameDelta.REASON_APPEND_DIRECT);
                     mSnapshotDirty.set(true);
                     scheduleSnapshotBuild(false);
-                    break;
-                case MSG_SSH_DRAIN:
-                    handleSshDrain();
                     break;
                 case MSG_BUILD_SNAPSHOT:
                     buildAndPublishSnapshot();

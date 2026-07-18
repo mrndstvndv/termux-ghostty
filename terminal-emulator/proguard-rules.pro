@@ -9,6 +9,12 @@
 
 # Add any project specific keep options here:
 
+# These methods are invoked from the native SSH dispatcher through JNI.
+-keep class com.termux.terminal.GhosttySessionWorker {
+    public void onNativeSshOutput(byte[]);
+    public void onNativeSshClosed();
+}
+
 # If your project uses WebView with JS, uncomment the following
 # and specify the fully qualified class name to the JavaScript interface
 # class:

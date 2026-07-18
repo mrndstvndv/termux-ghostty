@@ -150,9 +150,7 @@ public final class GhosttyNative {
     public static native void nativeSshDeinit(long sessionHandle);
     public static native void nativeSshWrite(long sessionHandle, byte[] data, int offset, int length);
     public static native void nativeSshResize(long sessionHandle, int cols, int rows);
-    public static native int nativeSshGetJvmWakeFd(long sessionHandle);
-    public static native void nativeSshAckWakeup(long sessionHandle);
-    public static native int nativeSshDrainToSession(long terminalSessionHandle, long sshSessionHandle);
+    public static native void nativeSshSetOutputCallback(long sessionHandle, Object callback);
     public static native boolean nativeSshIsRunning(long sessionHandle);
 
     public static native String nativeSshExec(long sessionHandle, String command);
@@ -166,4 +164,3 @@ public final class GhosttyNative {
     public static native int nativeSftpFileRead(long sessionHandle, long fileHandle, byte[] buffer, int offset, int length);
     public static native int nativeSftpFileWrite(long sessionHandle, long fileHandle, byte[] buffer, int offset, int length);
 }
-

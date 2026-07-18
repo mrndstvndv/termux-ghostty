@@ -81,7 +81,6 @@ class MainActivity : ComponentActivity() {
     private var activeTerminalView: TerminalView? = null
     private var sshService: SshSessionService? = null
     private var isBound = false
-    private var sshWriteExecutor: java.util.concurrent.ExecutorService? = null
     
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(className: ComponentName, service: IBinder) {
@@ -597,10 +596,6 @@ class MainActivity : ComponentActivity() {
                 val channel = session.openShellChannel(termType, 80, 24, herdrIntegrationValue)
                 shellChannel = channel
                 
-                sshWriteExecutor = java.util.concurrent.Executors.newSingleThreadExecutor { runnable ->
-                    Thread(runnable, "SshWriteWorker")
-                }
-
                 val sessionClient = object : TermuxTerminalSessionClientBase() {
                     override fun onFrameAvailable(changedSession: TerminalSession) {
                         if (!lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) return
@@ -813,8 +808,6 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun cleanupConnection() {
-        sshWriteExecutor?.shutdownNow()
-        sshWriteExecutor = null
         val session = terminalSessionState.value
         terminalSessionState.value = null
  

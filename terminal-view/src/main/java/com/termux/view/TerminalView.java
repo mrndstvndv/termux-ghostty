@@ -1107,6 +1107,13 @@ public class TerminalView extends View {
             return;
         }
 
+        boolean createdEvent = false;
+        if (event == null) {
+            long time = android.os.SystemClock.uptimeMillis();
+            event = MotionEvent.obtain(time, time, MotionEvent.ACTION_MOVE, getWidth() / 2f, getHeight() / 2f, 0);
+            createdEvent = true;
+        }
+
         for (int i = 0; i < amount; i++) {
             if (mTermSession.isMouseTrackingActive()) {
                 sendMouseEventCode(event, up ? TerminalConstants.MOUSE_WHEELUP_BUTTON : TerminalConstants.MOUSE_WHEELDOWN_BUTTON, true);
@@ -1116,6 +1123,10 @@ public class TerminalView extends View {
             // Send up and down key events for scrolling, which is what some terminals do to make scroll work in
             // e.g. less, which shifts to the alt screen without mouse handling.
             handleKeyCode(up ? KeyEvent.KEYCODE_DPAD_UP : KeyEvent.KEYCODE_DPAD_DOWN, 0);
+        }
+
+        if (createdEvent) {
+            event.recycle();
         }
     }
 

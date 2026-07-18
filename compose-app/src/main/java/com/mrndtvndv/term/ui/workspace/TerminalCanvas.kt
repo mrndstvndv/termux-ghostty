@@ -280,7 +280,8 @@ fun TerminalCanvas(
                     for (char in addedText) {
                         val ctrlHeld = extraKeysController.readControl()
                         val altHeld = extraKeysController.readAlt()
-                        inputCodePoint(char.code, ctrlHeld, altHeld, session, extraKeysController)
+                        val codePoint = if (char == '\n') 13 else char.code
+                        inputCodePoint(codePoint, ctrlHeld, altHeld, session, extraKeysController)
                     }
                 }
                 textFieldValue = TextFieldValue("  ", selection = androidx.compose.ui.text.TextRange(2))

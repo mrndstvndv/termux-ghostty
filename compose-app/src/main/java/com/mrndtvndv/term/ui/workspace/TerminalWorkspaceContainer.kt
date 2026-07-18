@@ -42,6 +42,7 @@ fun TerminalWorkspaceContainer(
 ) {
     TerminalCanvas(
         session = session,
+        extraKeysController = extraKeysController,
         onOpenUrl = onOpenUrl,
         onViewCreated = onViewCreated,
         onViewReleased = onViewReleased,

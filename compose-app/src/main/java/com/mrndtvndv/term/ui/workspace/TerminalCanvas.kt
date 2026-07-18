@@ -17,6 +17,7 @@ import android.content.Context
 @Composable
 fun TerminalCanvas(
     session: TerminalSession,
+    extraKeysController: com.mrndtvndv.term.ui.keyboard.ExtraKeysController,
     onOpenUrl: (String) -> Unit,
     onViewCreated: (com.termux.view.TerminalView) -> Unit,
     onViewReleased: (com.termux.view.TerminalView) -> Unit,
@@ -89,6 +90,18 @@ fun TerminalCanvas(
                             val ret = super.onScale(scale)
                             sharedPreferences.edit().putInt("font_size", mRenderer.mTextSize).apply()
                             return ret
+                        }
+                        override fun readControlKey(): Boolean {
+                            return extraKeysController.readControl()
+                        }
+                        override fun readAltKey(): Boolean {
+                            return extraKeysController.readAlt()
+                        }
+                        override fun readShiftKey(): Boolean {
+                            return extraKeysController.readShift()
+                        }
+                        override fun readFnKey(): Boolean {
+                            return extraKeysController.readFn()
                         }
                     })
 

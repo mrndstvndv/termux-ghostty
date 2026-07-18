@@ -40,5 +40,11 @@ fun TerminalWorkspaceContainer(
     onOpenUrl: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    TerminalCanvas(session, onOpenUrl, modifier)
+    TerminalCanvas(
+        session = session,
+        onOpenUrl = onOpenUrl,
+        onViewCreated = onViewCreated,
+        onViewReleased = onViewReleased,
+        modifier = modifier
+    )
 }

@@ -51,7 +51,7 @@ import com.termux.view.accessibility.TerminalAccessibilityDelegate;
 import com.termux.view.textselection.TextSelectionCursorController;
 
 /** View displaying and interacting with a {@link TerminalSession}. */
-public final class TerminalView extends View {
+public class TerminalView extends View {
 
     /** Log terminal view key and IME events. */
     private static boolean TERMINAL_VIEW_KEY_LOGGING_ENABLED = false;
@@ -178,6 +178,18 @@ public final class TerminalView extends View {
     public final static int KEY_EVENT_SOURCE_SOFT_KEYBOARD = 0;
 
     private static final String LOG_TAG = "TerminalView";
+
+    public void getSelectors(int[] out) {
+        if (out == null || out.length < 4) return;
+        if (mTextSelectionCursorController != null) {
+            mTextSelectionCursorController.getSelectors(out);
+        } else {
+            out[0] = -1;
+            out[1] = -1;
+            out[2] = -1;
+            out[3] = -1;
+        }
+    }
 
     public TerminalView(Context context, AttributeSet attributes) { // NO_UCD (unused code)
         super(context, attributes);

@@ -25,7 +25,7 @@ public final class TerminalRenderer {
     private static final int CURSOR_STYLE_BAR = 2;
     private static final long NO_FRAME_SEQUENCE = Long.MIN_VALUE;
 
-    final int mTextSize;
+    public final int mTextSize;
     final Typeface mTypeface;
     private final Paint mTextPaint = new Paint();
 

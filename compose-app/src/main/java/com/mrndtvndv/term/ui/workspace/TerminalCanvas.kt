@@ -87,9 +87,18 @@ fun TerminalCanvas(
                         override fun shouldOpenTerminalTranscriptURLOnClick() = true
                         override fun getTerminalTranscriptUrlOnTap(e: android.view.MotionEvent) = getVisibleLinkHit(e)?.url
                         override fun onScale(scale: Float): Float {
-                            val ret = super.onScale(scale)
-                            sharedPreferences.edit().putInt("font_size", mRenderer.mTextSize).apply()
-                            return ret
+                            if (scale < 0.9f || scale > 1.1f) {
+                                val increase = scale > 1f
+                                val currentSize = this@apply.mRenderer.mTextSize
+                                val newSize = currentSize + (if (increase) 1 else -1) * 2
+                                val clampedSize = newSize.coerceIn(sizes[1], sizes[2])
+                                if (clampedSize != currentSize) {
+                                    this@apply.setTextSize(clampedSize)
+                                    sharedPreferences.edit().putInt("font_size", clampedSize).apply()
+                                }
+                                return 1f
+                            }
+                            return scale
                         }
                         override fun readControlKey(): Boolean {
                             return extraKeysController.readControl()

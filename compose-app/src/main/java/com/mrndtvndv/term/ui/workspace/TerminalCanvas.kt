@@ -745,12 +745,44 @@ fun TerminalCanvas(
             // Action Mode Floating Popup Toolbar
             val renderer = inputView.mRenderer
             if (renderer != null && showToolbar) {
-                val menuY = ((minOf(selectionStartRow!!, selectionEndRow!!) - topRow) * renderer.getFontLineSpacing()).coerceAtLeast(0)
-                val menuX = (((selectionStartCol!! + selectionEndCol!!) / 2f) * renderer.getFontWidth()).coerceAtLeast(0f)
+                val selStartRow = minOf(selectionStartRow!!, selectionEndRow!!)
+                val selEndRow = maxOf(selectionStartRow!!, selectionEndRow!!)
+                val selStartCol = minOf(selectionStartCol!!, selectionEndCol!!)
+                val selEndCol = maxOf(selectionStartCol!!, selectionEndCol!!)
+
+                val fontLineSpacing = renderer.getFontLineSpacing()
+                val fontWidth = renderer.getFontWidth()
+
+                // Estimate toolbar popup dimensions: ~220dp × 56dp for 3 buttons
+                val toolbarWidth = with(density) { 220.dp.toPx() }
+                val toolbarHeight = with(density) { 56.dp.toPx() }
+
+                // Selection bounds in viewport pixel space
+                val selTopPx = (selStartRow - topRow) * fontLineSpacing
+                val selBottomPx = (selEndRow - topRow + 1) * fontLineSpacing
+                val viewHeight = inputView.height.toFloat()
+                val viewWidth = inputView.width.toFloat()
+
+                val toolbarGap = with(density) { 16.dp.toPx() }
+
+                // Place above selection if enough room, otherwise below
+                val menuY = if (selTopPx >= toolbarHeight + toolbarGap + fontLineSpacing) {
+                    (selTopPx - toolbarHeight - toolbarGap).toInt()
+                } else if (selBottomPx + toolbarHeight + toolbarGap <= viewHeight) {
+                    selBottomPx.toInt()
+                } else {
+                    // Fallback: snap to top of selection (will overlap but stays on-screen)
+                    selTopPx.coerceAtLeast(0).toInt()
+                }
+
+                // Center horizontally on selection midpoint, clamped to viewport edges
+                val selMidX = ((selStartCol + selEndCol) / 2f) * fontWidth
+                val maxMenuX = (viewWidth - toolbarWidth).coerceAtLeast(0f).toInt()
+                val menuX = (selMidX - toolbarWidth / 2f).toInt().coerceIn(0, maxMenuX)
 
                 Popup(
-                    alignment = Alignment.TopCenter,
-                    offset = IntOffset(menuX.toInt(), menuY),
+                    alignment = Alignment.TopStart,
+                    offset = IntOffset(menuX, menuY),
                     onDismissRequest = {
                         showToolbar = false
                     }
@@ -796,7 +828,11 @@ fun TerminalCanvas(
                             TextButton(onClick = {
                                 val content = session.terminalContent
                                 if (content != null) {
-                                    inputView.showContextMenu()
+                                    try {
+                                        inputView.showContextMenu()
+                                    } catch (_: NullPointerException) {
+                                        // View is detached from hierarchy, context menu unavailable
+                                    }
                                 }
                                 selectionStartRow = null
                                 selectionStartCol = null

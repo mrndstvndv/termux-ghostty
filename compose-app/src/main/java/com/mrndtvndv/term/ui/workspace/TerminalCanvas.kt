@@ -260,6 +260,34 @@ fun TerminalCanvas(
             value = textFieldValue,
             onValueChange = { newValue ->
                 val textVal = newValue.text
+                if (textVal.length == 2) {
+                    val selStart = newValue.selection.start
+                    if (selStart != 2) {
+                        val diff = selStart - 2
+                        if (diff < 0) {
+                            repeat(Math.abs(diff)) {
+                                val code = KeyHandler.getCode(
+                                    KeyEvent.KEYCODE_DPAD_LEFT,
+                                    0,
+                                    session.isCursorKeysApplicationMode,
+                                    session.isKeypadApplicationMode
+                                )
+                                if (code != null) session.write(code)
+                            }
+                        } else {
+                            repeat(diff) {
+                                val code = KeyHandler.getCode(
+                                    KeyEvent.KEYCODE_DPAD_RIGHT,
+                                    0,
+                                    session.isCursorKeysApplicationMode,
+                                    session.isKeypadApplicationMode
+                                )
+                                if (code != null) session.write(code)
+                            }
+                        }
+                    }
+                }
+
                 if (textVal.length < 2) {
                     val diff = 2 - textVal.length
                     repeat(diff) {

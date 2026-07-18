@@ -64,6 +64,7 @@ private val BlackColorScheme = darkColorScheme(
 @Composable
 fun TermuxGhosttyTheme(
     theme: String = "Dark",
+    customFontFamily: androidx.compose.ui.text.font.FontFamily? = null,
     content: @Composable () -> Unit
 ) {
     val context = LocalContext.current
@@ -100,9 +101,31 @@ fun TermuxGhosttyTheme(
         }
     }
 
+    val typography = if (customFontFamily != null) {
+        androidx.compose.material3.Typography(
+            displayLarge = Typography.displayLarge.copy(fontFamily = customFontFamily),
+            displayMedium = Typography.displayMedium.copy(fontFamily = customFontFamily),
+            displaySmall = Typography.displaySmall.copy(fontFamily = customFontFamily),
+            headlineLarge = Typography.headlineLarge.copy(fontFamily = customFontFamily),
+            headlineMedium = Typography.headlineMedium.copy(fontFamily = customFontFamily),
+            headlineSmall = Typography.headlineSmall.copy(fontFamily = customFontFamily),
+            titleLarge = Typography.titleLarge.copy(fontFamily = customFontFamily),
+            titleMedium = Typography.titleMedium.copy(fontFamily = customFontFamily),
+            titleSmall = Typography.titleSmall.copy(fontFamily = customFontFamily),
+            bodyLarge = Typography.bodyLarge.copy(fontFamily = customFontFamily),
+            bodyMedium = Typography.bodyMedium.copy(fontFamily = customFontFamily),
+            bodySmall = Typography.bodySmall.copy(fontFamily = customFontFamily),
+            labelLarge = Typography.labelLarge.copy(fontFamily = customFontFamily),
+            labelMedium = Typography.labelMedium.copy(fontFamily = customFontFamily),
+            labelSmall = Typography.labelSmall.copy(fontFamily = customFontFamily)
+        )
+    } else {
+        Typography
+    }
+
     MaterialTheme(
         colorScheme = colorScheme,
-        typography = Typography,
+        typography = typography,
         content = content
     )
 }

@@ -69,6 +69,8 @@ fun DashboardScreen(
     customFontName: String?,
     onSelectFont: () -> Unit,
     onClearFont: () -> Unit,
+    useCustomFontForWholeUi: Boolean,
+    onUseCustomFontForWholeUiChange: (Boolean) -> Unit,
     useInAppBrowser: Boolean,
     onUseInAppBrowserChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
@@ -451,6 +453,30 @@ fun DashboardScreen(
                                     Text("Reset", style = MaterialTheme.typography.bodyMedium)
                                 }
                             }
+                        }
+                    }
+
+                    if (customFontName != null) {
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Use Custom Font in UI", style = MaterialTheme.typography.bodyLarge)
+                                Text(
+                                    text = "Apply the custom terminal font to the entire application UI",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Switch(
+                                checked = useCustomFontForWholeUi,
+                                onCheckedChange = onUseCustomFontForWholeUiChange,
+                                enabled = !isLoading
+                            )
                         }
                     }
 

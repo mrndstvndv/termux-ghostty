@@ -317,65 +317,33 @@ fun TerminalCanvas(
             }
     ) {
         // Native Keyboard Input (Hidden BasicTextField)
-        var textFieldValue by remember { mutableStateOf(TextFieldValue("  ", selection = androidx.compose.ui.text.TextRange(2))) }
+        var textFieldValue by remember { mutableStateOf(TextFieldValue(" ", selection = androidx.compose.ui.text.TextRange(1))) }
 
         BasicTextField(
             value = textFieldValue,
             onValueChange = { newValue ->
                 val textVal = newValue.text
-                if (textVal.length == 2) {
-                    val selStart = newValue.selection.start
-                    if (selStart != 2) {
-                        val diff = selStart - 2
-                        if (diff < 0) {
-                            repeat(Math.abs(diff)) {
-                                val code = KeyHandler.getCode(
-                                    KeyEvent.KEYCODE_DPAD_LEFT,
-                                    0,
-                                    session.isCursorKeysApplicationMode,
-                                    session.isKeypadApplicationMode
-                                )
-                                if (code != null) session.write(code)
-                            }
-                        } else {
-                            repeat(diff) {
-                                val code = KeyHandler.getCode(
-                                    KeyEvent.KEYCODE_DPAD_RIGHT,
-                                    0,
-                                    session.isCursorKeysApplicationMode,
-                                    session.isKeypadApplicationMode
-                                )
-                                if (code != null) session.write(code)
-                            }
-                        }
-                    }
-                }
-
-                if (textVal.length < 2) {
-                    val diff = 2 - textVal.length
-                    repeat(diff) {
-                        val code = KeyHandler.getCode(
-                            KeyEvent.KEYCODE_DEL,
-                            0,
-                            session.isCursorKeysApplicationMode,
-                            session.isKeypadApplicationMode
-                        )
-                        if (code != null) {
-                            session.write(code)
-                        } else {
-                            session.writeCodePoint(false, 127) // DEL
-                        }
-                    }
-                } else if (textVal.length > 2) {
-                    val addedText = textVal.substring(2)
+                if (textVal.length < 1) {
+                    // Backspace: sentinel was deleted
+                    val code = KeyHandler.getCode(
+                        KeyEvent.KEYCODE_DEL, 0,
+                        session.isCursorKeysApplicationMode,
+                        session.isKeypadApplicationMode
+                    )
+                    if (code != null) session.write(code)
+                    else inputCodePoint(127, false, false, session, extraKeysController)
+                } else if (textVal.length == 1 && textVal != " ") {
+                    // IME replaced the sentinel space with a single char
+                    val codePoint = if (textVal[0] == '\n') 13 else textVal[0].code
+                    inputCodePoint(codePoint, false, false, session, extraKeysController)
+                } else if (textVal.length > 1) {
+                    val addedText = textVal.substring(1)
                     for (char in addedText) {
-                        val ctrlHeld = extraKeysController.readControl()
-                        val altHeld = extraKeysController.readAlt()
                         val codePoint = if (char == '\n') 13 else char.code
-                        inputCodePoint(codePoint, ctrlHeld, altHeld, session, extraKeysController)
+                        inputCodePoint(codePoint, false, false, session, extraKeysController)
                     }
                 }
-                textFieldValue = TextFieldValue("  ", selection = androidx.compose.ui.text.TextRange(2))
+                textFieldValue = TextFieldValue(" ", selection = androidx.compose.ui.text.TextRange(1))
             },
             keyboardOptions = KeyboardOptions.Default,
             modifier = Modifier
@@ -406,8 +374,7 @@ fun TerminalCanvas(
                         if (numLock) keyMod = keyMod or KeyHandler.KEYMOD_NUM_LOCK
 
                         val code = KeyHandler.getCode(
-                            keyCode,
-                            keyMod,
+                            keyCode, keyMod,
                             session.isCursorKeysApplicationMode,
                             session.isKeypadApplicationMode
                         )

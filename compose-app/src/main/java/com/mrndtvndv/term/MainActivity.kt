@@ -628,15 +628,13 @@ class MainActivity : ComponentActivity() {
                 }
                 val sessionIo = object : TerminalSessionIO {
                     override fun write(data: ByteArray?, offset: Int, count: Int) {
+                        // Fast path: TerminalSession.write() calls nativeSshWrite directly
+                        // when an SSH handle is available. This fallback is for non-SSH sessions.
                         if (data != null && count > 0) {
-                            val dataCopy = data.copyOfRange(offset, offset + count)
-                            sshWriteExecutor?.execute {
-                                try {
-                                    channel.outputStream.write(dataCopy)
-                                    channel.outputStream.flush()
-                                } catch (e: Exception) {
-                                    // ignore
-                                }
+                            try {
+                                channel.outputStream.write(data, offset, count)
+                            } catch (e: Exception) {
+                                // ignore
                             }
                         }
                     }

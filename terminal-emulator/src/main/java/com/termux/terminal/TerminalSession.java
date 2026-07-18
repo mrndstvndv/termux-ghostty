@@ -156,6 +156,10 @@ public final class TerminalSession extends TerminalOutput {
         }
     }
 
+    public long getSshSessionHandle() {
+        return mSshSessionHandle;
+    }
+
     public void appendOutput(byte[] data, int offset, int count) {
         if (mProcessToTerminalIOQueue.write(data, offset, count)) {
             if (mGhosttySessionWorker != null) {
@@ -362,6 +366,11 @@ public final class TerminalSession extends TerminalOutput {
     /** Write data to the shell process. */
     @Override
     public void write(byte[] data, int offset, int count) {
+        long sshHandle = mSshSessionHandle;
+        if (sshHandle != 0L) {
+            GhosttyNative.nativeSshWrite(sshHandle, data, offset, count);
+            return;
+        }
         if (mIsCustomIO) {
             if (mIoHandler != null) mIoHandler.write(data, offset, count);
         } else if (mShellPid > 0) {

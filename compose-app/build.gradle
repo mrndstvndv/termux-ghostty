@@ -1,6 +1,8 @@
 plugins {
     id 'com.android.application'
     id 'org.jetbrains.kotlin.plugin.compose'
+    id 'org.jlleitschuh.gradle.ktlint'
+    id 'io.gitlab.arturbosch.detekt'
 }
 
 android {
@@ -59,6 +61,15 @@ kotlin {
         jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
         freeCompilerArgs.add("-opt-in=kotlin.RequiresOptIn")
     }
+}
+
+detekt {
+    config = files("${rootDir}/config/detekt/detekt.yml")
+    buildUponDefaultConfig = true
+}
+
+ktlint {
+    version.set("1.3.1")
 }
 
 dependencies {

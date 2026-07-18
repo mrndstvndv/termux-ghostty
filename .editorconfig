@@ -15,6 +15,12 @@ charset = utf-8
 indent_style = space
 indent_size = 4
 
-[*.y{a,}ml]
+[*.{y{a,}ml}]
 indent_size = 2
 indent_style = space
+
+[*.{kt,kts}]
+indent_size = 4
+indent_style = space
+max_line_length = 120
+ktlint_function_naming_ignore_when_annotated_with = Composable

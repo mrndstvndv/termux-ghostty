@@ -1,0 +1,76 @@
+# detekt configuration
+# https://detekt.dev/docs/gettingstarted/configurations
+
+build:
+  maxIssues: 0
+
+complexity:
+  active: true
+  TooManyFunctions:
+    active: true
+    thresholdInFiles: 15
+    thresholdInClasses: 15
+    thresholdInInterfaces: 12
+    thresholdInObjects: 15
+    thresholdInEnums: 10
+  LongParameterList:
+    active: true
+    functionThreshold: 8
+    constructorThreshold: 8
+  CyclomaticComplexMethod:
+    active: true
+    threshold: 20
+  LargeClass:
+    active: true
+    threshold: 600
+
+style:
+  active: true
+  MaxLineLength:
+    active: true
+    maxLineLength: 120
+  UnusedImports:
+    active: true
+  WildcardImport:
+    active: false
+  MagicNumber:
+    active: false
+  ReturnCount:
+    active: true
+    max: 3
+    excludedFunctions:
+      - "equals"
+      - "hashCode"
+      - "toString"
+
+potential-bugs:
+  active: true
+  CastToNullableType:
+    active: true
+  UnreachableCode:
+    active: true
+  UnusedUnaryOperator:
+    active: true
+
+comments:
+  active: false
+  CommentOverPrivateFunction:
+    active: false
+  CommentOverPrivateProperty:
+    active: false
+
+performance:
+  active: true
+  SpreadOperator:
+    active: true
+
+naming:
+  active: true
+  FunctionNaming:
+    active: true
+    excludeClassPattern: '$^'
+    ignoreAnnotated:
+      - 'Composable'
+  TopLevelPropertyNaming:
+    active: true
+    constantPattern: '[A-Z][A-Za-z0-9]*'

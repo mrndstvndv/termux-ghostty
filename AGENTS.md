@@ -30,6 +30,24 @@ All fork-specific docs go under `docs/fork/`. Do not add `.md` files to the repo
 
 **Note on plans:** Do NOT commit plan files (`.md` files outlining implementation steps/checklists) or updates to plans to the Git repository. Keep plan documents untracked or locally edited only. Do not stage them for commits.
 
+## Linting & Static Analysis
+
+Two Kotlin linters are configured in `compose-app/build.gradle` (the only Kotlin module):
+
+| Tool | Purpose | Command |
+|---|---|---|
+| **ktlint** | Formatting & style (indentation, spacing, naming) | `./gradlew ktlintCheck` (check), `./gradlew ktlintFormat` (auto-fix) |
+| **detekt** | Static analysis (complexity, bugs, smells) | `./gradlew detekt` |
+| **Android Lint** | XML, manifest, perf, accessibility | `./gradlew lint` |
+
+**Quick combo:** `./gradlew ktlintFormat detekt` — fix style then run analysis.
+
+**Required after any code changes:** Run `./gradlew ktlintFormat detekt` before committing. ktlint auto-fixes formatting; detekt catches code smells. Both must pass.
+
+Config files:
+- `.editorconfig` — ktlint rules (shared with EditorConfig)
+- `config/detekt/detekt.yml` — detekt rules
+
 ## Core Behaviors to Preserve
 
 ### SFTP & Review Workspace Tracking (Herdr Integration)

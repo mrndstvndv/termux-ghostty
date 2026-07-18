@@ -16,24 +16,36 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.platform.LocalTextInputService
+import androidx.compose.ui.text.input.CommitTextCommand
+import androidx.compose.ui.text.input.BackspaceCommand
+import androidx.compose.ui.text.input.DeleteAllCommand
+import androidx.compose.ui.text.input.DeleteSurroundingTextCommand
+import androidx.compose.ui.text.input.DeleteSurroundingTextInCodePointsCommand
+import androidx.compose.ui.text.input.EditCommand
+import androidx.compose.ui.text.input.FinishComposingTextCommand
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.ImeOptions
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.MoveCursorCommand
+import androidx.compose.ui.text.input.SetComposingRegionCommand
+import androidx.compose.ui.text.input.SetComposingTextCommand
+import androidx.compose.ui.text.input.SetSelectionCommand
+import androidx.compose.ui.text.input.TextInputSession
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.focusTarget
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.onPreviewKeyEvent
-import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
@@ -138,6 +150,19 @@ fun inputCodePoint(
     if (cp > -1) {
         session.writeCodePoint(altHeld, cp)
     }
+}
+
+private fun sendDelete(
+    session: TerminalSession,
+    extraKeysController: com.mrndtvndv.term.ui.keyboard.ExtraKeysController
+) {
+    val code = KeyHandler.getCode(
+        KeyEvent.KEYCODE_DEL, 0,
+        session.isCursorKeysApplicationMode,
+        session.isKeypadApplicationMode
+    )
+    if (code != null) session.write(code)
+    else inputCodePoint(127, false, false, session, extraKeysController)
 }
 
 private fun sendTouchAsMouseClick(
@@ -301,6 +326,201 @@ fun TerminalCanvas(
 
     var combiningAccent by remember { mutableIntStateOf(0) }
 
+    @Suppress("DEPRECATION")
+    val textInputService = LocalTextInputService.current
+    var imeSession by remember { mutableStateOf<TextInputSession?>(null) }
+
+    // Track previous cursor position for Gboard swipe detection
+    var previousCursorPosition by remember { mutableIntStateOf(0) }
+
+    // Handle native Android key events (shared between hardware keyboard and IME SendKeyEventCommand)
+    fun handleNativeKeyEvent(nativeEvent: android.view.KeyEvent): Boolean {
+        if (nativeEvent.action != KeyEvent.ACTION_DOWN) return false
+
+        val keyCode = nativeEvent.keyCode
+        if (isSelectingText.value) {
+            selectionStartCol = null
+            selectionStartRow = null
+            selectionEndCol = null
+            selectionEndRow = null
+            showToolbar = false
+        }
+
+        val ctrl = nativeEvent.isCtrlPressed || extraKeysController.readControl()
+        val alt = nativeEvent.isAltPressed || extraKeysController.readAlt()
+        val shift = nativeEvent.isShiftPressed || extraKeysController.readShift()
+        val numLock = nativeEvent.isNumLockOn
+
+        var keyMod = 0
+        if (ctrl) keyMod = keyMod or KeyHandler.KEYMOD_CTRL
+        if (alt) keyMod = keyMod or KeyHandler.KEYMOD_ALT
+        if (shift) keyMod = keyMod or KeyHandler.KEYMOD_SHIFT
+        if (numLock) keyMod = keyMod or KeyHandler.KEYMOD_NUM_LOCK
+
+        val code = KeyHandler.getCode(
+            keyCode, keyMod,
+            session.isCursorKeysApplicationMode,
+            session.isKeypadApplicationMode
+        )
+        if (code != null) {
+            session.write(code)
+            return true
+        }
+
+        var bitsToClear = KeyEvent.META_CTRL_MASK
+        if ((nativeEvent.metaState and KeyEvent.META_ALT_RIGHT_ON) == 0) {
+            bitsToClear = bitsToClear or KeyEvent.META_ALT_ON or KeyEvent.META_ALT_LEFT_ON
+        }
+        var effectiveMetaState = nativeEvent.metaState and bitsToClear.inv()
+        if (shift) {
+            effectiveMetaState = effectiveMetaState or KeyEvent.META_SHIFT_ON or KeyEvent.META_SHIFT_LEFT_ON
+        }
+        if (extraKeysController.readFn()) {
+            effectiveMetaState = effectiveMetaState or KeyEvent.META_FUNCTION_ON
+        }
+
+        var result = nativeEvent.getUnicodeChar(effectiveMetaState)
+        if (result != 0) {
+            if ((result and android.view.KeyCharacterMap.COMBINING_ACCENT) != 0) {
+                if (combiningAccent != 0) {
+                    inputCodePoint(combiningAccent, ctrl, alt, session, extraKeysController)
+                }
+                combiningAccent = result and android.view.KeyCharacterMap.COMBINING_ACCENT_MASK
+            } else {
+                var finalResult = result
+                if (combiningAccent != 0) {
+                    val combinedChar = android.view.KeyCharacterMap.getDeadChar(combiningAccent, result)
+                    if (combinedChar > 0) {
+                        finalResult = combinedChar
+                    }
+                    combiningAccent = 0
+                }
+                inputCodePoint(finalResult, ctrl, alt, session, extraKeysController)
+            }
+            return true
+        }
+        return false
+    }
+
+    // Track the current composing text so we can send only deltas to the terminal.
+    var composingText by remember { mutableStateOf("") }
+
+    // Handle IME edit commands (soft keyboard input)
+    @Suppress("DEPRECATION")
+    val handleImeCommands: (List<EditCommand>) -> Unit = { commands ->
+        for (cmd in commands) {
+            when (cmd) {
+                is CommitTextCommand -> {
+                    val text = cmd.text
+                    if (composingText.isNotEmpty()) {
+                        // Composition finalized — only send new characters (e.g. space, punctuation)
+                        // or auto-correct replacement.
+                        if (text.startsWith(composingText)) {
+                            val delta = text.substring(composingText.length)
+                            for (char in delta) {
+                                val cp = if (char == '\n') 13 else char.code
+                                inputCodePoint(cp, false, false, session, extraKeysController)
+                            }
+                        } else {
+                            // Auto-correct replaced the composing text entirely
+                            for (ch in composingText) { sendDelete(session, extraKeysController) }
+                            for (char in text) {
+                                val cp = if (char == '\n') 13 else char.code
+                                inputCodePoint(cp, false, false, session, extraKeysController)
+                            }
+                        }
+                        composingText = ""
+                    } else {
+                        // No active composition — direct input
+                        for (char in text) {
+                            val cp = if (char == '\n') 13 else char.code
+                            inputCodePoint(cp, false, false, session, extraKeysController)
+                        }
+                    }
+                }
+                is DeleteSurroundingTextCommand -> {
+                    repeat(cmd.lengthBeforeCursor) {
+                        sendDelete(session, extraKeysController)
+                    }
+                }
+                is DeleteSurroundingTextInCodePointsCommand -> {
+                    repeat(cmd.lengthBeforeCursor) {
+                        sendDelete(session, extraKeysController)
+                    }
+                }
+                is BackspaceCommand -> {
+                    sendDelete(session, extraKeysController)
+                }
+                is DeleteAllCommand -> {
+                    repeat(100) { sendDelete(session, extraKeysController) }
+                }
+                is MoveCursorCommand -> {
+                    val keyCode = if (cmd.amount < 0) KeyEvent.KEYCODE_DPAD_LEFT else KeyEvent.KEYCODE_DPAD_RIGHT
+                    repeat(Math.abs(cmd.amount)) {
+                        val code = KeyHandler.getCode(
+                            keyCode, 0,
+                            session.isCursorKeysApplicationMode,
+                            session.isKeypadApplicationMode
+                        )
+                        if (code != null) session.write(code)
+                    }
+                }
+                is SetSelectionCommand -> {
+                    val diff = cmd.start - previousCursorPosition
+                    if (diff != 0) {
+                        val keyCode = if (diff < 0) KeyEvent.KEYCODE_DPAD_LEFT else KeyEvent.KEYCODE_DPAD_RIGHT
+                        repeat(Math.abs(diff)) {
+                            val code = KeyHandler.getCode(
+                                keyCode, 0,
+                                session.isCursorKeysApplicationMode,
+                                session.isKeypadApplicationMode
+                            )
+                            if (code != null) session.write(code)
+                        }
+                    }
+                    previousCursorPosition = cmd.start
+                }
+                is SetComposingTextCommand -> {
+                    val current = cmd.text
+                    // Send only the NEW characters since the last composing update
+                    if (current.length > composingText.length && current.startsWith(composingText)) {
+                        val delta = current.substring(composingText.length)
+                        for (char in delta) {
+                            val cp = if (char == '\n') 13 else char.code
+                            inputCodePoint(cp, false, false, session, extraKeysController)
+                        }
+                    } else if (composingText.isNotEmpty()) {
+                        // Text was corrected/replaced — backspace old, type new
+                        for (ch in composingText) { sendDelete(session, extraKeysController) }
+                        for (char in current) {
+                            val cp = if (char == '\n') 13 else char.code
+                            inputCodePoint(cp, false, false, session, extraKeysController)
+                        }
+                    } else {
+                        // First composition character
+                        for (char in current) {
+                            val cp = if (char == '\n') 13 else char.code
+                            inputCodePoint(cp, false, false, session, extraKeysController)
+                        }
+                    }
+                    composingText = current
+                }
+                is SetComposingRegionCommand -> { }
+                is FinishComposingTextCommand -> {
+                    composingText = ""
+                }
+            }
+        }
+    }
+
+    // Clean up the IME session when this composable leaves composition
+    DisposableEffect(Unit) {
+        onDispose {
+            imeSession?.dispose()
+            imeSession = null
+        }
+    }
+
     // Screen text snapshot for screen readers
     val visibleText = remember(session, frameTrigger) {
         val top = inputView.getTopRow()
@@ -315,123 +535,12 @@ fun TerminalCanvas(
                 inputView.layout(0, 0, size.width, size.height)
                 inputView.updateSize(true)
             }
+            .focusRequester(focusRequester)
+            .focusTarget()
+            .onPreviewKeyEvent { keyEvent ->
+                handleNativeKeyEvent(keyEvent.nativeKeyEvent)
+            }
     ) {
-        // Native Keyboard Input (Hidden BasicTextField)
-        var textFieldValue by remember { mutableStateOf(TextFieldValue("  ", selection = androidx.compose.ui.text.TextRange(2))) }
-
-        BasicTextField(
-            value = textFieldValue,
-            onValueChange = { newValue ->
-                val textVal = newValue.text
-                val sentinelLen = 2
-
-                // Detect Gboard spacebar swipe → arrow keys via cursor movement
-                if (textVal.length == sentinelLen) {
-                    val selStart = newValue.selection.start
-                    if (selStart != sentinelLen) {
-                        val diff = selStart - sentinelLen
-                        val keyCode = if (diff < 0) KeyEvent.KEYCODE_DPAD_LEFT else KeyEvent.KEYCODE_DPAD_RIGHT
-                        repeat(Math.abs(diff)) {
-                            val code = KeyHandler.getCode(
-                                keyCode, 0,
-                                session.isCursorKeysApplicationMode,
-                                session.isKeypadApplicationMode
-                            )
-                            if (code != null) session.write(code)
-                        }
-                    }
-                } else if (textVal.length < sentinelLen) {
-                    // Backspace: characters removed from sentinel
-                    val code = KeyHandler.getCode(
-                        KeyEvent.KEYCODE_DEL, 0,
-                        session.isCursorKeysApplicationMode,
-                        session.isKeypadApplicationMode
-                    )
-                    if (code != null) session.write(code)
-                    else inputCodePoint(127, false, false, session, extraKeysController)
-                } else if (textVal.length > sentinelLen) {
-                    val addedText = textVal.substring(sentinelLen)
-                    for (char in addedText) {
-                        val codePoint = if (char == '\n') 13 else char.code
-                        inputCodePoint(codePoint, false, false, session, extraKeysController)
-                    }
-                }
-                textFieldValue = TextFieldValue("  ", selection = androidx.compose.ui.text.TextRange(sentinelLen))
-            },
-            keyboardOptions = KeyboardOptions.Default,
-            modifier = Modifier
-                .size(1.dp)
-                .alpha(0f)
-                .focusRequester(focusRequester)
-                .onPreviewKeyEvent { keyEvent ->
-                    val nativeEvent = keyEvent.nativeKeyEvent
-                    if (keyEvent.type == KeyEventType.KeyDown) {
-                        val keyCode = nativeEvent.keyCode
-                        if (isSelectingText.value) {
-                            selectionStartCol = null
-                            selectionStartRow = null
-                            selectionEndCol = null
-                            selectionEndRow = null
-                            showToolbar = false
-                        }
-
-                        val ctrl = nativeEvent.isCtrlPressed || extraKeysController.readControl()
-                        val alt = nativeEvent.isAltPressed || extraKeysController.readAlt()
-                        val shift = nativeEvent.isShiftPressed || extraKeysController.readShift()
-                        val numLock = nativeEvent.isNumLockOn
-
-                        var keyMod = 0
-                        if (ctrl) keyMod = keyMod or KeyHandler.KEYMOD_CTRL
-                        if (alt) keyMod = keyMod or KeyHandler.KEYMOD_ALT
-                        if (shift) keyMod = keyMod or KeyHandler.KEYMOD_SHIFT
-                        if (numLock) keyMod = keyMod or KeyHandler.KEYMOD_NUM_LOCK
-
-                        val code = KeyHandler.getCode(
-                            keyCode, keyMod,
-                            session.isCursorKeysApplicationMode,
-                            session.isKeypadApplicationMode
-                        )
-                        if (code != null) {
-                            session.write(code)
-                            return@onPreviewKeyEvent true
-                        }
-
-                        var bitsToClear = KeyEvent.META_CTRL_MASK
-                        if ((nativeEvent.metaState and KeyEvent.META_ALT_RIGHT_ON) == 0) {
-                            bitsToClear = bitsToClear or KeyEvent.META_ALT_ON or KeyEvent.META_ALT_LEFT_ON
-                        }
-                        var effectiveMetaState = nativeEvent.metaState and bitsToClear.inv()
-                        if (shift) {
-                            effectiveMetaState = effectiveMetaState or KeyEvent.META_SHIFT_ON or KeyEvent.META_SHIFT_LEFT_ON
-                        }
-                        if (extraKeysController.readFn()) {
-                            effectiveMetaState = effectiveMetaState or KeyEvent.META_FUNCTION_ON
-                        }
-
-                        var result = nativeEvent.getUnicodeChar(effectiveMetaState)
-                        if (result != 0) {
-                            if ((result and android.view.KeyCharacterMap.COMBINING_ACCENT) != 0) {
-                                if (combiningAccent != 0) {
-                                    inputCodePoint(combiningAccent, ctrl, alt, session, extraKeysController)
-                                }
-                                combiningAccent = result and android.view.KeyCharacterMap.COMBINING_ACCENT_MASK
-                            } else {
-                                var finalResult = result
-                                if (combiningAccent != 0) {
-                                    val combinedChar = android.view.KeyCharacterMap.getDeadChar(combiningAccent, result)
-                                    if (combinedChar > 0) {
-                                        finalResult = combinedChar
-                                    }
-                                    combiningAccent = 0
-                                }
-                                inputCodePoint(finalResult, ctrl, alt, session, extraKeysController)
-                            }
-                            return@onPreviewKeyEvent true
-                        }
-                    }
-                    false
-                }
-        )
 
         // Rendering Layer (Compose Canvas)
         Canvas(
@@ -443,7 +552,9 @@ fun TerminalCanvas(
                 .pointerInput(inputView, session) {
                     var scaleAccumulator = 1f
                     var dragAccumulator = 0f
-                    detectTransformGestures { _, pan, zoom, _ ->
+                    var gestureStartY = 0f
+                    var initialScrollSet = false
+                    detectTransformGestures { centroid, pan, zoom, _ ->
                         if (isSelectingText.value) return@detectTransformGestures
 
                         val renderer = inputView.mRenderer
@@ -466,12 +577,52 @@ fun TerminalCanvas(
                             // Touch drag always scrolls (same as original GestureAndScaleRecognizer behavior)
                             // MOTION events via touch are only for real mice, never for touch input
                             if (pan.y != 0f) {
+                                // Set initial scroll position from the starting touch position
+                                // Only for viewport scrollback (non-mouse-tracking). When mouse
+                                // tracking is active (e.g. tmux splits), the terminal handles
+                                // per-pane scrolling via mouse coordinates — don't interfere with mTopRow.
+                                if (!initialScrollSet) {
+                                    initialScrollSet = true
+                                    gestureStartY = centroid.y
+
+                                    if (!session.isMouseTrackingActive()
+                                        && !session.isAlternateBufferActive()
+                                        && session.hasActiveTerminalBackend()
+                                    ) {
+                                        val viewHeight = inputView.height.toFloat()
+                                        if (viewHeight > 0f) {
+                                            val transcriptRows = session.getActiveTranscriptRows()
+                                            if (transcriptRows > 0) {
+                                                // Map touch Y to proportional scroll position:
+                                                //   top of viewport → earliest content (most negative topRow)
+                                                //   bottom of viewport → latest content (topRow = 0)
+                                                val ratio = (gestureStartY / viewHeight).coerceIn(0f, 1f)
+                                                val targetTopRow = -(transcriptRows * ratio).toInt()
+                                                    .coerceIn(-transcriptRows, 0)
+                                                inputView.setTopRow(targetTopRow)
+                                                session.setGhosttyTopRow(targetTopRow)
+                                                inputView.invalidate()
+                                            }
+                                        }
+                                    }
+                                }
+
                                 dragAccumulator += pan.y
                                 val fontHeight = renderer.getFontLineSpacing()
                                 val deltaRows = (dragAccumulator / fontHeight).toInt()
                                 if (deltaRows != 0) {
                                     dragAccumulator -= deltaRows * fontHeight
-                                    inputView.doScroll(null, -deltaRows)
+                                    // Pass a MotionEvent at the real touch position so that when
+                                    // mouse tracking is active (tmux splits), scroll wheel events
+                                    // are sent at the correct coordinates and routed to the right pane.
+                                    val time = android.os.SystemClock.uptimeMillis()
+                                    val me = MotionEvent.obtain(
+                                        time, time,
+                                        MotionEvent.ACTION_MOVE,
+                                        centroid.x, centroid.y, 0
+                                    )
+                                    inputView.doScroll(me, -deltaRows)
+                                    me.recycle()
                                 }
                             }
                         }
@@ -491,6 +642,20 @@ fun TerminalCanvas(
                                 sendTouchAsMouseClick(session, inputView, offset.x, offset.y)
 
                                 focusRequester.requestFocus()
+                                if (imeSession == null || imeSession?.isOpen != true) {
+                                    imeSession?.dispose()
+                                    imeSession = textInputService?.startInput(
+                                        value = TextFieldValue(""),
+                                        imeOptions = ImeOptions(
+                                            keyboardType = KeyboardType.Ascii,
+                                            imeAction = ImeAction.None,
+                                            autoCorrect = false
+                                        ),
+                                        onEditCommand = handleImeCommands,
+                                        onImeActionPerformed = { }
+                                    )
+                                }
+                                imeSession?.showSoftwareKeyboard()
                                 keyboardController?.show()
 
                                 val event = MotionEvent.obtain(

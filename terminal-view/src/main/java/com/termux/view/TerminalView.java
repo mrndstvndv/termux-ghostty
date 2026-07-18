@@ -2115,4 +2115,8 @@ public class TerminalView extends View {
         }
     }
 
+    public RenderFrameCache getRenderFrameCache() {
+        return mGhosttyRenderFrameCache;
+    }
+
 }

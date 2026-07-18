@@ -5,8 +5,19 @@ import android.graphics.Canvas
 import com.termux.view.TerminalView
 
 class ComposeInputTerminalView(context: Context) : TerminalView(context, null) {
-    override fun onDraw(canvas: Canvas) {
-        // Do not perform standard View rendering to avoid the slow hybrid rendering loop.
-        // We only let Compose Canvas handle the drawing.
+    var onInvalidateCallback: (() -> Unit)? = null
+
+    init {
+        setWillNotDraw(true)
+    }
+
+    override fun onFrameAvailable() {
+        super.onFrameAvailable()
+        onInvalidateCallback?.invoke()
+    }
+
+    override fun invalidate() {
+        super.invalidate()
+        onInvalidateCallback?.invoke()
     }
 }

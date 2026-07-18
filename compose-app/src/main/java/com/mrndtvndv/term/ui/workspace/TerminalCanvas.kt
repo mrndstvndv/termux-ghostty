@@ -9,7 +9,6 @@ import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.viewinterop.AndroidView
 import com.termux.terminal.TerminalSession
-import kotlinx.coroutines.delay
 import java.io.File
 import android.graphics.Typeface
 import com.termux.shared.termux.settings.preferences.TermuxAppSharedPreferences
@@ -24,44 +23,28 @@ fun TerminalCanvas(
     modifier: Modifier = Modifier
 ) {
     var inputView by remember { mutableStateOf<ComposeInputTerminalView?>(null) }
-    var snapshot by remember { mutableStateOf(session.ghosttyPublishedFrameDelta?.transportSnapshot) }
+    var frameTrigger by remember { mutableStateOf(0) }
     val selectionRange = remember { IntArray(4) { -1 } }
-    var selectionTrigger by remember { mutableStateOf(0) }
-
-    // Poll snapshot and selection updates
-    LaunchedEffect(session, inputView) {
-        while (true) {
-            val delta = session.ghosttyPublishedFrameDelta
-            val newSnapshot = delta?.transportSnapshot
-            if (newSnapshot != snapshot) {
-                snapshot = newSnapshot
-            }
-            inputView?.let { view ->
-                val tempSel = IntArray(4)
-                view.getSelectors(tempSel)
-                if (!tempSel.contentEquals(selectionRange)) {
-                    tempSel.copyInto(selectionRange)
-                    selectionTrigger++ // Trigger recomposition for selection highlights
-                }
-            }
-            delay(16)
-        }
-    }
 
     Box(modifier = modifier.fillMaxSize()) {
         // Bottom: Rendering Layer (Compose)
         Canvas(modifier = Modifier.fillMaxSize()) {
-            val currentSnapshot = snapshot ?: return@Canvas
             val currentInputView = inputView ?: return@Canvas
             val renderer = currentInputView.mRenderer ?: return@Canvas
+            val renderCache = currentInputView.renderFrameCache ?: return@Canvas
 
-            // Read selectionTrigger so it forces recomposition when selection changes
             @Suppress("UNUSED_VARIABLE")
-            val trigger = selectionTrigger
+            val trigger = frameTrigger
+
+            // Read from synchronous RenderFrameCache instead of volatile transport snapshots
+            val currentSnapshot = renderCache.getSnapshotForRender(
+                session.isGhosttyCursorBlinkingEnabled,
+                session.ghosttyCursorBlinkState
+            ) ?: return@Canvas
+
+            currentInputView.getSelectors(selectionRange)
 
             drawIntoCanvas { canvas ->
-                // Draw everything via TerminalRenderer using Compose nativeCanvas
-                // This includes correct colors, fonts, styles, and selection highlights
                 renderer.render(
                     currentSnapshot,
                     canvas.nativeCanvas,
@@ -104,13 +87,15 @@ fun TerminalCanvas(
                         override fun getTerminalTranscriptUrlOnTap(e: android.view.MotionEvent) = getVisibleLinkHit(e)?.url
                         override fun onScale(scale: Float): Float {
                             val ret = super.onScale(scale)
-                            // Update font size preference on scale
                             sharedPreferences.edit().putInt("font_size", mRenderer.mTextSize).apply()
                             return ret
                         }
                     })
 
                     attachSession(session)
+                    onInvalidateCallback = {
+                        frameTrigger++
+                    }
                     inputView = this
                     onViewCreated(this)
                 }

@@ -117,9 +117,9 @@ public final class TerminalRenderer {
         final int columns = screenSnapshot.getColumns();
 
         if (reverseVideo) {
-            canvas.drawColor(screenSnapshot.getPaletteColor(TextStyle.COLOR_INDEX_FOREGROUND), PorterDuff.Mode.SRC);
+            canvas.drawColor(screenSnapshot.getPaletteColor(TextStyle.COLOR_INDEX_FOREGROUND), PorterDuff.Mode.SRC_OVER);
         } else {
-            canvas.drawColor(screenSnapshot.getPaletteColor(TextStyle.COLOR_INDEX_BACKGROUND), PorterDuff.Mode.SRC);
+            canvas.drawColor(screenSnapshot.getPaletteColor(TextStyle.COLOR_INDEX_BACKGROUND), PorterDuff.Mode.SRC_OVER);
         }
 
         float heightOffset = mFontLineSpacingAndAscent;

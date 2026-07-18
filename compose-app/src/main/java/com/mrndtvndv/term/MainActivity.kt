@@ -19,6 +19,7 @@ import com.mrndtvndv.term.domain.SshSession
 import com.mrndtvndv.term.ui.dashboard.DashboardScreen
 import com.mrndtvndv.term.ui.theme.TermuxGhosttyTheme
 import com.mrndtvndv.term.ui.workspace.TerminalWorkspaceScreen
+import com.mrndtvndv.term.ui.workspace.WorkspaceTab
 import com.mrndtvndv.term.ui.sftp.SftpViewModel
 import com.mrndtvndv.term.domain.SftpClient
 import com.mrndtvndv.term.ui.review.ReviewViewModel
@@ -110,9 +111,9 @@ class MainActivity : ComponentActivity() {
     private var sshHost: String? = null
     private var sshPort: Int = 22
     private var sshUsername: String? = null
-    private val sftpActivePageState = mutableIntStateOf(0)
+    private val workspaceActiveTabState = mutableStateOf<WorkspaceTab>(WorkspaceTab.Terminal)
     private val sftpVisibleState = mutableStateOf(false)
-    private val browserUrlState = mutableStateOf("https://duckduckgo.com")
+    private val browserUrlState = mutableStateOf("")
     
     private val connectionLoading = mutableStateOf(false)
     private val connectionError = mutableStateOf<String?>(null)
@@ -208,6 +209,7 @@ class MainActivity : ComponentActivity() {
         val savedTheme = sharedPreferences.getString("app_theme", "Dark") ?: "Dark"
         val savedHerdrIntegration = sharedPreferences.getBoolean("herdr_integration", false)
         val savedUseInAppBrowser = sharedPreferences.getBoolean("use_in_app_browser", false)
+        val savedUseCustomFontForWholeUi = sharedPreferences.getBoolean("use_custom_font_for_whole_ui", false)
 
         val sizes = com.termux.shared.termux.settings.preferences.TermuxAppSharedPreferences.getDefaultFontSizes(this)
         val defaultFontSize = sizes[0]
@@ -217,8 +219,25 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             var appTheme by remember { mutableStateOf(savedTheme) }
+            var useCustomFontForWholeUi by remember { mutableStateOf(savedUseCustomFontForWholeUi) }
+            var customFontName by remember {
+                mutableStateOf(sharedPreferences.getString("custom_font_name", null))
+            }
+            
+            val customFontFamily = remember(customFontName, useCustomFontForWholeUi) {
+                if (useCustomFontForWholeUi && customFontName != null) {
+                    val file = File(filesDir, "font.ttf")
+                    if (file.exists() && file.length() > 0) {
+                        try {
+                            androidx.compose.ui.text.font.FontFamily(androidx.compose.ui.text.font.Typeface(android.graphics.Typeface.createFromFile(file)))
+                        } catch (e: Exception) {
+                            null
+                        }
+                    } else null
+                } else null
+            }
 
-            TermuxGhosttyTheme(theme = appTheme) {
+            TermuxGhosttyTheme(theme = appTheme, customFontFamily = customFontFamily) {
                 Surface(
                     modifier = Modifier.fillMaxSize()
                 ) {
@@ -232,9 +251,6 @@ class MainActivity : ComponentActivity() {
                     var extraKeysPreset by remember { mutableStateOf(savedExtraKeysPreset) }
                     var extraKeysCustomJson by remember { mutableStateOf(savedExtraKeysCustomJson) }
                     var fontSize by remember { mutableStateOf(savedFontSize) }
-                    var customFontName by remember {
-                        mutableStateOf(sharedPreferences.getString("custom_font_name", null))
-                    }
                     var herdrIntegration by remember { mutableStateOf(savedHerdrIntegration) }
                     var useInAppBrowser by remember { mutableStateOf(savedUseInAppBrowser) }
 
@@ -397,6 +413,11 @@ class MainActivity : ComponentActivity() {
                                         pickFontLauncher.launch("*/*")
                                     },
                                     onClearFont = onClearFont,
+                                    useCustomFontForWholeUi = useCustomFontForWholeUi,
+                                    onUseCustomFontForWholeUiChange = { enabled ->
+                                        useCustomFontForWholeUi = enabled
+                                        sharedPreferences.edit().putBoolean("use_custom_font_for_whole_ui", enabled).apply()
+                                    },
                                     useInAppBrowser = useInAppBrowser,
                                     onUseInAppBrowserChange = { enabled ->
                                         useInAppBrowser = enabled
@@ -405,8 +426,8 @@ class MainActivity : ComponentActivity() {
                                 )
                             }
                             is ScreenState.TerminalWorkspace -> {
-                                BackHandler(enabled = sftpActivePageState.intValue != 0) {
-                                    sftpActivePageState.intValue = 0
+                                BackHandler(enabled = workspaceActiveTabState.value != WorkspaceTab.Terminal) {
+                                    workspaceActiveTabState.value = WorkspaceTab.Terminal
                                 }
                                 if (termSession != null) {
                                      TerminalWorkspaceScreen(
@@ -425,15 +446,15 @@ class MainActivity : ComponentActivity() {
                                                  activeTerminalView = null
                                              }
                                          },
-                                         activePage = sftpActivePageState.intValue,
+                                         activeTab = workspaceActiveTabState.value,
                                          onOpenFile = { file ->
                                              openDownloadedFile(file)
                                          },
                                          onOpenFileError = { errorMsg ->
                                              handleNotification("SFTP Error", errorMsg)
                                          },
-                                          onPageSelected = { page ->
-                                               sftpActivePageState.intValue = page
+                                          onTabSelected = { tab ->
+                                               workspaceActiveTabState.value = tab
                                           },
                                           browserUrl = browserUrlState.value,
                                           onBrowserUrlChanged = { url ->
@@ -519,7 +540,7 @@ class MainActivity : ComponentActivity() {
                                                                       workspaceDirState.value = finalCwd
                                                                       sftpViewModelState.value?.navigateTo(finalCwd)
                                                                       
-                                                                      val savedUrl = sharedPreferences.getString("browser_last_url_$newWorkspaceKey", "https://duckduckgo.com") ?: "https://duckduckgo.com"
+                                                                      val savedUrl = sharedPreferences.getString("browser_last_url_$newWorkspaceKey", "") ?: ""
                                                                       browserUrlState.value = savedUrl
                                                                   }
                                                               }
@@ -744,7 +765,7 @@ class MainActivity : ComponentActivity() {
 
                                     activeWorkspaceKey = key
 
-                                    val savedUrl = sharedPreferences.getString("browser_last_url_$key", "https://duckduckgo.com") ?: "https://duckduckgo.com"
+                                    val savedUrl = sharedPreferences.getString("browser_last_url_$key", "") ?: ""
                                     withContext(Dispatchers.Main) {
                                         browserUrlState.value = savedUrl
                                         if (isHerdrEnabled) {
@@ -827,7 +848,7 @@ class MainActivity : ComponentActivity() {
         sftpClient = null
         sftpViewModelState.value = null
         reviewViewModelState.value = null
-        sftpActivePageState.intValue = 0
+        workspaceActiveTabState.value = WorkspaceTab.Terminal
         sftpVisibleState.value = false
         activeWorkspaceKey = null
         try {

@@ -36,11 +36,12 @@ fun urlsMatch(url1: String?, url2: String?): Boolean {
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun InAppBrowser(
-    webView: WebView,
+    getWebView: () -> WebView,
     initialUrl: String,
     onUrlChanged: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val webView = remember { getWebView() }
     var currentUrl by remember(initialUrl) { mutableStateOf(initialUrl) }
     var inputUrl by remember { mutableStateOf(initialUrl) }
     var isLoading by remember { mutableStateOf(false) }
@@ -57,13 +58,13 @@ fun InAppBrowser(
 
     // Handle initialUrl changes from external sources (e.g. terminal click)
     LaunchedEffect(initialUrl, webView) {
-        if (!urlsMatch(webView.url, initialUrl)) {
+        if (initialUrl.isNotEmpty() && !urlsMatch(webView.url, initialUrl)) {
             webView.loadUrl(initialUrl)
         }
     }
 
     LaunchedEffect(webView) {
-        if (webView.url == null) {
+        if (webView.url == null && currentUrl.isNotEmpty()) {
             webView.loadUrl(currentUrl)
         }
     }
@@ -222,7 +223,7 @@ fun InAppBrowser(
 
             IconButton(
                 onClick = {
-                    webView.loadUrl("https://duckduckgo.com")
+                    webView.loadUrl("about:blank")
                 }
             ) {
                 Icon(

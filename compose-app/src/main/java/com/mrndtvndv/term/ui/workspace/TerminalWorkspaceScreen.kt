@@ -54,7 +54,7 @@ fun TerminalWorkspaceScreen(
                     settings.displayZoomControls = false
                 }
             }
-            cachedWebView!!
+            cachedWebView
         }
     }
     val configuration = LocalConfiguration.current

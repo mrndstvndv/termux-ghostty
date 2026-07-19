@@ -51,7 +51,7 @@ fun SftpFileBrowser(
                     
                     val progress = if (state.totalBytes > 0) state.bytesDownloaded.toFloat() / state.totalBytes else 0f
                     LinearProgressIndicator(
-                        progress = progress,
+                        progress = { progress },
                         modifier = Modifier.fillMaxWidth()
                     )
                     

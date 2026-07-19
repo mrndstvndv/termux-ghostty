@@ -326,8 +326,9 @@ fun TerminalCanvas(
 
     var combiningAccent by remember { mutableIntStateOf(0) }
 
-    @Suppress("DEPRECATION")
+    @Suppress("DEPRECATION") // PlatformTextInputService + TextInputSession still needed for terminal IME
     val textInputService = LocalTextInputService.current
+    @Suppress("DEPRECATION")
     var imeSession by remember { mutableStateOf<TextInputSession?>(null) }
 
     // Track previous cursor position for Gboard swipe detection
@@ -406,7 +407,7 @@ fun TerminalCanvas(
     var composingText by remember { mutableStateOf("") }
 
     // Handle IME edit commands (soft keyboard input)
-    @Suppress("DEPRECATION")
+    @Suppress("DEPRECATION") // EditCommand API is deprecated but still needed for soft keyboard input
     val handleImeCommands: (List<EditCommand>) -> Unit = { commands ->
         for (cmd in commands) {
             when (cmd) {
@@ -715,7 +716,7 @@ fun TerminalCanvas(
             val renderer = inputView.mRenderer ?: return@Canvas
             val renderCache = inputView.renderFrameCache ?: return@Canvas
 
-            @Suppress("UNUSED_VARIABLE")
+            @Suppress("UNUSED_VARIABLE") // trigger forces Canvas redraw by reading frameTrigger state inside draw scope
             val trigger = frameTrigger
 
             val currentSnapshot = renderCache.getSnapshotForRender(
@@ -923,10 +924,10 @@ fun TerminalCanvas(
                 val menuY = if (selTopPx >= toolbarHeight + toolbarGap + fontLineSpacing) {
                     (selTopPx - toolbarHeight - toolbarGap).toInt()
                 } else if (selBottomPx + toolbarHeight + toolbarGap <= viewHeight) {
-                    selBottomPx.toInt()
+                    selBottomPx
                 } else {
                     // Fallback: snap to top of selection (will overlap but stays on-screen)
-                    selTopPx.coerceAtLeast(0).toInt()
+                    selTopPx.coerceAtLeast(0)
                 }
 
                 // Center horizontally on selection midpoint, clamped to viewport edges

@@ -35,9 +35,9 @@ fun SettingsScreen(
     onFontSizeChange: (Int) -> Unit,
     appTheme: String,
     onThemeChange: (String) -> Unit,
-    @Suppress("UNUSED_PARAMETER")
+    @Suppress("UNUSED_PARAMETER") // kept for future API compatibility when herdr integration is wired
     herdrIntegration: Boolean = false,
-    @Suppress("UNUSED_PARAMETER")
+    @Suppress("UNUSED_PARAMETER") // kept for future API compatibility when herdr integration is wired
     onHerdrIntegrationChange: (Boolean) -> Unit = {},
     customFontName: String?,
     onSelectFont: () -> Unit,

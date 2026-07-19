@@ -9,7 +9,7 @@ const val PresetDoubleRow = "[['ESC','/',{key: '-', popup: '|'},'HOME','UP','END
 const val PresetSingleRow = "[[ESC, TAB, CTRL, ALT, {key: '-', popup: '|'}, DOWN, UP]]"
 const val PresetArrowsOnly = "[[ESC, TAB, CTRL, ALT, UP, LEFT, DOWN, RIGHT]]"
 
-@Suppress("ReturnCount")
+@Suppress("ReturnCount") // guard clauses intentionally use early returns per project conventions
 private fun checkExtraKeysElement(i: Int, j: Int, element: Any): String? {
     if (element !is String && element !is org.json.JSONObject) {
         return "Element at [$i][$j] must be a string or object"

@@ -108,7 +108,7 @@ fun SplitWorkspace(
                 VerticalDivider(modifier = Modifier.fillMaxHeight(), thickness = 1.dp, color = MaterialTheme.colorScheme.outline)
                 Column(modifier = Modifier.width(rightPanelWidth).fillMaxHeight()) {
                     if (rightTabs.size > 1) {
-                        TabRow(
+                        SecondaryTabRow(
                             selectedTabIndex = rightActiveIndex,
                             containerColor = MaterialTheme.colorScheme.surface,
                             contentColor = MaterialTheme.colorScheme.onSurface

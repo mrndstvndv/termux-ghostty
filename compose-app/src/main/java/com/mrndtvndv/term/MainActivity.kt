@@ -1,6 +1,5 @@
 package com.mrndtvndv.term
 
-import android.app.Notification
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.ComponentName
@@ -19,9 +18,12 @@ import androidx.compose.runtime.*
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import com.mrndtvndv.term.data.prefs.SharedPreferencesWorkspacePersistence
+import com.mrndtvndv.term.server.ServerCoordinator
 import com.mrndtvndv.term.server.ServerFactory
 import com.mrndtvndv.term.server.ServerManager
 import com.mrndtvndv.term.server.ServerRepository
+import com.mrndtvndv.term.ui.notification.NotificationState
+import com.mrndtvndv.term.ui.prefs.UserPrefs
 import com.mrndtvndv.term.service.SshSessionService
 import com.mrndtvndv.term.ui.MainContent
 import com.termux.shared.interact.ShareUtils
@@ -50,12 +52,15 @@ class MainActivity : ComponentActivity() {
         )
     }
     private val serverManager by lazy { ServerManager(serverFactory) }
+    private val coordinator by lazy { ServerCoordinator(serverManager, serverRepository) }
+    private val userPrefs by lazy { UserPrefs() }
+    private val notificationState by lazy { NotificationState() }
 
     private val viewModel: MainViewModel by viewModels {
         object : ViewModelProvider.Factory {
-            @Suppress("UNCHECKED_CAST")
+            @Suppress("UNCHECKED_CAST") // safe: VM factory creates only MainViewModel, cast is correct
             override fun <T : ViewModel> create(modelClass: Class<T>): T =
-                MainViewModel(serverRepository, serverManager) as T
+                MainViewModel(serverRepository, coordinator, userPrefs, notificationState) as T
         }
     }
 
@@ -89,7 +94,7 @@ class MainActivity : ComponentActivity() {
     private fun handleNotification(title: String?, body: String?) {
         val isForeground = lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)
         if (isForeground) {
-            viewModel.postNotification(title, body)
+            notificationState.post(title, body)
         } else {
             showSystemNotification(title, body)
         }
@@ -126,7 +131,7 @@ class MainActivity : ComponentActivity() {
         val builder = com.termux.shared.notification.NotificationUtils.geNotificationBuilder(
             this,
             com.termux.shared.termux.TermuxConstants.TERMUX_TERMINAL_PROTOCOL_NOTIFICATIONS_NOTIFICATION_CHANNEL_ID,
-            Notification.PRIORITY_DEFAULT,
+            0, // Notification.PRIORITY_DEFAULT (deprecated in Java, inlined)
             normalizedTitle,
             normalizedBody,
             normalizedBody,
@@ -147,7 +152,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        viewModel.initPrefs(sharedPreferences)
+        userPrefs.init(sharedPreferences)
 
         Security.removeProvider("BC")
         Security.insertProviderAt(BouncyCastleProvider(), 1)
@@ -156,8 +161,11 @@ class MainActivity : ComponentActivity() {
         setContent {
             val uiState by viewModel.uiState
 
-            val customFontFamily = remember(uiState.customFontName, uiState.useCustomFontForWholeUi) {
-                if (uiState.useCustomFontForWholeUi && uiState.customFontName != null) {
+            val customFontName by userPrefs.customFontName.collectAsState()
+            val useCustomFontForWholeUi by userPrefs.useCustomFontForWholeUi.collectAsState()
+
+            val customFontFamily = remember(customFontName, useCustomFontForWholeUi) {
+                if (useCustomFontForWholeUi && customFontName != null) {
                     val file = File(filesDir, "font.ttf")
                     if (file.exists() && file.length() > 0) {
                         try {
@@ -212,16 +220,14 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                         val name = getFileName(this, uri) ?: "custom_font.ttf"
-                        sharedPreferences.edit().putString("custom_font_name", name).apply()
-                        viewModel.setCustomFontName(name)
+                        userPrefs.setCustomFontName(name, sharedPreferences)
                     } catch (e: Exception) {
                         android.util.Log.e("MainActivity", "Failed to copy font", e)
                     }
                 },
                 deleteFontFile = {
                     File(filesDir, "font.ttf").delete()
-                    sharedPreferences.edit().remove("custom_font_name").apply()
-                    viewModel.setCustomFontName(null)
+                    userPrefs.setCustomFontName(null, sharedPreferences)
                 },
                 fontFileExists = { File(filesDir, "font.ttf").exists() },
             )
@@ -254,7 +260,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    @Suppress("UNUSED_PARAMETER")
+    @Suppress("UNUSED_PARAMETER") // kept for future service integration; binding is handled internally
     private fun bindTerminalSession(termSession: TerminalSession) {
         val intent = Intent(this@MainActivity, SshSessionService::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {

@@ -50,7 +50,14 @@ fun MainContent(
 ) {
     val uiState by viewModel.uiState
     val savedServers by viewModel.savedServers
-    val navigator = rememberAppNavigator(viewModel)
+    val customFontName by viewModel.userPrefs.customFontName.collectAsState()
+    val useCustomFontForWholeUi by viewModel.userPrefs.useCustomFontForWholeUi.collectAsState()
+    val notification by viewModel.notificationState.notification.collectAsState()
+    val navigator = rememberAppNavigator(
+        activeTab = uiState.activeTab,
+        onSetTab = { tab -> viewModel.setTab(tab) },
+        onNavigateBack = { viewModel.navigateBack() },
+    )
 
     val savedTheme = sharedPreferences.getString("app_theme", "Dark") ?: "Dark"
     val savedExtraKeysEnabled = sharedPreferences.getBoolean("extra_keys_enabled", true)
@@ -177,14 +184,12 @@ fun MainContent(
                                         .putString("app_theme", newTheme).apply()
                                 },
 
-                                customFontName = uiState.customFontName,
+                                customFontName = customFontName,
                                 onSelectFont = { pickFontLauncher.launch("*/*") },
                                 onClearFont = onClearFontInternal,
-                                useCustomFontForWholeUi = uiState.useCustomFontForWholeUi,
+                                useCustomFontForWholeUi = useCustomFontForWholeUi,
                                 onUseCustomFontForWholeUiChange = { enabled ->
-                                    viewModel.setUseCustomFontForWholeUi(enabled)
-                                    sharedPreferences.edit()
-                                        .putBoolean("use_custom_font_for_whole_ui", enabled).apply()
+                                    viewModel.userPrefs.setUseCustomFontForWholeUi(enabled, sharedPreferences)
                                 },
                                 useInAppBrowser = useInAppBrowser,
                                 onUseInAppBrowserChange = { enabled ->
@@ -260,8 +265,8 @@ fun MainContent(
                 }
 
                 InAppNotificationBanner(
-                    activeNotification = uiState.notification,
-                    onDismiss = { viewModel.dismissNotification() },
+                    activeNotification = notification,
+                    onDismiss = { viewModel.notificationState.dismiss() },
                     modifier = Modifier.align(Alignment.TopCenter),
                 )
             }

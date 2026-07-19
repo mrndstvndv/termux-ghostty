@@ -5,12 +5,13 @@ import androidx.compose.runtime.remember
 import androidx.navigation3.runtime.NavBackStack
 import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.rememberNavBackStack
-import com.mrndtvndv.term.MainViewModel
 import com.mrndtvndv.term.ui.workspace.WorkspaceTab
 
 class Navigator(
     val backStack: NavBackStack<NavKey>,
-    private val viewModel: MainViewModel,
+    private val activeTab: () -> WorkspaceTab,
+    private val onSetTab: (WorkspaceTab) -> Unit,
+    private val onNavigateBack: () -> Unit,
 ) {
     fun navigate(key: AppNavKey) {
         backStack.add(key)
@@ -20,12 +21,12 @@ class Navigator(
         val current = backStack.lastOrNull() as? AppNavKey
         if (current is AppNavKey.TerminalWorkspace) {
             // Check if we need to switch tabs inside the workspace first
-            if (viewModel.uiState.value.activeTab != WorkspaceTab.Terminal) {
-                viewModel.setTab(WorkspaceTab.Terminal)
+            if (activeTab() != WorkspaceTab.Terminal) {
+                onSetTab(WorkspaceTab.Terminal)
                 return
             }
             // Navigate back to server list — connection stays alive
-            viewModel.navigateBack()
+            onNavigateBack()
         }
 
         if (backStack.size > 1) {
@@ -41,7 +42,13 @@ class Navigator(
 }
 
 @Composable
-fun rememberAppNavigator(viewModel: MainViewModel): Navigator {
+fun rememberAppNavigator(
+    activeTab: WorkspaceTab,
+    onSetTab: (WorkspaceTab) -> Unit,
+    onNavigateBack: () -> Unit,
+): Navigator {
     val backStack = rememberNavBackStack(AppNavKey.ServerList)
-    return remember(backStack, viewModel) { Navigator(backStack, viewModel) }
+    return remember(backStack) {
+        Navigator(backStack, { activeTab }, onSetTab, onNavigateBack)
+    }
 }

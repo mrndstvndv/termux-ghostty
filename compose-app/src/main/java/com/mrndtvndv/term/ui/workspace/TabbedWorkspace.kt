@@ -70,10 +70,10 @@ fun TabbedWorkspace(
     )
     val coroutineScope = rememberCoroutineScope()
 
-    // Sync pagerState when external activeTab changes (e.g. back button pressed in MainActivity)
-    LaunchedEffect(activePageIndex) {
-        if (pagerState.currentPage != activePageIndex && !pagerState.isScrollInProgress) {
-            pagerState.animateScrollToPage(activePageIndex)
+    // Sync pagerState on initial mount only; tab clicks handle the rest
+    LaunchedEffect(Unit) {
+        if (pagerState.currentPage != activePageIndex) {
+            pagerState.scrollToPage(activePageIndex)
         }
     }
 
@@ -111,7 +111,7 @@ fun TabbedWorkspace(
                             }
                             onTabSelected(tab)
                             coroutineScope.launch {
-                                pagerState.animateScrollToPage(index)
+                                pagerState.scrollToPage(index)
                             }
                         },
                         selectedContentColor = MaterialTheme.colorScheme.primary,
@@ -131,7 +131,7 @@ fun TabbedWorkspace(
         HorizontalPager(
             state = pagerState,
             userScrollEnabled = false, // Disable swipe so terminal selection / scrolling works
-            beyondViewportPageCount = 2,
+            key = { index -> activeTabs.getOrNull(index)?.let { "${index}_${it.title}" } ?: index.toString() },
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)

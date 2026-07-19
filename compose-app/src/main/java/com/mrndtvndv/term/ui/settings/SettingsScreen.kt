@@ -14,10 +14,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import com.mrndtvndv.term.ui.dashboard.PRESET_ARROWS_ONLY
-import com.mrndtvndv.term.ui.dashboard.PRESET_DOUBLE_ROW
-import com.mrndtvndv.term.ui.dashboard.PRESET_SINGLE_ROW
-import com.mrndtvndv.term.ui.dashboard.validateExtraKeysJson
+import com.mrndtvndv.term.ui.keyboard.PresetArrowsOnly
+import com.mrndtvndv.term.ui.keyboard.PresetDoubleRow
+import com.mrndtvndv.term.ui.keyboard.PresetSingleRow
+import com.mrndtvndv.term.ui.keyboard.validateExtraKeysJson
 import com.mrndtvndv.term.ui.keyboard.ExtraKeysController
 import com.mrndtvndv.term.ui.keyboard.ExtraKeysToolbar
 
@@ -35,8 +35,10 @@ fun SettingsScreen(
     onFontSizeChange: (Int) -> Unit,
     appTheme: String,
     onThemeChange: (String) -> Unit,
-    herdrIntegration: Boolean,
-    onHerdrIntegrationChange: (Boolean) -> Unit,
+    @Suppress("UNUSED_PARAMETER")
+    herdrIntegration: Boolean = false,
+    @Suppress("UNUSED_PARAMETER")
+    onHerdrIntegrationChange: (Boolean) -> Unit = {},
     customFontName: String?,
     onSelectFont: () -> Unit,
     onClearFont: () -> Unit,
@@ -139,9 +141,9 @@ fun SettingsScreen(
                         }
 
                         val resolvedJson = when (extraKeysPreset) {
-                            "Double Row" -> PRESET_DOUBLE_ROW
-                            "Single Row" -> PRESET_SINGLE_ROW
-                            "Arrows Only" -> PRESET_ARROWS_ONLY
+                            "Double Row" -> PresetDoubleRow
+                            "Single Row" -> PresetSingleRow
+                            "Arrows Only" -> PresetArrowsOnly
                             else -> extraKeysCustomJson
                         }
 
@@ -350,27 +352,6 @@ fun SettingsScreen(
                                 onCheckedChange = onUseCustomFontForWholeUiChange
                             )
                         }
-                    }
-
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("Herdr Integration", style = MaterialTheme.typography.bodyLarge)
-                            Text(
-                                text = "Pass environment variables to enable desktop notifications over SSH",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        Switch(
-                            checked = herdrIntegration,
-                            onCheckedChange = onHerdrIntegrationChange
-                        )
                     }
 
                     HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))

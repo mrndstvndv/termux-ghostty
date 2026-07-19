@@ -4,6 +4,49 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 
+const val PresetDoubleRow = "[['ESC','/',{key: '-', popup: '|'},'HOME','UP','END','PGUP']," +
+    " ['TAB','CTRL','ALT','LEFT','DOWN','RIGHT','PGDN']]"
+const val PresetSingleRow = "[[ESC, TAB, CTRL, ALT, {key: '-', popup: '|'}, DOWN, UP]]"
+const val PresetArrowsOnly = "[[ESC, TAB, CTRL, ALT, UP, LEFT, DOWN, RIGHT]]"
+
+@Suppress("ReturnCount")
+private fun checkExtraKeysElement(i: Int, j: Int, element: Any): String? {
+    if (element !is String && element !is org.json.JSONObject) {
+        return "Element at [$i][$j] must be a string or object"
+    }
+    if (element is org.json.JSONObject) {
+        if (!element.has("key") && !element.has("macro")) {
+            return "Object at [$i][$j] must specify 'key' or 'macro'"
+        }
+        if (element.has("key") && element.has("macro")) {
+            return "Object at [$i][$j] cannot specify both 'key' and 'macro'"
+        }
+    }
+    return null
+}
+
+fun validateExtraKeysJson(json: String): String? {
+    if (json.isBlank()) return "JSON layout cannot be empty"
+    return try {
+        val outer = org.json.JSONArray(json)
+        val error = checkAllExtraKeysRows(outer)
+        error
+    } catch (e: org.json.JSONException) {
+        "Invalid JSON format: ${e.localizedMessage}"
+    }
+}
+
+private fun checkAllExtraKeysRows(outer: org.json.JSONArray): String? {
+    for (i in 0 until outer.length()) {
+        val inner = outer.getJSONArray(i)
+        for (j in 0 until inner.length()) {
+            val error = checkExtraKeysElement(i, j, inner.get(j))
+            if (error != null) return error
+        }
+    }
+    return null
+}
+
 enum class ModifierState {
     INACTIVE,
     ACTIVE,

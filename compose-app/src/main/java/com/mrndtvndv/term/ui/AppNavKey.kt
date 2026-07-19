@@ -6,9 +6,14 @@ import kotlinx.serialization.Serializable
 @Serializable
 sealed interface AppNavKey : NavKey {
     @Serializable
-    data object Dashboard : AppNavKey
+    data object ServerList : AppNavKey
+
+    @Serializable
+    data object AddServer : AppNavKey
+
+    @Serializable
+    data class TerminalWorkspace(val serverId: String) : AppNavKey
+
     @Serializable
     data object Settings : AppNavKey
-    @Serializable
-    data object TerminalWorkspace : AppNavKey
 }

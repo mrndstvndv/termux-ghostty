@@ -1,6 +1,7 @@
 package com.mrndtvndv.term.ui
 
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.navigation3.runtime.NavBackStack
 import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.rememberNavBackStack
@@ -9,7 +10,7 @@ import com.mrndtvndv.term.ui.workspace.WorkspaceTab
 
 class Navigator(
     val backStack: NavBackStack<NavKey>,
-    private val viewModel: MainViewModel
+    private val viewModel: MainViewModel,
 ) {
     fun navigate(key: AppNavKey) {
         backStack.add(key)
@@ -23,11 +24,17 @@ class Navigator(
                 viewModel.setTab(WorkspaceTab.Terminal)
                 return
             }
-            // Clean up connection when leaving the workspace
-            viewModel.cleanupConnection()
+            // Navigate back to server list — connection stays alive
+            viewModel.navigateBack()
         }
-        
+
         if (backStack.size > 1) {
+            backStack.removeAt(backStack.size - 1)
+        }
+    }
+
+    fun goBackToRoot() {
+        while (backStack.size > 1) {
             backStack.removeAt(backStack.size - 1)
         }
     }
@@ -35,6 +42,6 @@ class Navigator(
 
 @Composable
 fun rememberAppNavigator(viewModel: MainViewModel): Navigator {
-    val backStack = rememberNavBackStack(AppNavKey.Dashboard)
+    val backStack = rememberNavBackStack(AppNavKey.ServerList)
     return remember(backStack, viewModel) { Navigator(backStack, viewModel) }
 }

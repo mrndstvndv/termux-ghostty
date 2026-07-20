@@ -339,6 +339,10 @@ fun TerminalCanvas(
         if (nativeEvent.action != KeyEvent.ACTION_DOWN) return false
 
         val keyCode = nativeEvent.keyCode
+        // Don't consume the back key — let system navigation handle it.
+        // KeyHandler.getCode(KEYCODE_BACK) would map it to ESC, stealing back navigation.
+        if (keyCode == KeyEvent.KEYCODE_BACK) return false
+
         if (isSelectingText.value) {
             selectionStartCol = null
             selectionStartRow = null

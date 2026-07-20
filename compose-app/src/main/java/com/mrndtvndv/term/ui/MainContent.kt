@@ -1,7 +1,13 @@
 package com.mrndtvndv.term.ui
 
+import android.content.Context
 import android.content.SharedPreferences
 import android.net.Uri
+import android.os.Build
+import android.view.inputmethod.InputMethodManager
+import android.window.OnBackInvokedCallback
+import android.window.OnBackInvokedDispatcher
+import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
@@ -11,6 +17,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import com.mrndtvndv.term.MainViewModel
 import com.mrndtvndv.term.ScreenState
 import com.mrndtvndv.term.domain.ServerConfig
@@ -212,6 +219,10 @@ fun MainContent(
                                 val reviewVM = viewModel.getReviewViewModel(serverId)
 
                                 if (server != null) {
+                                    BackPressInterceptor(
+                                        onBack = { navigator.goBack() },
+                                    )
+
                                     TerminalWorkspaceScreen(
                                         session = server.terminalSession,
                                         isLocal = server.config.isLocal,
@@ -272,6 +283,38 @@ fun MainContent(
                     modifier = Modifier.align(Alignment.TopCenter),
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun BackPressInterceptor(onBack: () -> Unit) {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+
+    val context = LocalContext.current
+    val activity = context as? ComponentActivity ?: return
+
+    DisposableEffect(activity) {
+        val dispatcher = activity.window?.onBackInvokedDispatcher
+            ?: return@DisposableEffect onDispose {}
+
+        val callback = OnBackInvokedCallback {
+            val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+            if (imm != null) {
+                activity.currentFocus?.windowToken?.let { token ->
+                    imm.hideSoftInputFromWindow(token, 0)
+                }
+            }
+            onBack()
+        }
+
+        dispatcher.registerOnBackInvokedCallback(
+            OnBackInvokedDispatcher.PRIORITY_OVERLAY,
+            callback,
+        )
+
+        onDispose {
+            dispatcher.unregisterOnBackInvokedCallback(callback)
         }
     }
 }

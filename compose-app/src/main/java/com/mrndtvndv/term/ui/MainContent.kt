@@ -143,9 +143,12 @@ fun MainContent(
                                 },
                                 onTap = { serverId -> viewModel.connect(serverId) },
                                 onDelete = { serverId -> viewModel.deleteServer(serverId) },
+                                onDisconnect = { serverId -> viewModel.disconnect(serverId) },
                                 onAdd = { navigator.navigate(AppNavKey.AddServer) },
                                 onSettingsClick = { navigator.navigate(AppNavKey.Settings) },
                                 onStartLocal = { viewModel.startLocalTerminal() },
+                                localConfig = viewModel.getLocalConfig(),
+                                onSetStartupCommand = { cmd -> viewModel.setLocalStartupCommand(cmd) },
                             )
                         }
 
@@ -295,8 +298,7 @@ private fun BackPressInterceptor(onBack: () -> Unit) {
     val activity = context as? ComponentActivity ?: return
 
     DisposableEffect(activity) {
-        val dispatcher = activity.window?.onBackInvokedDispatcher
-            ?: return@DisposableEffect onDispose {}
+        val dispatcher = activity.onBackInvokedDispatcher
 
         val callback = OnBackInvokedCallback {
             val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager

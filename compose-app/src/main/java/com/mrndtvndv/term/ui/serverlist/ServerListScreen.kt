@@ -8,12 +8,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -22,17 +23,24 @@ import androidx.compose.ui.unit.dp
 import com.mrndtvndv.term.domain.ServerConfig
 
 @OptIn(ExperimentalMaterial3Api::class)
+@Suppress("LongParameterList", "LongMethod")
 @Composable
 fun ServerListScreen(
     servers: List<ServerConfig>,
     activeIds: Set<String>,
     onTap: (String) -> Unit,
     onDelete: (String) -> Unit,
+    onDisconnect: (String) -> Unit,
     onAdd: () -> Unit,
     onSettingsClick: () -> Unit,
     onStartLocal: () -> Unit,
+    localConfig: ServerConfig?,
+    onSetStartupCommand: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    var showStartupDialog by remember { mutableStateOf(false) }
+    var startupInput by remember { mutableStateOf("") }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -60,7 +68,15 @@ fun ServerListScreen(
         ) {
             // ── Local Terminal card (always visible) ────────────────
             item(key = "local_terminal") {
-                LocalTerminalCard(onClick = onStartLocal)
+                LocalTerminalCard(
+                    onClick = onStartLocal,
+                    startupCommand = localConfig?.startupCommand,
+                    onConfigure = {
+                        val current = localConfig?.startupCommand.orEmpty()
+                        showStartupDialog = true
+                        startupInput = current
+                    },
+                )
             }
 
             val sshServers = servers.filter { !it.isLocal }
@@ -86,16 +102,59 @@ fun ServerListScreen(
                         config = config,
                         isActive = config.id in activeIds,
                         onClick = { onTap(config.id) },
+                        onDisconnect = { onDisconnect(config.id) },
                         onDelete = { onDelete(config.id) },
                     )
                 }
             }
         }
+
+        // Startup command dialog
+        if (showStartupDialog) {
+            AlertDialog(
+                onDismissRequest = { showStartupDialog = false },
+                title = { Text("Local Terminal Startup Command") },
+                text = {
+                    Column {
+                        Text(
+                            "Command to run automatically when the local shell starts:",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        Spacer(Modifier.height(12.dp))
+                        OutlinedTextField(
+                            value = startupInput,
+                            onValueChange = { startupInput = it },
+                            label = { Text("Startup command") },
+                            placeholder = { Text("e.g. cd /sdcard/Dev && ls") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                        )
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        onSetStartupCommand(startupInput)
+                        showStartupDialog = false
+                    }) {
+                        Text("Save")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showStartupDialog = false }) {
+                        Text("Cancel")
+                    }
+                },
+            )
+        }
     }
 }
 
 @Composable
-private fun LocalTerminalCard(onClick: () -> Unit) {
+private fun LocalTerminalCard(
+    onClick: () -> Unit,
+    startupCommand: String?,
+    onConfigure: () -> Unit,
+) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -107,7 +166,7 @@ private fun LocalTerminalCard(onClick: () -> Unit) {
     ) {
         Row(
             modifier = Modifier
-                .padding(16.dp)
+                .padding(start = 16.dp, top = 16.dp, bottom = 16.dp, end = 4.dp)
                 .fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -122,10 +181,26 @@ private fun LocalTerminalCard(onClick: () -> Unit) {
                     "Local Terminal",
                     style = MaterialTheme.typography.titleMedium,
                 )
-                Text(
-                    "Shell on this device",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                if (!startupCommand.isNullOrBlank()) {
+                    Text(
+                        startupCommand,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f),
+                        maxLines = 1,
+                    )
+                } else {
+                    Text(
+                        "Shell on this device",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            IconButton(onClick = onConfigure) {
+                Icon(
+                    Icons.Default.Settings,
+                    contentDescription = "Configure startup command",
+                    tint = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f),
                 )
             }
             Icon(
@@ -142,6 +217,7 @@ private fun ServerCard(
     config: ServerConfig,
     isActive: Boolean,
     onClick: () -> Unit,
+    onDisconnect: () -> Unit,
     onDelete: () -> Unit,
 ) {
     Card(
@@ -189,8 +265,11 @@ private fun ServerCard(
             }
 
             if (isActive) {
+                IconButton(onClick = onDisconnect) {
+                    Icon(Icons.Default.Close, contentDescription = "Disconnect", tint = MaterialTheme.colorScheme.error)
+                }
                 IconButton(onClick = onDelete) {
-                    Icon(Icons.Default.Delete, contentDescription = "Disconnect")
+                    Icon(Icons.Default.Delete, contentDescription = "Delete server", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }

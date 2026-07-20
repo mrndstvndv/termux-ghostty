@@ -71,6 +71,28 @@ class MainViewModel(
     fun getSftpViewModel(serverId: String): SftpViewModel? = coordinator.getSftpViewModel(serverId)
     fun getReviewViewModel(serverId: String): ReviewViewModel? = coordinator.getReviewViewModel(serverId)
 
+    fun getLocalConfig(): ServerConfig? = serverRepository.get(LOCAL_TERMINAL_ID)
+
+    /**
+     * Update the startup command for the local terminal.
+     * Creates the config first if it doesn't exist yet.
+     */
+    fun setLocalStartupCommand(command: String) {
+        val trimmed = command.trim()
+        val existing = serverRepository.get(LOCAL_TERMINAL_ID)
+        val updated = (existing ?: ServerConfig(
+            id = LOCAL_TERMINAL_ID,
+            label = "Local Terminal",
+            isLocal = true,
+        )).copy(startupCommand = trimmed.ifEmpty { null })
+        if (existing != null) {
+            serverRepository.update(updated)
+        } else {
+            serverRepository.add(updated)
+        }
+        reloadServers()
+    }
+
     // ── Connection ────────────────────────────────────────────────────
 
     fun connect(id: String) {

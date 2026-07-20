@@ -10,6 +10,8 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
+import android.view.KeyEvent
+import android.view.inputmethod.InputMethodManager
 import android.webkit.MimeTypeMap
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -315,6 +317,24 @@ class MainActivity : ComponentActivity() {
             }
             else -> super.onContextItemSelected(item)
         }
+    }
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (event.keyCode == KeyEvent.KEYCODE_BACK && event.action == KeyEvent.ACTION_DOWN) {
+            // Only intercept when on the terminal workspace screen
+            val currentScreen = viewModel.uiState.value.screen
+            if (currentScreen is ScreenState.TerminalWorkspace) {
+                // Hide keyboard BEFORE the IME can consume the event via onKeyPreIme.
+                // This way the back event propagates through to OnBackPressedDispatcher
+                // and navigator.goBack() fires on the SAME press.
+                val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+                imm?.hideSoftInputFromWindow(currentFocus?.windowToken, 0)
+            }
+            // On API 33+ the gesture back path uses OnBackInvokedDispatcher
+            // (handled by BackPressInterceptor). The hardware back button still
+            // goes through dispatchKeyEvent on all API levels.
+        }
+        return super.dispatchKeyEvent(event)
     }
 
     override fun onDestroy() {

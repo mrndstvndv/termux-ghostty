@@ -95,6 +95,106 @@ class ServerFactory(
      * also invokes the [onFinished] callback, while delegating every other
      * callback to [original] unchanged.
      */
+    private fun wrapLocalSessionClient(
+        sessionClient: TermuxTerminalSessionClientBase,
+        onFinished: () -> Unit,
+        startupCommand: String?,
+        session: TerminalSession,
+    ): TermuxTerminalSessionClientBase {
+        return object : TermuxTerminalSessionClientBase() {
+            override fun onSessionFinished(finishedSession: TerminalSession) {
+                sessionClient.onSessionFinished(finishedSession)
+                onFinished()
+            }
+
+            override fun onTextChanged(changedSession: TerminalSession) {
+                sessionClient.onTextChanged(changedSession)
+            }
+
+            override fun onFrameAvailable(changedSession: TerminalSession) {
+                sessionClient.onFrameAvailable(changedSession)
+            }
+
+            override fun onTitleChanged(updatedSession: TerminalSession) {
+                sessionClient.onTitleChanged(updatedSession)
+            }
+
+            override fun onCopyTextToClipboard(session: TerminalSession, text: String) {
+                sessionClient.onCopyTextToClipboard(session, text)
+            }
+
+            override fun onPasteTextFromClipboard(session: TerminalSession?) {
+                sessionClient.onPasteTextFromClipboard(session)
+            }
+
+            override fun onBell(session: TerminalSession) {
+                sessionClient.onBell(session)
+            }
+
+            override fun onColorsChanged(changedSession: TerminalSession) {
+                sessionClient.onColorsChanged(changedSession)
+            }
+
+            override fun onTerminalProtocolNotification(session: TerminalSession, title: String?, body: String?) {
+                sessionClient.onTerminalProtocolNotification(session, title, body)
+            }
+
+            override fun onTerminalProgressChanged(session: TerminalSession) {
+                sessionClient.onTerminalProgressChanged(session)
+            }
+
+            override fun onTerminalCursorStateChange(state: Boolean) {
+                sessionClient.onTerminalCursorStateChange(state)
+            }
+
+            override fun setTerminalShellPid(session: TerminalSession, pid: Int) {
+                sessionClient.setTerminalShellPid(session, pid)
+                // Write startup command once the shell subprocess is alive
+                if (!startupCommand.isNullOrBlank()) {
+                    try {
+                        val cmd = (startupCommand + "\n").toByteArray(Charsets.UTF_8)
+                        session.write(cmd, 0, cmd.size)
+                    } catch (_: Exception) { }
+                }
+            }
+
+            override fun getTerminalCursorStyle(): Int? {
+                return sessionClient.getTerminalCursorStyle()
+            }
+
+            override fun logError(tag: String, message: String) {
+                sessionClient.logError(tag, message)
+            }
+
+            override fun logWarn(tag: String, message: String) {
+                sessionClient.logWarn(tag, message)
+            }
+
+            override fun logInfo(tag: String, message: String) {
+                sessionClient.logInfo(tag, message)
+            }
+
+            override fun logDebug(tag: String, message: String) {
+                sessionClient.logDebug(tag, message)
+            }
+
+            override fun logVerbose(tag: String, message: String) {
+                sessionClient.logVerbose(tag, message)
+            }
+
+            override fun logStackTraceWithMessage(tag: String, message: String, e: Exception) {
+                sessionClient.logStackTraceWithMessage(tag, message, e)
+            }
+
+            override fun logStackTrace(tag: String, e: Exception) {
+                sessionClient.logStackTrace(tag, e)
+            }
+        }
+    }
+
+    /**
+     * Wraps a session client for SSH sessions — adds onSessionFinished callback.
+     */
     private fun wrapSessionClient(
         original: TermuxTerminalSessionClientBase,
         onFinished: () -> Unit,
@@ -198,7 +298,12 @@ class ServerFactory(
         val terminalSession = TerminalSession(
             shellPath, cwd, args, env, transcriptRows, sessionClient,
         )
-        val wrappedClient = wrapSessionClient(sessionClient) { onSessionFinished(config.id) }
+        val wrappedClient = wrapLocalSessionClient(
+            sessionClient = sessionClient,
+            onFinished = { onSessionFinished(config.id) },
+            startupCommand = config.startupCommand,
+            session = terminalSession,
+        )
         terminalSession.updateTerminalSessionClient(wrappedClient)
         onServiceBind(terminalSession)
 

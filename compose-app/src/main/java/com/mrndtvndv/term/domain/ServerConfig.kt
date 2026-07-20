@@ -13,6 +13,7 @@ data class ServerConfig(
     val auth: AuthType? = null,
     val herdrEnabled: Boolean = false,
     val isLocal: Boolean = false,
+    val startupCommand: String? = null,
 ) {
     /** Unique stable key for SharedPreferences lookups */
     val prefsKey: String get() = if (isLocal) {

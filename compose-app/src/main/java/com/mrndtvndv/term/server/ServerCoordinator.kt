@@ -33,12 +33,14 @@ class ServerCoordinator(
 
         return try {
             val server = serverManager.connect(config)
-            // Only create VMs if not already cached
-            if (id !in sftpViewModels) {
-                sftpViewModels[id] = createSftpViewModel(server)
-            }
-            if (id !in reviewViewModels) {
-                reviewViewModels[id] = createReviewViewModel(server)
+            // Only create SFTP/Review VMs for SSH sessions (not local)
+            if (!config.isLocal) {
+                if (id !in sftpViewModels) {
+                    sftpViewModels[id] = createSftpViewModel(server)
+                }
+                if (id !in reviewViewModels) {
+                    reviewViewModels[id] = createReviewViewModel(server)
+                }
             }
             Result.success(server)
         } catch (e: IllegalArgumentException) {
@@ -72,8 +74,10 @@ class ServerCoordinator(
 
     /** Returns new workspace dir + browserUrl if workspace changed, null otherwise. */
     suspend fun refreshWorkspace(serverId: String): WorkspaceChange? {
-        val tracker = serverManager.get(serverId)
-            ?.let { (it.workspaceState as? WorkspaceState.Tracked)?.tracker }
+        val server = serverManager.get(serverId) ?: return null
+        // Local sessions have no workspace tracker — nothing to refresh
+        if (server.config.isLocal) return null
+        val tracker = (server.workspaceState as? WorkspaceState.Tracked)?.tracker
             ?: return null
         val result = tracker.sync()
         return if (result is WorkspaceTracker.SyncResult.WorkspaceChanged) {
@@ -105,15 +109,19 @@ class ServerCoordinator(
     // ── Private helpers ──────────────────────────────────────────────
 
     private suspend fun createSftpViewModel(server: Server): SftpViewModel {
+        val sftpClient = server.sftpClient
+            ?: error("SFTP client unavailable for non-local server ${server.config.id}")
+        val session = server.sshSession
+            ?: error("SSH session unavailable for non-local server ${server.config.id}")
         val initialDir = when (val ws = server.workspaceState) {
             is WorkspaceState.Tracked -> ws.tracker.workspaceDir.value
             is WorkspaceState.Untracked -> "/"
         }
         val sftpVM = SftpViewModel(
-            client = server.sftpClient,
+            client = sftpClient,
             savedStateHandle = SavedStateHandle(),
             initialPath = initialDir,
-            execCommand = { cmd -> server.sshSession.execCommand(cmd) },
+            execCommand = { cmd -> session.execCommand(cmd) },
         )
         // Wire onPathChanged back into workspace tracking.
         // The serverId is captured from the caller context (map key).
@@ -126,8 +134,10 @@ class ServerCoordinator(
 
     private suspend fun createReviewViewModel(server: Server): ReviewViewModel? {
         val tracker = (server.workspaceState as? WorkspaceState.Tracked)?.tracker ?: return null
+        val session = server.sshSession
+            ?: error("SSH session unavailable for non-local server ${server.config.id}")
         return ReviewViewModel(
-            execCommand = { cmd -> server.sshSession.execCommand(cmd) },
+            execCommand = { cmd -> session.execCommand(cmd) },
             workspaceDir = tracker.workspaceDir,
         )
     }

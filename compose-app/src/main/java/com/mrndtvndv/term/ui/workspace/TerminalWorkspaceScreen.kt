@@ -19,8 +19,9 @@ import java.io.File
 @Composable
 fun TerminalWorkspaceScreen(
     session: TerminalSession,
-    sftpViewModel: SftpViewModel?,
-    reviewViewModel: ReviewViewModel?,
+    isLocal: Boolean = false,
+    sftpViewModel: SftpViewModel? = null,
+    reviewViewModel: ReviewViewModel? = null,
     extraKeysEnabled: Boolean,
     extraKeysJson: String,
     onViewCreated: (TerminalView) -> Unit,
@@ -92,6 +93,7 @@ fun TerminalWorkspaceScreen(
         SplitWorkspace(
             getWebView = getBrowserWebView,
             session = session,
+            isLocal = isLocal,
             sftpViewModel = sftpViewModel,
             reviewViewModel = reviewViewModel,
             foldingFeature = foldingFeature,
@@ -115,6 +117,7 @@ fun TerminalWorkspaceScreen(
         TabbedWorkspace(
             getWebView = getBrowserWebView,
             session = session,
+            isLocal = isLocal,
             sftpViewModel = sftpViewModel,
             reviewViewModel = reviewViewModel,
             extraKeysController = extraKeysController,

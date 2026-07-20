@@ -22,6 +22,7 @@ import java.io.File
 fun SplitWorkspace(
     getWebView: () -> WebView,
     session: TerminalSession,
+    isLocal: Boolean = false,
     sftpViewModel: SftpViewModel?,
     reviewViewModel: ReviewViewModel?,
     foldingFeature: FoldingFeature?,
@@ -45,7 +46,7 @@ fun SplitWorkspace(
         val totalWidth = maxWidth
         val hasRightPanel = true // Always has Browser, and optionally SFTP/Review
 
-        val rightTabs = remember(sftpViewModel, reviewViewModel) {
+        val rightTabs = remember(sftpViewModel, reviewViewModel, isLocal) {
             buildList {
                 if (sftpViewModel != null) {
                     add(WorkspaceTab.Sftp)
@@ -53,7 +54,9 @@ fun SplitWorkspace(
                 if (reviewViewModel != null) {
                     add(WorkspaceTab.Review)
                 }
-                add(WorkspaceTab.Browser)
+                if (!isLocal) {
+                    add(WorkspaceTab.Browser)
+                }
             }
         }
 

@@ -138,6 +138,7 @@ fun MainContent(
                                 onDelete = { serverId -> viewModel.deleteServer(serverId) },
                                 onAdd = { navigator.navigate(AppNavKey.AddServer) },
                                 onSettingsClick = { navigator.navigate(AppNavKey.Settings) },
+                                onStartLocal = { viewModel.startLocalTerminal() },
                             )
                         }
 
@@ -213,6 +214,7 @@ fun MainContent(
                                 if (server != null) {
                                     TerminalWorkspaceScreen(
                                         session = server.terminalSession,
+                                        isLocal = server.config.isLocal,
                                         sftpViewModel = sftpVM,
                                         reviewViewModel = reviewVM,
                                         extraKeysEnabled = extraKeysEnabled,

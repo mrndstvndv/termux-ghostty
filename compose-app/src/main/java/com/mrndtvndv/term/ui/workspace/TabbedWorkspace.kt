@@ -28,6 +28,7 @@ import java.io.File
 fun TabbedWorkspace(
     getWebView: () -> WebView,
     session: TerminalSession,
+    isLocal: Boolean = false,
     sftpViewModel: SftpViewModel?,
     reviewViewModel: ReviewViewModel?,
     extraKeysController: ExtraKeysController,
@@ -46,7 +47,7 @@ fun TabbedWorkspace(
     onRefreshWorkspace: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val activeTabs = remember(sftpViewModel, reviewViewModel) {
+    val activeTabs = remember(sftpViewModel, reviewViewModel, isLocal) {
         buildList {
             add(WorkspaceTab.Terminal)
             if (sftpViewModel != null) {
@@ -55,7 +56,9 @@ fun TabbedWorkspace(
             if (reviewViewModel != null) {
                 add(WorkspaceTab.Review)
             }
-            add(WorkspaceTab.Browser)
+            if (!isLocal) {
+                add(WorkspaceTab.Browser)
+            }
         }
     }
 

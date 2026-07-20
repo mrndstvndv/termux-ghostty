@@ -46,9 +46,11 @@ class MainActivity : ComponentActivity() {
     private val persistence by lazy { SharedPreferencesWorkspacePersistence(sharedPreferences) }
     private val serverFactory by lazy {
         ServerFactory(
+            context = this@MainActivity,
             persistence = persistence,
             onSessionClientCreated = { createSessionClient() },
             onServiceBind = { termSession -> bindTerminalSession(termSession) },
+            onSessionFinished = { serverId -> viewModel.disconnect(serverId) },
         )
     }
     private val serverManager by lazy { ServerManager(serverFactory) }

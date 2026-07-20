@@ -7,14 +7,19 @@ import java.util.UUID
 data class ServerConfig(
     val id: String = UUID.randomUUID().toString(),
     val label: String,
-    val host: String,
+    val host: String = "",
     val port: Int = 22,
-    val username: String,
-    val auth: AuthType,
+    val username: String = "",
+    val auth: AuthType? = null,
     val herdrEnabled: Boolean = false,
+    val isLocal: Boolean = false,
 ) {
     /** Unique stable key for SharedPreferences lookups */
-    val prefsKey: String get() = "${id}_${username}_${host}"
+    val prefsKey: String get() = if (isLocal) {
+        "${id}_local"
+    } else {
+        "${id}_${username}_${host}"
+    }
 
     /** Terminal type string sent to the SSH server */
     val termType: String get() = if (herdrEnabled) "xterm-ghostty" else "xterm-256color"

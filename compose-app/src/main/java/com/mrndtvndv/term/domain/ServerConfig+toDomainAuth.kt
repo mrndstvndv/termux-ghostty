@@ -6,4 +6,5 @@ fun ServerConfig.toDomainAuth(): SshAuth = when (val a = auth) {
         privateKeyPem = a.privateKeyPem,
         passphrase = a.passphrase?.toCharArray(),
     )
+    null -> throw IllegalStateException("Auth required for SSH connection; local shell should be handled before this call")
 }

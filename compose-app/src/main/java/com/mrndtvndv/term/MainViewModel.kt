@@ -36,6 +36,10 @@ class MainViewModel(
     val notificationState: NotificationState,
 ) : ViewModel() {
 
+    companion object {
+        private const val LOCAL_TERMINAL_ID = "local_terminal"
+    }
+
     private val _savedServers = mutableStateOf<List<ServerConfig>>(emptyList())
     val savedServers: State<List<ServerConfig>> = _savedServers
 
@@ -95,6 +99,24 @@ class MainViewModel(
                 },
             )
         }
+    }
+
+    /**
+     * Start a local terminal shell.
+     * Uses a singleton config with a well-known ID so tapping "Local Terminal"
+     * always reuses the same entry (no duplicates in saved servers).
+     */
+    fun startLocalTerminal() {
+        var config = serverRepository.get(LOCAL_TERMINAL_ID)
+        if (config == null) {
+            config = ServerConfig(
+                id = LOCAL_TERMINAL_ID,
+                label = "Local Terminal",
+                isLocal = true,
+            )
+            saveServer(config)
+        }
+        connect(config.id)
     }
 
     fun navigateBack() {

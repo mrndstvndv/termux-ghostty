@@ -136,11 +136,8 @@ fun MainContent(
                         entry<AppNavKey.ServerList> {
                             ServerListScreen(
                                 servers = savedServers,
-                                activeIds = viewModel.let { vm ->
-                                    savedServers.map { it.id }
-                                        .filter { id -> vm.getServer(id) != null }
-                                        .toSet()
-                                },
+                                activeIds = viewModel.activeIds.value,
+                                disconnectingId = viewModel.disconnectingId.value,
                                 onTap = { serverId -> viewModel.connect(serverId) },
                                 onDelete = { serverId -> viewModel.deleteServer(serverId) },
                                 onDisconnect = { serverId -> viewModel.disconnect(serverId) },

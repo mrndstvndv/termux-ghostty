@@ -7,6 +7,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
@@ -31,6 +32,7 @@ fun ServerListScreen(
     onTap: (String) -> Unit,
     onDelete: (String) -> Unit,
     onDisconnect: (String) -> Unit,
+    disconnectingId: String? = null,
     onAdd: () -> Unit,
     onSettingsClick: () -> Unit,
     onStartLocal: () -> Unit,
@@ -101,6 +103,7 @@ fun ServerListScreen(
                     ServerCard(
                         config = config,
                         isActive = config.id in activeIds,
+                        isDisconnecting = config.id == disconnectingId,
                         onClick = { onTap(config.id) },
                         onDisconnect = { onDisconnect(config.id) },
                         onDelete = { onDelete(config.id) },
@@ -213,9 +216,11 @@ private fun LocalTerminalCard(
 }
 
 @Composable
+@Suppress("LongMethod")
 private fun ServerCard(
     config: ServerConfig,
     isActive: Boolean,
+    isDisconnecting: Boolean = false,
     onClick: () -> Unit,
     onDisconnect: () -> Unit,
     onDelete: () -> Unit,
@@ -233,12 +238,7 @@ private fun ServerCard(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (isActive) {
-                Icon(
-                    Icons.Default.CheckCircle,
-                    contentDescription = "Connected",
-                    tint = Color(0xFF4CAF50),
-                    modifier = Modifier.size(20.dp),
-                )
+                Icon(Icons.Default.CheckCircle, "Connected", tint = Color(0xFF4CAF50), modifier = Modifier.size(20.dp))
                 Spacer(Modifier.width(8.dp))
             }
 
@@ -263,13 +263,23 @@ private fun ServerCard(
                     }
                 }
             }
-
             if (isActive) {
-                IconButton(onClick = onDisconnect) {
-                    Icon(Icons.Default.Close, contentDescription = "Disconnect", tint = MaterialTheme.colorScheme.error)
+                if (isDisconnecting) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp),
+                        strokeWidth = 2.dp,
+                    )
+                } else {
+                    IconButton(onClick = onDisconnect) {
+                        Icon(Icons.Default.Close, "Disconnect", tint = MaterialTheme.colorScheme.error)
+                    }
                 }
                 IconButton(onClick = onDelete) {
-                    Icon(Icons.Default.Delete, contentDescription = "Delete server", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Icon(
+                        Icons.Default.Delete,
+                        contentDescription = "Delete server",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
         }

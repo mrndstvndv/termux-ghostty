@@ -43,6 +43,12 @@ class MainViewModel(
     private val _savedServers = mutableStateOf<List<ServerConfig>>(emptyList())
     val savedServers: State<List<ServerConfig>> = _savedServers
 
+    private val _activeIds = mutableStateOf<Set<String>>(emptySet())
+    val activeIds: State<Set<String>> = _activeIds
+
+    private val _disconnectingId = mutableStateOf<String?>(null)
+    val disconnectingId: State<String?> = _disconnectingId
+
     private val _uiState = mutableStateOf(MainUiState())
     val uiState: State<MainUiState> = _uiState
 
@@ -62,7 +68,8 @@ class MainViewModel(
     }
 
     fun deleteServer(id: String) {
-        coordinator.disconnect(id)    // cleans up VM cache + ServerManager
+        coordinator.disconnect(id)
+        _activeIds.value = _activeIds.value - id
         serverRepository.remove(id)
         reloadServers()
     }
@@ -103,6 +110,7 @@ class MainViewModel(
             val result = coordinator.connect(id)
             result.fold(
                 onSuccess = { server ->
+                    _activeIds.value = _activeIds.value + id
                     val browserUrl = when (val ws = server.workspaceState) {
                         is WorkspaceState.Tracked -> ws.tracker.browserUrl
                         is WorkspaceState.Untracked -> ""
@@ -146,7 +154,10 @@ class MainViewModel(
     }
 
     fun disconnect(id: String) {
+        _disconnectingId.value = id
         coordinator.disconnect(id)
+        _activeIds.value = _activeIds.value - id
+        _disconnectingId.value = null
         _uiState.value = _uiState.value.copy(screen = ScreenState.ServerList)
     }
 

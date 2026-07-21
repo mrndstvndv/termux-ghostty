@@ -80,11 +80,7 @@ public class TerminalView extends View {
 
     /** The top row of text to display. Ranges from -activeTranscriptRows to 0. */
     int mTopRow;
-    private final Runnable mResizeRunnable = this::doUpdateSize;
-    private int mPendingNewColumns = -1;
-    private int mPendingNewRows = -1;
-    private int mPendingCellWidth = -1;
-    private int mPendingCellHeight = -1;
+
     int[] mDefaultSelectors = new int[]{-1,-1,-1,-1};
 
     float mScaleFactor = 1.f;
@@ -413,13 +409,45 @@ public class TerminalView extends View {
         outAttrs.imeOptions = EditorInfo.IME_FLAG_NO_FULLSCREEN;
 
         return new BaseInputConnection(this, true) {
+            private String mComposingText = "";
+
+            @Override
+            public boolean setComposingText(CharSequence text, int newCursorPosition) {
+                if (TERMINAL_VIEW_KEY_LOGGING_ENABLED) {
+                    mClient.logInfo(LOG_TAG, "IME: setComposingText(\"" + text + "\", " + newCursorPosition + ")");
+                }
+                String current = text != null ? text.toString() : "";
+
+                // Append: composing text grew (new characters typed)
+                if (current.length() > mComposingText.length() && current.startsWith(mComposingText)) {
+                    String delta = current.substring(mComposingText.length());
+                    sendTextToTerminal(delta);
+                }
+                // Backspace: composing text shrunk (character removed)
+                else if (current.length() < mComposingText.length() && mComposingText.startsWith(current)) {
+                    int removed = mComposingText.length() - current.length();
+                    KeyEvent deleteKey = new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DEL);
+                    for (int i = 0; i < removed; i++) sendKeyEvent(deleteKey);
+                }
+                // Replacement: text was corrected/replaced entirely (auto-correct, suggestion)
+                else if (!mComposingText.isEmpty()) {
+                    KeyEvent deleteKey = new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DEL);
+                    for (int i = 0; i < mComposingText.length(); i++) sendKeyEvent(deleteKey);
+                    sendTextToTerminal(current);
+                }
+                // First composition character
+                else {
+                    sendTextToTerminal(current);
+                }
+                mComposingText = current;
+                return super.setComposingText(text, newCursorPosition);
+            }
 
             @Override
             public boolean finishComposingText() {
                 if (TERMINAL_VIEW_KEY_LOGGING_ENABLED) mClient.logInfo(LOG_TAG, "IME: finishComposingText()");
+                mComposingText = "";
                 super.finishComposingText();
-
-                sendTextToTerminal(getEditable());
                 getEditable().clear();
                 return true;
             }
@@ -429,13 +457,26 @@ public class TerminalView extends View {
                 if (TERMINAL_VIEW_KEY_LOGGING_ENABLED) {
                     mClient.logInfo(LOG_TAG, "IME: commitText(\"" + text + "\", " + newCursorPosition + ")");
                 }
-                super.commitText(text, newCursorPosition);
 
                 if (!hasActiveTerminalBackend()) return true;
 
-                Editable content = getEditable();
-                sendTextToTerminal(content);
-                content.clear();
+                String committed = text != null ? text.toString() : "";
+                if (!mComposingText.isEmpty() && committed.startsWith(mComposingText)) {
+                    // Only send the suffix — the composing portion was already sent
+                    String delta = committed.substring(mComposingText.length());
+                    if (!delta.isEmpty()) sendTextToTerminal(delta);
+                } else if (!mComposingText.isEmpty()) {
+                    // Auto-correct: undo composing chars, send replacement
+                    KeyEvent deleteKey = new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DEL);
+                    for (int i = 0; i < mComposingText.length(); i++) sendKeyEvent(deleteKey);
+                    sendTextToTerminal(committed);
+                } else {
+                    sendTextToTerminal(committed);
+                }
+                mComposingText = "";
+
+                super.commitText(text, newCursorPosition);
+                getEditable().clear();
                 return true;
             }
 
@@ -1558,10 +1599,6 @@ public class TerminalView extends View {
 
     /** Check if the terminal size in rows and columns should be updated. */
     public void updateSize() {
-        updateSize(false);
-    }
-
-    public void updateSize(boolean immediate) {
         int viewWidth = getWidth();
         int viewHeight = getHeight();
         if (viewWidth == 0 || viewHeight == 0 || mTermSession == null || mRenderer == null) return;
@@ -1579,50 +1616,20 @@ public class TerminalView extends View {
             || cellWidthPixels != mTermSession.getCellWidthPixels()
             || cellHeightPixels != mTermSession.getCellHeightPixels();
 
-        android.util.Log.w(LOG_TAG, "updateSize(immediate=" + immediate + "): viewWidth=" + viewWidth + ", viewHeight=" + viewHeight 
-            + ", newColumns=" + newColumns + ", newRows=" + newRows 
-            + ", currentColumns=" + (hasActiveTerminalBackend() ? mTermSession.getColumns() : -1)
-            + ", currentRows=" + (hasActiveTerminalBackend() ? mTermSession.getRows() : -1)
-            + ", sizeChanged=" + sizeChanged);
+        if (!sizeChanged) return;
 
-        if (!sizeChanged) {
-            removeCallbacks(mResizeRunnable);
-            return;
-        }
-
-        if (immediate || !hasActiveTerminalBackend()) {
-            removeCallbacks(mResizeRunnable);
-            mTermSession.updateSize(newColumns, newRows, cellWidthPixels, cellHeightPixels);
-            mClient.onTerminalReady();
-
-            mTopRow = 0;
-            scrollTo(0, 0);
-            invalidate();
-        } else {
-            mPendingNewColumns = newColumns;
-            mPendingNewRows = newRows;
-            mPendingCellWidth = cellWidthPixels;
-            mPendingCellHeight = cellHeightPixels;
-
-            removeCallbacks(mResizeRunnable);
-            postDelayed(mResizeRunnable, 250); // Debounce by 250ms
-        }
-    }
-
-    private void doUpdateSize() {
-        if (mTermSession == null || mPendingNewColumns == -1) return;
-        // Removed getWindowVisibility() guard to allow resizing when hosted inside Compose AndroidView
-        android.util.Log.w(LOG_TAG, "doUpdateSize() (debounced): mPendingNewColumns=" + mPendingNewColumns 
-            + ", mPendingNewRows=" + mPendingNewRows 
-            + ", currentColumns=" + mTermSession.getColumns() 
-            + ", currentRows=" + mTermSession.getRows());
-        mTermSession.updateSize(mPendingNewColumns, mPendingNewRows, mPendingCellWidth, mPendingCellHeight);
+        mTermSession.updateSize(newColumns, newRows, cellWidthPixels, cellHeightPixels);
         mClient.onTerminalReady();
 
         mTopRow = 0;
         scrollTo(0, 0);
         invalidate();
-        mPendingNewColumns = -1;
+    }
+
+    /** @deprecated The immediate flag has no effect; call {@link #updateSize()} directly. */
+    @Deprecated
+    public void updateSize(boolean immediate) {
+        updateSize();
     }
 
     @Override

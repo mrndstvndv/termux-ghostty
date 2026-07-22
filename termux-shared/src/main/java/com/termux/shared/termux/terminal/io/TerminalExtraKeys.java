@@ -26,29 +26,72 @@ public class TerminalExtraKeys implements ExtraKeysView.IExtraKeysView {
 
     @Override
     public void onExtraKeyButtonClick(View view, ExtraKeyButton buttonInfo, MaterialButton button) {
-        if (buttonInfo.isMacro()) {
-            String[] keys = buttonInfo.getKey().split(" ");
+        String keyStr = buttonInfo.getKey();
+        boolean isMacro = buttonInfo.isMacro() ||
+            (keyStr.contains(" ") && !PRIMARY_KEY_CODES_FOR_STRINGS.containsKey(keyStr));
+
+        if (isMacro) {
+            String[] keys = keyStr.split(" ");
             boolean ctrlDown = false;
             boolean altDown = false;
             boolean shiftDown = false;
             boolean fnDown = false;
             for (String key : keys) {
-                if (SpecialButton.CTRL.getKey().equals(key)) {
+                String upperKey = key.toUpperCase();
+                if (SpecialButton.CTRL.getKey().equals(upperKey) || "CONTROL".equals(upperKey)) {
                     ctrlDown = true;
-                } else if (SpecialButton.ALT.getKey().equals(key)) {
+                } else if (SpecialButton.ALT.getKey().equals(upperKey)) {
                     altDown = true;
-                } else if (SpecialButton.SHIFT.getKey().equals(key)) {
+                } else if (SpecialButton.SHIFT.getKey().equals(upperKey) || "SHFT".equals(upperKey)) {
                     shiftDown = true;
-                } else if (SpecialButton.FN.getKey().equals(key)) {
+                } else if (SpecialButton.FN.getKey().equals(upperKey) || "FUNCTION".equals(upperKey)) {
                     fnDown = true;
                 } else {
                     onTerminalExtraKeyButtonClick(view, key, ctrlDown, altDown, shiftDown, fnDown);
-                    ctrlDown = false; altDown = false; shiftDown = false; fnDown = false;
+                    ctrlDown = false;
+                    altDown = false;
+                    shiftDown = false;
+                    fnDown = false;
                 }
             }
         } else {
-            onTerminalExtraKeyButtonClick(view, buttonInfo.getKey(), false, false, false, false);
+            ExtraKeysView extraKeysView = getExtraKeysView(view, button);
+            boolean ctrlDown = false;
+            boolean altDown = false;
+            boolean shiftDown = false;
+            boolean fnDown = false;
+
+            if (extraKeysView != null) {
+                Boolean ctrlState = extraKeysView.readSpecialButton(SpecialButton.CTRL, true);
+                if (ctrlState != null && ctrlState) ctrlDown = true;
+
+                Boolean altState = extraKeysView.readSpecialButton(SpecialButton.ALT, true);
+                if (altState != null && altState) altDown = true;
+
+                Boolean shiftState = extraKeysView.readSpecialButton(SpecialButton.SHIFT, true);
+                if (shiftState != null && shiftState) shiftDown = true;
+
+                Boolean fnState = extraKeysView.readSpecialButton(SpecialButton.FN, true);
+                if (fnState != null && fnState) fnDown = true;
+            }
+
+            onTerminalExtraKeyButtonClick(view, buttonInfo.getKey(), ctrlDown, altDown, shiftDown, fnDown);
         }
+    }
+
+    private ExtraKeysView getExtraKeysView(View view, MaterialButton button) {
+        View v = button != null ? button : view;
+        while (v != null) {
+            if (v instanceof ExtraKeysView) {
+                return (ExtraKeysView) v;
+            }
+            if (v.getParent() instanceof View) {
+                v = (View) v.getParent();
+            } else {
+                break;
+            }
+        }
+        return null;
     }
 
     protected void onTerminalExtraKeyButtonClick(View view, String key, boolean ctrlDown, boolean altDown, boolean shiftDown, boolean fnDown) {
@@ -64,15 +107,65 @@ public class TerminalExtraKeys implements ExtraKeysView.IExtraKeysView {
             KeyEvent keyEvent = new KeyEvent(0, 0, KeyEvent.ACTION_UP, keyCode, 0, metaState);
             mTerminalView.onKeyDown(keyCode, keyEvent);
         } else {
-            // not a control char
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                key.codePoints().forEach(codePoint -> {
-                    mTerminalView.inputCodePoint(TerminalView.KEY_EVENT_SOURCE_VIRTUAL_KEYBOARD, codePoint, ctrlDown, altDown);
-                });
+            int codePoint = key.length() == 1 ? key.codePointAt(0) : -1;
+            if (codePoint != -1) {
+                int finalCodePoint = codePoint;
+                boolean isUpperCase = finalCodePoint >= 'A' && finalCodePoint <= 'Z';
+
+                if (shiftDown) {
+                    if (finalCodePoint >= 'a' && finalCodePoint <= 'z') {
+                        finalCodePoint -= 32;
+                        isUpperCase = true;
+                    }
+                }
+
+                TerminalSession session = mTerminalView.getCurrentSession();
+
+                if (ctrlDown && isUpperCase && shiftDown) {
+                    // Kitty Keyboard Protocol for Ctrl+Shift+Letter
+                    int modifier = altDown ? 14 : 6;
+                    String sequence = "\u001b[" + finalCodePoint + ";" + modifier + "u";
+                    if (session != null) {
+                        session.write(sequence);
+                    }
+                    return;
+                }
+
+                if (ctrlDown) {
+                    if (finalCodePoint >= 'a' && finalCodePoint <= 'z') {
+                        finalCodePoint = finalCodePoint - 'a' + 1;
+                    } else if (finalCodePoint >= 'A' && finalCodePoint <= 'Z') {
+                        finalCodePoint = finalCodePoint - 'A' + 1;
+                    } else if (finalCodePoint == ' ' || finalCodePoint == '2') {
+                        finalCodePoint = 0;
+                    } else if (finalCodePoint == '[' || finalCodePoint == '3') {
+                        finalCodePoint = 27;
+                    } else if (finalCodePoint == '\\' || finalCodePoint == '4') {
+                        finalCodePoint = 28;
+                    } else if (finalCodePoint == ']' || finalCodePoint == '5') {
+                        finalCodePoint = 29;
+                    } else if (finalCodePoint == '^' || finalCodePoint == '6') {
+                        finalCodePoint = 30;
+                    } else if (finalCodePoint == '_' || finalCodePoint == '7' || finalCodePoint == '/') {
+                        finalCodePoint = 31;
+                    } else if (finalCodePoint == '8') {
+                        finalCodePoint = 127;
+                    }
+                }
+
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                    // Pass false for controlDownFromEvent because finalCodePoint is already converted
+                    mTerminalView.inputCodePoint(TerminalView.KEY_EVENT_SOURCE_VIRTUAL_KEYBOARD, finalCodePoint, false, altDown);
+                } else {
+                    if (session != null) {
+                        session.writeCodePoint(altDown, finalCodePoint);
+                    }
+                }
             } else {
                 TerminalSession session = mTerminalView.getCurrentSession();
-                if (session != null && key.length() > 0)
+                if (session != null && key.length() > 0) {
                     session.write(key);
+                }
             }
         }
     }

@@ -71,11 +71,16 @@ class MainActivity : ComponentActivity() {
     private var activeTerminalView: TerminalView? = null
     private var sshService: SshSessionService? = null
     private var isBound = false
+    private val pendingSessions = mutableSetOf<TerminalSession>()
 
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(className: ComponentName, service: IBinder) {
-            sshService = (service as SshSessionService.LocalBinder).getService()
+            val binder = service as SshSessionService.LocalBinder
+            val s = binder.getService()
+            sshService = s
             isBound = true
+            pendingSessions.forEach { s.addSession(it) }
+            pendingSessions.clear()
         }
 
         override fun onServiceDisconnected(arg0: ComponentName) {
@@ -155,6 +160,14 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) !=
+                android.content.pm.PackageManager.PERMISSION_GRANTED
+            ) {
+                requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 101)
+            }
+        }
 
         userPrefs.init(sharedPreferences)
 
@@ -261,10 +274,13 @@ class MainActivity : ComponentActivity() {
             ) {
                 handleNotification(title, body)
             }
+
+            override fun onSessionFinished(finishedSession: TerminalSession) {
+                unbindTerminalSession(finishedSession)
+            }
         }
     }
 
-    @Suppress("UNUSED_PARAMETER") // kept for future service integration; binding is handled internally
     private fun bindTerminalSession(termSession: TerminalSession) {
         val intent = Intent(this@MainActivity, SshSessionService::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -272,7 +288,18 @@ class MainActivity : ComponentActivity() {
         } else {
             startService(intent)
         }
+        val service = sshService
+        if (service != null) {
+            service.addSession(termSession)
+        } else {
+            pendingSessions.add(termSession)
+        }
         bindService(intent, connection, Context.BIND_AUTO_CREATE)
+    }
+
+    private fun unbindTerminalSession(termSession: TerminalSession) {
+        sshService?.removeSession(termSession.mHandle)
+        pendingSessions.remove(termSession)
     }
 
     override fun onCreateContextMenu(

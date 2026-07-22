@@ -36,7 +36,7 @@ class SshSessionService : Service() {
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
-        startForeground(NOTIFICATION_ID, buildNotification())
+        promoteToForeground()
         acquireWakeLock()
     }
 
@@ -45,6 +45,7 @@ class SshSessionService : Service() {
             disconnectAll()
             return START_NOT_STICKY
         }
+        promoteToForeground()
         return START_STICKY
     }
 
@@ -63,19 +64,45 @@ class SshSessionService : Service() {
 
     fun addSession(session: TerminalSession) {
         sessions[session.mHandle] = session
+        promoteToForeground()
     }
 
     fun removeSession(handle: String) {
         sessions.remove(handle)?.finishIfRunning()
         if (sessions.isEmpty()) {
+            stopForegroundCompat()
             stopSelf()
+        } else {
+            promoteToForeground()
         }
     }
 
     private fun disconnectAll() {
         sessions.values.forEach { it.finishIfRunning() }
         sessions.clear()
+        stopForegroundCompat()
         stopSelf()
+    }
+
+    private fun promoteToForeground() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            startForeground(
+                NOTIFICATION_ID,
+                buildNotification(),
+                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+            )
+        } else {
+            startForeground(NOTIFICATION_ID, buildNotification())
+        }
+    }
+
+    private fun stopForegroundCompat() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+        } else {
+            @Suppress("DEPRECATION")
+            stopForeground(true)
+        }
     }
 
     private fun acquireWakeLock() {
@@ -96,8 +123,8 @@ class SshSessionService : Service() {
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val name = "SSH Session Service"
-            val descriptionText = "Keeps SSH and SFTP connections active in the background"
+            val name = "Terminal Session Service"
+            val descriptionText = "Keeps terminal and SSH sessions active in the background"
             val importance = NotificationManager.IMPORTANCE_LOW
             val channel = NotificationChannel(CHANNEL_ID, name, importance).apply {
                 description = descriptionText
@@ -105,6 +132,33 @@ class SshSessionService : Service() {
             val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             notificationManager.createNotificationChannel(channel)
         }
+    }
+
+    private fun getNotificationTitleAndText(): Pair<String, String> {
+        val activeSessions = sessions.values
+        val sshCount = activeSessions.count { it.sshSessionHandle != 0L }
+        val localCount = activeSessions.count { it.sshSessionHandle == 0L }
+
+        val title = when {
+            sshCount > 0 && localCount > 0 -> "Active Terminal Sessions"
+            sshCount > 0 -> "SSH Session Active"
+            else -> "Local Session Active"
+        }
+
+        val text = when {
+            sshCount > 0 && localCount > 0 ->
+                "Maintaining $sshCount SSH and $localCount local terminal sessions"
+            sshCount > 0 -> {
+                if (sshCount > 1) "Maintaining $sshCount active SSH terminal sessions"
+                else "Maintaining active SSH terminal session"
+            }
+            else -> {
+                if (localCount > 1) "Maintaining $localCount active local terminal sessions"
+                else "Maintaining active local terminal session"
+            }
+        }
+
+        return Pair(title, text)
     }
 
     private fun buildNotification(): Notification {
@@ -124,16 +178,18 @@ class SshSessionService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
+        val (title, text) = getNotificationTitleAndText()
+
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("SSH Session Active")
-            .setContentText("Termux Ghostty is maintaining active terminal sessions")
+            .setContentTitle(title)
+            .setContentText(text)
             .setSmallIcon(android.R.drawable.stat_notify_chat)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .setContentIntent(openPendingIntent)
             .addAction(
                 android.R.drawable.ic_menu_close_clear_cancel,
-                "Disconnect",
+                "Disconnect All",
                 disconnectPendingIntent
             )
             .build()

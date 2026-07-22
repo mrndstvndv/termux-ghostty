@@ -655,22 +655,26 @@ fun TerminalCanvas(
                                 // Forward tap as mouse click when terminal mouse tracking is active
                                 sendTouchAsMouseClick(session, inputView, offset.x, offset.y)
 
-                                focusRequester.requestFocus()
-                                if (imeSession == null || imeSession?.isOpen != true) {
-                                    imeSession?.dispose()
-                                    imeSession = textInputService?.startInput(
-                                        value = TextFieldValue(""),
-                                        imeOptions = ImeOptions(
-                                            keyboardType = KeyboardType.Ascii,
-                                            imeAction = ImeAction.None,
-                                            autoCorrect = false
-                                        ),
-                                        onEditCommand = handleImeCommands,
-                                        onImeActionPerformed = { }
-                                    )
+                                val unconditionalKeyboard =
+                                    sharedPreferences.getBoolean("unconditional_soft_keyboard_on_tap", true)
+                                if (unconditionalKeyboard || !session.isMouseTrackingActive()) {
+                                    focusRequester.requestFocus()
+                                    if (imeSession == null || imeSession?.isOpen != true) {
+                                        imeSession?.dispose()
+                                        imeSession = textInputService?.startInput(
+                                            value = TextFieldValue(""),
+                                            imeOptions = ImeOptions(
+                                                keyboardType = KeyboardType.Ascii,
+                                                imeAction = ImeAction.None,
+                                                autoCorrect = false
+                                            ),
+                                            onEditCommand = handleImeCommands,
+                                            onImeActionPerformed = { }
+                                        )
+                                    }
+                                    imeSession?.showSoftwareKeyboard()
+                                    keyboardController?.show()
                                 }
-                                imeSession?.showSoftwareKeyboard()
-                                keyboardController?.show()
 
                                 val event = MotionEvent.obtain(
                                     android.os.SystemClock.uptimeMillis(),

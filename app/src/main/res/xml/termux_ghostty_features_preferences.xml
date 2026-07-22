@@ -49,6 +49,12 @@
             app:summary="@string/termux_ghostty_remember_soft_keyboard_state_summary"
             app:defaultValue="false" />
 
+        <SwitchPreferenceCompat
+            app:key="unconditional-soft-keyboard-on-tap"
+            app:title="@string/termux_ghostty_unconditional_soft_keyboard_on_tap_title"
+            app:summary="@string/termux_ghostty_unconditional_soft_keyboard_on_tap_summary"
+            app:defaultValue="true" />
+
     </PreferenceCategory>
 
     <PreferenceCategory

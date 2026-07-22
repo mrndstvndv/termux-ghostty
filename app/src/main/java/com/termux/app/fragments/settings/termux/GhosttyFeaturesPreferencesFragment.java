@@ -36,6 +36,7 @@ public class GhosttyFeaturesPreferencesFragment extends PreferenceFragmentCompat
             "session-tab-bar-position",
             "session-tab-bar-align",
             "remember-soft-keyboard-state",
+            "unconditional-soft-keyboard-on-tap",
             "terminal-onclick-url-open",
             "terminal-onclick-url-open-when-mouse-tracking-active",
             "material-you-theme"
@@ -128,6 +129,8 @@ class GhosttyFeaturesPreferencesDataStore extends PreferenceDataStore {
                 return mProperties.shouldOpenTerminalTranscriptURLOnClick();
             case TermuxPropertyConstants.KEY_TERMINAL_ONCLICK_URL_OPEN_WHEN_MOUSE_TRACKING_ACTIVE:
                 return mProperties.shouldOpenTerminalTranscriptURLOnClickWhenMouseTrackingActive();
+            case TermuxPropertyConstants.KEY_UNCONDITIONAL_SOFT_KEYBOARD_ON_TAP:
+                return mProperties.isUnconditionalSoftKeyboardOnTapEnabled();
             default:
                 return defValue;
         }

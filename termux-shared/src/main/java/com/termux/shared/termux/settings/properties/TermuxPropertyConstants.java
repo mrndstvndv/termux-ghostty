@@ -188,6 +188,9 @@ public final class TermuxPropertyConstants {
     /** Defines the key for whether touch taps on terminal links should open urls even when terminal mouse tracking is active */
     public static final String KEY_TERMINAL_ONCLICK_URL_OPEN_WHEN_MOUSE_TRACKING_ACTIVE =  "terminal-onclick-url-open-when-mouse-tracking-active"; // Default: "terminal-onclick-url-open-when-mouse-tracking-active"
 
+    /** Defines the key for whether soft keyboard should be shown on single tap unconditionally (even when mouse tracking is active) */
+    public static final String KEY_UNCONDITIONAL_SOFT_KEYBOARD_ON_TAP =  "unconditional-soft-keyboard-on-tap"; // Default: "unconditional-soft-keyboard-on-tap"
+
 
 
     /** Defines the key for whether to use black UI */
@@ -472,6 +475,7 @@ public final class TermuxPropertyConstants {
         KEY_RUN_TERMUX_AM_SOCKET_SERVER,
         KEY_TERMINAL_ONCLICK_URL_OPEN,
         KEY_TERMINAL_ONCLICK_URL_OPEN_WHEN_MOUSE_TRACKING_ACTIVE,
+        KEY_UNCONDITIONAL_SOFT_KEYBOARD_ON_TAP,
         KEY_USE_CTRL_SPACE_WORKAROUND,
         KEY_USE_FULLSCREEN,
         KEY_USE_FULLSCREEN_WORKAROUND,
@@ -538,7 +542,8 @@ public final class TermuxPropertyConstants {
      */
     public static final Set<String> TERMUX_DEFAULT_TRUE_BOOLEAN_BEHAVIOUR_PROPERTIES_LIST = new HashSet<>(Arrays.asList(
         KEY_EXTRA_KEYS_TEXT_ALL_CAPS,
-        KEY_RUN_TERMUX_AM_SOCKET_SERVER
+        KEY_RUN_TERMUX_AM_SOCKET_SERVER,
+        KEY_UNCONDITIONAL_SOFT_KEYBOARD_ON_TAP
     ));
 
     /** Defines the set for keys loaded by termux that have default inverted boolean behaviour with false as default.

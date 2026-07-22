@@ -728,6 +728,11 @@ public abstract class TermuxSharedProperties {
             TermuxPropertyConstants.KEY_TERMINAL_ONCLICK_URL_OPEN_WHEN_MOUSE_TRACKING_ACTIVE, true);
     }
 
+    public boolean isUnconditionalSoftKeyboardOnTapEnabled() {
+        return (boolean) getInternalPropertyValue(
+            TermuxPropertyConstants.KEY_UNCONDITIONAL_SOFT_KEYBOARD_ON_TAP, true);
+    }
+
     public boolean isUsingCtrlSpaceWorkaround() {
         return (boolean) getInternalPropertyValue(TermuxPropertyConstants.KEY_USE_CTRL_SPACE_WORKAROUND, true);
     }

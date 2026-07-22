@@ -73,6 +73,7 @@ fun MainContent(
     val savedExtraKeysCustomJson =
         sharedPreferences.getString("extra_keys_custom_json", "[]") ?: "[]"
     val savedUseInAppBrowser = sharedPreferences.getBoolean("use_in_app_browser", false)
+    val savedUnconditionalSoftKeyboardOnTap = sharedPreferences.getBoolean("unconditional_soft_keyboard_on_tap", true)
     val savedFontSize = sharedPreferences.getInt("font_size", 12)
 
     var appTheme by remember { mutableStateOf(savedTheme) }
@@ -101,6 +102,7 @@ fun MainContent(
             var extraKeysCustomJson by remember { mutableStateOf(savedExtraKeysCustomJson) }
             var fontSize by remember { mutableStateOf(savedFontSize) }
             var useInAppBrowser by remember { mutableStateOf(savedUseInAppBrowser) }
+            var unconditionalSoftKeyboardOnTap by remember { mutableStateOf(savedUnconditionalSoftKeyboardOnTap) }
 
             val pickFontLauncher = rememberLauncherForActivityResult(
                 contract = ActivityResultContracts.GetContent()
@@ -204,6 +206,12 @@ fun MainContent(
                                     useInAppBrowser = enabled
                                     sharedPreferences.edit()
                                         .putBoolean("use_in_app_browser", enabled).apply()
+                                },
+                                unconditionalSoftKeyboardOnTap = unconditionalSoftKeyboardOnTap,
+                                onUnconditionalSoftKeyboardOnTapChange = { enabled ->
+                                    unconditionalSoftKeyboardOnTap = enabled
+                                    sharedPreferences.edit()
+                                        .putBoolean("unconditional_soft_keyboard_on_tap", enabled).apply()
                                 },
                                 onBack = { navigator.goBack() },
                             )

@@ -192,7 +192,8 @@ public class TermuxTerminalViewClient extends TermuxTerminalViewClientBase {
             return;
         }
 
-        if (!session.isMouseTrackingActive() && !e.isFromSource(InputDevice.SOURCE_MOUSE)) {
+        boolean isUnconditionalKeyboard = mActivity.getProperties().isUnconditionalSoftKeyboardOnTapEnabled();
+        if ((isUnconditionalKeyboard || !session.isMouseTrackingActive()) && !e.isFromSource(InputDevice.SOURCE_MOUSE)) {
             if (!KeyboardUtils.areDisableSoftKeyboardFlagsSet(mActivity))
                 showSoftKeyboardAndRemember();
             else

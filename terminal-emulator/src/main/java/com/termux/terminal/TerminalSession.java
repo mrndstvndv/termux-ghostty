@@ -588,6 +588,12 @@ public final class TerminalSession extends TerminalOutput {
         if (isRunning()) {
             if (mIsCustomIO) {
                 cleanupResources(0);
+                mMainThreadHandler.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        mClient.onSessionFinished(TerminalSession.this);
+                    }
+                });
                 return;
             }
             try {

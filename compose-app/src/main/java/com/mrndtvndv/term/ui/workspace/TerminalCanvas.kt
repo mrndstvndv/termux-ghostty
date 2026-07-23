@@ -409,6 +409,7 @@ fun TerminalCanvas(
 
     // Track the current composing text so we can send only deltas to the terminal.
     var composingText by remember { mutableStateOf("") }
+    var lastComposedText by remember { mutableStateOf("") }
 
     // Handle IME edit commands (soft keyboard input)
     @Suppress("DEPRECATION") // EditCommand API is deprecated but still needed for soft keyboard input
@@ -417,24 +418,26 @@ fun TerminalCanvas(
             when (cmd) {
                 is CommitTextCommand -> {
                     val text = cmd.text
-                    if (composingText.isNotEmpty()) {
+                    val activeComposition = if (composingText.isNotEmpty()) composingText else lastComposedText
+                    if (activeComposition.isNotEmpty()) {
                         // Composition finalized — only send new characters (e.g. space, punctuation)
                         // or auto-correct replacement.
-                        if (text.startsWith(composingText)) {
-                            val delta = text.substring(composingText.length)
+                        if (text.startsWith(activeComposition)) {
+                            val delta = text.substring(activeComposition.length)
                             for (char in delta) {
                                 val cp = if (char == '\n') 13 else char.code
                                 inputCodePoint(cp, false, false, session, extraKeysController)
                             }
                         } else {
                             // Auto-correct replaced the composing text entirely
-                            for (ch in composingText) { sendDelete(session, extraKeysController) }
+                            for (ch in activeComposition) { sendDelete(session, extraKeysController) }
                             for (char in text) {
                                 val cp = if (char == '\n') 13 else char.code
                                 inputCodePoint(cp, false, false, session, extraKeysController)
                             }
                         }
                         composingText = ""
+                        lastComposedText = ""
                     } else {
                         // No active composition — direct input
                         for (char in text) {
@@ -444,22 +447,27 @@ fun TerminalCanvas(
                     }
                 }
                 is DeleteSurroundingTextCommand -> {
+                    lastComposedText = ""
                     repeat(cmd.lengthBeforeCursor) {
                         sendDelete(session, extraKeysController)
                     }
                 }
                 is DeleteSurroundingTextInCodePointsCommand -> {
+                    lastComposedText = ""
                     repeat(cmd.lengthBeforeCursor) {
                         sendDelete(session, extraKeysController)
                     }
                 }
                 is BackspaceCommand -> {
+                    lastComposedText = ""
                     sendDelete(session, extraKeysController)
                 }
                 is DeleteAllCommand -> {
+                    lastComposedText = ""
                     repeat(100) { sendDelete(session, extraKeysController) }
                 }
                 is MoveCursorCommand -> {
+                    lastComposedText = ""
                     val keyCode = if (cmd.amount < 0) KeyEvent.KEYCODE_DPAD_LEFT else KeyEvent.KEYCODE_DPAD_RIGHT
                     repeat(Math.abs(cmd.amount)) {
                         val code = KeyHandler.getCode(
@@ -471,6 +479,7 @@ fun TerminalCanvas(
                     }
                 }
                 is SetSelectionCommand -> {
+                    lastComposedText = ""
                     val diff = cmd.start - previousCursorPosition
                     if (diff != 0) {
                         val keyCode = if (diff < 0) KeyEvent.KEYCODE_DPAD_LEFT else KeyEvent.KEYCODE_DPAD_RIGHT
@@ -486,6 +495,7 @@ fun TerminalCanvas(
                     previousCursorPosition = cmd.start
                 }
                 is SetComposingTextCommand -> {
+                    lastComposedText = ""
                     val current = cmd.text
                     when {
                         // Append: composing text grew (new characters typed)
@@ -521,7 +531,10 @@ fun TerminalCanvas(
                 }
                 is SetComposingRegionCommand -> { }
                 is FinishComposingTextCommand -> {
-                    composingText = ""
+                    if (composingText.isNotEmpty()) {
+                        lastComposedText = composingText
+                        composingText = ""
+                    }
                 }
             }
         }

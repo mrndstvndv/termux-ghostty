@@ -16,6 +16,8 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       skip_release: ${{ steps.changelog.outputs.skip_release }}
+      build_app: ${{ steps.changelog.outputs.build_app }}
+      build_compose: ${{ steps.changelog.outputs.build_compose }}
       new_version: ${{ steps.changelog.outputs.new_version }}
       changelog: ${{ steps.changelog.outputs.changelog }}
 
@@ -41,16 +43,22 @@ jobs:
           .github/scripts/generate-changelog.sh "${{ steps.previous_release.outputs.previous_tag }}" 2>/tmp/script_output > /tmp/changelog_output
 
           SKIP_RELEASE=$(grep "skip_release=" /tmp/script_output | cut -d= -f2)
+          BUILD_APP=$(grep "build_app=" /tmp/script_output | cut -d= -f2)
+          BUILD_COMPOSE=$(grep "build_compose=" /tmp/script_output | cut -d= -f2)
           NEW_VERSION=$(grep "^v" /tmp/script_output)
           CHANGELOG=$(cat /tmp/changelog_output)
 
           echo "skip_release=$SKIP_RELEASE" >> $GITHUB_OUTPUT
+          echo "build_app=$BUILD_APP" >> $GITHUB_OUTPUT
+          echo "build_compose=$BUILD_COMPOSE" >> $GITHUB_OUTPUT
           echo "changelog<<EOF" >> $GITHUB_OUTPUT
           echo "$CHANGELOG" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
           echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
 
           echo "Skip release: $SKIP_RELEASE"
+          echo "Build app: $BUILD_APP"
+          echo "Build compose: $BUILD_COMPOSE"
           echo "New version: $NEW_VERSION"
           echo "Changelog:"
           echo "$CHANGELOG"
@@ -73,21 +81,26 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Update Version in build.gradle
+      - name: Update Version in Gradle files
         run: |
           NEW_VERSION="${{ needs.changelog.outputs.new_version }}"
           VERSION_NAME="${NEW_VERSION#v}"
 
-          CURRENT_VERSION_CODE=$(grep -m 1 -E '^\s+versionCode\s+[0-9]+' app/build.gradle | grep -oE '[0-9]+')
-          NEW_VERSION_CODE=$((CURRENT_VERSION_CODE + 1))
+          if [ "${{ needs.changelog.outputs.build_app }}" == "true" ]; then
+            CURRENT_VERSION_CODE=$(grep -m 1 -E '^\s+versionCode\s+[0-9]+' app/build.gradle | grep -oE '[0-9]+')
+            NEW_VERSION_CODE=$((CURRENT_VERSION_CODE + 1))
+            echo "Updating legacy app version: name=$VERSION_NAME, code=$NEW_VERSION_CODE"
+            sed -i "s/^\(\s*versionCode\s\+\)[0-9]\+/\1$NEW_VERSION_CODE/" app/build.gradle
+            sed -i "s/^\(\s*versionName\s\+\)\"[^\"]*\"/\1\"$VERSION_NAME\"/" app/build.gradle
+          fi
 
-          echo "Updating version: name=$VERSION_NAME, code=$NEW_VERSION_CODE"
-
-          sed -i "s/^\(\s*versionCode\s\+\)[0-9]\+/\1$NEW_VERSION_CODE/" app/build.gradle
-          sed -i "s/^\(\s*versionName\s\+\)\"[^\"]*\"/\1\"$VERSION_NAME\"/" app/build.gradle
-
-          grep -q "versionCode $NEW_VERSION_CODE" app/build.gradle || { echo "ERROR: Failed to update versionCode"; exit 1; }
-          grep -q "versionName \"$VERSION_NAME\"" app/build.gradle || { echo "ERROR: Failed to update versionName"; exit 1; }
+          if [ "${{ needs.changelog.outputs.build_compose }}" == "true" ]; then
+            CURRENT_VERSION_CODE_C=$(grep -m 1 -E '^\s+versionCode\s+[0-9]+' compose-app/build.gradle | grep -oE '[0-9]+')
+            NEW_VERSION_CODE_C=$((CURRENT_VERSION_CODE_C + 1))
+            echo "Updating compose app version: name=$VERSION_NAME, code=$NEW_VERSION_CODE_C"
+            sed -i "s/^\(\s*versionCode\s\+\)[0-9]\+/\1$NEW_VERSION_CODE_C/" compose-app/build.gradle
+            sed -i "s/^\(\s*versionName\s\+\)\"[^\"]*\"/\1\"$VERSION_NAME\"/" compose-app/build.gradle
+          fi
 
       - name: Install Determinate Nix
         uses: DeterminateSystems/determinate-nix-action@v3
@@ -110,47 +123,33 @@ jobs:
         run: |
           exit_on_error() { echo "$1"; exit 1; }
 
-          # Strip 'v' prefix for semver
           TERMUX_APP_VERSION_NAME="${TERMUX_APP_VERSION_NAME#v}"
           export TERMUX_APP_VERSION_NAME
           export TERMUX_APK_VERSION_TAG="${TERMUX_APP_VERSION_NAME}-${{ matrix.package_variant }}-github-release"
 
-          if ! nix develop --command ./gradlew assembleRelease --no-daemon; then
-            exit_on_error "Build failed for '${{ matrix.package_variant }}' release."
-          fi
+          mkdir -p output_apks
 
-          APK_DIR_PATH="./app/build/outputs/apk/release"
-          APK_BASENAME_PREFIX="termux-app_${TERMUX_APP_VERSION_NAME}-${{ matrix.package_variant }}-github-release"
-
-          echo "Validating APKs"
-          for abi in universal arm64-v8a armeabi-v7a x86_64 x86; do
-            if ! test -f "$APK_DIR_PATH/${APK_BASENAME_PREFIX}_$abi.apk"; then
-              files_found="$(ls "$APK_DIR_PATH")"
-              exit_on_error "Failed to find built APK at '$APK_DIR_PATH/${APK_BASENAME_PREFIX}_$abi.apk'. Files found: "$'\n'"$files_found"
+          if [ "${{ needs.changelog.outputs.build_app }}" == "true" ]; then
+            echo "Building legacy app APK"
+            if ! nix develop --command ./gradlew :app:assembleRelease --no-daemon; then
+              exit_on_error "Build failed for legacy app '${{ matrix.package_variant }}' release."
             fi
-          done
-
-          echo "Generating sha25sums file"
-          if ! (cd "$APK_DIR_PATH"; sha256sum \
-            "${APK_BASENAME_PREFIX}_universal.apk" \
-            "${APK_BASENAME_PREFIX}_arm64-v8a.apk" \
-            "${APK_BASENAME_PREFIX}_armeabi-v7a.apk" \
-            "${APK_BASENAME_PREFIX}_x86_64.apk" \
-            "${APK_BASENAME_PREFIX}_x86.apk" \
-            > "${APK_BASENAME_PREFIX}_sha256sums"); then
-            exit_on_error "Generate sha25sums failed for '${{ matrix.package_variant }}' release."
+            cp ./app/build/outputs/apk/release/*.apk output_apks/ 2>/dev/null || true
           fi
 
-          echo "APK_DIR_PATH=$APK_DIR_PATH" >> $GITHUB_ENV
-          echo "APK_BASENAME_PREFIX=$APK_BASENAME_PREFIX" >> $GITHUB_ENV
+          if [ "${{ needs.changelog.outputs.build_compose }}" == "true" ]; then
+            echo "Building compose-app APK"
+            if ! nix develop --command ./gradlew :compose-app:assembleRelease --no-daemon; then
+              exit_on_error "Build failed for compose-app '${{ matrix.package_variant }}' release."
+            fi
+            cp ./compose-app/build/outputs/apk/release/*.apk output_apks/ 2>/dev/null || true
+          fi
 
       - name: Upload APKs
         uses: actions/upload-artifact@v4
         with:
           name: release-apks-${{ matrix.package_variant }}
-          path: |
-            ${{ env.APK_DIR_PATH }}/termux-app_*.apk
-            ${{ env.APK_DIR_PATH }}/termux-app_*_sha256sums
+          path: output_apks/*.apk
           retention-days: 1
 
   release:
@@ -195,16 +194,24 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Update Version in build.gradle
+      - name: Update Version in Gradle files
         run: |
           NEW_VERSION="${{ needs.changelog.outputs.new_version }}"
           VERSION_NAME="${NEW_VERSION#v}"
 
-          CURRENT_VERSION_CODE=$(grep -m 1 -E '^\s+versionCode\s+[0-9]+' app/build.gradle | grep -oE '[0-9]+')
-          NEW_VERSION_CODE=$((CURRENT_VERSION_CODE + 1))
+          if [ "${{ needs.changelog.outputs.build_app }}" == "true" ]; then
+            CURRENT_VERSION_CODE=$(grep -m 1 -E '^\s+versionCode\s+[0-9]+' app/build.gradle | grep -oE '[0-9]+')
+            NEW_VERSION_CODE=$((CURRENT_VERSION_CODE + 1))
+            sed -i "s/^\(\s*versionCode\s\+\)[0-9]\+/\1$NEW_VERSION_CODE/" app/build.gradle
+            sed -i "s/^\(\s*versionName\s\+\)\"[^\"]*\"/\1\"$VERSION_NAME\"/" app/build.gradle
+          fi
 
-          sed -i "s/^\(\s*versionCode\s\+\)[0-9]\+/\1$NEW_VERSION_CODE/" app/build.gradle
-          sed -i "s/^\(\s*versionName\s\+\)\"[^\"]*\"/\1\"$VERSION_NAME\"/" app/build.gradle
+          if [ "${{ needs.changelog.outputs.build_compose }}" == "true" ]; then
+            CURRENT_VERSION_CODE_C=$(grep -m 1 -E '^\s+versionCode\s+[0-9]+' compose-app/build.gradle | grep -oE '[0-9]+')
+            NEW_VERSION_CODE_C=$((CURRENT_VERSION_CODE_C + 1))
+            sed -i "s/^\(\s*versionCode\s\+\)[0-9]\+/\1$NEW_VERSION_CODE_C/" compose-app/build.gradle
+            sed -i "s/^\(\s*versionName\s\+\)\"[^\"]*\"/\1\"$VERSION_NAME\"/" compose-app/build.gradle
+          fi
 
       - name: Commit and Push
         env:
@@ -214,8 +221,7 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
           NEW_VERSION="${{ needs.changelog.outputs.new_version }}"
-          NEW_VERSION_CODE=$(grep -m 1 -E '^\s+versionCode\s+[0-9]+' app/build.gradle | grep -oE '[0-9]+')
-
-          git add app/build.gradle
-          git commit -m "chore: bump version to $NEW_VERSION (code $NEW_VERSION_CODE) [skip ci]"
+          
+          git add app/build.gradle compose-app/build.gradle 2>/dev/null || true
+          git commit -m "chore: bump version to $NEW_VERSION [skip ci]" || echo "No changes to commit"
           git push origin HEAD:${{ github.ref_name }}

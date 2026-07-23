@@ -24,6 +24,10 @@ HAS_BREAKING=false
 HAS_FEAT=false
 HAS_PATCH=false
 
+# Check changed files to determine impacted modules
+HAS_APP_CHANGES=false
+HAS_COMPOSE_CHANGES=false
+
 # Parse commits
 while IFS= read -r line; do
     [ -z "$line" ] && continue
@@ -36,6 +40,22 @@ while IFS= read -r line; do
     # Skip excluded types and merge commits
     if [[ "$commit_msg" =~ ^(ci|agent|chore|doc|Merge|Revert) ]]; then
         continue
+    fi
+
+    # Determine files modified in this commit
+    changed_files=$(git diff-tree --no-commit-id --name-only -r "$commit_hash" 2>/dev/null || echo "")
+    
+    # Check affected modules
+    if echo "$changed_files" | grep -qE '^compose-app/'; then
+        HAS_COMPOSE_CHANGES=true
+    fi
+    if echo "$changed_files" | grep -qE '^(app/|terminal-view/|terminal-emulator/|termux-shared/)'; then
+        HAS_APP_CHANGES=true
+    fi
+    # If commit is project-wide or root Gradle/Nix changes without explicit folder scope, mark both
+    if ! echo "$changed_files" | grep -qE '^(compose-app/|app/|terminal-view/|terminal-emulator/|termux-shared/)'; then
+        HAS_COMPOSE_CHANGES=true
+        HAS_APP_CHANGES=true
     fi
 
     # Check for breaking change in commit body
@@ -103,6 +123,10 @@ if [ -n "$PREVIOUS_TAG" ]; then
         MAJOR="${BASH_REMATCH[1]}"
         MINOR="${BASH_REMATCH[2]}"
         PATCH="${BASH_REMATCH[3]}"
+    elif [[ "$PREV_VERSION" =~ ^([0-9]+)\.([0-9]+)$ ]]; then
+        MAJOR="${BASH_REMATCH[1]}"
+        MINOR="${BASH_REMATCH[2]}"
+        PATCH=0
     else
         MAJOR=0
         MINOR=0
@@ -132,8 +156,18 @@ fi
 
 NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
 
-# Output whether we should skip release and the new version to stderr for workflow capture
+# Determine per-module build triggers
+BUILD_APP=false
+BUILD_COMPOSE=false
+if [ "$HAS_VERSION_BUMP" = true ]; then
+    if [ "$HAS_APP_CHANGES" = true ]; then BUILD_APP=true; fi
+    if [ "$HAS_COMPOSE_CHANGES" = true ]; then BUILD_COMPOSE=true; fi
+fi
+
+# Output metadata to stderr for workflow capture
 echo "skip_release=$([ "$HAS_VERSION_BUMP" = true ] && echo 'false' || echo 'true')" >&2
+echo "build_app=${BUILD_APP}" >&2
+echo "build_compose=${BUILD_COMPOSE}" >&2
 echo "v${NEW_VERSION}" >&2
 
 # Output changelog to stdout

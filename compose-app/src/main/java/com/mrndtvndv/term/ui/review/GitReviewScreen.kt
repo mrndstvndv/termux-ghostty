@@ -5,6 +5,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.gestures.rememberTransformableState
+import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -37,6 +39,7 @@ fun GitReviewScreen(
     val selectedFile by viewModel.selectedFile.collectAsState()
     val selectedFileDiff by viewModel.selectedFileDiff.collectAsState()
     val isDiffLoading by viewModel.isDiffLoading.collectAsState()
+    val isFullFileMode by viewModel.isFullFileMode.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
 
     val configuration = LocalConfiguration.current
@@ -113,7 +116,10 @@ fun GitReviewScreen(
                 DiffViewer(
                     selectedFile = selectedFile,
                     diffText = selectedFileDiff,
-                    isLoading = isDiffLoading
+                    isLoading = isDiffLoading,
+                    isFullFileMode = isFullFileMode,
+                    onToggleFullFileMode = { viewModel.toggleFullFileMode() },
+                    showHeader = true
                 )
             }
         }
@@ -132,7 +138,11 @@ fun GitReviewScreen(
                                     overflow = TextOverflow.Ellipsis
                                 )
                                 Text(
-                                    text = if (selectedFile?.isStaged == true) "Staged Changes" else "Unstaged Changes",
+                                    text = if (selectedFile?.isStaged == true) {
+                                        "Staged Changes"
+                                    } else {
+                                        "Unstaged Changes"
+                                    },
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                                 )
@@ -146,6 +156,25 @@ fun GitReviewScreen(
                                 )
                             }
                         },
+                        actions = {
+                            FilterChip(
+                                selected = isFullFileMode,
+                                onClick = { viewModel.toggleFullFileMode() },
+                                label = { Text(if (isFullFileMode) "Full File" else "Diff Only") },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = if (isFullFileMode) {
+                                            Icons.Default.Visibility
+                                        } else {
+                                            Icons.Default.UnfoldMore
+                                        },
+                                        contentDescription = "Toggle full file mode",
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                },
+                                modifier = Modifier.padding(end = 8.dp)
+                            )
+                        },
                         colors = TopAppBarDefaults.topAppBarColors(
                             containerColor = MaterialTheme.colorScheme.surface
                         )
@@ -156,7 +185,10 @@ fun GitReviewScreen(
                     DiffViewer(
                         selectedFile = selectedFile,
                         diffText = selectedFileDiff,
-                        isLoading = isDiffLoading
+                        isLoading = isDiffLoading,
+                        isFullFileMode = isFullFileMode,
+                        onToggleFullFileMode = { viewModel.toggleFullFileMode() },
+                        showHeader = false
                     )
                 }
             }
@@ -474,10 +506,66 @@ fun FileItem(
 }
 
 @Composable
+fun DiffHeader(
+    selectedFile: GitFileStatus,
+    isFullFileMode: Boolean,
+    onToggleFullFileMode: () -> Unit
+) {
+    Surface(
+        tonalElevation = 2.dp,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = selectedFile.path,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = if (selectedFile.isStaged) "Staged Changes" else "Unstaged Changes",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                )
+            }
+            Spacer(modifier = Modifier.width(12.dp))
+            FilterChip(
+                selected = isFullFileMode,
+                onClick = onToggleFullFileMode,
+                label = { Text(if (isFullFileMode) "Full File" else "Diff Only") },
+                leadingIcon = {
+                    Icon(
+                        imageVector = if (isFullFileMode) {
+                            Icons.Default.Visibility
+                        } else {
+                            Icons.Default.UnfoldMore
+                        },
+                        contentDescription = "Toggle full file mode",
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            )
+        }
+    }
+    HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+}
+
+@Composable
 fun DiffViewer(
     selectedFile: GitFileStatus?,
     diffText: String?,
-    isLoading: Boolean
+    isLoading: Boolean,
+    isFullFileMode: Boolean = false,
+    onToggleFullFileMode: () -> Unit = {},
+    showHeader: Boolean = false
 ) {
     if (selectedFile == null) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -490,187 +578,312 @@ fun DiffViewer(
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
+        if (showHeader) {
+            DiffHeader(
+                selectedFile = selectedFile,
+                isFullFileMode = isFullFileMode,
+                onToggleFullFileMode = onToggleFullFileMode
+            )
+        }
+
         Box(modifier = Modifier.fillMaxSize().weight(1f)) {
-            if (isLoading) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator()
-                }
-            } else if (diffText == null) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("No diff details loaded.")
-                }
-            } else if (diffText.trim().isEmpty()) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("No changes detected in file.")
-                }
-            } else {
-                val scrollState = rememberScrollState()
-                val horizScrollState = rememberScrollState()
-                val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
-                val fallbackColor = MaterialTheme.colorScheme.onSurface
-
-                val parsedLines = remember(diffText) {
-                    var currentOldLine = 0
-                    var currentNewLine = 0
-                    diffText.split("\n").map { line ->
-                        when {
-                            line.startsWith("@@ ") -> {
-                                val match = Regex("""@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@""").find(line)
-                                if (match != null) {
-                                    currentOldLine = match.groupValues[1].toInt()
-                                    currentNewLine = match.groupValues[2].toInt()
-                                }
-                                ParsedDiffLine(line, "", "", DiffLineType.HUNK_HEADER)
-                            }
-                            line.startsWith("+") && !line.startsWith("+++") -> {
-                                val lineNum = currentNewLine.toString()
-                                currentNewLine++
-                                ParsedDiffLine(line, "", lineNum, DiffLineType.ADDITION)
-                            }
-                            line.startsWith("-") && !line.startsWith("---") -> {
-                                val lineNum = currentOldLine.toString()
-                                currentOldLine++
-                                ParsedDiffLine(line, lineNum, "", DiffLineType.DELETION)
-                            }
-                            line.startsWith(" ") -> {
-                                val oldNum = currentOldLine.toString()
-                                val newNum = currentNewLine.toString()
-                                currentOldLine++
-                                currentNewLine++
-                                ParsedDiffLine(line, oldNum, newNum, DiffLineType.CONTEXT)
-                            }
-                            line.startsWith("diff --git") || line.startsWith("index ") || line.startsWith("--- ") || line.startsWith("+++ ") -> {
-                                ParsedDiffLine(line, "", "", DiffLineType.METADATA)
-                            }
-                            else -> {
-                                if (currentOldLine > 0) {
-                                    val oldNum = currentOldLine.toString()
-                                    val newNum = currentNewLine.toString()
-                                    currentOldLine++
-                                    currentNewLine++
-                                    ParsedDiffLine(line, oldNum, newNum, DiffLineType.CONTEXT)
-                                } else {
-                                    ParsedDiffLine(line, "", "", DiffLineType.METADATA)
-                                }
-                            }
-                        }
+            when {
+                isLoading -> {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator()
                     }
                 }
-
-                val maxLineNum = remember(parsedLines) {
-                    parsedLines.maxOfOrNull { 
-                        maxOf(it.oldLineNum.toIntOrNull() ?: 0, it.newLineNum.toIntOrNull() ?: 0) 
-                    } ?: 0
+                diffText == null -> {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text("No diff details loaded.")
+                    }
                 }
-                val digitCount = remember(maxLineNum) {
-                    maxLineNum.toString().length.coerceAtLeast(1)
+                diffText.trim().isEmpty() -> {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text("No changes detected in file.")
+                    }
                 }
-                val numWidth = remember(digitCount) { (digitCount * 7 + 4).dp }
-                val columnWidth = remember(numWidth) { numWidth * 2 + 8.dp }
+                else -> {
+                    DiffContent(diffText = diffText)
+                }
+            }
+        }
+    }
+}
 
-                Row(
-                     modifier = Modifier
-                         .fillMaxSize()
-                         .verticalScroll(scrollState)
-                         .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.1f))
-                ) {
-                    // 1. Line Numbers Column (Fixed on the Left)
-                    Column(
-                        modifier = Modifier
-                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
-                            .width(columnWidth)
+private fun parseDiffLines(diffText: String): List<ParsedDiffLine> {
+    var currentOldLine = 0
+    var currentNewLine = 0
+    return diffText.split("\n").map { line ->
+        when {
+            line.startsWith("@@ ") -> {
+                val match = Regex("""@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@""").find(line)
+                if (match != null) {
+                    currentOldLine = match.groupValues[1].toInt()
+                    currentNewLine = match.groupValues[2].toInt()
+                }
+                ParsedDiffLine(line, "", "", DiffLineType.HUNK_HEADER)
+            }
+            line.startsWith("+") && !line.startsWith("+++") -> {
+                val lineNum = currentNewLine.toString()
+                currentNewLine++
+                ParsedDiffLine(line, "", lineNum, DiffLineType.ADDITION)
+            }
+            line.startsWith("-") && !line.startsWith("---") -> {
+                val lineNum = currentOldLine.toString()
+                currentOldLine++
+                ParsedDiffLine(line, lineNum, "", DiffLineType.DELETION)
+            }
+            line.startsWith(" ") -> {
+                val oldNum = currentOldLine.toString()
+                val newNum = currentNewLine.toString()
+                currentOldLine++
+                currentNewLine++
+                ParsedDiffLine(line, oldNum, newNum, DiffLineType.CONTEXT)
+            }
+            line.startsWith("diff --git") || line.startsWith("index ") ||
+                line.startsWith("--- ") || line.startsWith("+++ ") ||
+                line.startsWith("\\ ") -> {
+                ParsedDiffLine(line, "", "", DiffLineType.METADATA)
+            }
+            else -> {
+                if (currentOldLine > 0) {
+                    val oldNum = currentOldLine.toString()
+                    val newNum = currentNewLine.toString()
+                    currentOldLine++
+                    currentNewLine++
+                    ParsedDiffLine(line, oldNum, newNum, DiffLineType.CONTEXT)
+                } else {
+                    ParsedDiffLine(line, "", "", DiffLineType.METADATA)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun DiffContent(
+    diffText: String,
+    modifier: Modifier = Modifier
+) {
+    var fontScale by remember { mutableFloatStateOf(1f) }
+    val transformState = rememberTransformableState { zoomChange, _, _ ->
+        fontScale = (fontScale * zoomChange).coerceIn(0.6f, 3.0f)
+    }
+
+    val scrollState = rememberScrollState()
+    val horizScrollState = rememberScrollState()
+    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val fallbackColor = MaterialTheme.colorScheme.onSurface
+
+    val parsedLines = remember(diffText) { parseDiffLines(diffText) }
+
+    val maxLineNum = remember(parsedLines) {
+        parsedLines.maxOfOrNull {
+            maxOf(it.oldLineNum.toIntOrNull() ?: 0, it.newLineNum.toIntOrNull() ?: 0)
+        } ?: 0
+    }
+    val digitCount = maxLineNum.toString().length.coerceAtLeast(1)
+    val dims = remember(digitCount, fontScale) {
+        val numW = ((digitCount * 7 + 4) * fontScale).dp
+        ScaledDiffDimensions(
+            numWidth = numW,
+            columnWidth = numW * 2 + (8 * fontScale).dp,
+            lineHeight = (20 * fontScale).dp,
+            codeFontSize = (12 * fontScale).sp,
+            lineNumFontSize = (10 * fontScale).sp
+        )
+    }
+
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .transformable(state = transformState)
+    ) {
+        DiffRowsLayout(
+            parsedLines = parsedLines,
+            dims = dims,
+            scrollState = scrollState,
+            horizScrollState = horizScrollState,
+            isDark = isDark,
+            fallbackColor = fallbackColor
+        )
+
+        if (fontScale != 1f) {
+            Surface(
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f),
+                shape = RoundedCornerShape(16.dp),
+                shadowElevation = 4.dp,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(16.dp)
+                    .clickable { fontScale = 1f }
+            ) {
+                Text(
+                    text = "${(fontScale * 100).toInt()}% (Tap to reset)",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun DiffRowsLayout(
+    parsedLines: List<ParsedDiffLine>,
+    dims: ScaledDiffDimensions,
+    scrollState: androidx.compose.foundation.ScrollState,
+    horizScrollState: androidx.compose.foundation.ScrollState,
+    isDark: Boolean,
+    fallbackColor: Color
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(scrollState)
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.1f))
+    ) {
+        LineNumberColumn(
+            parsedLines = parsedLines,
+            numWidth = dims.numWidth,
+            columnWidth = dims.columnWidth,
+            lineHeight = dims.lineHeight,
+            fontSize = dims.lineNumFontSize,
+            isDark = isDark,
+            fallbackColor = fallbackColor
+        )
+
+        Box(
+            modifier = Modifier
+                .width(1.dp)
+                .height((parsedLines.size * dims.lineHeight.value).dp)
+                .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+        )
+
+        CodeLinesColumn(
+            parsedLines = parsedLines,
+            horizScrollState = horizScrollState,
+            lineHeight = dims.lineHeight,
+            fontSize = dims.codeFontSize,
+            isDark = isDark,
+            fallbackColor = fallbackColor
+        )
+    }
+}
+
+private data class ScaledDiffDimensions(
+    val numWidth: androidx.compose.ui.unit.Dp,
+    val columnWidth: androidx.compose.ui.unit.Dp,
+    val lineHeight: androidx.compose.ui.unit.Dp,
+    val codeFontSize: androidx.compose.ui.unit.TextUnit,
+    val lineNumFontSize: androidx.compose.ui.unit.TextUnit
+)
+
+@Composable
+private fun LineNumberColumn(
+    parsedLines: List<ParsedDiffLine>,
+    numWidth: androidx.compose.ui.unit.Dp,
+    columnWidth: androidx.compose.ui.unit.Dp,
+    lineHeight: androidx.compose.ui.unit.Dp,
+    fontSize: androidx.compose.ui.unit.TextUnit,
+    isDark: Boolean,
+    fallbackColor: Color
+) {
+    Column(
+        modifier = Modifier
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
+            .width(columnWidth)
+    ) {
+        parsedLines.forEach { parsedLine ->
+            val (bgColor, _) = getColors(parsedLine.type, isDark, fallbackColor)
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(lineHeight)
+                    .background(bgColor)
+                    .padding(horizontal = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.End
+            ) {
+                Text(
+                    text = parsedLine.oldLineNum,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                    fontSize = fontSize,
+                    fontFamily = FontFamily.Monospace,
+                    modifier = Modifier.width(numWidth),
+                    textAlign = androidx.compose.ui.text.style.TextAlign.End
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                    text = parsedLine.newLineNum,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                    fontSize = fontSize,
+                    fontFamily = FontFamily.Monospace,
+                    modifier = Modifier.width(numWidth),
+                    textAlign = androidx.compose.ui.text.style.TextAlign.End
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun RowScope.CodeLinesColumn(
+    parsedLines: List<ParsedDiffLine>,
+    horizScrollState: androidx.compose.foundation.ScrollState,
+    lineHeight: androidx.compose.ui.unit.Dp,
+    fontSize: androidx.compose.ui.unit.TextUnit,
+    isDark: Boolean,
+    fallbackColor: Color
+) {
+    Column(
+        modifier = Modifier
+            .weight(1f)
+            .horizontalScroll(horizScrollState)
+    ) {
+        parsedLines.forEach { parsedLine ->
+            val (bgColor, textColor) = getColors(parsedLine.type, isDark, fallbackColor)
+
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(lineHeight)
+                    .background(bgColor)
+                    .padding(horizontal = 8.dp),
+                contentAlignment = Alignment.CenterStart
+            ) {
+                val annotatedText = remember(parsedLine.text, parsedLine.type, isDark, textColor) {
+                    val type = parsedLine.type
+                    if (type == DiffLineType.ADDITION || type == DiffLineType.DELETION ||
+                        type == DiffLineType.CONTEXT
                     ) {
-                        parsedLines.forEach { parsedLine ->
-                            val (bgColor, _) = getColors(parsedLine.type, isDark, fallbackColor)
-                            
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(20.dp)
-                                    .background(bgColor)
-                                    .padding(horizontal = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.End
-                            ) {
-                                Text(
-                                    text = parsedLine.oldLineNum,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
-                                    fontSize = 10.sp,
-                                    fontFamily = FontFamily.Monospace,
-                                    modifier = Modifier.width(numWidth),
-                                    textAlign = androidx.compose.ui.text.style.TextAlign.End
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(
-                                    text = parsedLine.newLineNum,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
-                                    fontSize = 10.sp,
-                                    fontFamily = FontFamily.Monospace,
-                                    modifier = Modifier.width(numWidth),
-                                    textAlign = androidx.compose.ui.text.style.TextAlign.End
-                                )
+                        val prefix = parsedLine.text.take(1)
+                        val remainingText = parsedLine.text.drop(1)
+
+                        androidx.compose.ui.text.buildAnnotatedString {
+                            withStyle(androidx.compose.ui.text.SpanStyle(color = textColor)) {
+                                append(prefix)
                             }
+                            append(highlightCode(remainingText, isDark))
                         }
-                    }
-
-                    // Vertical Divider
-                    Box(
-                        modifier = Modifier
-                            .width(1.dp)
-                            .height((parsedLines.size * 20).dp)
-                            .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
-                    )
-
-                    // 2. Code Lines Column (Horizontally Scrollable)
-                    Column(
-                        modifier = Modifier
-                            .weight(1f)
-                            .horizontalScroll(horizScrollState)
-                    ) {
-                        parsedLines.forEach { parsedLine ->
-                            val (bgColor, textColor) = getColors(parsedLine.type, isDark, fallbackColor)
-                            
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(20.dp)
-                                    .background(bgColor)
-                                    .padding(horizontal = 8.dp),
-                                contentAlignment = Alignment.CenterStart
-                            ) {
-                                val annotatedText = remember(parsedLine.text, parsedLine.type, isDark, textColor) {
-                                    val type = parsedLine.type
-                                    if (type == DiffLineType.ADDITION || type == DiffLineType.DELETION || type == DiffLineType.CONTEXT) {
-                                        val prefix = parsedLine.text.take(1)
-                                        val remainingText = parsedLine.text.drop(1)
-                                        
-                                        androidx.compose.ui.text.buildAnnotatedString {
-                                            // The prefix (+, -,  ) gets styled with the base text color of the line
-                                            withStyle(androidx.compose.ui.text.SpanStyle(color = textColor)) {
-                                                append(prefix)
-                                            }
-                                            // The rest of the line gets highlighted
-                                            append(highlightCode(remainingText, isDark))
-                                        }
-                                    } else {
-                                        androidx.compose.ui.text.buildAnnotatedString {
-                                            withStyle(androidx.compose.ui.text.SpanStyle(color = textColor)) {
-                                                append(parsedLine.text)
-                                            }
-                                        }
-                                    }
-                                }
-
-                                Text(
-                                    text = annotatedText,
-                                    fontSize = 12.sp,
-                                    fontFamily = FontFamily.Monospace,
-                                    softWrap = false
-                                )
+                    } else {
+                        androidx.compose.ui.text.buildAnnotatedString {
+                            withStyle(androidx.compose.ui.text.SpanStyle(color = textColor)) {
+                                append(parsedLine.text)
                             }
                         }
                     }
                 }
+
+                Text(
+                    text = annotatedText,
+                    fontSize = fontSize,
+                    fontFamily = FontFamily.Monospace,
+                    softWrap = false
+                )
             }
         }
     }

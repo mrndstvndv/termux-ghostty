@@ -43,11 +43,21 @@ class ReviewViewModel(
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage = _errorMessage.asStateFlow()
 
+    private val _isFullFileMode = MutableStateFlow(false)
+    val isFullFileMode = _isFullFileMode.asStateFlow()
+
     init {
         viewModelScope.launch {
             workspaceDir.collect {
                 refresh()
             }
+        }
+    }
+
+    fun toggleFullFileMode() {
+        _isFullFileMode.value = !_isFullFileMode.value
+        _selectedFile.value?.let { file ->
+            loadDiff(file)
         }
     }
 
@@ -134,20 +144,21 @@ class ReviewViewModel(
             _isDiffLoading.value = true
             _selectedFileDiff.value = null
             val dir = workspaceDir.value
+            val contextFlag = if (_isFullFileMode.value) "-U999999 " else ""
             try {
                 val repoRoot = getRepoRoot(dir)
                 val command = when {
                     file.status == "??" -> {
-                        // Untracked file: use git diff --no-index /dev/null <file>
-                        "export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; cd \"$repoRoot\" && git diff --no-index -- /dev/null \"${file.path}\""
+                        "export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; cd \"$repoRoot\" && " +
+                            "git diff --no-index ${contextFlag}-- /dev/null \"${file.path}\""
                     }
                     file.isStaged -> {
-                        // Staged file: use git diff --cached
-                        "export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; cd \"$repoRoot\" && git diff --cached -- \"${file.path}\""
+                        "export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; cd \"$repoRoot\" && " +
+                            "git diff --cached ${contextFlag}-- \"${file.path}\""
                     }
                     else -> {
-                        // Unstaged file: use git diff
-                        "export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; cd \"$repoRoot\" && git diff -- \"${file.path}\""
+                        "export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; cd \"$repoRoot\" && " +
+                            "git diff ${contextFlag}-- \"${file.path}\""
                     }
                 }
                 val diffOutput = execCommand(command)

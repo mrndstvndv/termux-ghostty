@@ -8,6 +8,19 @@ plugins {
     id 'org.jetbrains.kotlin.plugin.serialization'
 }
 
+androidComponents {
+    onVariants(selector().all()) { variant ->
+        variant.outputs.each { output ->
+            def buildTypeName = variant.buildType
+            def nameTag = buildTypeName == "debug" ? "debug" : "release"
+            def apkVersionTag = System.getenv("TERMUX_APK_VERSION_TAG") ?: ""
+            def packageVariant = System.getenv("TERMUX_PACKAGE_VARIANT") ?: "apt-android-7"
+            def filename = "termux-compose-app_" + (apkVersionTag ? apkVersionTag : packageVariant + "-" + nameTag) + ".apk"
+            output.outputFileName.set(filename)
+        }
+    }
+}
+
 android {
     namespace 'com.mrndtvndv.term'
     compileSdk project.properties.compileSdkVersion.toInteger()
@@ -51,10 +64,26 @@ android {
         }
     }
 
+    signingConfigs {
+        release {
+            def keystoreFile = System.getenv("KEYSTORE_FILE")
+            if (keystoreFile && file(keystoreFile).exists()) {
+                storeFile file(keystoreFile)
+                storePassword System.getenv("KEYSTORE_PASSWORD")
+                keyAlias System.getenv("KEY_ALIAS")
+                keyPassword System.getenv("KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
             minifyEnabled true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            def keystoreFile = System.getenv("KEYSTORE_FILE")
+            if (keystoreFile && file(keystoreFile).exists()) {
+                signingConfig signingConfigs.release
+            }
         }
     }
 }

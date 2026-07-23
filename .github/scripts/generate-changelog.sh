@@ -58,9 +58,9 @@ while IFS= read -r line; do
         HAS_APP_CHANGES=true
     fi
 
-    # Check for breaking change in commit body
+    # Check for breaking change in commit body or header
     commit_body=$(git log -1 --pretty=format:"%b" "$commit_hash" 2>/dev/null || echo "")
-    if [[ "$commit_body" == *"BREAKING CHANGE:"* ]] || [[ "$commit_msg" == *"!:"* ]]; then
+    if [[ "$commit_body" == *"BREAKING CHANGE:"* ]] || echo "$commit_msg" | grep -qE '^[a-z]+(\([^)]+\))?!:'; then
         HAS_BREAKING=true
     fi
 

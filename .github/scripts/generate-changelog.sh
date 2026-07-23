@@ -38,7 +38,7 @@ while IFS= read -r line; do
     commit_msg=$(echo "$line" | cut -d'|' -f3-)
 
     # Skip excluded types and merge commits
-    if [[ "$commit_msg" =~ ^(ci|agent|chore|doc|Merge|Revert) ]]; then
+    if [[ "$commit_msg" =~ ^(agent|chore|doc|Merge|Revert) ]]; then
         continue
     fi
 
@@ -65,8 +65,8 @@ while IFS= read -r line; do
     fi
 
     # Parse conventional commit
-    if echo "$commit_msg" | grep -qE '^(feat|fix|update|ui|refactor|perf)(\([^)]+\))?!?:[[:space:]]+.+$'; then
-        type=$(echo "$commit_msg" | sed -E 's/^(feat|fix|update|ui|refactor|perf).*/\1/')
+    if echo "$commit_msg" | grep -qE '^(feat|fix|update|ui|refactor|perf|ci)(\([^)]+\))?!?:[[:space:]]+.+$'; then
+        type=$(echo "$commit_msg" | sed -E 's/^(feat|fix|update|ui|refactor|perf|ci).*/\1/')
         scope=$(echo "$commit_msg" | sed -E 's/^[^(:]+\(([^)]+)\):.*/\1/' | grep -v "^$commit_msg$" || true)
         desc=$(echo "$commit_msg" | sed -E 's/^[^(:]+(\([^)]+\))?!?:[[:space:]]+//')
         if [ -n "$scope" ]; then
@@ -96,7 +96,7 @@ while IFS= read -r line; do
                 HAS_PATCH=true
                 fixes+=("$entry")
                 ;;
-            update)
+            ci|update)
                 HAS_PATCH=true
                 updates+=("$entry")
                 ;;

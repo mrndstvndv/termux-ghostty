@@ -5,17 +5,19 @@ import android.graphics.Typeface
 import android.view.KeyEvent
 import android.view.MotionEvent
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.height
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.platform.LocalTextInputService
 import androidx.compose.ui.text.input.CommitTextCommand
@@ -36,12 +38,15 @@ import androidx.compose.ui.text.input.TextInputSession
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusTarget
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -52,7 +57,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
-import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.text
 import androidx.compose.ui.text.AnnotatedString
@@ -224,6 +229,42 @@ private fun sendTouchAsMouseMove(
         0, 0, 0
     )
     session.sendGhosttyMouseEvent(move)
+}
+
+private val selectionHandleVisualSize = 20.dp
+private val selectionHandleTouchTargetSize = 48.dp
+
+@Composable
+private fun SelectionHandle(
+    pointsLeft: Boolean,
+    contentDescription: String,
+    modifier: Modifier = Modifier
+) {
+    val handleColor = MaterialTheme.colorScheme.primary
+
+    Canvas(
+        modifier = modifier
+            .size(selectionHandleTouchTargetSize)
+            .semantics {
+                this.contentDescription = contentDescription
+            }
+    ) {
+        val visualSize = selectionHandleVisualSize.toPx()
+        val radius = visualSize / 2f
+        val visualLeft = if (pointsLeft) size.width - visualSize else 0f
+        val rectangleLeft = if (pointsLeft) visualLeft + radius else visualLeft
+
+        drawRect(
+            color = handleColor,
+            topLeft = Offset(rectangleLeft, 0f),
+            size = androidx.compose.ui.geometry.Size(radius, radius)
+        )
+        drawCircle(
+            color = handleColor,
+            radius = radius,
+            center = Offset(visualLeft + radius, radius)
+        )
+    }
 }
 
 @Composable
@@ -766,33 +807,55 @@ fun TerminalCanvas(
             val endCol = selectionEndCol!!
             val endRow = selectionEndRow!!
 
+            // Handles are rendered one row below the selection so they don't obscure the text
+            val selectionHandleRowOffset = 1
+
             val topRow = inputView.getTopRow()
+            val fontLineSpacing = inputView.mRenderer?.getFontLineSpacing()?.toFloat() ?: 0f
 
             val startX = inputView.getPointX(startCol).toFloat()
-            val startY = inputView.getPointY(startRow).toFloat()
+            val startY = inputView.getPointY(startRow + selectionHandleRowOffset).toFloat()
 
             val endX = inputView.getPointX(endCol + 1).toFloat()
-            val endY = inputView.getPointY(endRow).toFloat()
-
-            val leftHandlePainter = painterResource(id = com.termux.view.R.drawable.text_select_handle_left_material)
-            val rightHandlePainter = painterResource(id = com.termux.view.R.drawable.text_select_handle_right_material)
+            val endY = inputView.getPointY(endRow + selectionHandleRowOffset).toFloat()
 
             val density = LocalDensity.current
-            val handleWidthPx = with(density) { leftHandlePainter.intrinsicSize.width }
+            val handleVisualSizePx = with(density) { selectionHandleVisualSize.toPx() }
+            val handleTouchTargetSizePx = with(density) { selectionHandleTouchTargetSize.toPx() }
 
-            val leftHandleX = startX - handleWidthPx * 0.75f
+            val viewWidth = inputView.width.toFloat()
+            val leftHandlePointsLeft = startX - handleVisualSizePx >= 0f
+            val leftHandleVisualX = if (leftHandlePointsLeft) {
+                startX - handleVisualSizePx
+            } else {
+                startX
+            }
+            val leftHandleX = if (leftHandlePointsLeft) {
+                leftHandleVisualX - (handleTouchTargetSizePx - handleVisualSizePx)
+            } else {
+                leftHandleVisualX
+            }
             val leftHandleY = startY
 
-            val rightHandleX = endX - handleWidthPx * 0.25f
+            val rightHandlePointsLeft = endX + handleVisualSizePx > viewWidth
+            val rightHandleVisualX = if (rightHandlePointsLeft) {
+                endX - handleVisualSizePx
+            } else {
+                endX
+            }
+            val rightHandleX = if (rightHandlePointsLeft) {
+                rightHandleVisualX - (handleTouchTargetSizePx - handleVisualSizePx)
+            } else {
+                rightHandleVisualX
+            }
             val rightHandleY = endY
 
             // Left Selection Handle
-            Image(
-                painter = leftHandlePainter,
+            SelectionHandle(
+                pointsLeft = leftHandlePointsLeft,
                 contentDescription = "Start Selection Handle",
                 modifier = Modifier
                     .offset { IntOffset(leftHandleX.toInt(), leftHandleY.toInt()) }
-                    .size(with(density) { leftHandlePainter.intrinsicSize.toDpSize() })
                     .pointerInput(Unit) {
                         detectTapGestures { /* consume tap, prevent passthrough to Canvas */ }
                     }
@@ -803,7 +866,7 @@ fun TerminalCanvas(
                             onDragStart = {
                                 // Read current handle position from live state
                                 val sx = inputView.getPointX(selectionStartCol!!).toFloat()
-                                val sy = inputView.getPointY(selectionStartRow!!).toFloat()
+                                val sy = inputView.getPointY(selectionStartRow!! + selectionHandleRowOffset).toFloat()
                                 accumDragX = sx
                                 accumDragY = sy
                             },
@@ -816,7 +879,7 @@ fun TerminalCanvas(
                                 accumDragY += dragAmount.y
 
                                 val curX = inputView.getCursorX(accumDragX)
-                                val curY = inputView.getCursorY(accumDragY)
+                                val curY = inputView.getCursorY(accumDragY - fontLineSpacing * 0.5f)
 
                                 val content = session.terminalContent
                                 if (content != null) {
@@ -853,12 +916,11 @@ fun TerminalCanvas(
             )
 
             // Right Selection Handle
-            Image(
-                painter = rightHandlePainter,
+            SelectionHandle(
+                pointsLeft = rightHandlePointsLeft,
                 contentDescription = "End Selection Handle",
                 modifier = Modifier
                     .offset { IntOffset(rightHandleX.toInt(), rightHandleY.toInt()) }
-                    .size(with(density) { rightHandlePainter.intrinsicSize.toDpSize() })
                     .pointerInput(Unit) {
                         detectTapGestures { /* consume tap, prevent passthrough to Canvas */ }
                     }
@@ -869,7 +931,7 @@ fun TerminalCanvas(
                             onDragStart = {
                                 // Read current handle position from live state
                                 val ex = inputView.getPointX(selectionEndCol!! + 1).toFloat()
-                                val ey = inputView.getPointY(selectionEndRow!!).toFloat()
+                                val ey = inputView.getPointY(selectionEndRow!! + selectionHandleRowOffset).toFloat()
                                 accumDragX = ex
                                 accumDragY = ey
                             },
@@ -882,7 +944,7 @@ fun TerminalCanvas(
                                 accumDragY += dragAmount.y
 
                                 val curX = inputView.getCursorX(accumDragX)
-                                val curY = inputView.getCursorY(accumDragY)
+                                val curY = inputView.getCursorY(accumDragY - fontLineSpacing * 0.5f)
 
                                 val content = session.terminalContent
                                 if (content != null) {
@@ -929,9 +991,9 @@ fun TerminalCanvas(
                 val fontLineSpacing = renderer.getFontLineSpacing()
                 val fontWidth = renderer.getFontWidth()
 
-                // Estimate toolbar popup dimensions: ~160dp × 56dp for 2 buttons
-                val toolbarWidth = with(density) { 160.dp.toPx() }
-                val toolbarHeight = with(density) { 56.dp.toPx() }
+                // Two contiguous text buttons inside a compact pill-shaped toolbar.
+                val toolbarWidth = with(density) { 176.dp.toPx() }
+                val toolbarHeight = with(density) { 48.dp.toPx() }
 
                 // Selection bounds in viewport pixel space
                 val selTopPx = (selStartRow - topRow) * fontLineSpacing
@@ -939,16 +1001,25 @@ fun TerminalCanvas(
                 val viewHeight = inputView.height.toFloat()
                 val viewWidth = inputView.width.toFloat()
 
-                val toolbarGap = with(density) { 16.dp.toPx() }
+                val toolbarGap = with(density) { 4.dp.toPx() }
+                val handlesBottomPx = selBottomPx + with(density) {
+                    selectionHandleVisualSize.toPx()
+                }
+                val menuBelowSelectionY = handlesBottomPx + toolbarGap
 
-                // Place above selection if enough room, otherwise below
-                val menuY = if (selTopPx >= toolbarHeight + toolbarGap + fontLineSpacing) {
-                    (selTopPx - toolbarHeight - toolbarGap).toInt()
-                } else if (selBottomPx + toolbarHeight + toolbarGap <= viewHeight) {
-                    selBottomPx
-                } else {
-                    // Fallback: snap to top of selection (will overlap but stays on-screen)
-                    selTopPx.coerceAtLeast(0)
+                // Prefer above the selection. For selections near the top, place the toolbar
+                // below the handles instead of directly below the selected text.
+                val menuY = when {
+                    selTopPx >= toolbarHeight + toolbarGap -> {
+                        (selTopPx - toolbarHeight - toolbarGap).toInt()
+                    }
+                    menuBelowSelectionY + toolbarHeight <= viewHeight -> {
+                        menuBelowSelectionY.toInt()
+                    }
+                    else -> {
+                        // Keep the toolbar on-screen when neither side has enough room.
+                        (viewHeight - toolbarHeight).coerceAtLeast(0f).toInt()
+                    }
                 }
 
                 // Center horizontally on selection midpoint, clamped to viewport edges
@@ -963,45 +1034,66 @@ fun TerminalCanvas(
                         showToolbar = false
                     }
                 ) {
+                    val toolbarShape = RoundedCornerShape(percent = 50)
+
                     Surface(
-                        shape = MaterialTheme.shapes.medium,
+                        shape = toolbarShape,
                         tonalElevation = 8.dp,
                         shadowElevation = 8.dp,
                         color = MaterialTheme.colorScheme.surface,
                         contentColor = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.padding(8.dp)
+                        modifier = Modifier.width(176.dp)
                     ) {
                         Row(
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp)
+                                .clip(toolbarShape)
                         ) {
-                            TextButton(onClick = {
-                                val content = session.terminalContent
-                                if (content != null) {
-                                    val text = content.getSelectedText(selectionStartCol!!, selectionStartRow!!, selectionEndCol!!, selectionEndRow!!)
-                                    session.onCopyTextToClipboard(text)
-                                }
-                                selectionStartRow = null
-                                selectionStartCol = null
-                                selectionEndRow = null
-                                selectionEndCol = null
-                                showToolbar = false
-                            }) {
+                            TextButton(
+                                onClick = {
+                                    val content = session.terminalContent
+                                    if (content != null) {
+                                        val text = content.getSelectedText(
+                                            selectionStartCol!!,
+                                            selectionStartRow!!,
+                                            selectionEndCol!!,
+                                            selectionEndRow!!
+                                        )
+                                        session.onCopyTextToClipboard(text)
+                                    }
+                                    selectionStartRow = null
+                                    selectionStartCol = null
+                                    selectionEndRow = null
+                                    selectionEndCol = null
+                                    showToolbar = false
+                                },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxHeight(),
+                                shape = RoundedCornerShape(0.dp),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                            ) {
                                 Text("Copy")
                             }
 
-                            TextButton(onClick = {
-                                selectionStartRow = null
-                                selectionStartCol = null
-                                selectionEndRow = null
-                                selectionEndCol = null
-                                showToolbar = false
-                                session.onPasteTextFromClipboard()
-                            }) {
+                            TextButton(
+                                onClick = {
+                                    selectionStartRow = null
+                                    selectionStartCol = null
+                                    selectionEndRow = null
+                                    selectionEndCol = null
+                                    showToolbar = false
+                                    session.onPasteTextFromClipboard()
+                                },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxHeight(),
+                                shape = RoundedCornerShape(0.dp),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                            ) {
                                 Text("Paste")
                             }
-
-
                         }
                     }
                 }

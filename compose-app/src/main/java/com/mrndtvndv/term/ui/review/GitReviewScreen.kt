@@ -23,6 +23,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -40,6 +41,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.text.withStyle
 
+@Suppress("LongMethod", "CyclomaticComplexMethod")
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GitReviewScreen(
@@ -48,9 +50,13 @@ fun GitReviewScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val selectedFile by viewModel.selectedFile.collectAsState()
+    val selectedCommit by viewModel.selectedCommit.collectAsState()
     val selectedFileDiff by viewModel.selectedFileDiff.collectAsState()
     val isDiffLoading by viewModel.isDiffLoading.collectAsState()
     val isFullFileMode by viewModel.isFullFileMode.collectAsState()
+    val isStagedExpanded by viewModel.isStagedExpanded.collectAsState()
+    val isUnstagedExpanded by viewModel.isUnstagedExpanded.collectAsState()
+    val isCommitsExpanded by viewModel.isCommitsExpanded.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
     val isCommitInProgress by viewModel.isCommitInProgress.collectAsState()
 
@@ -166,7 +172,16 @@ fun GitReviewScreen(
                 FileChangesList(
                     uiState = uiState,
                     selectedFile = selectedFile,
+                    selectedCommit = selectedCommit,
+                    isStagedExpanded = isStagedExpanded,
+                    isUnstagedExpanded = isUnstagedExpanded,
+                    isCommitsExpanded = isCommitsExpanded,
+                    onToggleStagedExpanded = { viewModel.toggleStagedExpanded() },
+                    onToggleUnstagedExpanded = { viewModel.toggleUnstagedExpanded() },
+                    onToggleCommitsExpanded = { viewModel.toggleCommitsExpanded() },
                     onFileSelected = { viewModel.selectFile(it) },
+                    onCommitSelected = { viewModel.selectCommit(it) },
+                    onLoadMoreCommits = { viewModel.loadMoreCommits() },
                     onStage = { viewModel.stageFile(it) },
                     onUnstage = { viewModel.unstageFile(it) },
                     onDiscard = { discardConfirmFile = it },
@@ -185,6 +200,7 @@ fun GitReviewScreen(
             Box(modifier = Modifier.weight(0.6f).fillMaxHeight()) {
                 DiffViewer(
                     selectedFile = selectedFile,
+                    selectedCommit = selectedCommit,
                     diffText = selectedFileDiff,
                     isLoading = isDiffLoading,
                     isFullFileMode = isFullFileMode,
@@ -195,23 +211,25 @@ fun GitReviewScreen(
         }
     } else {
         // Mobile layout: switch between list and diff view
-        if (selectedFile != null) {
+        if (selectedFile != null || selectedCommit != null) {
             Scaffold(
                 topBar = {
                     TopAppBar(
                         title = {
                             Column {
                                 Text(
-                                    text = selectedFile?.path ?: "",
+                                    text = selectedFile?.path ?: selectedCommit?.subject ?: "",
                                     style = MaterialTheme.typography.titleMedium,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
                                 Text(
-                                    text = if (selectedFile?.isStaged == true) {
-                                        "Staged Changes"
-                                    } else {
-                                        "Unstaged Changes"
+                                    text = when {
+                                        selectedFile?.isStaged == true -> "Staged Changes"
+                                        selectedFile != null -> "Unstaged Changes"
+                                        selectedCommit != null ->
+                                            "Commit ${selectedCommit?.shortHash} • ${selectedCommit?.relativeDate}"
+                                        else -> ""
                                     },
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
@@ -227,23 +245,25 @@ fun GitReviewScreen(
                             }
                         },
                         actions = {
-                            FilterChip(
-                                selected = isFullFileMode,
-                                onClick = { viewModel.toggleFullFileMode() },
-                                label = { Text(if (isFullFileMode) "Full File" else "Diff Only") },
-                                leadingIcon = {
-                                    Icon(
-                                        imageVector = if (isFullFileMode) {
-                                            Icons.Default.Visibility
-                                        } else {
-                                            Icons.Default.UnfoldMore
-                                        },
-                                        contentDescription = "Toggle full file mode",
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                },
-                                modifier = Modifier.padding(end = 8.dp)
-                            )
+                            if (selectedFile != null) {
+                                FilterChip(
+                                    selected = isFullFileMode,
+                                    onClick = { viewModel.toggleFullFileMode() },
+                                    label = { Text(if (isFullFileMode) "Full File" else "Diff Only") },
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = if (isFullFileMode) {
+                                                Icons.Default.Visibility
+                                            } else {
+                                                Icons.Default.UnfoldMore
+                                            },
+                                            contentDescription = "Toggle full file mode",
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    },
+                                    modifier = Modifier.padding(end = 8.dp)
+                                )
+                            }
                         },
                         colors = TopAppBarDefaults.topAppBarColors(
                             containerColor = MaterialTheme.colorScheme.surface
@@ -254,6 +274,7 @@ fun GitReviewScreen(
                 Box(modifier = modifier.fillMaxSize().padding(padding)) {
                     DiffViewer(
                         selectedFile = selectedFile,
+                        selectedCommit = selectedCommit,
                         diffText = selectedFileDiff,
                         isLoading = isDiffLoading,
                         isFullFileMode = isFullFileMode,
@@ -266,7 +287,16 @@ fun GitReviewScreen(
             FileChangesList(
                 uiState = uiState,
                 selectedFile = null,
+                selectedCommit = null,
+                isStagedExpanded = isStagedExpanded,
+                isUnstagedExpanded = isUnstagedExpanded,
+                isCommitsExpanded = isCommitsExpanded,
+                onToggleStagedExpanded = { viewModel.toggleStagedExpanded() },
+                onToggleUnstagedExpanded = { viewModel.toggleUnstagedExpanded() },
+                onToggleCommitsExpanded = { viewModel.toggleCommitsExpanded() },
                 onFileSelected = { viewModel.selectFile(it) },
+                onCommitSelected = { viewModel.selectCommit(it) },
+                onLoadMoreCommits = { viewModel.loadMoreCommits() },
                 onStage = { viewModel.stageFile(it) },
                 onUnstage = { viewModel.unstageFile(it) },
                 onDiscard = { discardConfirmFile = it },
@@ -405,7 +435,16 @@ private fun highlightCode(code: String, isDark: Boolean): androidx.compose.ui.te
 fun FileChangesList(
     uiState: ReviewUiState,
     selectedFile: GitFileStatus?,
+    selectedCommit: GitCommit? = null,
+    isStagedExpanded: Boolean = true,
+    isUnstagedExpanded: Boolean = true,
+    isCommitsExpanded: Boolean = true,
+    onToggleStagedExpanded: () -> Unit = {},
+    onToggleUnstagedExpanded: () -> Unit = {},
+    onToggleCommitsExpanded: () -> Unit = {},
     onFileSelected: (GitFileStatus) -> Unit,
+    onCommitSelected: (GitCommit) -> Unit = {},
+    onLoadMoreCommits: () -> Unit = {},
     onStage: (GitFileStatus) -> Unit,
     onUnstage: (GitFileStatus) -> Unit,
     onDiscard: (GitFileStatus) -> Unit,
@@ -510,7 +549,7 @@ fun FileChangesList(
                             if (uiState.stagedFiles.isEmpty() && uiState.unstagedFiles.isEmpty()) {
                                 item {
                                     Box(
-                                        modifier = Modifier.fillParentMaxSize().padding(32.dp),
+                                        modifier = Modifier.fillMaxWidth().padding(32.dp),
                                         contentAlignment = Alignment.Center
                                     ) {
                                         Column(
@@ -539,85 +578,130 @@ fun FileChangesList(
                             } else {
                                 if (uiState.stagedFiles.isNotEmpty()) {
                                     item {
-                                        SectionHeader(title = "Staged Changes (${uiState.stagedFiles.size})")
+                                        SectionHeader(
+                                            title = "Staged Changes (${uiState.stagedFiles.size})",
+                                            isExpanded = isStagedExpanded,
+                                            onToggle = onToggleStagedExpanded
+                                        )
                                     }
-                                    items(uiState.stagedFiles) { file ->
-                                        val isChecked = file in checkedFiles
-                                        FileItem(
-                                            file = file,
-                                            isSelected = selectedFile == file,
-                                            isChecked = isChecked,
-                                            inSelectionMode = inSelectionMode,
-                                            onClick = {
-                                                if (inSelectionMode) {
+                                    if (isStagedExpanded) {
+                                        items(uiState.stagedFiles) { file ->
+                                            val isChecked = file in checkedFiles
+                                            FileItem(
+                                                file = file,
+                                                isSelected = selectedFile == file,
+                                                isChecked = isChecked,
+                                                inSelectionMode = inSelectionMode,
+                                                onClick = {
+                                                    if (inSelectionMode) {
+                                                        checkedFiles = if (isChecked) {
+                                                            checkedFiles - file
+                                                        } else {
+                                                            checkedFiles + file
+                                                        }
+                                                    } else {
+                                                        onFileSelected(file)
+                                                    }
+                                                },
+                                                onLongClick = {
                                                     checkedFiles = if (isChecked) {
                                                         checkedFiles - file
                                                     } else {
                                                         checkedFiles + file
                                                     }
-                                                } else {
-                                                    onFileSelected(file)
-                                                }
-                                            },
-                                            onLongClick = {
-                                                checkedFiles = if (isChecked) {
-                                                    checkedFiles - file
-                                                } else {
-                                                    checkedFiles + file
-                                                }
-                                            },
-                                            onCheckedChange = { checked ->
-                                                checkedFiles = if (checked) {
-                                                    checkedFiles + file
-                                                } else {
-                                                    checkedFiles - file
-                                                }
-                                            },
-                                            onAction = { onUnstage(file) },
-                                            onDiscard = { onDiscard(file) }
-                                        )
+                                                },
+                                                onCheckedChange = { checked ->
+                                                    checkedFiles = if (checked) {
+                                                        checkedFiles + file
+                                                    } else {
+                                                        checkedFiles - file
+                                                    }
+                                                },
+                                                onAction = { onUnstage(file) },
+                                                onDiscard = { onDiscard(file) }
+                                            )
+                                        }
                                     }
                                 }
 
                                 if (uiState.unstagedFiles.isNotEmpty()) {
                                     item {
-                                        SectionHeader(title = "Unstaged Changes (${uiState.unstagedFiles.size})")
+                                        SectionHeader(
+                                            title = "Unstaged Changes (${uiState.unstagedFiles.size})",
+                                            isExpanded = isUnstagedExpanded,
+                                            onToggle = onToggleUnstagedExpanded
+                                        )
                                     }
-                                    items(uiState.unstagedFiles) { file ->
-                                        val isChecked = file in checkedFiles
-                                        FileItem(
-                                            file = file,
-                                            isSelected = selectedFile == file,
-                                            isChecked = isChecked,
-                                            inSelectionMode = inSelectionMode,
-                                            onClick = {
-                                                if (inSelectionMode) {
+                                    if (isUnstagedExpanded) {
+                                        items(uiState.unstagedFiles) { file ->
+                                            val isChecked = file in checkedFiles
+                                            FileItem(
+                                                file = file,
+                                                isSelected = selectedFile == file,
+                                                isChecked = isChecked,
+                                                inSelectionMode = inSelectionMode,
+                                                onClick = {
+                                                    if (inSelectionMode) {
+                                                        checkedFiles = if (isChecked) {
+                                                            checkedFiles - file
+                                                        } else {
+                                                            checkedFiles + file
+                                                        }
+                                                    } else {
+                                                        onFileSelected(file)
+                                                    }
+                                                },
+                                                onLongClick = {
                                                     checkedFiles = if (isChecked) {
                                                         checkedFiles - file
                                                     } else {
                                                         checkedFiles + file
                                                     }
-                                                } else {
-                                                    onFileSelected(file)
-                                                }
-                                            },
-                                            onLongClick = {
-                                                checkedFiles = if (isChecked) {
-                                                    checkedFiles - file
-                                                } else {
-                                                    checkedFiles + file
-                                                }
-                                            },
-                                            onCheckedChange = { checked ->
-                                                checkedFiles = if (checked) {
-                                                    checkedFiles + file
-                                                } else {
-                                                    checkedFiles - file
-                                                }
-                                            },
-                                            onAction = { onStage(file) },
-                                            onDiscard = { onDiscard(file) }
+                                                },
+                                                onCheckedChange = { checked ->
+                                                    checkedFiles = if (checked) {
+                                                        checkedFiles + file
+                                                    } else {
+                                                        checkedFiles - file
+                                                    }
+                                                },
+                                                onAction = { onStage(file) },
+                                                onDiscard = { onDiscard(file) }
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            if (uiState.recentCommits.isNotEmpty()) {
+                                item {
+                                    SectionHeader(
+                                        title = "Commit History (${uiState.recentCommits.size})",
+                                        isExpanded = isCommitsExpanded,
+                                        onToggle = onToggleCommitsExpanded
+                                    )
+                                }
+                                if (isCommitsExpanded) {
+                                    items(uiState.recentCommits) { commit ->
+                                        CommitItem(
+                                            commit = commit,
+                                            isSelected = selectedCommit == commit,
+                                            onClick = { onCommitSelected(commit) }
                                         )
+                                    }
+                                    if (uiState.hasMoreCommits) {
+                                        item {
+                                            Box(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(vertical = 8.dp),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                TextButton(onClick = onLoadMoreCommits) {
+                                                    Text("Load More Commits")
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -752,13 +836,30 @@ fun M3FloatingToolbar(
 }
 
 @Composable
-fun SectionHeader(title: String) {
-    Text(
-        text = title,
-        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
-        color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
-    )
+fun SectionHeader(
+    title: String,
+    isExpanded: Boolean,
+    onToggle: () -> Unit
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onToggle() }
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+            color = MaterialTheme.colorScheme.primary
+        )
+        Icon(
+            imageVector = if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+            contentDescription = if (isExpanded) "Collapse $title" else "Expand $title",
+            tint = MaterialTheme.colorScheme.primary
+        )
+    }
 }
 
 @Suppress("LongParameterList", "LongMethod", "CyclomaticComplexMethod")
@@ -849,8 +950,125 @@ fun FileItem(
                 }
             }
         }
+    HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
+    }
+}
+
+@Suppress("LongMethod")
+@Composable
+fun CommitItem(
+    commit: GitCommit,
+    isSelected: Boolean,
+    onClick: () -> Unit
+) {
+    val bg = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f) else Color.Transparent
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(bg)
+            .clickable { onClick() }
+            .padding(vertical = 6.dp, horizontal = 16.dp)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Icon(
+                imageVector = Icons.Default.Commit,
+                contentDescription = "Commit",
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(20.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Surface(
+                shape = RoundedCornerShape(4.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                modifier = Modifier.padding(end = 8.dp)
+            ) {
+                Text(
+                    text = commit.shortHash,
+                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                )
+            }
+            Text(
+                text = commit.subject,
+                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
+            )
+        }
+        Spacer(modifier = Modifier.height(2.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(start = 28.dp),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(
+                text = commit.author,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = commit.relativeDate,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+            )
+        }
+        Spacer(modifier = Modifier.height(4.dp))
         HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
     }
+}
+
+@Composable
+fun CommitDiffHeader(commit: GitCommit) {
+    Surface(
+        tonalElevation = 2.dp,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = commit.subject,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
+                Surface(
+                    shape = RoundedCornerShape(4.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    modifier = Modifier.padding(start = 8.dp)
+                ) {
+                    Text(
+                        text = commit.shortHash,
+                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                    )
+                }
+            }
+            Text(
+                text = "${commit.author} • ${commit.relativeDate}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+            )
+        }
+    }
+    HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
 }
 
 @Composable
@@ -909,16 +1127,17 @@ fun DiffHeader(
 @Composable
 fun DiffViewer(
     selectedFile: GitFileStatus?,
+    selectedCommit: GitCommit? = null,
     diffText: String?,
     isLoading: Boolean,
     isFullFileMode: Boolean = false,
     onToggleFullFileMode: () -> Unit = {},
     showHeader: Boolean = false
 ) {
-    if (selectedFile == null) {
+    if (selectedFile == null && selectedCommit == null) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Text(
-                "Select a file to view its diff",
+                "Select a file or commit to view details",
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
             )
         }
@@ -927,11 +1146,15 @@ fun DiffViewer(
 
     Column(modifier = Modifier.fillMaxSize()) {
         if (showHeader) {
-            DiffHeader(
-                selectedFile = selectedFile,
-                isFullFileMode = isFullFileMode,
-                onToggleFullFileMode = onToggleFullFileMode
-            )
+            if (selectedFile != null) {
+                DiffHeader(
+                    selectedFile = selectedFile,
+                    isFullFileMode = isFullFileMode,
+                    onToggleFullFileMode = onToggleFullFileMode
+                )
+            } else if (selectedCommit != null) {
+                CommitDiffHeader(commit = selectedCommit)
+            }
         }
 
         Box(modifier = Modifier.fillMaxSize().weight(1f)) {
@@ -1009,6 +1232,110 @@ private fun parseDiffLines(diffText: String): List<ParsedDiffLine> {
     }
 }
 
+data class FileDiffSection(
+    val filePath: String,
+    val lines: List<ParsedDiffLine>
+)
+
+@Suppress("NestedBlockDepth")
+private fun parseFileDiffSections(diffText: String): List<FileDiffSection> {
+    if (diffText.isBlank()) return emptyList()
+
+    val rawLines = diffText.split("\n")
+    val sections = mutableListOf<FileDiffSection>()
+    var currentPath = ""
+    var currentLines = mutableListOf<String>()
+
+    fun flushSection() {
+        if (currentLines.isNotEmpty()) {
+            val parsed = parseDiffLines(currentLines.joinToString("\n"))
+            val path = currentPath.ifBlank { "Diff Details" }
+            sections.add(FileDiffSection(path, parsed))
+            currentLines = mutableListOf()
+            currentPath = ""
+        }
+    }
+
+    rawLines.forEach { line ->
+        if (line.startsWith("diff --git ")) {
+            flushSection()
+            val bPath = if (line.contains(" b/")) line.substringAfter(" b/").trim() else ""
+            val aPath = if (line.contains(" a/")) {
+                line.substringAfter(" a/").substringBefore(" b/").trim()
+            } else ""
+            currentPath = bPath.ifEmpty { aPath }
+            currentLines.add(line)
+        } else {
+            if (currentPath.isEmpty()) {
+                if (line.startsWith("+++ b/")) {
+                    currentPath = line.substringAfter("+++ b/").trim()
+                } else if (line.startsWith("--- a/")) {
+                    currentPath = line.substringAfter("--- a/").trim()
+                }
+            }
+            currentLines.add(line)
+        }
+    }
+    flushSection()
+
+    return sections.ifEmpty {
+        listOf(FileDiffSection("Diff Details", parseDiffLines(diffText)))
+    }
+}
+
+@Composable
+fun FileDiffHeader(
+    filePath: String,
+    isCollapsed: Boolean,
+    onToggleCollapse: () -> Unit
+) {
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        tonalElevation = 2.dp,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onToggleCollapse() }
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.weight(1f)
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.InsertDriveFile,
+                    contentDescription = "File",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = filePath,
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace
+                    ),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Icon(
+                imageVector = if (isCollapsed) Icons.Default.ExpandMore else Icons.Default.ExpandLess,
+                contentDescription = if (isCollapsed) "Expand $filePath" else "Collapse $filePath",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+    HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+}
+
+@Suppress("LongMethod")
 @Composable
 fun DiffContent(
     diffText: String,
@@ -1024,10 +1351,12 @@ fun DiffContent(
     val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val fallbackColor = MaterialTheme.colorScheme.onSurface
 
-    val parsedLines = remember(diffText) { parseDiffLines(diffText) }
+    val sections = remember(diffText) { parseFileDiffSections(diffText) }
+    var collapsedSections by remember { mutableStateOf(setOf<String>()) }
 
-    val maxLineNum = remember(parsedLines) {
-        parsedLines.maxOfOrNull {
+    val allParsedLines = remember(sections) { sections.flatMap { it.lines } }
+    val maxLineNum = remember(allParsedLines) {
+        allParsedLines.maxOfOrNull {
             maxOf(it.oldLineNum.toIntOrNull() ?: 0, it.newLineNum.toIntOrNull() ?: 0)
         } ?: 0
     }
@@ -1048,14 +1377,36 @@ fun DiffContent(
             .fillMaxSize()
             .transformable(state = transformState)
     ) {
-        DiffRowsLayout(
-            parsedLines = parsedLines,
-            dims = dims,
-            scrollState = scrollState,
-            horizScrollState = horizScrollState,
-            isDark = isDark,
-            fallbackColor = fallbackColor
-        )
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(scrollState)
+                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.1f))
+        ) {
+            sections.forEach { section ->
+                FileDiffHeader(
+                    filePath = section.filePath,
+                    isCollapsed = section.filePath in collapsedSections,
+                    onToggleCollapse = {
+                        collapsedSections = if (section.filePath in collapsedSections) {
+                            collapsedSections - section.filePath
+                        } else {
+                            collapsedSections + section.filePath
+                        }
+                    }
+                )
+
+                if (section.filePath !in collapsedSections) {
+                    DiffRowsLayout(
+                        parsedLines = section.lines,
+                        dims = dims,
+                        horizScrollState = horizScrollState,
+                        isDark = isDark,
+                        fallbackColor = fallbackColor
+                    )
+                }
+            }
+        }
 
         if (fontScale != 1f) {
             Surface(
@@ -1082,16 +1433,12 @@ fun DiffContent(
 private fun DiffRowsLayout(
     parsedLines: List<ParsedDiffLine>,
     dims: ScaledDiffDimensions,
-    scrollState: androidx.compose.foundation.ScrollState,
     horizScrollState: androidx.compose.foundation.ScrollState,
     isDark: Boolean,
     fallbackColor: Color
 ) {
     Row(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(scrollState)
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.1f))
+        modifier = Modifier.fillMaxWidth()
     ) {
         LineNumberColumn(
             parsedLines = parsedLines,

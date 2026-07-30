@@ -11,7 +11,9 @@ sealed interface ReviewUiState {
     object Loading : ReviewUiState
     data class Success(
         val stagedFiles: List<GitFileStatus>,
-        val unstagedFiles: List<GitFileStatus>
+        val unstagedFiles: List<GitFileStatus>,
+        val recentCommits: List<GitCommit> = emptyList(),
+        val hasMoreCommits: Boolean = true
     ) : ReviewUiState
     data class Error(val message: String) : ReviewUiState
 }
@@ -23,6 +25,15 @@ data class GitFileStatus(
     val isStaged: Boolean
 )
 
+data class GitCommit(
+    val hash: String,
+    val shortHash: String,
+    val author: String,
+    val relativeDate: String,
+    val subject: String
+)
+
+@Suppress("TooManyFunctions")
 class ReviewViewModel(
     private val execCommand: suspend (String) -> String,
     private val workspaceDir: StateFlow<String>
@@ -33,6 +44,9 @@ class ReviewViewModel(
 
     private val _selectedFile = MutableStateFlow<GitFileStatus?>(null)
     val selectedFile = _selectedFile.asStateFlow()
+
+    private val _selectedCommit = MutableStateFlow<GitCommit?>(null)
+    val selectedCommit = _selectedCommit.asStateFlow()
 
     private val _selectedFileDiff = MutableStateFlow<String?>(null)
     val selectedFileDiff = _selectedFileDiff.asStateFlow()
@@ -48,6 +62,27 @@ class ReviewViewModel(
 
     private val _isCommitInProgress = MutableStateFlow(false)
     val isCommitInProgress = _isCommitInProgress.asStateFlow()
+
+    private val _isStagedExpanded = MutableStateFlow(true)
+    val isStagedExpanded = _isStagedExpanded.asStateFlow()
+
+    private val _isUnstagedExpanded = MutableStateFlow(true)
+    val isUnstagedExpanded = _isUnstagedExpanded.asStateFlow()
+
+    private val _isCommitsExpanded = MutableStateFlow(true)
+    val isCommitsExpanded = _isCommitsExpanded.asStateFlow()
+
+    fun toggleStagedExpanded() {
+        _isStagedExpanded.value = !_isStagedExpanded.value
+    }
+
+    fun toggleUnstagedExpanded() {
+        _isUnstagedExpanded.value = !_isUnstagedExpanded.value
+    }
+
+    fun toggleCommitsExpanded() {
+        _isCommitsExpanded.value = !_isCommitsExpanded.value
+    }
 
     private companion object {
         const val COMMIT_EXIT_MARKER = "__REVIEW_COMMIT_EXIT__"
@@ -82,16 +117,58 @@ class ReviewViewModel(
         }
     }
 
+    private suspend fun fetchCommits(repoRoot: String, limit: Int = 15, skip: Int = 0): List<GitCommit> {
+        return try {
+            val command = "export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; cd \"$repoRoot\" && " +
+                "git log --skip=$skip -n $limit --pretty=format:\"%H|%h|%an|%ar|%s\""
+            val output = execCommand(command)
+            output.lines().filter { it.isNotBlank() }.mapNotNull { line ->
+                val parts = line.split('|')
+                if (parts.size >= 5) {
+                    val subject = parts.drop(4).joinToString("|")
+                    GitCommit(
+                        hash = parts[0],
+                        shortHash = parts[1],
+                        author = parts[2],
+                        relativeDate = parts[3],
+                        subject = subject
+                    )
+                } else {
+                    null
+                }
+            }
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    fun loadMoreCommits() {
+        val currentState = _uiState.value as? ReviewUiState.Success ?: return
+        val currentCommits = currentState.recentCommits
+        viewModelScope.launch {
+            val dir = workspaceDir.value
+            val repoRoot = getRepoRoot(dir)
+            val nextCommits = fetchCommits(repoRoot, limit = 15, skip = currentCommits.size)
+            val updatedList = currentCommits + nextCommits
+            _uiState.value = currentState.copy(
+                recentCommits = updatedList,
+                hasMoreCommits = nextCommits.size == 15
+            )
+        }
+    }
+
+    @Suppress("LongMethod")
     fun refresh() {
         viewModelScope.launch {
             _uiState.value = ReviewUiState.Loading
             _selectedFile.value = null
+            _selectedCommit.value = null
             _selectedFileDiff.value = null
             val dir = workspaceDir.value
             try {
                 val repoRoot = getRepoRoot(dir)
-                // Ensure we handle PATH correctly on remote machines
-                val command = "export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; cd \"$repoRoot\" && git status --porcelain"
+                val command = "export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; " +
+                    "cd \"$repoRoot\" && git status --porcelain"
                 val output = execCommand(command)
                 
                 val staged = mutableListOf<GitFileStatus>()
@@ -104,7 +181,6 @@ class ReviewViewModel(
                         val col1 = line[1]
                         val rawPath = line.substring(3).trim()
                         
-                        // Parse path, handle quotes and renames
                         val cleanPath = if (rawPath.contains(" -> ")) {
                             rawPath.substringAfter(" -> ").trim().removeSurrounding("\"").trimEnd('/')
                         } else {
@@ -135,7 +211,13 @@ class ReviewViewModel(
                     }
                 }
                 
-                _uiState.value = ReviewUiState.Success(staged, unstaged)
+                val initialCommits = fetchCommits(repoRoot, limit = 15, skip = 0)
+                _uiState.value = ReviewUiState.Success(
+                    stagedFiles = staged,
+                    unstagedFiles = unstaged,
+                    recentCommits = initialCommits,
+                    hasMoreCommits = initialCommits.size == 15
+                )
             } catch (e: Exception) {
                 _uiState.value = ReviewUiState.Error(e.localizedMessage ?: "Failed to get git status")
             }
@@ -144,7 +226,39 @@ class ReviewViewModel(
 
     fun selectFile(file: GitFileStatus) {
         _selectedFile.value = file
+        _selectedCommit.value = null
         loadDiff(file)
+    }
+
+    fun selectCommit(commit: GitCommit) {
+        _selectedCommit.value = commit
+        _selectedFile.value = null
+        loadCommitDiff(commit)
+    }
+
+    fun deselectFile() {
+        _selectedFile.value = null
+        _selectedCommit.value = null
+        _selectedFileDiff.value = null
+    }
+
+    private fun loadCommitDiff(commit: GitCommit) {
+        viewModelScope.launch {
+            _isDiffLoading.value = true
+            _selectedFileDiff.value = null
+            val dir = workspaceDir.value
+            try {
+                val repoRoot = getRepoRoot(dir)
+                val command = "export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; cd \"$repoRoot\" && " +
+                    "git show --stat -p \"${commit.hash}\""
+                val diffOutput = execCommand(command)
+                _selectedFileDiff.value = diffOutput
+            } catch (e: Exception) {
+                _selectedFileDiff.value = "Failed to load commit diff: ${e.localizedMessage}"
+            } finally {
+                _isDiffLoading.value = false
+            }
+        }
     }
 
     private fun loadDiff(file: GitFileStatus) {
@@ -307,11 +421,6 @@ class ReviewViewModel(
                 _isCommitInProgress.value = false
             }
         }
-    }
-
-    fun deselectFile() {
-        _selectedFile.value = null
-        _selectedFileDiff.value = null
     }
 
     fun clearErrorMessage() {

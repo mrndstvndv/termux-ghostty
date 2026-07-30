@@ -249,14 +249,10 @@ fun SftpFileBrowser(
                                                     }
                                                 }
                                             },
-                                            supportingContent = {
+                                            supportingContent = run {
                                                 val lastModified = formatLastModified(file.modifiedTime)
                                                 val desc = if (file.isDirectory) {
-                                                    if (lastModified.isNotEmpty()) {
-                                                        "Directory • $lastModified"
-                                                    } else {
-                                                        "Directory"
-                                                    }
+                                                    lastModified
                                                 } else {
                                                     val sizeStr = formatBytes(file.size)
                                                     if (lastModified.isNotEmpty()) {
@@ -265,10 +261,16 @@ fun SftpFileBrowser(
                                                         sizeStr
                                                     }
                                                 }
-                                                Text(
-                                                    text = desc,
-                                                    style = MaterialTheme.typography.bodySmall
-                                                )
+                                                if (desc.isNotEmpty()) {
+                                                    {
+                                                        Text(
+                                                            text = desc,
+                                                            style = MaterialTheme.typography.bodySmall
+                                                        )
+                                                    }
+                                                } else {
+                                                    null
+                                                }
                                             },
                                             leadingContent = {
                                                 Icon(

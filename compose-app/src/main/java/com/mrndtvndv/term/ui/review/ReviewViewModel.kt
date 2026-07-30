@@ -447,6 +447,43 @@ class ReviewViewModel(
         }
     }
 
+    @Suppress("LongMethod")
+    fun renameCommit(commit: GitCommit, newSubject: String) {
+        viewModelScope.launch {
+            _isCommitInProgress.value = true
+            val dir = workspaceDir.value
+            try {
+                val repoRoot = getRepoRoot(dir)
+                val escapedSubject = shellQuote(newSubject)
+                val pathEnv = "export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; "
+                val headHash = try {
+                    execCommand(
+                        pathEnv + "cd ${shellQuote(repoRoot)} && git rev-parse HEAD"
+                    ).trim()
+                } catch (e: Exception) {
+                    ""
+                }
+                val isHead = headHash == commit.hash ||
+                    (headHash.isNotEmpty() && headHash.startsWith(commit.shortHash))
+
+                val command = if (isHead) {
+                    pathEnv + "cd ${shellQuote(repoRoot)} && " +
+                        "git commit --amend -m $escapedSubject"
+                } else {
+                    pathEnv + "cd ${shellQuote(repoRoot)} && " +
+                        "git rebase -x \"if [ \\\$(git rev-parse HEAD) = '${commit.hash}' ]; " +
+                        "then git commit --amend -m $escapedSubject; fi\" \"${commit.hash}^\""
+                }
+                execCommand(command)
+                refresh()
+            } catch (e: Exception) {
+                _errorMessage.value = "Failed to rename commit: ${e.localizedMessage}"
+            } finally {
+                _isCommitInProgress.value = false
+            }
+        }
+    }
+
     fun clearErrorMessage() {
         _errorMessage.value = null
     }

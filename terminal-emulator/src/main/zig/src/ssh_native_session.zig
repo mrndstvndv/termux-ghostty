@@ -261,7 +261,7 @@ pub const SshNativeSession = struct {
     }
 
     pub fn start(self: *SshNativeSession) !void {
-        self.thread = try std.Thread.spawn(.{}, runLoop, .{self});
+        self.thread = try std.Thread.spawn(.{ .allocator = self.allocator }, runLoop, .{self});
     }
 
     pub fn deinit(self: *SshNativeSession, env: ?*c.JNIEnv) void {

@@ -67,8 +67,63 @@ fun GitReviewScreen(
     var discardConfirmFile by remember { mutableStateOf<GitFileStatus?>(null) }
     var showCommitDialog by remember { mutableStateOf(false) }
     var commitMessage by remember { mutableStateOf("") }
+    var renameCommitTarget by remember { mutableStateOf<GitCommit?>(null) }
+    var renameCommitSubject by remember { mutableStateOf("") }
 
     val stagedFileCount = (uiState as? ReviewUiState.Success)?.stagedFiles?.size ?: 0
+
+    if (renameCommitTarget != null) {
+        AlertDialog(
+            onDismissRequest = { if (!isCommitInProgress) renameCommitTarget = null },
+            title = { Text("Edit Commit Message") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "Commit ${renameCommitTarget?.shortHash}",
+                        style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                    )
+                    OutlinedTextField(
+                        value = renameCommitSubject,
+                        onValueChange = { renameCommitSubject = it },
+                        label = { Text("Commit Message") },
+                        enabled = !isCommitInProgress,
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val commit = renameCommitTarget
+                        if (commit != null && renameCommitSubject.isNotBlank()) {
+                            viewModel.renameCommit(commit, renameCommitSubject.trim())
+                        }
+                        renameCommitTarget = null
+                    },
+                    enabled = renameCommitSubject.isNotBlank() && !isCommitInProgress
+                ) {
+                    if (isCommitInProgress) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp
+                        )
+                    } else {
+                        Text("Save")
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { renameCommitTarget = null },
+                    enabled = !isCommitInProgress
+                ) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
 
     if (showCommitDialog) {
         AlertDialog(
@@ -183,6 +238,10 @@ fun GitReviewScreen(
                     onToggleCommitsExpanded = { viewModel.toggleCommitsExpanded() },
                     onFileSelected = { viewModel.selectFile(it) },
                     onCommitSelected = { viewModel.selectCommit(it) },
+                    onRenameCommitClick = { commit ->
+                        renameCommitTarget = commit
+                        renameCommitSubject = commit.subject
+                    },
                     onLoadMoreCommits = { viewModel.loadMoreCommits() },
                     onStage = { viewModel.stageFile(it) },
                     onUnstage = { viewModel.unstageFile(it) },
@@ -299,6 +358,10 @@ fun GitReviewScreen(
                 onToggleCommitsExpanded = { viewModel.toggleCommitsExpanded() },
                 onFileSelected = { viewModel.selectFile(it) },
                 onCommitSelected = { viewModel.selectCommit(it) },
+                onRenameCommitClick = { commit ->
+                    renameCommitTarget = commit
+                    renameCommitSubject = commit.subject
+                },
                 onLoadMoreCommits = { viewModel.loadMoreCommits() },
                 onStage = { viewModel.stageFile(it) },
                 onUnstage = { viewModel.unstageFile(it) },
@@ -448,6 +511,7 @@ fun FileChangesList(
     onToggleCommitsExpanded: () -> Unit = {},
     onFileSelected: (GitFileStatus) -> Unit,
     onCommitSelected: (GitCommit) -> Unit = {},
+    onRenameCommitClick: (GitCommit) -> Unit = {},
     onLoadMoreCommits: () -> Unit = {},
     onStage: (GitFileStatus) -> Unit,
     onUnstage: (GitFileStatus) -> Unit,
@@ -690,7 +754,8 @@ fun FileChangesList(
                                         CommitItem(
                                             commit = commit,
                                             isSelected = selectedCommit == commit,
-                                            onClick = { onCommitSelected(commit) }
+                                            onClick = { onCommitSelected(commit) },
+                                            onRenameClick = { onRenameCommitClick(commit) }
                                         )
                                     }
                                     if (uiState.hasMoreCommits) {
@@ -958,73 +1023,100 @@ fun FileItem(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Suppress("LongMethod")
 @Composable
 fun CommitItem(
     commit: GitCommit,
     isSelected: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onRenameClick: () -> Unit = {}
 ) {
     val bg = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f) else Color.Transparent
+    var showMenu by remember { mutableStateOf(false) }
 
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(bg)
-            .clickable { onClick() }
-            .padding(vertical = 6.dp, horizontal = 16.dp)
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth()
+    Box(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(bg)
+                .combinedClickable(
+                    onClick = onClick,
+                    onLongClick = { showMenu = true }
+                )
+                .padding(vertical = 6.dp, horizontal = 16.dp)
         ) {
-            Icon(
-                imageVector = Icons.Default.Commit,
-                contentDescription = "Commit",
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(20.dp)
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Surface(
-                shape = RoundedCornerShape(4.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant,
-                modifier = Modifier.padding(end = 8.dp)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
             ) {
+                Icon(
+                    imageVector = Icons.Default.Commit,
+                    contentDescription = "Commit",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Surface(
+                    shape = RoundedCornerShape(4.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    modifier = Modifier.padding(end = 8.dp)
+                ) {
+                    Text(
+                        text = commit.shortHash,
+                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                    )
+                }
                 Text(
-                    text = commit.shortHash,
-                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                    text = commit.subject,
+                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
                 )
             }
-            Text(
-                text = commit.subject,
-                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f)
-            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(start = 28.dp),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = commit.author,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = commit.relativeDate,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                )
+            }
+            Spacer(modifier = Modifier.height(4.dp))
+            HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
         }
-        Spacer(modifier = Modifier.height(2.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(start = 28.dp),
-            horizontalArrangement = Arrangement.SpaceBetween
+
+        DropdownMenu(
+            expanded = showMenu,
+            onDismissRequest = { showMenu = false }
         ) {
-            Text(
-                text = commit.author,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(
-                text = commit.relativeDate,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+            DropdownMenuItem(
+                text = { Text("Edit Commit Message") },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.Edit,
+                        contentDescription = "Edit Commit Message"
+                    )
+                },
+                onClick = {
+                    showMenu = false
+                    onRenameClick()
+                }
             )
         }
-        Spacer(modifier = Modifier.height(4.dp))
-        HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
     }
 }
 

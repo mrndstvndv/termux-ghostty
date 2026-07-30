@@ -393,9 +393,10 @@ pub export fn Java_com_termux_terminal_GhosttyNative_nativeConsumeNotificationTi
 
     const jni = env orelse return null;
     const owned_ptr = core.termux_ghostty_session_consume_notification_title(sessionFromHandle(native_handle)) orelse return null;
-    const owned = std.mem.span(owned_ptr);
-    defer native_allocator.free(owned);
-    return newJStringFromUtf8(jni, owned);
+    const owned_slice = std.mem.span(owned_ptr);
+    const owned_sentinel_slice = owned_ptr[0..owned_slice.len :0];
+    defer native_allocator.free(owned_sentinel_slice);
+    return newJStringFromUtf8(jni, owned_slice);
 }
 
 pub export fn Java_com_termux_terminal_GhosttyNative_nativeConsumeNotificationBody(
@@ -407,9 +408,10 @@ pub export fn Java_com_termux_terminal_GhosttyNative_nativeConsumeNotificationBo
 
     const jni = env orelse return null;
     const owned_ptr = core.termux_ghostty_session_consume_notification_body(sessionFromHandle(native_handle)) orelse return null;
-    const owned = std.mem.span(owned_ptr);
-    defer native_allocator.free(owned);
-    return newJStringFromUtf8(jni, owned);
+    const owned_slice = std.mem.span(owned_ptr);
+    const owned_sentinel_slice = owned_ptr[0..owned_slice.len :0];
+    defer native_allocator.free(owned_sentinel_slice);
+    return newJStringFromUtf8(jni, owned_slice);
 }
 
 pub export fn Java_com_termux_terminal_GhosttyNative_nativeGetProgressState(

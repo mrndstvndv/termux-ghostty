@@ -1,7 +1,17 @@
+@file:Suppress("TooManyFunctions")
+
 package com.mrndtvndv.term.ui.review
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.ui.draw.shadow
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -160,6 +170,9 @@ fun GitReviewScreen(
                     onStage = { viewModel.stageFile(it) },
                     onUnstage = { viewModel.unstageFile(it) },
                     onDiscard = { discardConfirmFile = it },
+                    onStageBatch = { viewModel.stageFiles(it) },
+                    onUnstageBatch = { viewModel.unstageFiles(it) },
+                    onDiscardBatch = { viewModel.discardFiles(it) },
                     onCommit = { showCommitDialog = true },
                     isCommitInProgress = isCommitInProgress,
                     onRefresh = { viewModel.refresh() }
@@ -257,6 +270,9 @@ fun GitReviewScreen(
                 onStage = { viewModel.stageFile(it) },
                 onUnstage = { viewModel.unstageFile(it) },
                 onDiscard = { discardConfirmFile = it },
+                onStageBatch = { viewModel.stageFiles(it) },
+                onUnstageBatch = { viewModel.unstageFiles(it) },
+                onDiscardBatch = { viewModel.discardFiles(it) },
                 onCommit = { showCommitDialog = true },
                 isCommitInProgress = isCommitInProgress,
                 onRefresh = { viewModel.refresh() },
@@ -384,7 +400,7 @@ private fun highlightCode(code: String, isDark: Boolean): androidx.compose.ui.te
     return builder.toAnnotatedString()
 }
 
-@Suppress("LongParameterList", "LongMethod")
+@Suppress("LongParameterList", "LongMethod", "CyclomaticComplexMethod")
 @Composable
 fun FileChangesList(
     uiState: ReviewUiState,
@@ -393,17 +409,61 @@ fun FileChangesList(
     onStage: (GitFileStatus) -> Unit,
     onUnstage: (GitFileStatus) -> Unit,
     onDiscard: (GitFileStatus) -> Unit,
+    onStageBatch: (List<GitFileStatus>) -> Unit,
+    onUnstageBatch: (List<GitFileStatus>) -> Unit,
+    onDiscardBatch: (List<GitFileStatus>) -> Unit,
     onCommit: () -> Unit,
     isCommitInProgress: Boolean,
     onRefresh: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val stagedFiles = (uiState as? ReviewUiState.Success)?.stagedFiles.orEmpty()
+    val unstagedFiles = (uiState as? ReviewUiState.Success)?.unstagedFiles.orEmpty()
+    val allFiles = remember(stagedFiles, unstagedFiles) { stagedFiles + unstagedFiles }
+
+    var checkedFiles by remember { mutableStateOf(setOf<GitFileStatus>()) }
+    var showBatchDiscardDialog by remember { mutableStateOf(false) }
+
+    LaunchedEffect(allFiles) {
+        checkedFiles = checkedFiles.filter { it in allFiles }.toSet()
+    }
+
+    if (showBatchDiscardDialog && checkedFiles.isNotEmpty()) {
+        AlertDialog(
+            onDismissRequest = { showBatchDiscardDialog = false },
+            title = { Text("Discard ${checkedFiles.size} Changes?") },
+            text = {
+                Text(
+                    "Are you sure you want to discard all local changes to the ${checkedFiles.size} " +
+                        "selected file(s)? This cannot be undone."
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        onDiscardBatch(checkedFiles.toList())
+                        checkedFiles = emptySet()
+                        showBatchDiscardDialog = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text("Discard All")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showBatchDiscardDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    val inSelectionMode = checkedFiles.isNotEmpty()
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
         floatingActionButton = {
-            if (stagedFiles.isNotEmpty()) {
+            if (stagedFiles.isNotEmpty() && !inSelectionMode) {
                 FloatingActionButton(
                     onClick = { if (!isCommitInProgress) onCommit() },
                 ) {
@@ -422,92 +482,270 @@ fun FileChangesList(
             }
         }
     ) { contentPadding ->
-        PullToRefreshBox(
-            isRefreshing = uiState is ReviewUiState.Loading,
-            onRefresh = onRefresh,
-            modifier = Modifier.fillMaxSize().padding(contentPadding)
-        ) {
-            when (uiState) {
-                is ReviewUiState.Loading -> {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator()
+        Box(modifier = Modifier.fillMaxSize()) {
+            PullToRefreshBox(
+                isRefreshing = uiState is ReviewUiState.Loading,
+                onRefresh = onRefresh,
+                modifier = Modifier.fillMaxSize().padding(contentPadding)
+            ) {
+                when (uiState) {
+                    is ReviewUiState.Loading -> {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator()
+                        }
                     }
-                }
-                is ReviewUiState.Error -> {
-                    Box(
-                        modifier = Modifier.fillMaxSize().padding(16.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(text = uiState.message, color = MaterialTheme.colorScheme.error)
+                    is ReviewUiState.Error -> {
+                        Box(
+                            modifier = Modifier.fillMaxSize().padding(16.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(text = uiState.message, color = MaterialTheme.colorScheme.error)
+                        }
                     }
-                }
-                is ReviewUiState.Success -> {
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(top = 8.dp, bottom = 88.dp)
-                    ) {
-                        if (uiState.stagedFiles.isEmpty() && uiState.unstagedFiles.isEmpty()) {
-                            item {
-                                Box(
-                                    modifier = Modifier.fillParentMaxSize().padding(32.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Column(
-                                        horizontalAlignment = Alignment.CenterHorizontally,
-                                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    is ReviewUiState.Success -> {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(top = 8.dp, bottom = 88.dp)
+                        ) {
+                            if (uiState.stagedFiles.isEmpty() && uiState.unstagedFiles.isEmpty()) {
+                                item {
+                                    Box(
+                                        modifier = Modifier.fillParentMaxSize().padding(32.dp),
+                                        contentAlignment = Alignment.Center
                                     ) {
-                                        Icon(
-                                            imageVector = Icons.Default.CheckCircle,
-                                            contentDescription = "Clean",
-                                            tint = Color(0xFF2EA043),
-                                            modifier = Modifier.size(48.dp)
-                                        )
-                                        Text(
-                                            "Working Tree Clean",
-                                            style = MaterialTheme.typography.titleMedium,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                        Text(
-                                            "No staged or unstaged changes found.",
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                        Column(
+                                            horizontalAlignment = Alignment.CenterHorizontally,
+                                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.CheckCircle,
+                                                contentDescription = "Clean",
+                                                tint = Color(0xFF2EA043),
+                                                modifier = Modifier.size(48.dp)
+                                            )
+                                            Text(
+                                                "Working Tree Clean",
+                                                style = MaterialTheme.typography.titleMedium,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                            Text(
+                                                "No staged or unstaged changes found.",
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                            )
+                                        }
+                                    }
+                                }
+                            } else {
+                                if (uiState.stagedFiles.isNotEmpty()) {
+                                    item {
+                                        SectionHeader(title = "Staged Changes (${uiState.stagedFiles.size})")
+                                    }
+                                    items(uiState.stagedFiles) { file ->
+                                        val isChecked = file in checkedFiles
+                                        FileItem(
+                                            file = file,
+                                            isSelected = selectedFile == file,
+                                            isChecked = isChecked,
+                                            inSelectionMode = inSelectionMode,
+                                            onClick = {
+                                                if (inSelectionMode) {
+                                                    checkedFiles = if (isChecked) {
+                                                        checkedFiles - file
+                                                    } else {
+                                                        checkedFiles + file
+                                                    }
+                                                } else {
+                                                    onFileSelected(file)
+                                                }
+                                            },
+                                            onLongClick = {
+                                                checkedFiles = if (isChecked) {
+                                                    checkedFiles - file
+                                                } else {
+                                                    checkedFiles + file
+                                                }
+                                            },
+                                            onCheckedChange = { checked ->
+                                                checkedFiles = if (checked) {
+                                                    checkedFiles + file
+                                                } else {
+                                                    checkedFiles - file
+                                                }
+                                            },
+                                            onAction = { onUnstage(file) },
+                                            onDiscard = { onDiscard(file) }
                                         )
                                     }
                                 }
-                            }
-                        } else {
-                            if (uiState.stagedFiles.isNotEmpty()) {
-                                item {
-                                    SectionHeader(title = "Staged Changes (${uiState.stagedFiles.size})")
-                                }
-                                items(uiState.stagedFiles) { file ->
-                                    FileItem(
-                                        file = file,
-                                        isSelected = selectedFile == file,
-                                        onClick = { onFileSelected(file) },
-                                        onAction = { onUnstage(file) },
-                                        onDiscard = { onDiscard(file) }
-                                    )
-                                }
-                            }
 
-                            if (uiState.unstagedFiles.isNotEmpty()) {
-                                item {
-                                    SectionHeader(title = "Unstaged Changes (${uiState.unstagedFiles.size})")
-                                }
-                                items(uiState.unstagedFiles) { file ->
-                                    FileItem(
-                                        file = file,
-                                        isSelected = selectedFile == file,
-                                        onClick = { onFileSelected(file) },
-                                        onAction = { onStage(file) },
-                                        onDiscard = { onDiscard(file) }
-                                    )
+                                if (uiState.unstagedFiles.isNotEmpty()) {
+                                    item {
+                                        SectionHeader(title = "Unstaged Changes (${uiState.unstagedFiles.size})")
+                                    }
+                                    items(uiState.unstagedFiles) { file ->
+                                        val isChecked = file in checkedFiles
+                                        FileItem(
+                                            file = file,
+                                            isSelected = selectedFile == file,
+                                            isChecked = isChecked,
+                                            inSelectionMode = inSelectionMode,
+                                            onClick = {
+                                                if (inSelectionMode) {
+                                                    checkedFiles = if (isChecked) {
+                                                        checkedFiles - file
+                                                    } else {
+                                                        checkedFiles + file
+                                                    }
+                                                } else {
+                                                    onFileSelected(file)
+                                                }
+                                            },
+                                            onLongClick = {
+                                                checkedFiles = if (isChecked) {
+                                                    checkedFiles - file
+                                                } else {
+                                                    checkedFiles + file
+                                                }
+                                            },
+                                            onCheckedChange = { checked ->
+                                                checkedFiles = if (checked) {
+                                                    checkedFiles + file
+                                                } else {
+                                                    checkedFiles - file
+                                                }
+                                            },
+                                            onAction = { onStage(file) },
+                                            onDiscard = { onDiscard(file) }
+                                        )
+                                    }
                                 }
                             }
                         }
                     }
                 }
+            }
+
+            AnimatedVisibility(
+                visible = inSelectionMode,
+                enter = slideInVertically { it } + fadeIn(),
+                exit = slideOutVertically { it } + fadeOut(),
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 16.dp)
+            ) {
+                val selectedList = checkedFiles.toList()
+                val selectedStaged = selectedList.filter { it.isStaged }
+                val selectedUnstaged = selectedList.filter { !it.isStaged }
+
+                M3FloatingToolbar(
+                    stagedCount = selectedStaged.size,
+                    unstagedCount = selectedUnstaged.size,
+                    onStageSelected = {
+                        if (selectedUnstaged.isNotEmpty()) {
+                            onStageBatch(selectedUnstaged)
+                            checkedFiles = emptySet()
+                        }
+                    },
+                    onUnstageSelected = {
+                        if (selectedStaged.isNotEmpty()) {
+                            onUnstageBatch(selectedStaged)
+                            checkedFiles = emptySet()
+                        }
+                    },
+                    onDiscardSelected = {
+                        showBatchDiscardDialog = true
+                    },
+                    onSelectAll = {
+                        checkedFiles = if (checkedFiles.size == allFiles.size) {
+                            emptySet()
+                        } else {
+                            allFiles.toSet()
+                        }
+                    },
+                    onClearSelection = {
+                        checkedFiles = emptySet()
+                    }
+                )
+            }
+        }
+    }
+}
+
+@Suppress("LongParameterList", "LongMethod", "CyclomaticComplexMethod")
+@Composable
+fun M3FloatingToolbar(
+    stagedCount: Int,
+    unstagedCount: Int,
+    onStageSelected: () -> Unit,
+    onUnstageSelected: () -> Unit,
+    onDiscardSelected: () -> Unit,
+    onSelectAll: () -> Unit,
+    onClearSelection: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier
+            .shadow(elevation = 8.dp, shape = RoundedCornerShape(28.dp)),
+        shape = RoundedCornerShape(28.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+        tonalElevation = 6.dp
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            if (unstagedCount > 0) {
+                IconButton(onClick = onStageSelected) {
+                    Icon(
+                        imageVector = Icons.Default.AddCircleOutline,
+                        contentDescription = "Stage selected",
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+
+            if (stagedCount > 0) {
+                IconButton(onClick = onUnstageSelected) {
+                    Icon(
+                        imageVector = Icons.Default.RemoveCircleOutline,
+                        contentDescription = "Unstage selected",
+                        tint = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
+
+            IconButton(onClick = onDiscardSelected) {
+                Icon(
+                    imageVector = Icons.Default.Restore,
+                    contentDescription = "Discard selected",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            VerticalDivider(
+                modifier = Modifier
+                    .height(20.dp)
+                    .padding(horizontal = 2.dp),
+                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+            )
+
+            IconButton(onClick = onSelectAll) {
+                Icon(
+                    imageVector = Icons.Default.SelectAll,
+                    contentDescription = "Select all",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            IconButton(onClick = onClearSelection) {
+                Icon(
+                    imageVector = Icons.Default.Close,
+                    contentDescription = "Clear selection",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
     }
@@ -523,38 +761,62 @@ fun SectionHeader(title: String) {
     )
 }
 
+@Suppress("LongParameterList", "LongMethod", "CyclomaticComplexMethod")
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun FileItem(
     file: GitFileStatus,
     isSelected: Boolean,
+    isChecked: Boolean,
+    inSelectionMode: Boolean,
     onClick: () -> Unit,
+    onLongClick: () -> Unit,
+    onCheckedChange: (Boolean) -> Unit,
     onAction: () -> Unit,
     onDiscard: () -> Unit
 ) {
-    val bg = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f) else Color.Transparent
+    val bg = when {
+        isChecked -> MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)
+        isSelected -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
+        else -> Color.Transparent
+    }
+    val normalizedPath = file.path.trimEnd('/')
+    val fileName = normalizedPath.substringAfterLast('/').ifEmpty { file.path }
+    val parentDir = if (normalizedPath.contains('/')) normalizedPath.substringBeforeLast('/') else null
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .background(bg)
-            .clickable { onClick() }
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick
+            )
             .padding(vertical = 4.dp, horizontal = 16.dp)
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.fillMaxWidth()
         ) {
+            if (inSelectionMode) {
+                Checkbox(
+                    checked = isChecked,
+                    onCheckedChange = onCheckedChange,
+                    modifier = Modifier.padding(end = 8.dp)
+                )
+            }
             StatusBadge(status = file.status)
             Spacer(modifier = Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = file.path.substringAfterLast('/'),
+                    text = fileName,
                     style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                if (file.path.contains('/')) {
+                if (!parentDir.isNullOrEmpty()) {
                     Text(
-                        text = file.path.substringBeforeLast('/'),
+                        text = parentDir,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
                         maxLines = 1,
@@ -562,19 +824,29 @@ fun FileItem(
                     )
                 }
             }
-            IconButton(onClick = onAction) {
-                Icon(
-                    imageVector = if (file.isStaged) Icons.Default.RemoveCircleOutline else Icons.Default.AddCircleOutline,
-                    contentDescription = if (file.isStaged) "Unstage" else "Stage",
-                    tint = if (file.isStaged) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
-                )
-            }
-            IconButton(onClick = onDiscard) {
-                Icon(
-                    imageVector = Icons.Default.Restore,
-                    contentDescription = "Discard Changes",
-                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                )
+            if (!inSelectionMode) {
+                IconButton(onClick = onAction) {
+                    Icon(
+                        imageVector = if (file.isStaged) {
+                            Icons.Default.RemoveCircleOutline
+                        } else {
+                            Icons.Default.AddCircleOutline
+                        },
+                        contentDescription = if (file.isStaged) "Unstage" else "Stage",
+                        tint = if (file.isStaged) {
+                            MaterialTheme.colorScheme.error
+                        } else {
+                            MaterialTheme.colorScheme.primary
+                        }
+                    )
+                }
+                IconButton(onClick = onDiscard) {
+                    Icon(
+                        imageVector = Icons.Default.Restore,
+                        contentDescription = "Discard Changes",
+                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                    )
+                }
             }
         }
         HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))

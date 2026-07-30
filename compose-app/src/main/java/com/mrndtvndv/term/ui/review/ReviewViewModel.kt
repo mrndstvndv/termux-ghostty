@@ -97,7 +97,8 @@ class ReviewViewModel(
                 val staged = mutableListOf<GitFileStatus>()
                 val unstaged = mutableListOf<GitFileStatus>()
 
-                output.split("\n").forEach { line ->
+                output.lines().forEach { rawLine ->
+                    val line = rawLine.trimEnd('\r')
                     if (line.length >= 4) {
                         val col0 = line[0]
                         val col1 = line[1]
@@ -105,9 +106,9 @@ class ReviewViewModel(
                         
                         // Parse path, handle quotes and renames
                         val cleanPath = if (rawPath.contains(" -> ")) {
-                            rawPath.substringAfter(" -> ").trim().removeSurrounding("\"")
+                            rawPath.substringAfter(" -> ").trim().removeSurrounding("\"").trimEnd('/')
                         } else {
-                            rawPath.removeSurrounding("\"")
+                            rawPath.removeSurrounding("\"").trimEnd('/')
                         }
 
                         if (col0 != ' ' && col0 != '?') {
@@ -178,61 +179,80 @@ class ReviewViewModel(
         }
     }
 
-    fun stageFile(file: GitFileStatus) {
+    fun stageFiles(files: List<GitFileStatus>) {
+        if (files.isEmpty()) return
         viewModelScope.launch {
             val dir = workspaceDir.value
             try {
                 val repoRoot = getRepoRoot(dir)
-                val command = "export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; cd \"$repoRoot\" && git add \"${file.path}\""
+                val pathsArg = files.joinToString(" ") { "\"${it.path}\"" }
+                val command = "export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; " +
+                    "cd \"$repoRoot\" && git add -- $pathsArg"
                 execCommand(command)
                 refresh()
             } catch (e: Exception) {
-                _errorMessage.value = "Failed to stage file: ${e.localizedMessage}"
+                _errorMessage.value = "Failed to stage files: ${e.localizedMessage}"
             }
         }
     }
 
-    fun unstageFile(file: GitFileStatus) {
+    fun unstageFiles(files: List<GitFileStatus>) {
+        if (files.isEmpty()) return
         viewModelScope.launch {
             val dir = workspaceDir.value
             try {
                 val repoRoot = getRepoRoot(dir)
-                // Try restore first, fallback to reset
-                val command = "export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; cd \"$repoRoot\" && (git restore --staged -- \"${file.path}\" || git reset HEAD -- \"${file.path}\")"
+                val pathsArg = files.joinToString(" ") { "\"${it.path}\"" }
+                val command = "export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; " +
+                    "cd \"$repoRoot\" && (git restore --staged -- $pathsArg || git reset HEAD -- $pathsArg)"
                 execCommand(command)
                 refresh()
             } catch (e: Exception) {
-                _errorMessage.value = "Failed to unstage file: ${e.localizedMessage}"
+                _errorMessage.value = "Failed to unstage files: ${e.localizedMessage}"
             }
         }
     }
 
-    fun discardFileChanges(file: GitFileStatus) {
+    fun discardFiles(files: List<GitFileStatus>) {
+        if (files.isEmpty()) return
         viewModelScope.launch {
             val dir = workspaceDir.value
             try {
                 val repoRoot = getRepoRoot(dir)
-                val command = when {
-                    file.status == "??" -> {
-                        // Delete untracked file
-                        "cd \"$repoRoot\" && rm -rf \"${file.path}\""
-                    }
-                    file.isStaged -> {
-                        // First unstage, then restore
-                        "export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; cd \"$repoRoot\" && (git restore --staged -- \"${file.path}\" || git reset HEAD -- \"${file.path}\") && (git restore -- \"${file.path}\" || git checkout -- \"${file.path}\")"
-                    }
-                    else -> {
-                        // Restore unstaged file
-                        "export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; cd \"$repoRoot\" && (git restore -- \"${file.path}\" || git checkout -- \"${file.path}\")"
-                    }
+                val untracked = files.filter { it.status == "??" }
+                val staged = files.filter { it.isStaged && it.status != "??" }
+                val unstaged = files.filter { !it.isStaged && it.status != "??" }
+
+                val commands = mutableListOf<String>()
+                if (untracked.isNotEmpty()) {
+                    val pathsArg = untracked.joinToString(" ") { "\"${it.path}\"" }
+                    commands.add("rm -rf $pathsArg")
                 }
-                execCommand(command)
+                if (staged.isNotEmpty()) {
+                    val pathsArg = staged.joinToString(" ") { "\"${it.path}\"" }
+                    commands.add("(git restore --staged -- $pathsArg || git reset HEAD -- $pathsArg) && " +
+                        "(git restore -- $pathsArg || git checkout -- $pathsArg)")
+                }
+                if (unstaged.isNotEmpty()) {
+                    val pathsArg = unstaged.joinToString(" ") { "\"${it.path}\"" }
+                    commands.add("(git restore -- $pathsArg || git checkout -- $pathsArg)")
+                }
+
+                if (commands.isNotEmpty()) {
+                    val fullCommand = "export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; " +
+                        "cd \"$repoRoot\" && " + commands.joinToString(" && ")
+                    execCommand(fullCommand)
+                }
                 refresh()
             } catch (e: Exception) {
-                _errorMessage.value = "Failed to discard changes: ${e.localizedMessage}"
+                _errorMessage.value = "Failed to discard files: ${e.localizedMessage}"
             }
         }
     }
+
+    fun stageFile(file: GitFileStatus) = stageFiles(listOf(file))
+    fun unstageFile(file: GitFileStatus) = unstageFiles(listOf(file))
+    fun discardFileChanges(file: GitFileStatus) = discardFiles(listOf(file))
 
     fun commit(message: String) {
         if (_isCommitInProgress.value) return

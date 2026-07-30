@@ -12,9 +12,13 @@ class UserPrefs {
     private val _useCustomFontForWholeUi = MutableStateFlow(false)
     val useCustomFontForWholeUi: StateFlow<Boolean> = _useCustomFontForWholeUi.asStateFlow()
 
+    private val _nativeLogcatLoggingEnabled = MutableStateFlow(false)
+    val nativeLogcatLoggingEnabled: StateFlow<Boolean> = _nativeLogcatLoggingEnabled.asStateFlow()
+
     fun init(prefs: SharedPreferences) {
         _customFontName.value = prefs.getString("custom_font_name", null)
         _useCustomFontForWholeUi.value = prefs.getBoolean("use_custom_font_for_whole_ui", false)
+        _nativeLogcatLoggingEnabled.value = prefs.getBoolean("native_logcat_logging_enabled", false)
     }
 
     fun setCustomFontName(name: String?, prefs: SharedPreferences) {
@@ -25,5 +29,10 @@ class UserPrefs {
     fun setUseCustomFontForWholeUi(enabled: Boolean, prefs: SharedPreferences) {
         _useCustomFontForWholeUi.value = enabled
         prefs.edit().putBoolean("use_custom_font_for_whole_ui", enabled).apply()
+    }
+
+    fun setNativeLogcatLoggingEnabled(enabled: Boolean, prefs: SharedPreferences) {
+        _nativeLogcatLoggingEnabled.value = enabled
+        prefs.edit().putBoolean("native_logcat_logging_enabled", enabled).apply()
     }
 }

@@ -14,6 +14,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalContext
+import android.widget.Toast
+import com.mrndtvndv.term.NativeLogcatLogger
 import com.mrndtvndv.term.ui.keyboard.PresetArrowsOnly
 import com.mrndtvndv.term.ui.keyboard.PresetDoubleRow
 import com.mrndtvndv.term.ui.keyboard.PresetSingleRow
@@ -48,6 +51,8 @@ fun SettingsScreen(
     onUseInAppBrowserChange: (Boolean) -> Unit,
     unconditionalSoftKeyboardOnTap: Boolean = true,
     onUnconditionalSoftKeyboardOnTapChange: (Boolean) -> Unit = {},
+    nativeLogcatLoggingEnabled: Boolean = false,
+    onNativeLogcatLoggingEnabledChange: (Boolean) -> Unit = {},
     onBack: () -> Unit
 ) {
     val scrollState = rememberScrollState()
@@ -487,7 +492,108 @@ fun SettingsScreen(
                     }
                 }
             }
-            
+
+            // Native & Debug Logs Settings
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                )
+            ) {
+                val context = LocalContext.current
+                var logSizeText by remember { mutableStateOf(NativeLogcatLogger.getLogFileSizeMb(context)) }
+                var crashDetected by remember { mutableStateOf(NativeLogcatLogger.hasDetectedNativeCrash(context)) }
+
+                Column(
+                    modifier = Modifier
+                        .padding(24.dp)
+                        .fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Text(
+                        text = "NATIVE & DEBUG LOGS",
+                        style = MaterialTheme.typography.headlineSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        textAlign = TextAlign.Center
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Native Logcat Crash Logger", style = MaterialTheme.typography.bodyLarge)
+                            Text(
+                                text = "Continuously record logcat buffer in background to " +
+                                    "capture random JNI, Zig, libssh, or SFTP native library crashes",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = nativeLogcatLoggingEnabled,
+                            onCheckedChange = { enabled ->
+                                onNativeLogcatLoggingEnabledChange(enabled)
+                                logSizeText = NativeLogcatLogger.getLogFileSizeMb(context)
+                                crashDetected = NativeLogcatLogger.hasDetectedNativeCrash(context)
+                            }
+                        )
+                    }
+
+                    if (crashDetected) {
+                        Text(
+                            text = "⚠️ Native crash (SIGSEGV / SIGABRT) detected in log file!",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.error,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+
+                    Text(
+                        text = "Log File Size: $logSizeText",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = {
+                                val path = NativeLogcatLogger.exportLogToDownloads(context)
+                                if (path != null) {
+                                    Toast.makeText(context, "Log exported to $path", Toast.LENGTH_LONG).show()
+                                } else {
+                                    Toast.makeText(
+                                        context,
+                                        "Failed to export log or log is empty",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                }
+                            },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Export Log")
+                        }
+
+                        OutlinedButton(
+                            onClick = {
+                                NativeLogcatLogger.clearLog(context)
+                                logSizeText = NativeLogcatLogger.getLogFileSizeMb(context)
+                                crashDetected = NativeLogcatLogger.hasDetectedNativeCrash(context)
+                                Toast.makeText(context, "Native log cleared", Toast.LENGTH_SHORT).show()
+                            },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Clear Log")
+                        }
+                    }
+                }
+            }
+
             Spacer(modifier = Modifier.height(16.dp))
         }
     }

@@ -15,6 +15,10 @@ class TermApplication : Application() {
             previousHandler?.uncaughtException(thread, throwable)
                 ?: Log.e(TAG, "Uncaught exception", throwable)
         }
+        val prefs = getSharedPreferences("ssh_prefs", MODE_PRIVATE)
+        if (prefs.getBoolean("native_logcat_logging_enabled", false)) {
+            NativeLogcatLogger.start(this)
+        }
     }
 
     private companion object {

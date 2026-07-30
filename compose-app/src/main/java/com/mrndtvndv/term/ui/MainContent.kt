@@ -19,6 +19,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import com.mrndtvndv.term.MainViewModel
+import com.mrndtvndv.term.NativeLogcatLogger
 import com.mrndtvndv.term.ScreenState
 import com.mrndtvndv.term.domain.ServerConfig
 import com.mrndtvndv.term.ui.addserver.AddServerScreen
@@ -59,6 +60,8 @@ fun MainContent(
     val savedServers by viewModel.savedServers
     val customFontName by viewModel.userPrefs.customFontName.collectAsState()
     val useCustomFontForWholeUi by viewModel.userPrefs.useCustomFontForWholeUi.collectAsState()
+    val nativeLogcatLoggingEnabled by viewModel.userPrefs.nativeLogcatLoggingEnabled.collectAsState()
+    val context = LocalContext.current
     val notification by viewModel.notificationState.notification.collectAsState()
     val navigator = rememberAppNavigator(
         activeTab = uiState.activeTab,
@@ -212,6 +215,15 @@ fun MainContent(
                                     unconditionalSoftKeyboardOnTap = enabled
                                     sharedPreferences.edit()
                                         .putBoolean("unconditional_soft_keyboard_on_tap", enabled).apply()
+                                },
+                                nativeLogcatLoggingEnabled = nativeLogcatLoggingEnabled,
+                                onNativeLogcatLoggingEnabledChange = { enabled ->
+                                    viewModel.userPrefs.setNativeLogcatLoggingEnabled(enabled, sharedPreferences)
+                                    if (enabled) {
+                                        NativeLogcatLogger.start(context)
+                                    } else {
+                                        NativeLogcatLogger.stop()
+                                    }
                                 },
                                 onBack = { navigator.goBack() },
                             )

@@ -42,6 +42,9 @@ class SftpViewModel(
     private val _downloadState = MutableStateFlow<SftpDownloadState?>(null)
     val downloadState = _downloadState.asStateFlow()
 
+    private val _isRefreshing = MutableStateFlow(false)
+    val isRefreshing = _isRefreshing.asStateFlow()
+
     private var downloadJob: Job? = null
 
     var onPathChanged: ((String) -> Unit)? = null
@@ -57,7 +60,11 @@ class SftpViewModel(
     fun navigateTo(path: String) {
         currentPath = path
         viewModelScope.launch {
-            _uiState.value = SftpUiState.Loading
+            if (_uiState.value !is SftpUiState.Success) {
+                _uiState.value = SftpUiState.Loading
+            } else {
+                _isRefreshing.value = true
+            }
             try {
                 val list = client.listFiles(path).sortedWith(
                     compareBy<SftpFile> { !it.isDirectory }.thenBy { it.name.lowercase() }
@@ -86,7 +93,11 @@ class SftpViewModel(
                 _uiState.value = SftpUiState.Success(path, list, gitStatuses)
                 onPathChanged?.invoke(path)
             } catch (e: Exception) {
-                _uiState.value = SftpUiState.Error(e.localizedMessage ?: "Failed to load directory")
+                if (_uiState.value !is SftpUiState.Success) {
+                    _uiState.value = SftpUiState.Error(e.localizedMessage ?: "Failed to load directory")
+                }
+            } finally {
+                _isRefreshing.value = false
             }
         }
     }

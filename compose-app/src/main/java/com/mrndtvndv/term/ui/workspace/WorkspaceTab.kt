@@ -9,7 +9,7 @@ sealed interface WorkspaceTab {
     val title: String
         get() = when (this) {
             Terminal -> "Terminal"
-            Sftp -> "SFTP Explorer"
+            Sftp -> "SFTP"
             Review -> "Review"
             Browser -> "Browser"
         }

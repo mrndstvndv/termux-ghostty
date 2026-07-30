@@ -21,7 +21,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.navigation3.runtime.NavBackStack
 import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.entryProvider
@@ -56,16 +58,35 @@ private fun parsePathSegments(path: String): List<PathSegment> {
     return segments
 }
 
+private fun isPathPrefix(prefix: String, fullPath: String): Boolean {
+    if (prefix == fullPath || prefix == "/") return true
+    val formattedPrefix = if (prefix.endsWith("/")) prefix else "$prefix/"
+    return fullPath.startsWith(formattedPrefix)
+}
+
 @Composable
 fun SftpBreadcrumbs(
-    path: String,
+    currentPath: String,
     onSegmentClick: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val segments = remember(path) { parsePathSegments(path) }
+    var trailPath by remember { mutableStateOf(currentPath) }
+
+    LaunchedEffect(currentPath) {
+        if (!isPathPrefix(currentPath, trailPath)) {
+            trailPath = currentPath
+        }
+    }
+
+    val segments = remember(trailPath) { parsePathSegments(trailPath) }
+    val activeIndex = remember(currentPath, segments) {
+        val idx = segments.indexOfLast { it.fullPath == currentPath }
+        if (idx != -1) idx else segments.lastIndex
+    }
+
     val scrollState = rememberScrollState()
 
-    LaunchedEffect(path) {
+    LaunchedEffect(currentPath, activeIndex) {
         scrollState.animateScrollTo(scrollState.maxValue)
     }
 
@@ -77,24 +98,25 @@ fun SftpBreadcrumbs(
         verticalAlignment = Alignment.CenterVertically
     ) {
         segments.forEachIndexed { index, segment ->
-            val isLast = index == segments.size - 1
+            val isLastInSegments = index == segments.size - 1
+            val isActive = index == activeIndex
             Text(
                 text = segment.name,
-                style = if (isLast) {
+                style = if (isActive) {
                     MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)
                 } else {
                     MaterialTheme.typography.bodyMedium
                 },
-                color = if (isLast) {
+                color = if (isActive) {
                     MaterialTheme.colorScheme.onSurface
                 } else {
                     MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                 },
                 modifier = Modifier
-                    .clickable(enabled = !isLast) { onSegmentClick(segment.fullPath) }
+                    .clickable(enabled = !isActive) { onSegmentClick(segment.fullPath) }
                     .padding(vertical = 4.dp, horizontal = 4.dp)
             )
-            if (!isLast) {
+            if (!isLastInSegments) {
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
                     contentDescription = null,
@@ -181,16 +203,17 @@ fun SftpFileBrowser(
             entry<SftpNavKey.Folder> {
                 Column(modifier = modifier.fillMaxSize()) {
                     SftpBreadcrumbs(
-                        path = viewModel.currentPath,
+                        currentPath = viewModel.currentPath,
                         onSegmentClick = { targetPath ->
-                            while (
-                                sftpBackStack.size > 1 &&
-                                (sftpBackStack.lastOrNull() as? SftpNavKey.Folder)?.path != targetPath
-                            ) {
-                                sftpBackStack.removeLastOrNull()
-                            }
-                            if ((sftpBackStack.lastOrNull() as? SftpNavKey.Folder)?.path != targetPath) {
+                            if (sftpBackStack.none { (it as? SftpNavKey.Folder)?.path == targetPath }) {
                                 sftpBackStack.add(SftpNavKey.Folder(targetPath))
+                            } else {
+                                while (
+                                    sftpBackStack.size > 1 &&
+                                    (sftpBackStack.lastOrNull() as? SftpNavKey.Folder)?.path != targetPath
+                                ) {
+                                    sftpBackStack.removeLastOrNull()
+                                }
                             }
                             viewModel.navigateTo(targetPath)
                         }

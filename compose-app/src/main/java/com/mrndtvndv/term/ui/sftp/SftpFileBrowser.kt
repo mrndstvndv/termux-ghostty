@@ -21,9 +21,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.navigation3.runtime.NavBackStack
 import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.entryProvider
@@ -58,26 +56,13 @@ private fun parsePathSegments(path: String): List<PathSegment> {
     return segments
 }
 
-private fun isPathPrefix(prefix: String, fullPath: String): Boolean {
-    if (prefix == fullPath || prefix == "/") return true
-    val formattedPrefix = if (prefix.endsWith("/")) prefix else "$prefix/"
-    return fullPath.startsWith(formattedPrefix)
-}
-
 @Composable
 fun SftpBreadcrumbs(
     currentPath: String,
+    trailPath: String,
     onSegmentClick: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var trailPath by remember { mutableStateOf(currentPath) }
-
-    LaunchedEffect(currentPath) {
-        if (!isPathPrefix(currentPath, trailPath)) {
-            trailPath = currentPath
-        }
-    }
-
     val segments = remember(trailPath) { parsePathSegments(trailPath) }
     val activeIndex = remember(currentPath, segments) {
         val idx = segments.indexOfLast { it.fullPath == currentPath }
@@ -141,6 +126,7 @@ fun SftpFileBrowser(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val isRefreshing by viewModel.isRefreshing.collectAsState()
+    val trailPath by viewModel.trailPath.collectAsState()
     val downloadState by viewModel.downloadState.collectAsState()
     val context = LocalContext.current
 
@@ -204,6 +190,7 @@ fun SftpFileBrowser(
                 Column(modifier = modifier.fillMaxSize()) {
                     SftpBreadcrumbs(
                         currentPath = viewModel.currentPath,
+                        trailPath = trailPath,
                         onSegmentClick = { targetPath ->
                             if (sftpBackStack.none { (it as? SftpNavKey.Folder)?.path == targetPath }) {
                                 sftpBackStack.add(SftpNavKey.Folder(targetPath))

@@ -164,31 +164,20 @@ pub export fn Java_com_termux_terminal_GhosttyNative_nativeAppend(
 ) jint {
     _ = clazz;
 
-    const jni = env orelse {
-        ghostty_log.err("jni nativeAppend missing env handle=0x{x}", .{native_handle});
-        return 0;
-    };
-    const handle = sessionFromHandle(native_handle) orelse {
-        ghostty_log.err("jni nativeAppend invalid handle=0x{x}", .{native_handle});
-        return 0;
-    };
-    if (length <= 0) {
+    const jni = env orelse return 0;
+    const handle = sessionFromHandle(native_handle) orelse return 0;
+    if (data == null or length <= 0 or offset < 0) {
         return 0;
     }
 
     const count = std.math.cast(usize, length) orelse return 0;
-    var stack_buffer: [4096]u8 = undefined;
-    var heap_buffer: ?[]u8 = null;
-    const bytes: []u8 = if (count <= stack_buffer.len)
-        stack_buffer[0..count]
-    else blk: {
-        const allocated = native_allocator.alloc(u8, count) catch return 0;
-        heap_buffer = allocated;
-        break :blk allocated;
-    };
-    defer if (heap_buffer) |allocated| native_allocator.free(allocated);
+    const offset_u = std.math.cast(usize, offset) orelse return 0;
 
-    jni.*.*.GetByteArrayRegion.?(jni, data, offset, length, @ptrCast(bytes.ptr));
+    const raw_ptr = jni.*.*.GetPrimitiveArrayCritical.?(jni, data, null) orelse return 0;
+    defer jni.*.*.ReleasePrimitiveArrayCritical.?(jni, data, raw_ptr, c.JNI_ABORT);
+
+    const bytes_ptr: [*]const u8 = @ptrCast(raw_ptr);
+    const bytes = bytes_ptr[offset_u .. offset_u + count];
     return @intCast(core.termux_ghostty_session_append(handle, bytes.ptr, bytes.len));
 }
 
@@ -204,25 +193,21 @@ pub export fn Java_com_termux_terminal_GhosttyNative_nativeDrainPendingOutput(
 
     const jni = env orelse return 0;
     const handle = sessionFromHandle(native_handle) orelse return 0;
-    if (length <= 0) {
+    if (buffer == null or length <= 0 or offset < 0) {
         return 0;
     }
 
     const count = std.math.cast(usize, length) orelse return 0;
-    var stack_buffer: [4096]u8 = undefined;
-    var heap_buffer: ?[]u8 = null;
-    const out: []u8 = if (count <= stack_buffer.len)
-        stack_buffer[0..count]
-    else blk: {
-        const allocated = native_allocator.alloc(u8, count) catch return 0;
-        heap_buffer = allocated;
-        break :blk allocated;
-    };
-    defer if (heap_buffer) |allocated| native_allocator.free(allocated);
+    const offset_u = std.math.cast(usize, offset) orelse return 0;
+
+    const raw_ptr = jni.*.*.GetPrimitiveArrayCritical.?(jni, buffer, null) orelse return 0;
+    defer jni.*.*.ReleasePrimitiveArrayCritical.?(jni, buffer, raw_ptr, 0);
+
+    const bytes_ptr: [*]u8 = @ptrCast(raw_ptr);
+    const out = bytes_ptr[offset_u .. offset_u + count];
 
     const written = core.termux_ghostty_session_drain_pending_output(handle, out.ptr, out.len);
     if (written > 0) {
-        jni.*.*.SetByteArrayRegion.?(jni, buffer, offset, @intCast(written), @ptrCast(out.ptr));
         ghostty_log.debug("jni nativeDrainPendingOutput handle=0x{x} wrote={}", .{ native_handle, written });
     }
     return @intCast(written);
@@ -747,23 +732,18 @@ pub export fn Java_com_termux_terminal_GhosttyNative_nativeSshWrite(
 ) void {
     _ = clazz;
     const jni = env orelse return;
-    if (session_handle <= 0 or data == null or length <= 0) return;
+    if (session_handle <= 0 or data == null or length <= 0 or offset < 0) return;
 
     const session = @as(*ssh.SshNativeSession, @ptrFromInt(@as(usize, @intCast(session_handle))));
 
     const count = std.math.cast(usize, length) orelse return;
-    var stack_buffer: [2048]u8 = undefined;
-    var heap_buffer: ?[]u8 = null;
-    const bytes: []u8 = if (count <= stack_buffer.len)
-        stack_buffer[0..count]
-    else blk: {
-        const allocated = native_allocator.alloc(u8, count) catch return;
-        heap_buffer = allocated;
-        break :blk allocated;
-    };
-    defer if (heap_buffer) |allocated| native_allocator.free(allocated);
+    const offset_u = std.math.cast(usize, offset) orelse return;
 
-    jni.*.*.GetByteArrayRegion.?(jni, data, offset, length, @ptrCast(bytes.ptr));
+    const raw_ptr = jni.*.*.GetPrimitiveArrayCritical.?(jni, data, null) orelse return;
+    defer jni.*.*.ReleasePrimitiveArrayCritical.?(jni, data, raw_ptr, c.JNI_ABORT);
+
+    const bytes_ptr: [*]const u8 = @ptrCast(raw_ptr);
+    const bytes = bytes_ptr[offset_u .. offset_u + count];
     session.writeKeystrokes(bytes);
 }
 
@@ -976,13 +956,19 @@ pub export fn Java_com_termux_terminal_GhosttyNative_nativeSftpFileRead(
     _ = clazz;
     const jni = env orelse return -1;
     const session = sshSessionFromHandle(session_handle) orelse return -1;
-    if (file_handle <= 0 or buffer == null or length <= 0) return 0;
+    if (file_handle <= 0 or buffer == null or length <= 0 or offset < 0) return 0;
+
     const count = std.math.cast(usize, length) orelse return -1;
-    const bytes = native_allocator.alloc(u8, count) catch return -1;
-    defer native_allocator.free(bytes);
+    const offset_u = std.math.cast(usize, offset) orelse return -1;
+
+    const raw_ptr = jni.*.*.GetPrimitiveArrayCritical.?(jni, buffer, null) orelse return -1;
+    defer jni.*.*.ReleasePrimitiveArrayCritical.?(jni, buffer, raw_ptr, 0);
+
+    const bytes_ptr: [*]u8 = @ptrCast(raw_ptr);
+    const bytes = bytes_ptr[offset_u .. offset_u + count];
+
     const file: *anyopaque = @ptrFromInt(@as(usize, @intCast(file_handle)));
     const result = session.sftpFileRead(file, bytes);
-    if (result > 0) jni.*.*.SetByteArrayRegion.?(jni, buffer, offset, @intCast(result), @ptrCast(bytes.ptr));
     return @intCast(result);
 }
 
@@ -998,11 +984,17 @@ pub export fn Java_com_termux_terminal_GhosttyNative_nativeSftpFileWrite(
     _ = clazz;
     const jni = env orelse return -1;
     const session = sshSessionFromHandle(session_handle) orelse return -1;
-    if (file_handle <= 0 or buffer == null or length <= 0) return 0;
+    if (file_handle <= 0 or buffer == null or length <= 0 or offset < 0) return 0;
+
     const count = std.math.cast(usize, length) orelse return -1;
-    const bytes = native_allocator.alloc(u8, count) catch return -1;
-    defer native_allocator.free(bytes);
-    jni.*.*.GetByteArrayRegion.?(jni, buffer, offset, length, @ptrCast(bytes.ptr));
+    const offset_u = std.math.cast(usize, offset) orelse return -1;
+
+    const raw_ptr = jni.*.*.GetPrimitiveArrayCritical.?(jni, buffer, null) orelse return -1;
+    defer jni.*.*.ReleasePrimitiveArrayCritical.?(jni, buffer, raw_ptr, c.JNI_ABORT);
+
+    const bytes_ptr: [*]const u8 = @ptrCast(raw_ptr);
+    const bytes = bytes_ptr[offset_u .. offset_u + count];
+
     const file: *anyopaque = @ptrFromInt(@as(usize, @intCast(file_handle)));
     return @intCast(session.sftpFileWrite(file, bytes));
 }

@@ -53,12 +53,24 @@ class SftpViewModel(
         get() = savedStateHandle["current_path"] ?: initialPath
         set(value) { savedStateHandle["current_path"] = value }
 
+    private fun isPathPrefix(prefix: String, fullPath: String): Boolean {
+        if (prefix == fullPath || prefix == "/") return true
+        val formattedPrefix = if (prefix.endsWith("/")) prefix else "$prefix/"
+        return fullPath.startsWith(formattedPrefix)
+    }
+
+    private val _trailPath = MutableStateFlow(currentPath)
+    val trailPath = _trailPath.asStateFlow()
+
     init {
         navigateTo(currentPath)
     }
 
     fun navigateTo(path: String) {
         currentPath = path
+        if (!isPathPrefix(path, _trailPath.value)) {
+            _trailPath.value = path
+        }
         viewModelScope.launch {
             if (_uiState.value !is SftpUiState.Success) {
                 _uiState.value = SftpUiState.Loading

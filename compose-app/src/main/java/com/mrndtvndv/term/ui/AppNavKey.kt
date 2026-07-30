@@ -17,3 +17,15 @@ sealed interface AppNavKey : NavKey {
     @Serializable
     data object Settings : AppNavKey
 }
+
+@Serializable
+sealed interface ReviewNavKey : NavKey {
+    @Serializable
+    data object ChangesList : ReviewNavKey
+
+    @Serializable
+    data class FileDiff(val path: String, val isStaged: Boolean) : ReviewNavKey
+
+    @Serializable
+    data class CommitDiff(val hash: String) : ReviewNavKey
+}

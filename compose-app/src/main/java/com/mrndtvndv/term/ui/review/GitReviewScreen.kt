@@ -2,8 +2,13 @@
 
 package com.mrndtvndv.term.ui.review
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.navigation3.runtime.NavBackStack
+import androidx.navigation3.runtime.NavKey
+import androidx.navigation3.runtime.entryProvider
+import androidx.navigation3.runtime.rememberNavBackStack
+import androidx.navigation3.ui.NavDisplay
+import com.mrndtvndv.term.ui.ReviewNavKey
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -65,10 +70,7 @@ fun GitReviewScreen(
     val configuration = LocalConfiguration.current
     val isWideScreen = configuration.screenWidthDp >= 600
 
-    val isDiffViewOpen = !isWideScreen && (selectedFile != null || selectedCommit != null)
-    BackHandler(enabled = isDiffViewOpen) {
-        viewModel.deselectFile()
-    }
+    val reviewBackStack: NavBackStack<NavKey> = rememberNavBackStack(ReviewNavKey.ChangesList)
 
     var discardConfirmFile by remember { mutableStateOf<GitFileStatus?>(null) }
     var showCommitDialog by remember { mutableStateOf(false) }
@@ -277,110 +279,172 @@ fun GitReviewScreen(
             }
         }
     } else {
-        // Mobile layout: switch between list and diff view
-        if (selectedFile != null || selectedCommit != null) {
-            Scaffold(
-                topBar = {
-                    TopAppBar(
-                        title = {
-                            Column {
-                                Text(
-                                    text = selectedFile?.path ?: selectedCommit?.subject ?: "",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                Text(
-                                    text = when {
-                                        selectedFile?.isStaged == true -> "Staged Changes"
-                                        selectedFile != null -> "Unstaged Changes"
-                                        selectedCommit != null ->
-                                            "Commit ${selectedCommit?.shortHash} • ${selectedCommit?.relativeDate}"
-                                        else -> ""
-                                    },
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                                )
-                            }
+        // Mobile layout: use Navigation 3 backStack for list vs diff view
+        NavDisplay(
+            backStack = reviewBackStack,
+            onBack = {
+                viewModel.deselectFile()
+                reviewBackStack.removeLastOrNull()
+            },
+            entryProvider = entryProvider<NavKey> {
+                entry<ReviewNavKey.ChangesList> {
+                    FileChangesList(
+                        uiState = uiState,
+                        selectedFile = null,
+                        selectedCommit = null,
+                        isStagedExpanded = isStagedExpanded,
+                        isUnstagedExpanded = isUnstagedExpanded,
+                        isCommitsExpanded = isCommitsExpanded,
+                        isRefreshing = isRefreshing,
+                        onToggleStagedExpanded = { viewModel.toggleStagedExpanded() },
+                        onToggleUnstagedExpanded = { viewModel.toggleUnstagedExpanded() },
+                        onToggleCommitsExpanded = { viewModel.toggleCommitsExpanded() },
+                        onFileSelected = { file ->
+                            viewModel.selectFile(file)
+                            reviewBackStack.add(ReviewNavKey.FileDiff(file.path, file.isStaged))
                         },
-                        navigationIcon = {
-                            IconButton(onClick = { viewModel.deselectFile() }) {
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                    contentDescription = "Back"
-                                )
-                            }
+                        onCommitSelected = { commit ->
+                            viewModel.selectCommit(commit)
+                            reviewBackStack.add(ReviewNavKey.CommitDiff(commit.hash))
                         },
-                        actions = {
-                            if (selectedFile != null) {
-                                FilterChip(
-                                    selected = isFullFileMode,
-                                    onClick = { viewModel.toggleFullFileMode() },
-                                    label = { Text(if (isFullFileMode) "Full File" else "Diff Only") },
-                                    leadingIcon = {
-                                        Icon(
-                                            imageVector = if (isFullFileMode) {
-                                                Icons.Default.Visibility
-                                            } else {
-                                                Icons.Default.UnfoldMore
-                                            },
-                                            contentDescription = "Toggle full file mode",
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                    },
-                                    modifier = Modifier.padding(end = 8.dp)
-                                )
-                            }
+                        onRenameCommitClick = { commit ->
+                            renameCommitTarget = commit
+                            renameCommitSubject = commit.subject
                         },
-                        colors = TopAppBarDefaults.topAppBarColors(
-                            containerColor = MaterialTheme.colorScheme.surface
-                        )
+                        onLoadMoreCommits = { viewModel.loadMoreCommits() },
+                        onStage = { viewModel.stageFile(it) },
+                        onUnstage = { viewModel.unstageFile(it) },
+                        onDiscard = { discardConfirmFile = it },
+                        onStageBatch = { viewModel.stageFiles(it) },
+                        onUnstageBatch = { viewModel.unstageFiles(it) },
+                        onDiscardBatch = { viewModel.discardFiles(it) },
+                        onCommit = { showCommitDialog = true },
+                        isCommitInProgress = isCommitInProgress,
+                        onRefresh = { viewModel.refresh() },
+                        modifier = modifier
                     )
                 }
-            ) { padding ->
-                Box(modifier = modifier.fillMaxSize().padding(padding)) {
-                    DiffViewer(
-                        selectedFile = selectedFile,
-                        selectedCommit = selectedCommit,
-                        diffText = selectedFileDiff,
-                        isLoading = isDiffLoading,
-                        isFullFileMode = isFullFileMode,
-                        onToggleFullFileMode = { viewModel.toggleFullFileMode() },
-                        showHeader = false
-                    )
+                entry<ReviewNavKey.FileDiff> { navKey ->
+                    Scaffold(
+                        topBar = {
+                            TopAppBar(
+                                title = {
+                                    Column {
+                                        Text(
+                                            text = selectedFile?.path ?: navKey.path,
+                                            style = MaterialTheme.typography.titleMedium,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            text = if (navKey.isStaged) "Staged Changes" else "Unstaged Changes",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                        )
+                                    }
+                                },
+                                navigationIcon = {
+                                    IconButton(onClick = {
+                                        viewModel.deselectFile()
+                                        reviewBackStack.removeLastOrNull()
+                                    }) {
+                                        Icon(
+                                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                            contentDescription = "Back"
+                                        )
+                                    }
+                                },
+                                actions = {
+                                    FilterChip(
+                                        selected = isFullFileMode,
+                                        onClick = { viewModel.toggleFullFileMode() },
+                                        label = { Text(if (isFullFileMode) "Full File" else "Diff Only") },
+                                        leadingIcon = {
+                                            Icon(
+                                                imageVector = if (isFullFileMode) {
+                                                    Icons.Default.Visibility
+                                                } else {
+                                                    Icons.Default.UnfoldMore
+                                                },
+                                                contentDescription = "Toggle full file mode",
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        },
+                                        modifier = Modifier.padding(end = 8.dp)
+                                    )
+                                },
+                                colors = TopAppBarDefaults.topAppBarColors(
+                                    containerColor = MaterialTheme.colorScheme.surface
+                                )
+                            )
+                        }
+                    ) { padding ->
+                        Box(modifier = modifier.fillMaxSize().padding(padding)) {
+                            DiffViewer(
+                                selectedFile = selectedFile,
+                                selectedCommit = selectedCommit,
+                                diffText = selectedFileDiff,
+                                isLoading = isDiffLoading,
+                                isFullFileMode = isFullFileMode,
+                                onToggleFullFileMode = { viewModel.toggleFullFileMode() },
+                                showHeader = false
+                            )
+                        }
+                    }
+                }
+                entry<ReviewNavKey.CommitDiff> { navKey ->
+                    Scaffold(
+                        topBar = {
+                            TopAppBar(
+                                title = {
+                                    Column {
+                                        Text(
+                                            text = selectedCommit?.subject ?: "Commit Details",
+                                            style = MaterialTheme.typography.titleMedium,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            text = selectedCommit?.let {
+                                                "Commit ${it.shortHash} • ${it.relativeDate}"
+                                            } ?: "Commit ${navKey.hash.take(7)}",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                        )
+                                    }
+                                },
+                                navigationIcon = {
+                                    IconButton(onClick = {
+                                        viewModel.deselectFile()
+                                        reviewBackStack.removeLastOrNull()
+                                    }) {
+                                        Icon(
+                                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                            contentDescription = "Back"
+                                        )
+                                    }
+                                },
+                                colors = TopAppBarDefaults.topAppBarColors(
+                                    containerColor = MaterialTheme.colorScheme.surface
+                                )
+                            )
+                        }
+                    ) { padding ->
+                        Box(modifier = modifier.fillMaxSize().padding(padding)) {
+                            DiffViewer(
+                                selectedFile = selectedFile,
+                                selectedCommit = selectedCommit,
+                                diffText = selectedFileDiff,
+                                isLoading = isDiffLoading,
+                                isFullFileMode = isFullFileMode,
+                                onToggleFullFileMode = { viewModel.toggleFullFileMode() },
+                                showHeader = false
+                            )
+                        }
+                    }
                 }
             }
-        } else {
-            FileChangesList(
-                uiState = uiState,
-                selectedFile = null,
-                selectedCommit = null,
-                isStagedExpanded = isStagedExpanded,
-                isUnstagedExpanded = isUnstagedExpanded,
-                isCommitsExpanded = isCommitsExpanded,
-                isRefreshing = isRefreshing,
-                onToggleStagedExpanded = { viewModel.toggleStagedExpanded() },
-                onToggleUnstagedExpanded = { viewModel.toggleUnstagedExpanded() },
-                onToggleCommitsExpanded = { viewModel.toggleCommitsExpanded() },
-                onFileSelected = { viewModel.selectFile(it) },
-                onCommitSelected = { viewModel.selectCommit(it) },
-                onRenameCommitClick = { commit ->
-                    renameCommitTarget = commit
-                    renameCommitSubject = commit.subject
-                },
-                onLoadMoreCommits = { viewModel.loadMoreCommits() },
-                onStage = { viewModel.stageFile(it) },
-                onUnstage = { viewModel.unstageFile(it) },
-                onDiscard = { discardConfirmFile = it },
-                onStageBatch = { viewModel.stageFiles(it) },
-                onUnstageBatch = { viewModel.unstageFiles(it) },
-                onDiscardBatch = { viewModel.discardFiles(it) },
-                onCommit = { showCommitDialog = true },
-                isCommitInProgress = isCommitInProgress,
-                onRefresh = { viewModel.refresh() },
-                modifier = modifier
-            )
-        }
+        )
     }
 }
 

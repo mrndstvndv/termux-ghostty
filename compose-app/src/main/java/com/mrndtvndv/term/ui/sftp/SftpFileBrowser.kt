@@ -39,8 +39,13 @@ fun SftpFileBrowser(
     // Show progress dialog when downloading to open
     downloadState?.let { state ->
         AlertDialog(
-            onDismissRequest = {},
+            onDismissRequest = { viewModel.cancelDownload() },
             confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { viewModel.cancelDownload() }) {
+                    Text("Cancel")
+                }
+            },
             title = { Text("Downloading File") },
             text = {
                 Column(

@@ -5,6 +5,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.mrndtvndv.term.domain.SftpClient
 import com.mrndtvndv.term.domain.SftpFile
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
@@ -38,6 +41,8 @@ class SftpViewModel(
 
     private val _downloadState = MutableStateFlow<SftpDownloadState?>(null)
     val downloadState = _downloadState.asStateFlow()
+
+    private var downloadJob: Job? = null
 
     var onPathChanged: ((String) -> Unit)? = null
 
@@ -86,27 +91,41 @@ class SftpViewModel(
         }
     }
 
+    @Suppress("SwallowedException")
     fun downloadAndOpenFile(
         file: SftpFile,
         cacheDir: File,
         onFileReady: (File) -> Unit,
         onError: (String) -> Unit
     ) {
-        viewModelScope.launch {
+        downloadJob?.cancel()
+        downloadJob = viewModelScope.launch {
             _downloadState.value = SftpDownloadState(file.name, 0L, file.size, true)
             try {
                 val tempDir = File(cacheDir, "sftp_cache").apply { mkdirs() }
                 val localFile = File(tempDir, file.name)
                 client.downloadFile(file.path, localFile) { progress ->
-                    _downloadState.value = SftpDownloadState(file.name, progress, file.size, true)
+                    if (isActive) {
+                        _downloadState.value = SftpDownloadState(file.name, progress, file.size, true)
+                    }
                 }
+                if (isActive) {
+                    _downloadState.value = null
+                    onFileReady(localFile)
+                }
+            } catch (e: CancellationException) {
                 _downloadState.value = null
-                onFileReady(localFile)
-            } catch (e: java.lang.Exception) {
+            } catch (e: Exception) {
                 _downloadState.value = null
                 onError(e.localizedMessage ?: "Failed to download file")
             }
         }
+    }
+
+    fun cancelDownload() {
+        downloadJob?.cancel()
+        downloadJob = null
+        _downloadState.value = null
     }
 
     fun refresh() {

@@ -361,7 +361,7 @@ private fun formatBytes(bytes: Long): String {
 private fun formatLastModified(mtime: Long): String {
     if (mtime <= 0) return ""
     val date = java.util.Date(mtime)
-    val sdf = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault()).apply {
+    val sdf = java.text.SimpleDateFormat("yyyy-MM-dd hh:mm:ss a", java.util.Locale.getDefault()).apply {
         timeZone = java.util.TimeZone.getDefault()
     }
     return sdf.format(date)

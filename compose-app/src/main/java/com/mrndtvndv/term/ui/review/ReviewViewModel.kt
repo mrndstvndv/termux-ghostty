@@ -13,10 +13,18 @@ sealed interface ReviewUiState {
         val stagedFiles: List<GitFileStatus>,
         val unstagedFiles: List<GitFileStatus>,
         val recentCommits: List<GitCommit> = emptyList(),
-        val hasMoreCommits: Boolean = true
+        val hasMoreCommits: Boolean = true,
+        val currentBranch: String = "",
+        val branches: List<GitBranch> = emptyList()
     ) : ReviewUiState
     data class Error(val message: String) : ReviewUiState
 }
+
+data class GitBranch(
+    val name: String,
+    val isCurrent: Boolean,
+    val isRemote: Boolean = false
+)
 
 data class GitFileStatus(
     val originalPath: String, // the raw path from git status (might include quotes, renames)
@@ -63,6 +71,9 @@ class ReviewViewModel(
     private val _isCommitInProgress = MutableStateFlow(false)
     val isCommitInProgress = _isCommitInProgress.asStateFlow()
 
+    private val _isBranchOperationInProgress = MutableStateFlow(false)
+    val isBranchOperationInProgress = _isBranchOperationInProgress.asStateFlow()
+
     private val _isRefreshing = MutableStateFlow(false)
     val isRefreshing = _isRefreshing.asStateFlow()
 
@@ -89,6 +100,7 @@ class ReviewViewModel(
 
     private companion object {
         const val COMMIT_EXIT_MARKER = "__REVIEW_COMMIT_EXIT__"
+        const val BRANCH_EXIT_MARKER = "__REVIEW_BRANCH_EXIT__"
     }
 
     init {
@@ -157,6 +169,59 @@ class ReviewViewModel(
                 recentCommits = updatedList,
                 hasMoreCommits = nextCommits.size == 15
             )
+        }
+    }
+
+    @Suppress("NestedBlockDepth")
+    private suspend fun fetchBranchInfo(repoRoot: String): Pair<String, List<GitBranch>> {
+        return try {
+            val pathEnv = "export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; "
+            val currentCmd = "$pathEnv cd ${shellQuote(repoRoot)} && git rev-parse --abbrev-ref HEAD"
+            val rawCurrent = execCommand(currentCmd).trim()
+            val currentBranchName = if (rawCurrent == "HEAD") {
+                val shortHashCmd = "$pathEnv cd ${shellQuote(repoRoot)} && git rev-parse --short HEAD"
+                val hash = try { execCommand(shortHashCmd).trim() } catch (e: Exception) { "" }
+                if (hash.isNotEmpty()) "HEAD ($hash)" else "HEAD"
+            } else {
+                rawCurrent
+            }
+
+            val listCmd = "$pathEnv cd ${shellQuote(repoRoot)} && " +
+                "git branch -a --format=\"%(refname)|%(refname:short)|%(HEAD)\""
+            val output = execCommand(listCmd)
+            val branches = mutableListOf<GitBranch>()
+
+            output.lines().forEach { line ->
+                val parts = line.split('|')
+                if (parts.size >= 3) {
+                    val refName = parts[0].trim()
+                    val shortName = parts[1].trim()
+                    val isHead = parts[2].trim() == "*"
+
+                    if (refName.startsWith("refs/heads/")) {
+                        branches.add(
+                            GitBranch(
+                                name = shortName,
+                                isCurrent = isHead || shortName == rawCurrent,
+                                isRemote = false
+                            )
+                        )
+                    } else if (refName.startsWith("refs/remotes/")) {
+                        if (!shortName.endsWith("/HEAD")) {
+                            branches.add(
+                                GitBranch(
+                                    name = shortName,
+                                    isCurrent = isHead,
+                                    isRemote = true
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+            Pair(currentBranchName, branches)
+        } catch (e: Exception) {
+            Pair("", emptyList())
         }
     }
 
@@ -230,11 +295,14 @@ class ReviewViewModel(
                 }
                 
                 val initialCommits = fetchCommits(repoRoot, limit = 15, skip = 0)
+                val (currentBranch, branches) = fetchBranchInfo(repoRoot)
                 _uiState.value = ReviewUiState.Success(
                     stagedFiles = staged,
                     unstagedFiles = unstaged,
                     recentCommits = initialCommits,
-                    hasMoreCommits = initialCommits.size == 15
+                    hasMoreCommits = initialCommits.size == 15,
+                    currentBranch = currentBranch,
+                    branches = branches
                 )
             } catch (e: Exception) {
                 if (_uiState.value !is ReviewUiState.Success) {
@@ -480,6 +548,113 @@ class ReviewViewModel(
                 _errorMessage.value = "Failed to rename commit: ${e.localizedMessage}"
             } finally {
                 _isCommitInProgress.value = false
+            }
+        }
+    }
+
+    @Suppress("LongMethod", "CyclomaticComplexMethod")
+    fun checkoutBranch(branch: GitBranch) {
+        if (_isBranchOperationInProgress.value) return
+        viewModelScope.launch {
+            _isBranchOperationInProgress.value = true
+            val dir = workspaceDir.value
+            try {
+                val repoRoot = getRepoRoot(dir)
+                val targetName = branch.name
+                val pathEnv = "export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; "
+                val command = if (branch.isRemote) {
+                    val localCandidate = targetName.substringAfter('/')
+                    pathEnv + "cd ${shellQuote(repoRoot)} && " +
+                        "(git checkout ${shellQuote(localCandidate)} || " +
+                        "git checkout ${shellQuote(targetName)}) 2>&1; " +
+                        "branchExitCode=\$?; " +
+                        "printf '\\n$BRANCH_EXIT_MARKER%s\\n' \"\$branchExitCode\""
+                } else {
+                    pathEnv + "cd ${shellQuote(repoRoot)} && " +
+                        "git checkout ${shellQuote(targetName)} 2>&1; " +
+                        "branchExitCode=\$?; " +
+                        "printf '\\n$BRANCH_EXIT_MARKER%s\\n' \"\$branchExitCode\""
+                }
+
+                val output = execCommand(command)
+                val markerIndex = output.lastIndexOf(BRANCH_EXIT_MARKER)
+                val exitCode = if (markerIndex >= 0) {
+                    output.substring(markerIndex + BRANCH_EXIT_MARKER.length)
+                        .lineSequence()
+                        .firstOrNull()
+                        ?.trim()
+                        ?.toIntOrNull()
+                } else {
+                    null
+                }
+                val details = if (markerIndex >= 0) {
+                    output.substring(0, markerIndex).trim()
+                } else {
+                    output.trim()
+                }
+
+                if (exitCode == 0) {
+                    _errorMessage.value = null
+                    refresh()
+                } else {
+                    val suffix = details.takeIf { it.isNotEmpty() }?.let { ": $it" }.orEmpty()
+                    _errorMessage.value = "Failed to switch branch$suffix"
+                }
+            } catch (e: Exception) {
+                _errorMessage.value = "Failed to switch branch: ${e.localizedMessage}"
+            } finally {
+                _isBranchOperationInProgress.value = false
+            }
+        }
+    }
+
+    @Suppress("LongMethod")
+    fun createAndCheckoutBranch(newBranchName: String) {
+        if (_isBranchOperationInProgress.value) return
+        val name = newBranchName.trim()
+        if (name.isEmpty()) {
+            _errorMessage.value = "Branch name cannot be empty"
+            return
+        }
+        viewModelScope.launch {
+            _isBranchOperationInProgress.value = true
+            val dir = workspaceDir.value
+            try {
+                val repoRoot = getRepoRoot(dir)
+                val pathEnv = "export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; "
+                val command = pathEnv + "cd ${shellQuote(repoRoot)} && " +
+                    "git checkout -b ${shellQuote(name)} 2>&1; " +
+                    "branchExitCode=\$?; " +
+                    "printf '\\n$BRANCH_EXIT_MARKER%s\\n' \"\$branchExitCode\""
+
+                val output = execCommand(command)
+                val markerIndex = output.lastIndexOf(BRANCH_EXIT_MARKER)
+                val exitCode = if (markerIndex >= 0) {
+                    output.substring(markerIndex + BRANCH_EXIT_MARKER.length)
+                        .lineSequence()
+                        .firstOrNull()
+                        ?.trim()
+                        ?.toIntOrNull()
+                } else {
+                    null
+                }
+                val details = if (markerIndex >= 0) {
+                    output.substring(0, markerIndex).trim()
+                } else {
+                    output.trim()
+                }
+
+                if (exitCode == 0) {
+                    _errorMessage.value = null
+                    refresh()
+                } else {
+                    val suffix = details.takeIf { it.isNotEmpty() }?.let { ": $it" }.orEmpty()
+                    _errorMessage.value = "Failed to create branch$suffix"
+                }
+            } catch (e: Exception) {
+                _errorMessage.value = "Failed to create branch: ${e.localizedMessage}"
+            } finally {
+                _isBranchOperationInProgress.value = false
             }
         }
     }

@@ -13,6 +13,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -66,6 +67,7 @@ fun GitReviewScreen(
     val isRefreshing by viewModel.isRefreshing.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
     val isCommitInProgress by viewModel.isCommitInProgress.collectAsState()
+    val isBranchOperationInProgress by viewModel.isBranchOperationInProgress.collectAsState()
 
     val configuration = LocalConfiguration.current
     val isWideScreen = configuration.screenWidthDp >= 600
@@ -77,6 +79,8 @@ fun GitReviewScreen(
     var commitMessage by remember { mutableStateOf("") }
     var renameCommitTarget by remember { mutableStateOf<GitCommit?>(null) }
     var renameCommitSubject by remember { mutableStateOf("") }
+    var showBranchDialog by remember { mutableStateOf(false) }
+    var showCreateBranchDialog by remember { mutableStateOf(false) }
 
     val stagedFileCount = (uiState as? ReviewUiState.Success)?.stagedFiles?.size ?: 0
 
@@ -229,6 +233,35 @@ fun GitReviewScreen(
         )
     }
 
+    if (showBranchDialog) {
+        val successState = uiState as? ReviewUiState.Success
+        BranchSelectorDialog(
+            currentBranch = successState?.currentBranch.orEmpty(),
+            branches = successState?.branches.orEmpty(),
+            isOperationInProgress = isBranchOperationInProgress,
+            onBranchSelected = { branch ->
+                viewModel.checkoutBranch(branch)
+                showBranchDialog = false
+            },
+            onCreateNewBranchClick = {
+                showBranchDialog = false
+                showCreateBranchDialog = true
+            },
+            onDismissRequest = { showBranchDialog = false }
+        )
+    }
+
+    if (showCreateBranchDialog) {
+        CreateBranchDialog(
+            isOperationInProgress = isBranchOperationInProgress,
+            onConfirm = { newBranch ->
+                viewModel.createAndCheckoutBranch(newBranch)
+                showCreateBranchDialog = false
+            },
+            onDismissRequest = { showCreateBranchDialog = false }
+        )
+    }
+
     if (isWideScreen) {
         Row(modifier = modifier.fillMaxSize()) {
             // Left Panel - File List (40% width)
@@ -259,7 +292,8 @@ fun GitReviewScreen(
                     onDiscardBatch = { viewModel.discardFiles(it) },
                     onCommit = { showCommitDialog = true },
                     isCommitInProgress = isCommitInProgress,
-                    onRefresh = { viewModel.refresh() }
+                    onRefresh = { viewModel.refresh() },
+                    onBranchHeaderClick = { showBranchDialog = true }
                 )
             }
 
@@ -321,6 +355,7 @@ fun GitReviewScreen(
                         onCommit = { showCommitDialog = true },
                         isCommitInProgress = isCommitInProgress,
                         onRefresh = { viewModel.refresh() },
+                        onBranchHeaderClick = { showBranchDialog = true },
                         modifier = modifier
                     )
                 }
@@ -592,6 +627,7 @@ fun FileChangesList(
     onCommit: () -> Unit,
     isCommitInProgress: Boolean,
     onRefresh: () -> Unit,
+    onBranchHeaderClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val stagedFiles = (uiState as? ReviewUiState.Success)?.stagedFiles.orEmpty()
@@ -684,6 +720,12 @@ fun FileChangesList(
                             modifier = Modifier.fillMaxSize(),
                             contentPadding = PaddingValues(top = 8.dp, bottom = 88.dp)
                         ) {
+                            item {
+                                BranchHeader(
+                                    currentBranch = uiState.currentBranch,
+                                    onBranchClick = onBranchHeaderClick
+                                )
+                            }
                             if (uiState.stagedFiles.isEmpty() && uiState.unstagedFiles.isEmpty()) {
                                 item {
                                     Box(
@@ -1795,4 +1837,368 @@ private fun getColors(type: DiffLineType, isDark: Boolean, fallbackColor: Color)
             Color.Transparent to fallbackColor.copy(alpha = 0.85f)
         }
     }
+}
+
+@Suppress("LongMethod")
+@Composable
+fun BranchHeader(
+    currentBranch: String,
+    onBranchClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 6.dp),
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+    ) {
+        Row(
+            modifier = Modifier
+                .clickable(onClick = onBranchClick)
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.weight(1f)
+            ) {
+                Surface(
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Default.AccountTree,
+                            contentDescription = "Current branch",
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+                Column {
+                    Text(
+                        text = "Current Branch",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = currentBranch.ifBlank { "HEAD" },
+                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+            Surface(
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        text = "Switch",
+                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Medium),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Icon(
+                        imageVector = Icons.Default.ArrowDropDown,
+                        contentDescription = "Switch branch",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Suppress("LongMethod", "CyclomaticComplexMethod")
+@Composable
+fun BranchSelectorDialog(
+    currentBranch: String,
+    branches: List<GitBranch>,
+    isOperationInProgress: Boolean,
+    onBranchSelected: (GitBranch) -> Unit,
+    onCreateNewBranchClick: () -> Unit,
+    onDismissRequest: () -> Unit
+) {
+    var searchQuery by remember { mutableStateOf("") }
+    val filteredBranches = remember(branches, searchQuery) {
+        if (searchQuery.isBlank()) {
+            branches
+        } else {
+            branches.filter { it.name.contains(searchQuery, ignoreCase = true) }
+        }
+    }
+    val localBranches = remember(filteredBranches) { filteredBranches.filter { !it.isRemote } }
+    val remoteBranches = remember(filteredBranches) { filteredBranches.filter { it.isRemote } }
+
+    AlertDialog(
+        onDismissRequest = { if (!isOperationInProgress) onDismissRequest() },
+        title = {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Switch Branch")
+                if (isOperationInProgress) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        strokeWidth = 2.dp
+                    )
+                }
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 420.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    placeholder = { Text("Filter branches...") },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Default.Search,
+                            contentDescription = "Search"
+                        )
+                    },
+                    trailingIcon = {
+                        if (searchQuery.isNotEmpty()) {
+                            IconButton(onClick = { searchQuery = "" }) {
+                                Icon(
+                                    imageVector = Icons.Default.Clear,
+                                    contentDescription = "Clear search"
+                                )
+                            }
+                        }
+                    },
+                    singleLine = true,
+                    enabled = !isOperationInProgress,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                OutlinedButton(
+                    onClick = onCreateNewBranchClick,
+                    enabled = !isOperationInProgress,
+                    modifier = Modifier.fillMaxWidth(),
+                    contentPadding = PaddingValues(vertical = 8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = "Create new branch",
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Create New Branch")
+                }
+
+                if (filteredBranches.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 24.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "No matching branches found",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        if (localBranches.isNotEmpty()) {
+                            item {
+                                Text(
+                                    text = "Local Branches",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.padding(top = 4.dp, bottom = 4.dp)
+                                )
+                            }
+                            items(localBranches) { branch ->
+                                BranchItem(
+                                    branch = branch,
+                                    currentBranch = currentBranch,
+                                    isEnabled = !isOperationInProgress,
+                                    onClick = { onBranchSelected(branch) }
+                                )
+                            }
+                        }
+
+                        if (remoteBranches.isNotEmpty()) {
+                            item {
+                                Text(
+                                    text = "Remote Branches",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
+                                )
+                            }
+                            items(remoteBranches) { branch ->
+                                BranchItem(
+                                    branch = branch,
+                                    currentBranch = currentBranch,
+                                    isEnabled = !isOperationInProgress,
+                                    onClick = { onBranchSelected(branch) }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(
+                onClick = onDismissRequest,
+                enabled = !isOperationInProgress
+            ) {
+                Text("Cancel")
+            }
+        }
+    )
+}
+
+@Suppress("LongMethod")
+@Composable
+fun BranchItem(
+    branch: GitBranch,
+    currentBranch: String,
+    isEnabled: Boolean,
+    onClick: () -> Unit
+) {
+    val isCurrent = branch.isCurrent || branch.name == currentBranch
+    Surface(
+        onClick = onClick,
+        enabled = isEnabled,
+        shape = RoundedCornerShape(8.dp),
+        color = if (isCurrent) {
+            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
+        } else {
+            Color.Transparent
+        },
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.weight(1f)
+            ) {
+                Icon(
+                    imageVector = if (branch.isRemote) Icons.Default.Cloud else Icons.Default.AccountTree,
+                    contentDescription = null,
+                    tint = if (isCurrent) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                    modifier = Modifier.size(18.dp)
+                )
+                Text(
+                    text = branch.name,
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal
+                    ),
+                    color = if (isCurrent) {
+                        MaterialTheme.colorScheme.onPrimaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.onSurface
+                    },
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            if (isCurrent) {
+                Icon(
+                    imageVector = Icons.Default.Check,
+                    contentDescription = "Active branch",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun CreateBranchDialog(
+    isOperationInProgress: Boolean,
+    onConfirm: (String) -> Unit,
+    onDismissRequest: () -> Unit
+) {
+    var branchName by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = { if (!isOperationInProgress) onDismissRequest() },
+        title = { Text("Create New Branch") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = "Enter a name for the new branch based on your current HEAD.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                OutlinedTextField(
+                    value = branchName,
+                    onValueChange = { branchName = it },
+                    label = { Text("Branch Name") },
+                    placeholder = { Text("e.g. feature/my-feature") },
+                    singleLine = true,
+                    enabled = !isOperationInProgress,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    if (branchName.isNotBlank()) {
+                        onConfirm(branchName.trim())
+                    }
+                },
+                enabled = branchName.isNotBlank() && !isOperationInProgress
+            ) {
+                if (isOperationInProgress) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Text("Create & Checkout")
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = onDismissRequest,
+                enabled = !isOperationInProgress
+            ) {
+                Text("Cancel")
+            }
+        }
+    )
 }

@@ -3,6 +3,9 @@ const testing = std.testing;
 const ghostty = @import("ghostty-vt");
 const ghostty_log = @import("android_log.zig");
 
+// Android Scudo rejects the 8-byte pointers returned by c_allocator's posix_memalign path.
+const native_allocator = std.heap.raw_c_allocator;
+
 pub const append_result_screen_changed: u32 = 1 << 0;
 pub const append_result_cursor_changed: u32 = 1 << 1;
 pub const append_result_title_changed: u32 = 1 << 2;
@@ -958,6 +961,7 @@ pub const Session = struct {
             .sel = selection,
             .trim = trim,
         }) catch return null;
+        defer self.alloc.free(text);
         return copyOwnedUtf8(self.alloc, text);
     }
 
@@ -969,6 +973,7 @@ pub const Session = struct {
             .sel = selection,
             .trim = true,
         }) catch return null;
+        defer self.alloc.free(text);
         return copyOwnedUtf8(self.alloc, text);
     }
 
@@ -1468,16 +1473,16 @@ pub export fn termux_ghostty_session_create(
         return null;
     };
 
-    const session = std.heap.c_allocator.create(Session) catch {
+    const session = native_allocator.create(Session) catch {
         ghostty_log.err("core create allocation failed cols={} rows={} transcript={}", .{ columns, rows, transcript_rows });
         return null;
     };
-    errdefer std.heap.c_allocator.destroy(session);
+    errdefer native_allocator.destroy(session);
 
     const scrollback_bytes = estimatedScrollbackBytes(parsed_columns, parsed_transcript_rows);
     const colors = defaultTerminalColors();
     session.* = undefined;
-    session.alloc = std.heap.c_allocator;
+    session.alloc = native_allocator;
     session.terminal = ghostty.Terminal.init(session.alloc, .{
         .cols = parsed_columns,
         .rows = parsed_rows,
@@ -1554,7 +1559,7 @@ pub export fn termux_ghostty_session_destroy(session: ?*Session) void {
     const handle = session orelse return;
     ghostty_log.info("core destroy session=0x{x}", .{ @intFromPtr(handle) });
     handle.deinit();
-    std.heap.c_allocator.destroy(handle);
+    native_allocator.destroy(handle);
 }
 
 pub export fn termux_ghostty_session_reset(session: ?*Session) void {
@@ -2532,14 +2537,14 @@ fn expectOwnedText(actual: ?[*:0]u8, expected: ?[]const u8) !void {
     if (expected) |expected_text| {
         const owned_ptr = actual orelse return error.ExpectedText;
         const owned = std.mem.span(owned_ptr);
-        defer std.heap.c_allocator.free(owned);
+        defer native_allocator.free(owned);
         try testing.expectEqualSlices(u8, expected_text, owned);
         return;
     }
 
     if (actual) |owned_ptr| {
         const owned = std.mem.span(owned_ptr);
-        defer std.heap.c_allocator.free(owned);
+        defer native_allocator.free(owned);
         try testing.expectEqual(@as(usize, 0), owned.len);
         return;
     }

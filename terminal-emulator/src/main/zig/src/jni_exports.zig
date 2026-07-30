@@ -8,6 +8,9 @@ const ghostty_log = @import("android_log.zig");
 const core = @import("termux_ghostty.zig");
 const ssh = @import("ssh_native_session.zig");
 
+// Android Scudo rejects the 8-byte pointers returned by c_allocator's posix_memalign path.
+const native_allocator = std.heap.raw_c_allocator;
+
 const jint = c.jint;
 const jlong = c.jlong;
 const jboolean = c.jboolean;
@@ -179,11 +182,11 @@ pub export fn Java_com_termux_terminal_GhosttyNative_nativeAppend(
     const bytes: []u8 = if (count <= stack_buffer.len)
         stack_buffer[0..count]
     else blk: {
-        const allocated = std.heap.c_allocator.alloc(u8, count) catch return 0;
+        const allocated = native_allocator.alloc(u8, count) catch return 0;
         heap_buffer = allocated;
         break :blk allocated;
     };
-    defer if (heap_buffer) |allocated| std.heap.c_allocator.free(allocated);
+    defer if (heap_buffer) |allocated| native_allocator.free(allocated);
 
     jni.*.*.GetByteArrayRegion.?(jni, data, offset, length, @ptrCast(bytes.ptr));
     return @intCast(core.termux_ghostty_session_append(handle, bytes.ptr, bytes.len));
@@ -211,11 +214,11 @@ pub export fn Java_com_termux_terminal_GhosttyNative_nativeDrainPendingOutput(
     const out: []u8 = if (count <= stack_buffer.len)
         stack_buffer[0..count]
     else blk: {
-        const allocated = std.heap.c_allocator.alloc(u8, count) catch return 0;
+        const allocated = native_allocator.alloc(u8, count) catch return 0;
         heap_buffer = allocated;
         break :blk allocated;
     };
-    defer if (heap_buffer) |allocated| std.heap.c_allocator.free(allocated);
+    defer if (heap_buffer) |allocated| native_allocator.free(allocated);
 
     const written = core.termux_ghostty_session_drain_pending_output(handle, out.ptr, out.len);
     if (written > 0) {
@@ -364,7 +367,7 @@ pub export fn Java_com_termux_terminal_GhosttyNative_nativeConsumeTitle(
 
     const jni = env orelse return null;
     const owned = core.termux_ghostty_session_consume_title(sessionFromHandle(native_handle)) orelse return null;
-    defer std.heap.c_allocator.free(owned);
+    defer native_allocator.free(owned);
     return newJStringFromUtf8(jni, owned);
 }
 
@@ -377,7 +380,7 @@ pub export fn Java_com_termux_terminal_GhosttyNative_nativeConsumeClipboardText(
 
     const jni = env orelse return null;
     const owned = core.termux_ghostty_session_consume_clipboard_text(sessionFromHandle(native_handle)) orelse return null;
-    defer std.heap.c_allocator.free(owned);
+    defer native_allocator.free(owned);
     return newJStringFromUtf8(jni, owned);
 }
 
@@ -391,7 +394,7 @@ pub export fn Java_com_termux_terminal_GhosttyNative_nativeConsumeNotificationTi
     const jni = env orelse return null;
     const owned_ptr = core.termux_ghostty_session_consume_notification_title(sessionFromHandle(native_handle)) orelse return null;
     const owned = std.mem.span(owned_ptr);
-    defer std.heap.c_allocator.free(owned);
+    defer native_allocator.free(owned);
     return newJStringFromUtf8(jni, owned);
 }
 
@@ -405,7 +408,7 @@ pub export fn Java_com_termux_terminal_GhosttyNative_nativeConsumeNotificationBo
     const jni = env orelse return null;
     const owned_ptr = core.termux_ghostty_session_consume_notification_body(sessionFromHandle(native_handle)) orelse return null;
     const owned = std.mem.span(owned_ptr);
-    defer std.heap.c_allocator.free(owned);
+    defer native_allocator.free(owned);
     return newJStringFromUtf8(jni, owned);
 }
 
@@ -581,7 +584,7 @@ pub export fn Java_com_termux_terminal_GhosttyNative_nativeGetSelectedText(
         end_row,
         false,
     ) orelse return null;
-    defer std.heap.c_allocator.free(owned);
+    defer native_allocator.free(owned);
     return newJStringFromUtf8(jni, owned);
 }
 
@@ -596,7 +599,7 @@ pub export fn Java_com_termux_terminal_GhosttyNative_nativeGetWordAtLocation(
 
     const jni = env orelse return null;
     const owned = core.termux_ghostty_session_get_word_at_location(sessionFromHandle(native_handle), column, row) orelse return null;
-    defer std.heap.c_allocator.free(owned);
+    defer native_allocator.free(owned);
     return newJStringFromUtf8(jni, owned);
 }
 
@@ -616,7 +619,7 @@ pub export fn Java_com_termux_terminal_GhosttyNative_nativeGetTranscriptText(
         join_lines,
         trim,
     ) orelse return null;
-    defer std.heap.c_allocator.free(owned);
+    defer native_allocator.free(owned);
     return newJStringFromUtf8(jni, owned);
 }
 
@@ -640,19 +643,19 @@ fn toJBoolean(value: bool) jboolean {
 
 fn newJStringFromUtf8(env: *c.JNIEnv, utf8: []const u8) c.jstring {
     var units: std.ArrayListUnmanaged(c.jchar) = .empty;
-    defer units.deinit(std.heap.c_allocator);
+    defer units.deinit(native_allocator);
 
     var view = std.unicode.Utf8View.init(utf8) catch return null;
     var iterator = view.iterator();
     while (iterator.nextCodepoint()) |codepoint| {
         if (codepoint <= 0xFFFF) {
-            units.append(std.heap.c_allocator, @intCast(codepoint)) catch return null;
+            units.append(native_allocator, @intCast(codepoint)) catch return null;
             continue;
         }
 
         const scalar: u32 = codepoint - 0x10000;
-        units.append(std.heap.c_allocator, @intCast(0xD800 + (scalar >> 10))) catch return null;
-        units.append(std.heap.c_allocator, @intCast(0xDC00 + (scalar & 0x3FF))) catch return null;
+        units.append(native_allocator, @intCast(0xD800 + (scalar >> 10))) catch return null;
+        units.append(native_allocator, @intCast(0xDC00 + (scalar & 0x3FF))) catch return null;
     }
 
     return env.*.*.NewString.?(env, if (units.items.len == 0) null else units.items.ptr, @intCast(units.items.len));
@@ -690,7 +693,7 @@ pub export fn Java_com_termux_terminal_GhosttyNative_nativeSshInit(
     const is_herdr = (herdr_integration != c.JNI_FALSE);
 
     const session = ssh.SshNativeSession.init(
-        std.heap.c_allocator,
+        native_allocator,
         socket_fd,
         username_slice,
         pass_key_slice,
@@ -752,11 +755,11 @@ pub export fn Java_com_termux_terminal_GhosttyNative_nativeSshWrite(
     const bytes: []u8 = if (count <= stack_buffer.len)
         stack_buffer[0..count]
     else blk: {
-        const allocated = std.heap.c_allocator.alloc(u8, count) catch return;
+        const allocated = native_allocator.alloc(u8, count) catch return;
         heap_buffer = allocated;
         break :blk allocated;
     };
-    defer if (heap_buffer) |allocated| std.heap.c_allocator.free(allocated);
+    defer if (heap_buffer) |allocated| native_allocator.free(allocated);
 
     jni.*.*.GetByteArrayRegion.?(jni, data, offset, length, @ptrCast(bytes.ptr));
     session.writeKeystrokes(bytes);
@@ -841,7 +844,7 @@ pub export fn Java_com_termux_terminal_GhosttyNative_nativeSshExec(
     const chars = jni.*.*.GetStringUTFChars.?(jni, command, null);
     defer jni.*.*.ReleaseStringUTFChars.?(jni, command, chars);
     var output: std.ArrayList(u8) = .empty;
-    defer output.deinit(std.heap.c_allocator);
+    defer output.deinit(native_allocator);
     session.execCommand(std.mem.span(chars), &output) catch return null;
     return newJStringFromUtf8(jni, output.items);
 }
@@ -885,7 +888,7 @@ pub export fn Java_com_termux_terminal_GhosttyNative_nativeSftpListFiles(
     const chars = jni.*.*.GetStringUTFChars.?(jni, path, null);
     defer jni.*.*.ReleaseStringUTFChars.?(jni, path, chars);
     var output: std.ArrayList(u8) = .empty;
-    defer output.deinit(std.heap.c_allocator);
+    defer output.deinit(native_allocator);
     const handle: *anyopaque = @ptrFromInt(@as(usize, @intCast(sftp_handle)));
     if (!session.sftpListFiles(handle, std.mem.span(chars), &output)) return null;
     return newJStringFromUtf8(jni, output.items);
@@ -973,8 +976,8 @@ pub export fn Java_com_termux_terminal_GhosttyNative_nativeSftpFileRead(
     const session = sshSessionFromHandle(session_handle) orelse return -1;
     if (file_handle <= 0 or buffer == null or length <= 0) return 0;
     const count = std.math.cast(usize, length) orelse return -1;
-    const bytes = std.heap.c_allocator.alloc(u8, count) catch return -1;
-    defer std.heap.c_allocator.free(bytes);
+    const bytes = native_allocator.alloc(u8, count) catch return -1;
+    defer native_allocator.free(bytes);
     const file: *anyopaque = @ptrFromInt(@as(usize, @intCast(file_handle)));
     const result = session.sftpFileRead(file, bytes);
     if (result > 0) jni.*.*.SetByteArrayRegion.?(jni, buffer, offset, @intCast(result), @ptrCast(bytes.ptr));
@@ -995,8 +998,8 @@ pub export fn Java_com_termux_terminal_GhosttyNative_nativeSftpFileWrite(
     const session = sshSessionFromHandle(session_handle) orelse return -1;
     if (file_handle <= 0 or buffer == null or length <= 0) return 0;
     const count = std.math.cast(usize, length) orelse return -1;
-    const bytes = std.heap.c_allocator.alloc(u8, count) catch return -1;
-    defer std.heap.c_allocator.free(bytes);
+    const bytes = native_allocator.alloc(u8, count) catch return -1;
+    defer native_allocator.free(bytes);
     jni.*.*.GetByteArrayRegion.?(jni, buffer, offset, length, @ptrCast(bytes.ptr));
     const file: *anyopaque = @ptrFromInt(@as(usize, @intCast(file_handle)));
     return @intCast(session.sftpFileWrite(file, bytes));

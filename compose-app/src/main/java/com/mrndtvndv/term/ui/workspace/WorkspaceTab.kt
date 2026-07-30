@@ -10,7 +10,7 @@ sealed interface WorkspaceTab {
         get() = when (this) {
             Terminal -> "Terminal"
             Sftp -> "SFTP"
-            Review -> "Review"
+            Review -> "Git"
             Browser -> "Browser"
         }
 }

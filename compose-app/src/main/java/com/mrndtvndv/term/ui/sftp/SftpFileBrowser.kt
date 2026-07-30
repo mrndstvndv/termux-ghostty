@@ -15,12 +15,20 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.navigation3.runtime.NavBackStack
+import androidx.navigation3.runtime.NavKey
+import androidx.navigation3.runtime.entryProvider
+import androidx.navigation3.runtime.rememberNavBackStack
+import androidx.navigation3.ui.NavDisplay
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.mrndtvndv.term.domain.SftpFile
+import com.mrndtvndv.term.ui.SftpNavKey
 import java.io.File
 
 @Composable
@@ -75,165 +83,210 @@ fun SftpFileBrowser(
         )
     }
 
-    Column(modifier = modifier.fillMaxSize()) {
-        // Path toolbar
-        Surface(
-            tonalElevation = 8.dp,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                IconButton(onClick = { viewModel.navigateUp() }) {
-                    Icon(
-                        imageVector = Icons.Default.ArrowUpward,
-                        contentDescription = "Up"
-                    )
-                }
-                Text(
-                    text = viewModel.currentPath,
-                    style = MaterialTheme.typography.bodyMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f)
-                )
-                IconButton(onClick = { viewModel.refresh() }) {
-                    Icon(
-                        imageVector = Icons.Default.Refresh,
-                        contentDescription = "Refresh"
-                    )
-                }
-            }
-        }
+    val initialKey = remember(viewModel.currentPath) { SftpNavKey.Folder(viewModel.currentPath) }
+    val sftpBackStack: NavBackStack<NavKey> = rememberNavBackStack(initialKey)
 
-        when (val state = uiState) {
-            is SftpUiState.Loading -> {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .weight(1f),
-                    contentAlignment = Alignment.Center
-                ) {
-                    CircularProgressIndicator()
+    NavDisplay(
+        backStack = sftpBackStack,
+        onBack = {
+            if (sftpBackStack.size > 1) {
+                sftpBackStack.removeLastOrNull()
+                val prevPath = (sftpBackStack.lastOrNull() as? SftpNavKey.Folder)?.path
+                if (prevPath != null) {
+                    viewModel.navigateTo(prevPath)
                 }
+            } else {
+                viewModel.navigateUp()
             }
-            is SftpUiState.Success -> {
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .weight(1f),
-                    contentPadding = PaddingValues(vertical = 8.dp)
-                ) {
-                    items(state.files) { file ->
-                        ListItem(
-                            headlineContent = {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(
-                                        text = file.name,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                    val gitStatus = state.gitStatuses[file.name]?.trim()
-                                    if (!gitStatus.isNullOrEmpty()) {
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        val color = when {
-                                            gitStatus == "??" || gitStatus.contains("A") -> androidx.compose.ui.graphics.Color(0xFF4CAF50) // Green
-                                            gitStatus.contains("D") -> androidx.compose.ui.graphics.Color(0xFFF44336) // Red
-                                            else -> androidx.compose.ui.graphics.Color(0xFFFF9800) // Orange for Modified/Renamed
-                                        }
-                                        Surface(
-                                            color = color.copy(alpha = 0.2f),
-                                            shape = androidx.compose.foundation.shape.RoundedCornerShape(4.dp)
-                                        ) {
-                                            Text(
-                                                text = gitStatus,
-                                                color = color,
-                                                style = MaterialTheme.typography.labelSmall,
-                                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
-                                            )
-                                        }
-                                    }
-                                }
-                            },
-                            supportingContent = {
-                                val lastModified = formatLastModified(file.modifiedTime)
-                                val desc = if (file.isDirectory) {
-                                    if (lastModified.isNotEmpty()) "Directory • $lastModified" else "Directory"
-                                } else {
-                                    val sizeStr = formatBytes(file.size)
-                                    if (lastModified.isNotEmpty()) "$sizeStr • $lastModified" else sizeStr
-                                }
-                                Text(
-                                    text = desc,
-                                    style = MaterialTheme.typography.bodySmall
-                                )
-                            },
-                            leadingContent = {
-                                Icon(
-                                    imageVector = if (file.isDirectory) Icons.Default.Folder else Icons.AutoMirrored.Filled.InsertDriveFile,
-                                    contentDescription = null,
-                                    tint = if (file.isDirectory) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary
-                                )
-                            },
-                            trailingContent = {
-                                Row {
-                                    if (!file.isDirectory && onDownloadFile != null) {
-                                        IconButton(onClick = { onDownloadFile(file) }) {
-                                            Icon(
-                                                imageVector = Icons.Default.Download,
-                                                contentDescription = "Download"
-                                            )
-                                        }
-                                    }
-                                    if (onDeleteFile != null) {
-                                        IconButton(onClick = { onDeleteFile(file) }) {
-                                            Icon(
-                                                imageVector = Icons.Default.Delete,
-                                                contentDescription = "Delete",
-                                                tint = MaterialTheme.colorScheme.error
-                                            )
-                                        }
-                                    }
-                                }
-                            },
+        },
+        entryProvider = entryProvider<NavKey> {
+            entry<SftpNavKey.Folder> {
+                Column(modifier = modifier.fillMaxSize()) {
+                    // Path toolbar
+                    Surface(
+                        tonalElevation = 8.dp,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
                             modifier = Modifier
-                                .clickable {
-                                    if (file.isDirectory) {
-                                        viewModel.navigateTo(file.path)
+                                .fillMaxWidth()
+                                .padding(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            IconButton(onClick = {
+                                if (sftpBackStack.size > 1) {
+                                    sftpBackStack.removeLastOrNull()
+                                    val prevPath = (sftpBackStack.lastOrNull() as? SftpNavKey.Folder)?.path
+                                    if (prevPath != null) {
+                                        viewModel.navigateTo(prevPath)
                                     } else {
-                                        viewModel.downloadAndOpenFile(
-                                            file = file,
-                                            cacheDir = context.cacheDir,
-                                            onFileReady = onOpenFile,
-                                            onError = onOpenFileError
-                                        )
+                                        viewModel.navigateUp()
                                     }
+                                } else {
+                                    viewModel.navigateUp()
                                 }
-                        )
-                        HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+                            }) {
+                                Icon(
+                                    imageVector = Icons.Default.ArrowUpward,
+                                    contentDescription = "Up"
+                                )
+                            }
+                            Text(
+                                text = viewModel.currentPath,
+                                style = MaterialTheme.typography.bodyMedium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f)
+                            )
+                            IconButton(onClick = { viewModel.refresh() }) {
+                                Icon(
+                                    imageVector = Icons.Default.Refresh,
+                                    contentDescription = "Refresh"
+                                )
+                            }
+                        }
+                    }
+
+                    when (val state = uiState) {
+                        is SftpUiState.Loading -> {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .weight(1f),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                CircularProgressIndicator()
+                            }
+                        }
+                        is SftpUiState.Success -> {
+                            LazyColumn(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .weight(1f),
+                                contentPadding = PaddingValues(vertical = 8.dp)
+                            ) {
+                                items(state.files) { file ->
+                                    ListItem(
+                                        headlineContent = {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Text(
+                                                    text = file.name,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                                val gitStatus = state.gitStatuses[file.name]?.trim()
+                                                if (!gitStatus.isNullOrEmpty()) {
+                                                    val green = androidx.compose.ui.graphics.Color(0xFF4CAF50)
+                                                    val red = androidx.compose.ui.graphics.Color(0xFFF44336)
+                                                    val orange = androidx.compose.ui.graphics.Color(0xFFFF9800)
+                                                    val color = when {
+                                                        gitStatus == "??" || gitStatus.contains("A") -> green
+                                                        gitStatus.contains("D") -> red
+                                                        else -> orange
+                                                    }
+                                                    Surface(
+                                                        color = color.copy(alpha = 0.2f),
+                                                        shape = RoundedCornerShape(4.dp)
+                                                    ) {
+                                                        Text(
+                                                            text = gitStatus,
+                                                            color = color,
+                                                            style = MaterialTheme.typography.labelSmall,
+                                                            modifier = Modifier
+                                                                .padding(horizontal = 4.dp, vertical = 2.dp)
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        },
+                                        supportingContent = {
+                                            val lastModified = formatLastModified(file.modifiedTime)
+                                            val desc = if (file.isDirectory) {
+                                                if (lastModified.isNotEmpty()) {
+                                                    "Directory • $lastModified"
+                                                } else {
+                                                    "Directory"
+                                                }
+                                            } else {
+                                                val sizeStr = formatBytes(file.size)
+                                                if (lastModified.isNotEmpty()) {
+                                                    "$sizeStr • $lastModified"
+                                                } else {
+                                                    sizeStr
+                                                }
+                                            }
+                                            Text(
+                                                text = desc,
+                                                style = MaterialTheme.typography.bodySmall
+                                            )
+                                        },
+                                        leadingContent = {
+                                            Icon(
+                                                imageVector = if (file.isDirectory) Icons.Default.Folder else Icons.AutoMirrored.Filled.InsertDriveFile,
+                                                contentDescription = null,
+                                                tint = if (file.isDirectory) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary
+                                            )
+                                        },
+                                        trailingContent = {
+                                            Row {
+                                                if (!file.isDirectory && onDownloadFile != null) {
+                                                    IconButton(onClick = { onDownloadFile(file) }) {
+                                                        Icon(
+                                                            imageVector = Icons.Default.Download,
+                                                            contentDescription = "Download"
+                                                        )
+                                                    }
+                                                }
+                                                if (onDeleteFile != null) {
+                                                    IconButton(onClick = { onDeleteFile(file) }) {
+                                                        Icon(
+                                                            imageVector = Icons.Default.Delete,
+                                                            contentDescription = "Delete",
+                                                            tint = MaterialTheme.colorScheme.error
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        },
+                                        modifier = Modifier
+                                            .clickable {
+                                                if (file.isDirectory) {
+                                                    sftpBackStack.add(SftpNavKey.Folder(file.path))
+                                                    viewModel.navigateTo(file.path)
+                                                } else {
+                                                    viewModel.downloadAndOpenFile(
+                                                        file = file,
+                                                        cacheDir = context.cacheDir,
+                                                        onFileReady = onOpenFile,
+                                                        onError = onOpenFileError
+                                                    )
+                                                }
+                                            }
+                                    )
+                                    HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+                                }
+                            }
+                        }
+                        is SftpUiState.Error -> {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .weight(1f)
+                                    .padding(16.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = state.message,
+                                    color = MaterialTheme.colorScheme.error,
+                                    style = MaterialTheme.typography.bodyLarge
+                                )
+                            }
+                        }
                     }
                 }
             }
-            is SftpUiState.Error -> {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .weight(1f)
-                        .padding(16.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = state.message,
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodyLarge
-                    )
-                }
-            }
         }
-    }
+    )
 }
 
 private fun formatBytes(bytes: Long): String {

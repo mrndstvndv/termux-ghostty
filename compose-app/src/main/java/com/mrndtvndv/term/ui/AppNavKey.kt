@@ -29,3 +29,9 @@ sealed interface ReviewNavKey : NavKey {
     @Serializable
     data class CommitDiff(val hash: String) : ReviewNavKey
 }
+
+@Serializable
+sealed interface SftpNavKey : NavKey {
+    @Serializable
+    data class Folder(val path: String) : SftpNavKey
+}

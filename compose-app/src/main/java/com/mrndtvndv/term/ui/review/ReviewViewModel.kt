@@ -63,6 +63,9 @@ class ReviewViewModel(
     private val _isCommitInProgress = MutableStateFlow(false)
     val isCommitInProgress = _isCommitInProgress.asStateFlow()
 
+    private val _isRefreshing = MutableStateFlow(false)
+    val isRefreshing = _isRefreshing.asStateFlow()
+
     private val _isStagedExpanded = MutableStateFlow(true)
     val isStagedExpanded = _isStagedExpanded.asStateFlow()
 
@@ -160,10 +163,12 @@ class ReviewViewModel(
     @Suppress("LongMethod")
     fun refresh() {
         viewModelScope.launch {
-            _uiState.value = ReviewUiState.Loading
-            _selectedFile.value = null
-            _selectedCommit.value = null
-            _selectedFileDiff.value = null
+            if (_uiState.value !is ReviewUiState.Success) {
+                _uiState.value = ReviewUiState.Loading
+            } else {
+                _isRefreshing.value = true
+            }
+
             val dir = workspaceDir.value
             try {
                 val repoRoot = getRepoRoot(dir)
@@ -210,6 +215,19 @@ class ReviewViewModel(
                         }
                     }
                 }
+
+                val currentSelFile = _selectedFile.value
+                if (currentSelFile != null) {
+                    val matchingFile = (staged + unstaged).find {
+                        it.path == currentSelFile.path && it.isStaged == currentSelFile.isStaged
+                    }
+                    if (matchingFile != null) {
+                        _selectedFile.value = matchingFile
+                    } else {
+                        _selectedFile.value = null
+                        _selectedFileDiff.value = null
+                    }
+                }
                 
                 val initialCommits = fetchCommits(repoRoot, limit = 15, skip = 0)
                 _uiState.value = ReviewUiState.Success(
@@ -219,7 +237,13 @@ class ReviewViewModel(
                     hasMoreCommits = initialCommits.size == 15
                 )
             } catch (e: Exception) {
-                _uiState.value = ReviewUiState.Error(e.localizedMessage ?: "Failed to get git status")
+                if (_uiState.value !is ReviewUiState.Success) {
+                    _uiState.value = ReviewUiState.Error(e.localizedMessage ?: "Failed to get git status")
+                } else {
+                    _errorMessage.value = e.localizedMessage ?: "Failed to update git status"
+                }
+            } finally {
+                _isRefreshing.value = false
             }
         }
     }

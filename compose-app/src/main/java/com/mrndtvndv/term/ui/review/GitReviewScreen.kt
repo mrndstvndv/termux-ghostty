@@ -57,6 +57,7 @@ fun GitReviewScreen(
     val isStagedExpanded by viewModel.isStagedExpanded.collectAsState()
     val isUnstagedExpanded by viewModel.isUnstagedExpanded.collectAsState()
     val isCommitsExpanded by viewModel.isCommitsExpanded.collectAsState()
+    val isRefreshing by viewModel.isRefreshing.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
     val isCommitInProgress by viewModel.isCommitInProgress.collectAsState()
 
@@ -176,6 +177,7 @@ fun GitReviewScreen(
                     isStagedExpanded = isStagedExpanded,
                     isUnstagedExpanded = isUnstagedExpanded,
                     isCommitsExpanded = isCommitsExpanded,
+                    isRefreshing = isRefreshing,
                     onToggleStagedExpanded = { viewModel.toggleStagedExpanded() },
                     onToggleUnstagedExpanded = { viewModel.toggleUnstagedExpanded() },
                     onToggleCommitsExpanded = { viewModel.toggleCommitsExpanded() },
@@ -291,6 +293,7 @@ fun GitReviewScreen(
                 isStagedExpanded = isStagedExpanded,
                 isUnstagedExpanded = isUnstagedExpanded,
                 isCommitsExpanded = isCommitsExpanded,
+                isRefreshing = isRefreshing,
                 onToggleStagedExpanded = { viewModel.toggleStagedExpanded() },
                 onToggleUnstagedExpanded = { viewModel.toggleUnstagedExpanded() },
                 onToggleCommitsExpanded = { viewModel.toggleCommitsExpanded() },
@@ -439,6 +442,7 @@ fun FileChangesList(
     isStagedExpanded: Boolean = true,
     isUnstagedExpanded: Boolean = true,
     isCommitsExpanded: Boolean = true,
+    isRefreshing: Boolean = false,
     onToggleStagedExpanded: () -> Unit = {},
     onToggleUnstagedExpanded: () -> Unit = {},
     onToggleCommitsExpanded: () -> Unit = {},
@@ -523,7 +527,7 @@ fun FileChangesList(
     ) { contentPadding ->
         Box(modifier = Modifier.fillMaxSize()) {
             PullToRefreshBox(
-                isRefreshing = uiState is ReviewUiState.Loading,
+                isRefreshing = isRefreshing,
                 onRefresh = onRefresh,
                 modifier = Modifier.fillMaxSize().padding(contentPadding)
             ) {

@@ -32,7 +32,7 @@ object NativeLogcatLogger {
         }
 
         try {
-            val builder = ProcessBuilder("logcat", "-f", logFile.absolutePath, "-v", "threadtime", "*:V")
+            val builder = ProcessBuilder("logcat", "-f", logFile.absolutePath, "-v", "threadtime", "-b", "all", "*:V")
             logcatProcess = builder.start()
             Log.i(TAG, "Started native logcat logger writing to ${logFile.absolutePath}")
         } catch (e: Exception) {
@@ -87,9 +87,38 @@ object NativeLogcatLogger {
         }
     }
 
+    @Synchronized
     fun clearLog(context: Context): Boolean {
+        val wasRunning = logcatProcess?.isAlive == true
+        if (wasRunning) {
+            stop()
+        }
+
+        try {
+            val clearProcess = ProcessBuilder("logcat", "-c", "-b", "all").start()
+            clearProcess.waitFor()
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to execute logcat -c", e)
+        }
+
         val file = getLogFile(context)
-        return if (file.exists()) file.delete() else true
+        val deleted = try {
+            if (file.exists()) {
+                file.writeText("")
+                file.delete()
+            } else {
+                true
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to clear log file", e)
+            false
+        }
+
+        if (wasRunning) {
+            start(context)
+        }
+
+        return deleted
     }
 
     fun exportLogToDownloads(context: Context): String? {

@@ -7,9 +7,15 @@ const c = @cImport({
     @cInclude("unistd.h");
     @cInclude("poll.h");
     @cInclude("fcntl.h");
+    @cInclude("pthread.h");
 });
 
 pub const SshNativeSession = struct {
+    // Use page_allocator for ArrayList buffers to bypass Android Scudo entirely.
+    // Scudo's strict chunk-header validation is incompatible with the reallocation
+    // patterns from Zig ArrayLists combined with libssh2's own malloc usage.
+    const queue_allocator = std.heap.page_allocator;
+
     allocator: std.mem.Allocator,
     session: *c.LIBSSH2_SESSION,
     channel: *c.LIBSSH2_CHANNEL,
@@ -26,7 +32,6 @@ pub const SshNativeSession = struct {
     output_closed_method: ?c.jmethodID,
     thread: ?std.Thread,
     running: std.atomic.Value(bool),
-
     const CommandKind = enum {
         write,
         resize,
@@ -112,6 +117,7 @@ pub const SshNativeSession = struct {
         cols: c_int,
         rows: c_int,
         herdr_integration: bool,
+        java_vm: ?*c.JavaVM,
     ) !*SshNativeSession {
         _ = c.libssh2_init(0);
 
@@ -250,7 +256,7 @@ pub const SshNativeSession = struct {
             .command_lock = .{},
             .command_queue = .empty,
             .callback_lock = .{},
-            .java_vm = null,
+            .java_vm = java_vm,
             .output_callback = null,
             .output_callback_method = null,
             .output_closed_method = null,
@@ -268,7 +274,10 @@ pub const SshNativeSession = struct {
         self.running.store(false, .release);
         self.signalCommandWake();
         if (self.thread) |thread| {
-            thread.join();
+            const thread_id: c.pthread_t = @intCast(@intFromPtr(thread.getHandle()));
+            if (c.pthread_equal(thread_id, c.pthread_self()) == 0) {
+                thread.join();
+            }
         } else {
             _ = c.libssh2_channel_free(self.channel);
             _ = c.libssh2_session_disconnect_ex(self.session, c.SSH_DISCONNECT_BY_APPLICATION, "Shutdown", "");
@@ -280,8 +289,8 @@ pub const SshNativeSession = struct {
         self.callback_lock.lock();
         self.clearOutputCallbackLocked(env);
         self.callback_lock.unlock();
-        self.output_queue.deinit(self.allocator);
-        self.command_queue.deinit(self.allocator);
+        self.output_queue.deinit(queue_allocator);
+        self.command_queue.deinit(queue_allocator);
 
         const allocator = self.allocator;
         allocator.destroy(self);
@@ -410,6 +419,26 @@ pub const SshNativeSession = struct {
     }
 
     fn runLoop(self: *SshNativeSession) void {
+        var jni_env: ?*c.JNIEnv = null;
+        var attached = false;
+
+        self.callback_lock.lock();
+        const vm_opt = self.java_vm;
+        self.callback_lock.unlock();
+
+        if (vm_opt) |vm| {
+            if (vm.*.*.AttachCurrentThreadAsDaemon.?(vm, @ptrCast(&jni_env), null) == 0) {
+                attached = true;
+            }
+        }
+        defer {
+            if (attached) {
+                if (self.java_vm) |vm| {
+                    _ = vm.*.*.DetachCurrentThread.?(vm);
+                }
+            }
+        }
+
         var fds = [_]c.struct_pollfd{
             .{ .fd = self.socket_fd, .events = c.POLLIN, .revents = 0 },
             .{ .fd = self.wake_pipe[0], .events = c.POLLIN, .revents = 0 },
@@ -430,7 +459,7 @@ pub const SshNativeSession = struct {
             }
 
             if ((fds[0].revents & (c.POLLIN | c.POLLOUT | c.POLLERR | c.POLLHUP)) != 0) {
-                self.processRead();
+                self.processRead(jni_env);
                 self.processCommands();
             }
         }
@@ -439,18 +468,18 @@ pub const SshNativeSession = struct {
         _ = c.libssh2_channel_free(self.channel);
         _ = c.libssh2_session_disconnect_ex(self.session, c.SSH_DISCONNECT_BY_APPLICATION, "Shutdown", "");
         _ = c.libssh2_session_free(self.session);
-        self.deliverClosed();
+        self.deliverClosed(jni_env);
     }
 
-    fn processRead(self: *SshNativeSession) void {
+    fn processRead(self: *SshNativeSession, env: ?*c.JNIEnv) void {
         var buffer: [16384]u8 = undefined;
         while (self.running.load(.acquire)) {
             const count = c.libssh2_channel_read(self.channel, &buffer, buffer.len);
             if (count > 0) {
                 self.output_lock.lock();
-                self.output_queue.appendSlice(self.allocator, buffer[0..@intCast(count)]) catch {};
+                self.output_queue.appendSlice(queue_allocator, buffer[0..@intCast(count)]) catch {};
                 self.output_lock.unlock();
-                self.deliverOutput();
+                self.deliverOutput(env);
             } else if (count == c.LIBSSH2_ERROR_EAGAIN) {
                 break;
             } else {
@@ -467,17 +496,22 @@ pub const SshNativeSession = struct {
             self.command_lock.unlock();
             const current = command orelse break;
 
+            const owned = current.owned;
+            const data_to_free = current.data;
+            const completion = current.completion;
+
             switch (current.kind) {
-                .write => self.processWrite(current.data orelse &[_]u8{}),
+                .write => self.processWrite(data_to_free orelse &[_]u8{}),
                 .resize => self.processResize(current.cols, current.rows),
                 .callback => if (current.callback) |callback| callback(self, current),
             }
 
-            if (current.completion) |completion| completion.post();
-            if (current.owned) {
-                if (current.data) |data| self.allocator.free(data);
+            if (owned) {
+                if (data_to_free) |data| self.allocator.free(data);
                 self.allocator.destroy(current);
             }
+
+            if (completion) |comp| comp.post();
         }
     }
 
@@ -505,10 +539,10 @@ pub const SshNativeSession = struct {
     }
 
     fn enqueue(self: *SshNativeSession, command: *Command) bool {
-        if (!self.running.load(.acquire)) return false;
         self.command_lock.lock();
         defer self.command_lock.unlock();
-        self.command_queue.append(self.allocator, command) catch return false;
+        if (!self.running.load(.acquire)) return false;
+        self.command_queue.append(queue_allocator, command) catch return false;
         self.signalCommandWake();
         return true;
     }
@@ -527,11 +561,17 @@ pub const SshNativeSession = struct {
             const command = if (self.command_queue.items.len == 0) null else self.command_queue.orderedRemove(0);
             self.command_lock.unlock();
             const current = command orelse break;
-            if (current.completion) |completion| completion.post();
-            if (current.owned) {
-                if (current.data) |data| self.allocator.free(data);
+
+            const owned = current.owned;
+            const data_to_free = current.data;
+            const completion = current.completion;
+
+            if (owned) {
+                if (data_to_free) |data| self.allocator.free(data);
                 self.allocator.destroy(current);
             }
+
+            if (completion) |comp| comp.post();
         }
     }
 
@@ -540,10 +580,10 @@ pub const SshNativeSession = struct {
         _ = c.write(self.wake_pipe[1], &dummy, 1);
     }
 
-    fn deliverOutput(self: *SshNativeSession) void {
+    fn deliverOutput(self: *SshNativeSession, env: ?*c.JNIEnv) void {
         self.callback_lock.lock();
         defer self.callback_lock.unlock();
-        self.deliverOutputLocked(null);
+        self.deliverOutputLocked(env);
     }
 
     fn deliverOutputLocked(self: *SshNativeSession, current_env: ?*c.JNIEnv) void {
@@ -574,19 +614,25 @@ pub const SshNativeSession = struct {
         self.output_queue.clearRetainingCapacity();
     }
 
-    fn deliverClosed(self: *SshNativeSession) void {
+    fn deliverClosed(self: *SshNativeSession, current_env: ?*c.JNIEnv) void {
         self.callback_lock.lock();
         defer self.callback_lock.unlock();
         const java_vm = self.java_vm orelse return;
         const callback = self.output_callback orelse return;
         const method = self.output_closed_method orelse return;
-        var env: ?*c.JNIEnv = null;
-        if (java_vm.*.*.AttachCurrentThreadAsDaemon.?(
-            java_vm,
-            @ptrCast(&env),
-            null,
-        ) != 0) return;
-        defer _ = java_vm.*.*.DetachCurrentThread.?(java_vm);
+        var env: ?*c.JNIEnv = current_env;
+        var attached = false;
+        if (env == null) {
+            if (java_vm.*.*.AttachCurrentThreadAsDaemon.?(
+                java_vm,
+                @ptrCast(&env),
+                null,
+            ) != 0) return;
+            attached = true;
+        }
+        defer {
+            if (attached) _ = java_vm.*.*.DetachCurrentThread.?(java_vm);
+        }
         env.?.*.*.CallVoidMethod.?(env.?, callback, method);
     }
 

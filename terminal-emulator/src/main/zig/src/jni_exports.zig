@@ -632,9 +632,24 @@ fn newJStringFromUtf8(env: *c.JNIEnv, utf8: []const u8) c.jstring {
     var units: std.ArrayListUnmanaged(c.jchar) = .empty;
     defer units.deinit(native_allocator);
 
-    var view = std.unicode.Utf8View.init(utf8) catch return null;
-    var iterator = view.iterator();
-    while (iterator.nextCodepoint()) |codepoint| {
+    var i: usize = 0;
+    while (i < utf8.len) {
+        const seq_len = std.unicode.utf8ByteSequenceLength(utf8[i]) catch {
+            units.append(native_allocator, 0xFFFD) catch return null;
+            i += 1;
+            continue;
+        };
+        if (i + seq_len > utf8.len) {
+            units.append(native_allocator, 0xFFFD) catch return null;
+            break;
+        }
+        const codepoint = std.unicode.utf8Decode(utf8[i .. i + seq_len]) catch {
+            units.append(native_allocator, 0xFFFD) catch return null;
+            i += 1;
+            continue;
+        };
+        i += seq_len;
+
         if (codepoint <= 0xFFFF) {
             units.append(native_allocator, @intCast(codepoint)) catch return null;
             continue;
@@ -679,6 +694,9 @@ pub export fn Java_com_termux_terminal_GhosttyNative_nativeSshInit(
     const is_pass = (is_password != c.JNI_FALSE);
     const is_herdr = (herdr_integration != c.JNI_FALSE);
 
+    var java_vm: ?*c.JavaVM = null;
+    _ = jni.*.*.GetJavaVM.?(jni, &java_vm);
+
     const session = ssh.SshNativeSession.init(
         native_allocator,
         socket_fd,
@@ -689,6 +707,7 @@ pub export fn Java_com_termux_terminal_GhosttyNative_nativeSshInit(
         cols,
         rows,
         is_herdr,
+        java_vm,
     ) catch |err| {
         ghostty_log.err("nativeSshInit failed: {}", .{err});
         return 0;

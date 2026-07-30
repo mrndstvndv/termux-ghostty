@@ -2,6 +2,7 @@
 
 package com.mrndtvndv.term.ui.review
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -63,6 +64,11 @@ fun GitReviewScreen(
 
     val configuration = LocalConfiguration.current
     val isWideScreen = configuration.screenWidthDp >= 600
+
+    val isDiffViewOpen = !isWideScreen && (selectedFile != null || selectedCommit != null)
+    BackHandler(enabled = isDiffViewOpen) {
+        viewModel.deselectFile()
+    }
 
     var discardConfirmFile by remember { mutableStateOf<GitFileStatus?>(null) }
     var showCommitDialog by remember { mutableStateOf(false) }

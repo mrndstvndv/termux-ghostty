@@ -80,7 +80,7 @@ def termuxGhosttyAbis = [
 ]
 
 def termuxGhosttyVariants = [
-    [name: 'debug', taskSuffix: 'Debug', optimize: 'ReleaseSmall', logEnabled: 'true'],
+    [name: 'debug', taskSuffix: 'Debug', optimize: 'Debug', logEnabled: 'true'],
     [name: 'release', taskSuffix: 'Release', optimize: 'ReleaseSmall', logEnabled: 'false'],
 ]
 

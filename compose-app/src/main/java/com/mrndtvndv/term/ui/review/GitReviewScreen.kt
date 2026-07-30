@@ -16,6 +16,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -41,11 +42,65 @@ fun GitReviewScreen(
     val isDiffLoading by viewModel.isDiffLoading.collectAsState()
     val isFullFileMode by viewModel.isFullFileMode.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
+    val isCommitInProgress by viewModel.isCommitInProgress.collectAsState()
 
     val configuration = LocalConfiguration.current
     val isWideScreen = configuration.screenWidthDp >= 600
 
     var discardConfirmFile by remember { mutableStateOf<GitFileStatus?>(null) }
+    var showCommitDialog by remember { mutableStateOf(false) }
+    var commitMessage by remember { mutableStateOf("") }
+
+    val stagedFileCount = (uiState as? ReviewUiState.Success)?.stagedFiles?.size ?: 0
+
+    if (showCommitDialog) {
+        AlertDialog(
+            onDismissRequest = { if (!isCommitInProgress) showCommitDialog = false },
+            title = { Text("Commit Changes") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("Commit $stagedFileCount staged file${if (stagedFileCount == 1) "" else "s"}.")
+                    OutlinedTextField(
+                        value = commitMessage,
+                        onValueChange = { commitMessage = it },
+                        label = { Text("Commit message") },
+                        placeholder = { Text("Describe your changes") },
+                        minLines = 2,
+                        maxLines = 5,
+                        enabled = !isCommitInProgress,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.commit(commitMessage)
+                        showCommitDialog = false
+                        commitMessage = ""
+                    },
+                    enabled = commitMessage.isNotBlank() && !isCommitInProgress
+                ) {
+                    if (isCommitInProgress) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp
+                        )
+                    } else {
+                        Text("Commit")
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showCommitDialog = false },
+                    enabled = !isCommitInProgress
+                ) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
 
     // Error Alert Dialog
     errorMessage?.let { error ->
@@ -105,6 +160,8 @@ fun GitReviewScreen(
                     onStage = { viewModel.stageFile(it) },
                     onUnstage = { viewModel.unstageFile(it) },
                     onDiscard = { discardConfirmFile = it },
+                    onCommit = { showCommitDialog = true },
+                    isCommitInProgress = isCommitInProgress,
                     onRefresh = { viewModel.refresh() }
                 )
             }
@@ -200,6 +257,8 @@ fun GitReviewScreen(
                 onStage = { viewModel.stageFile(it) },
                 onUnstage = { viewModel.unstageFile(it) },
                 onDiscard = { discardConfirmFile = it },
+                onCommit = { showCommitDialog = true },
+                isCommitInProgress = isCommitInProgress,
                 onRefresh = { viewModel.refresh() },
                 modifier = modifier
             )
@@ -325,6 +384,7 @@ private fun highlightCode(code: String, isDark: Boolean): androidx.compose.ui.te
     return builder.toAnnotatedString()
 }
 
+@Suppress("LongParameterList", "LongMethod")
 @Composable
 fun FileChangesList(
     uiState: ReviewUiState,
@@ -333,101 +393,117 @@ fun FileChangesList(
     onStage: (GitFileStatus) -> Unit,
     onUnstage: (GitFileStatus) -> Unit,
     onDiscard: (GitFileStatus) -> Unit,
+    onCommit: () -> Unit,
+    isCommitInProgress: Boolean,
     onRefresh: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Column(modifier = modifier.fillMaxSize()) {
-        Surface(
-            tonalElevation = 8.dp,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "Git Changes",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.weight(1f)
-                )
-                IconButton(onClick = onRefresh) {
-                    Icon(imageVector = Icons.Default.Refresh, contentDescription = "Refresh")
+    val stagedFiles = (uiState as? ReviewUiState.Success)?.stagedFiles.orEmpty()
+
+    Scaffold(
+        modifier = modifier.fillMaxSize(),
+        floatingActionButton = {
+            if (stagedFiles.isNotEmpty()) {
+                FloatingActionButton(
+                    onClick = { if (!isCommitInProgress) onCommit() },
+                ) {
+                    if (isCommitInProgress) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(24.dp),
+                            strokeWidth = 2.dp
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Default.Commit,
+                            contentDescription = "Commit staged changes"
+                        )
+                    }
                 }
             }
         }
-
-        when (uiState) {
-            is ReviewUiState.Loading -> {
-                Box(modifier = Modifier.fillMaxSize().weight(1f), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator()
+    ) { contentPadding ->
+        PullToRefreshBox(
+            isRefreshing = uiState is ReviewUiState.Loading,
+            onRefresh = onRefresh,
+            modifier = Modifier.fillMaxSize().padding(contentPadding)
+        ) {
+            when (uiState) {
+                is ReviewUiState.Loading -> {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator()
+                    }
                 }
-            }
-            is ReviewUiState.Error -> {
-                Box(modifier = Modifier.fillMaxSize().weight(1f).padding(16.dp), contentAlignment = Alignment.Center) {
-                    Text(text = uiState.message, color = MaterialTheme.colorScheme.error)
-                }
-            }
-            is ReviewUiState.Success -> {
-                if (uiState.stagedFiles.isEmpty() && uiState.unstagedFiles.isEmpty()) {
+                is ReviewUiState.Error -> {
                     Box(
-                        modifier = Modifier.fillMaxSize().weight(1f).padding(32.dp),
+                        modifier = Modifier.fillMaxSize().padding(16.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.CheckCircle,
-                                contentDescription = "Clean",
-                                tint = Color(0xFF2EA043),
-                                modifier = Modifier.size(48.dp)
-                            )
-                            Text(
-                                "Working Tree Clean",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                "No staged or unstaged changes found.",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                            )
-                        }
+                        Text(text = uiState.message, color = MaterialTheme.colorScheme.error)
                     }
-                } else {
+                }
+                is ReviewUiState.Success -> {
                     LazyColumn(
-                        modifier = Modifier.fillMaxSize().weight(1f),
-                        contentPadding = PaddingValues(vertical = 8.dp)
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(top = 8.dp, bottom = 88.dp)
                     ) {
-                        if (uiState.stagedFiles.isNotEmpty()) {
+                        if (uiState.stagedFiles.isEmpty() && uiState.unstagedFiles.isEmpty()) {
                             item {
-                                SectionHeader(title = "Staged Changes (${uiState.stagedFiles.size})")
+                                Box(
+                                    modifier = Modifier.fillParentMaxSize().padding(32.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Column(
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.CheckCircle,
+                                            contentDescription = "Clean",
+                                            tint = Color(0xFF2EA043),
+                                            modifier = Modifier.size(48.dp)
+                                        )
+                                        Text(
+                                            "Working Tree Clean",
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Text(
+                                            "No staged or unstaged changes found.",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                        )
+                                    }
+                                }
                             }
-                            items(uiState.stagedFiles) { file ->
-                                FileItem(
-                                    file = file,
-                                    isSelected = selectedFile == file,
-                                    onClick = { onFileSelected(file) },
-                                    onAction = { onUnstage(file) },
-                                    onDiscard = { onDiscard(file) }
-                                )
+                        } else {
+                            if (uiState.stagedFiles.isNotEmpty()) {
+                                item {
+                                    SectionHeader(title = "Staged Changes (${uiState.stagedFiles.size})")
+                                }
+                                items(uiState.stagedFiles) { file ->
+                                    FileItem(
+                                        file = file,
+                                        isSelected = selectedFile == file,
+                                        onClick = { onFileSelected(file) },
+                                        onAction = { onUnstage(file) },
+                                        onDiscard = { onDiscard(file) }
+                                    )
+                                }
                             }
-                        }
 
-                        if (uiState.unstagedFiles.isNotEmpty()) {
-                            item {
-                                SectionHeader(title = "Unstaged Changes (${uiState.unstagedFiles.size})")
-                            }
-                            items(uiState.unstagedFiles) { file ->
-                                FileItem(
-                                    file = file,
-                                    isSelected = selectedFile == file,
-                                    onClick = { onFileSelected(file) },
-                                    onAction = { onStage(file) },
-                                    onDiscard = { onDiscard(file) }
-                                )
+                            if (uiState.unstagedFiles.isNotEmpty()) {
+                                item {
+                                    SectionHeader(title = "Unstaged Changes (${uiState.unstagedFiles.size})")
+                                }
+                                items(uiState.unstagedFiles) { file ->
+                                    FileItem(
+                                        file = file,
+                                        isSelected = selectedFile == file,
+                                        onClick = { onFileSelected(file) },
+                                        onAction = { onStage(file) },
+                                        onDiscard = { onDiscard(file) }
+                                    )
+                                }
                             }
                         }
                     }
@@ -935,4 +1011,3 @@ private fun getColors(type: DiffLineType, isDark: Boolean, fallbackColor: Color)
         }
     }
 }
-

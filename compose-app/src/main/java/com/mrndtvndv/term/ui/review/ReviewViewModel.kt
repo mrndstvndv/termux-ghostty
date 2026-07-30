@@ -46,6 +46,13 @@ class ReviewViewModel(
     private val _isFullFileMode = MutableStateFlow(false)
     val isFullFileMode = _isFullFileMode.asStateFlow()
 
+    private val _isCommitInProgress = MutableStateFlow(false)
+    val isCommitInProgress = _isCommitInProgress.asStateFlow()
+
+    private companion object {
+        const val COMMIT_EXIT_MARKER = "__REVIEW_COMMIT_EXIT__"
+    }
+
     init {
         viewModelScope.launch {
             workspaceDir.collect {
@@ -227,6 +234,61 @@ class ReviewViewModel(
         }
     }
 
+    fun commit(message: String) {
+        if (_isCommitInProgress.value) return
+        val commitMessage = message.trim()
+        val stagedFiles = (_uiState.value as? ReviewUiState.Success)?.stagedFiles.orEmpty()
+        if (commitMessage.isEmpty()) {
+            _errorMessage.value = "Commit message cannot be empty"
+            return
+        }
+        if (stagedFiles.isEmpty()) {
+            _errorMessage.value = "Stage at least one file before committing"
+            return
+        }
+
+        viewModelScope.launch {
+            _isCommitInProgress.value = true
+            val dir = workspaceDir.value
+            try {
+                val repoRoot = getRepoRoot(dir)
+                val command = "export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; " +
+                    "cd ${shellQuote(repoRoot)} && " +
+                    "git commit -m ${shellQuote(commitMessage)} 2>&1; " +
+                    "commitExitCode=\$?; " +
+                    "printf '\\n$COMMIT_EXIT_MARKER%s\\n' \"\$commitExitCode\""
+                val output = execCommand(command)
+                val markerIndex = output.lastIndexOf(COMMIT_EXIT_MARKER)
+                val exitCode = if (markerIndex >= 0) {
+                    output.substring(markerIndex + COMMIT_EXIT_MARKER.length)
+                        .lineSequence()
+                        .firstOrNull()
+                        ?.trim()
+                        ?.toIntOrNull()
+                } else {
+                    null
+                }
+                val details = if (markerIndex >= 0) {
+                    output.substring(0, markerIndex).trim()
+                } else {
+                    output.trim()
+                }
+
+                if (exitCode == 0) {
+                    _errorMessage.value = null
+                    refresh()
+                } else {
+                    val suffix = details.takeIf { it.isNotEmpty() }?.let { ": $it" }.orEmpty()
+                    _errorMessage.value = "Commit failed$suffix"
+                }
+            } catch (e: Exception) {
+                _errorMessage.value = "Failed to commit changes: ${e.localizedMessage}"
+            } finally {
+                _isCommitInProgress.value = false
+            }
+        }
+    }
+
     fun deselectFile() {
         _selectedFile.value = null
         _selectedFileDiff.value = null
@@ -235,4 +297,6 @@ class ReviewViewModel(
     fun clearErrorMessage() {
         _errorMessage.value = null
     }
+
+    private fun shellQuote(value: String): String = "'${value.replace("'", "'\"'\"'")}'"
 }

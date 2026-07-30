@@ -72,10 +72,10 @@ fun TabbedWorkspace(
     )
     val coroutineScope = rememberCoroutineScope()
 
-    // Sync pagerState on initial mount only; tab clicks handle the rest
-    LaunchedEffect(Unit) {
+    // Sync pagerState when activeTab changes
+    LaunchedEffect(activePageIndex) {
         if (pagerState.currentPage != activePageIndex) {
-            pagerState.scrollToPage(activePageIndex)
+            pagerState.animateScrollToPage(activePageIndex)
         }
     }
 
@@ -83,6 +83,9 @@ fun TabbedWorkspace(
     LaunchedEffect(pagerState.settledPage, activeTabs) {
         val tab = activeTabs.getOrNull(pagerState.settledPage) ?: WorkspaceTab.Terminal
         if (tab != activeTab) {
+            if (tab == WorkspaceTab.Sftp || tab == WorkspaceTab.Review) {
+                onRefreshWorkspace()
+            }
             onTabSelected(tab)
         }
     }
@@ -105,7 +108,7 @@ fun TabbedWorkspace(
                             }
                             onTabSelected(tab)
                             coroutineScope.launch {
-                                pagerState.scrollToPage(index)
+                                pagerState.animateScrollToPage(index)
                             }
                         },
                         selectedContentColor = MaterialTheme.colorScheme.primary,
@@ -124,7 +127,7 @@ fun TabbedWorkspace(
     ) { paddingValues ->
         HorizontalPager(
             state = pagerState,
-            userScrollEnabled = false, // Disable swipe so terminal selection / scrolling works
+            userScrollEnabled = true,
             key = { index -> activeTabs.getOrNull(index)?.let { "${index}_${it.title}" } ?: index.toString() },
             modifier = Modifier
                 .fillMaxSize()

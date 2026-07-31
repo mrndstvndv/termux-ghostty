@@ -137,6 +137,7 @@ fun SplitWorkspace(
                                 if (sftpViewModel != null) {
                                     SftpFileBrowser(
                                         viewModel = sftpViewModel,
+                                        isTabActive = rightActiveTab == WorkspaceTab.Sftp,
                                         onOpenFile = onOpenFile,
                                         onOpenFileError = onOpenFileError
                                     )
@@ -146,6 +147,7 @@ fun SplitWorkspace(
                                 if (reviewViewModel != null) {
                                     GitReviewScreen(
                                         viewModel = reviewViewModel,
+                                        isTabActive = rightActiveTab == WorkspaceTab.Review,
                                         modifier = Modifier.fillMaxSize()
                                     )
                                 }
@@ -155,6 +157,7 @@ fun SplitWorkspace(
                                     getWebView = getWebView,
                                     initialUrl = browserUrl,
                                     onUrlChanged = onBrowserUrlChanged,
+                                    isTabActive = rightActiveTab == WorkspaceTab.Browser,
                                     modifier = Modifier.fillMaxSize()
                                 )
                             }

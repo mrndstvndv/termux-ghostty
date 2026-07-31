@@ -32,6 +32,7 @@ fun urlsMatch(url1: String?, url2: String?): Boolean {
     return url1.trim().removeSuffix("/") == url2.trim().removeSuffix("/")
 }
 
+@Suppress("LongMethod", "CyclomaticComplexMethod")
 @OptIn(ExperimentalMaterial3Api::class)
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
@@ -39,6 +40,7 @@ fun InAppBrowser(
     getWebView: () -> WebView,
     initialUrl: String,
     onUrlChanged: (String) -> Unit,
+    isTabActive: Boolean = true,
     modifier: Modifier = Modifier
 ) {
     val webView = remember { getWebView() }
@@ -135,8 +137,8 @@ fun InAppBrowser(
         }
     }
 
-    // Intercept back button if webview can navigate back
-    BackHandler(enabled = canGoBack) {
+    // Intercept back button if webview can navigate back and tab is active
+    BackHandler(enabled = isTabActive && canGoBack) {
         webView.goBack()
     }
 

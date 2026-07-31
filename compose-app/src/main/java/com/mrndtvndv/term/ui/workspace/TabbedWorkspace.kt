@@ -167,6 +167,7 @@ fun TabbedWorkspace(
                         if (sftpViewModel != null) {
                             SftpFileBrowser(
                                 viewModel = sftpViewModel,
+                                isTabActive = activeTab == WorkspaceTab.Sftp,
                                 onOpenFile = onOpenFile,
                                 onOpenFileError = onOpenFileError
                             )
@@ -176,6 +177,7 @@ fun TabbedWorkspace(
                         if (reviewViewModel != null) {
                             GitReviewScreen(
                                 viewModel = reviewViewModel,
+                                isTabActive = activeTab == WorkspaceTab.Review,
                                 modifier = Modifier.fillMaxSize()
                             )
                         }
@@ -185,6 +187,7 @@ fun TabbedWorkspace(
                             getWebView = getWebView,
                             initialUrl = browserUrl,
                             onUrlChanged = onBrowserUrlChanged,
+                            isTabActive = activeTab == WorkspaceTab.Browser,
                             modifier = Modifier.fillMaxSize()
                         )
                     }

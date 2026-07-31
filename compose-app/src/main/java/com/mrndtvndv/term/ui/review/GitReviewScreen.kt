@@ -53,6 +53,7 @@ import androidx.compose.ui.text.withStyle
 @Composable
 fun GitReviewScreen(
     viewModel: ReviewViewModel,
+    isTabActive: Boolean = true,
     modifier: Modifier = Modifier
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -320,8 +321,10 @@ fun GitReviewScreen(
         NavDisplay(
             backStack = reviewBackStack,
             onBack = {
-                viewModel.deselectFile()
-                reviewBackStack.removeLastOrNull()
+                if (isTabActive && reviewBackStack.size > 1) {
+                    viewModel.deselectFile()
+                    reviewBackStack.removeLastOrNull()
+                }
             },
             entryProvider = entryProvider<NavKey> {
                 entry<ReviewNavKey.ChangesList> {

@@ -43,15 +43,12 @@ private fun parsePathSegments(path: String): List<PathSegment> {
     if (path.isBlank() || path == "/") {
         return listOf(PathSegment("/", "/"))
     }
-    val parts = path.trim('/').split('/')
-    val segments = mutableListOf<PathSegment>()
-    var currentAcc = ""
-    segments.add(PathSegment("/", "/"))
-    parts.forEach { part ->
-        if (part.isNotEmpty()) {
-            currentAcc += "/$part"
-            segments.add(PathSegment(part, currentAcc))
-        }
+    val segments = mutableListOf(PathSegment("/", "/"))
+    val parts = path.split("/").filter { it.isNotEmpty() }
+    var currentPath = ""
+    for (part in parts) {
+        currentPath += "/$part"
+        segments.add(PathSegment(part, currentPath))
     }
     return segments
 }
@@ -63,51 +60,60 @@ fun SftpBreadcrumbs(
     onSegmentClick: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val segments = remember(trailPath) { parsePathSegments(trailPath) }
-    val activeIndex = remember(currentPath, segments) {
-        val idx = segments.indexOfLast { it.fullPath == currentPath }
-        if (idx != -1) idx else segments.lastIndex
-    }
-
+    val effectivePath = if (currentPath == "/" && trailPath.isNotEmpty()) trailPath else currentPath
+    val segments = remember(effectivePath) { parsePathSegments(effectivePath) }
     val scrollState = rememberScrollState()
 
-    LaunchedEffect(currentPath, activeIndex) {
+    LaunchedEffect(segments.size) {
         scrollState.animateScrollTo(scrollState.maxValue)
     }
 
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .horizontalScroll(scrollState)
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        tonalElevation = 2.dp,
+        modifier = modifier.fillMaxWidth()
     ) {
-        segments.forEachIndexed { index, segment ->
-            val isLastInSegments = index == segments.size - 1
-            val isActive = index == activeIndex
-            Text(
-                text = segment.name,
-                style = if (isActive) {
-                    MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)
-                } else {
-                    MaterialTheme.typography.bodyMedium
-                },
-                color = if (isActive) {
-                    MaterialTheme.colorScheme.onSurface
-                } else {
-                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                },
-                modifier = Modifier
-                    .clickable(enabled = !isActive) { onSegmentClick(segment.fullPath) }
-                    .padding(vertical = 4.dp, horizontal = 4.dp)
-            )
-            if (!isLastInSegments) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
-                    modifier = Modifier.size(18.dp)
-                )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(scrollState)
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            segments.forEachIndexed { index, segment ->
+                val isLast = index == segments.size - 1
+                Surface(
+                    color = if (isLast) {
+                        MaterialTheme.colorScheme.primaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.surfaceVariant
+                    },
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.clickable {
+                        onSegmentClick(segment.fullPath)
+                    }
+                ) {
+                    Text(
+                        text = segment.name,
+                        style = MaterialTheme.typography.labelLarge,
+                        color = if (isLast) {
+                            MaterialTheme.colorScheme.onPrimaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                        fontWeight = if (isLast) FontWeight.Bold else FontWeight.Medium,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
+
+                if (!isLast) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
             }
         }
     }
@@ -119,6 +125,7 @@ fun SftpBreadcrumbs(
 fun SftpFileBrowser(
     viewModel: SftpViewModel,
     modifier: Modifier = Modifier,
+    isTabActive: Boolean = true,
     onOpenFile: (File) -> Unit,
     onOpenFileError: (String) -> Unit,
     onDownloadFile: ((SftpFile) -> Unit)? = null,
@@ -175,14 +182,12 @@ fun SftpFileBrowser(
     NavDisplay(
         backStack = sftpBackStack,
         onBack = {
-            if (sftpBackStack.size > 1) {
+            if (isTabActive && sftpBackStack.size > 1) {
                 sftpBackStack.removeLastOrNull()
                 val prevPath = (sftpBackStack.lastOrNull() as? SftpNavKey.Folder)?.path
                 if (prevPath != null) {
                     viewModel.navigateTo(prevPath)
                 }
-            } else {
-                viewModel.navigateUp()
             }
         },
         entryProvider = entryProvider<NavKey> {

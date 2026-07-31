@@ -69,8 +69,7 @@ fun SftpBreadcrumbs(
     }
 
     Surface(
-        color = MaterialTheme.colorScheme.surfaceVariant,
-        tonalElevation = 2.dp,
+        color = MaterialTheme.colorScheme.surface,
         modifier = modifier.fillMaxWidth()
     ) {
         Row(
@@ -86,7 +85,7 @@ fun SftpBreadcrumbs(
                     color = if (isLast) {
                         MaterialTheme.colorScheme.primaryContainer
                     } else {
-                        MaterialTheme.colorScheme.surfaceVariant
+                        MaterialTheme.colorScheme.surface
                     },
                     shape = RoundedCornerShape(8.dp),
                     modifier = Modifier.clickable {
@@ -99,7 +98,7 @@ fun SftpBreadcrumbs(
                         color = if (isLast) {
                             MaterialTheme.colorScheme.onPrimaryContainer
                         } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
+                            MaterialTheme.colorScheme.onSurface
                         },
                         fontWeight = if (isLast) FontWeight.Bold else FontWeight.Medium,
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)

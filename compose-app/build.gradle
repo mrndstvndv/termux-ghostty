@@ -139,9 +139,6 @@ dependencies {
     // Conscrypt for faster & secure cryptographic operations on Android
     implementation 'org.conscrypt:conscrypt-android:2.6.1'
 
-    // Syntax Highlighting
-    implementation 'dev.hossain:compose-highlight:0.32.0'
-
     // Navigation 3
     implementation 'androidx.navigation3:navigation3-runtime:1.1.4'
     implementation 'androidx.navigation3:navigation3-ui:1.1.4'

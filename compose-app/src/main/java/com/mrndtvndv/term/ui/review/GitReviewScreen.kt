@@ -401,7 +401,7 @@ fun GitReviewScreen(
                                         FilterChip(
                                             selected = showLineNumbers,
                                             onClick = { viewModel.toggleLineNumbers() },
-                                            label = { Text(if (showLineNumbers) "Line #s" else "No #s") },
+                                            label = { Text("Line Numbers") },
                                             leadingIcon = {
                                                 Icon(
                                                     imageVector = Icons.Default.FormatListNumbered,
@@ -485,7 +485,7 @@ fun GitReviewScreen(
                                     FilterChip(
                                         selected = showLineNumbers,
                                         onClick = { viewModel.toggleLineNumbers() },
-                                        label = { Text(if (showLineNumbers) "Line #s" else "No #s") },
+                                        label = { Text("Line Numbers") },
                                         leadingIcon = {
                                             Icon(
                                                 imageVector = Icons.Default.FormatListNumbered,
@@ -1360,7 +1360,7 @@ fun DiffHeader(
                 FilterChip(
                     selected = showLineNumbers,
                     onClick = onToggleLineNumbers,
-                    label = { Text(if (showLineNumbers) "Line #s" else "No #s") },
+                    label = { Text("Line Numbers") },
                     leadingIcon = {
                         Icon(
                             imageVector = Icons.Default.FormatListNumbered,

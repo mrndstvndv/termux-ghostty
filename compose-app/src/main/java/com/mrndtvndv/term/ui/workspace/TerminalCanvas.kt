@@ -303,10 +303,6 @@ fun TerminalCanvas(
             isFocusableInTouchMode = true
             setTextSize(currentFontSize.value)
             setTypeface(face)
-            // TODO(debug): temporary — captures every IME call (setComposingText/commitText/
-            // deleteSurroundingText) and key event to logcat for diagnosing word deletions
-            // from Gboard's spacebar-swipe cursor mode. Remove once fixed.
-            setIsTerminalViewKeyLoggingEnabled(true)
 
             setTerminalViewClient(object : com.termux.shared.termux.terminal.TermuxTerminalViewClientBase() {
                 override fun onSingleTapUp(e: MotionEvent) {
@@ -468,31 +464,57 @@ fun TerminalCanvas(
             when (cmd) {
                 is CommitTextCommand -> {
                     val text = cmd.text
-                    val activeComposition = if (composingText.isNotEmpty()) composingText else lastComposedText
-                    if (activeComposition.isNotEmpty()) {
-                        // Composition finalized — only send new characters (e.g. space, punctuation)
-                        // or auto-correct replacement.
-                        if (text.startsWith(activeComposition)) {
-                            val delta = text.substring(activeComposition.length)
-                            for (char in delta) {
-                                val cp = if (char == '\n') 13 else char.code
-                                inputCodePoint(cp, false, false, session, extraKeysController)
+                    when {
+                        // Active composition — the word was already echoed to the terminal as it grew.
+                        composingText.isNotEmpty() -> {
+                            when {
+                                text.startsWith(composingText) -> {
+                                    // Normal finalization — send only the suffix (space, punctuation)
+                                    val delta = text.substring(composingText.length)
+                                    for (char in delta) {
+                                        val cp = if (char == '\n') 13 else char.code
+                                        inputCodePoint(cp, false, false, session, extraKeysController)
+                                    }
+                                }
+                                text.isEmpty() -> {
+                                    // Empty commit = composition cancelled (e.g. Gboard spacebar
+                                    // swipe). The word is already in the terminal — do not delete.
+                                }
+                                else -> {
+                                    // Auto-correct replaced the composing text entirely
+                                    for (ch in composingText) { sendDelete(session, extraKeysController) }
+                                    for (char in text) {
+                                        val cp = if (char == '\n') 13 else char.code
+                                        inputCodePoint(cp, false, false, session, extraKeysController)
+                                    }
+                                }
                             }
-                        } else {
-                            // Auto-correct replaced the composing text entirely
-                            for (ch in activeComposition) { sendDelete(session, extraKeysController) }
+                            composingText = ""
+                            lastComposedText = ""
+                        }
+                        // Composition already finished — the word is in the terminal. Never delete;
+                        // send only the suffix if this commit continues the word, else direct input.
+                        lastComposedText.isNotEmpty() -> {
+                            if (text.startsWith(lastComposedText)) {
+                                val delta = text.substring(lastComposedText.length)
+                                for (char in delta) {
+                                    val cp = if (char == '\n') 13 else char.code
+                                    inputCodePoint(cp, false, false, session, extraKeysController)
+                                }
+                            } else if (text.isNotEmpty()) {
+                                for (char in text) {
+                                    val cp = if (char == '\n') 13 else char.code
+                                    inputCodePoint(cp, false, false, session, extraKeysController)
+                                }
+                            }
+                            lastComposedText = ""
+                        }
+                        // No composition — direct input
+                        else -> {
                             for (char in text) {
                                 val cp = if (char == '\n') 13 else char.code
                                 inputCodePoint(cp, false, false, session, extraKeysController)
                             }
-                        }
-                        composingText = ""
-                        lastComposedText = ""
-                    } else {
-                        // No active composition — direct input
-                        for (char in text) {
-                            val cp = if (char == '\n') 13 else char.code
-                            inputCodePoint(cp, false, false, session, extraKeysController)
                         }
                     }
                 }
@@ -548,6 +570,9 @@ fun TerminalCanvas(
                     lastComposedText = ""
                     val current = cmd.text
                     when {
+                        // Same text with a different cursor position (Gboard spacebar-swipe cursor
+                        // mode, recorrection). Nothing changed in the terminal — ignore.
+                        current == composingText -> { }
                         // Append: composing text grew (new characters typed)
                         current.length > composingText.length && current.startsWith(composingText) -> {
                             val delta = current.substring(composingText.length)
@@ -556,10 +581,16 @@ fun TerminalCanvas(
                                 inputCodePoint(cp, false, false, session, extraKeysController)
                             }
                         }
-                        // Backspace: composing text shrunk (character removed)
+                        // Shrink: a real backspace removes one code point; a multi-character
+                        // collapse is the IME cancelling the composition (e.g. Gboard spacebar
+                        // swipe) and must not become backspaces — the text was already sent to
+                        // the terminal as it grew.
                         composingText.length > current.length && composingText.startsWith(current) -> {
-                            val removed = composingText.length - current.length
-                            repeat(removed) { sendDelete(session, extraKeysController) }
+                            val removedCodePoints = Character.codePointCount(composingText, 0, composingText.length) -
+                                Character.codePointCount(current, 0, current.length)
+                            if (removedCodePoints == 1) {
+                                sendDelete(session, extraKeysController)
+                            }
                         }
                         // Replacement: text was corrected/replaced entirely (auto-correct, suggestion)
                         composingText.isNotEmpty() -> {

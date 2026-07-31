@@ -477,8 +477,11 @@ fun TerminalCanvas(
                                     }
                                 }
                                 text.isEmpty() -> {
-                                    // Empty commit = composition cancelled (e.g. Gboard spacebar
-                                    // swipe). The word is already in the terminal — do not delete.
+                                    // Empty commit while composing = Gboard dismissing the
+                                    // recorrection on the first backspace press after gesture
+                                    // typing. The word was already echoed to the terminal as it
+                                    // grew, so honor the backspace with a single delete.
+                                    sendDelete(session, extraKeysController)
                                 }
                                 else -> {
                                     // Auto-correct replaced the composing text entirely

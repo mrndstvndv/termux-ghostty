@@ -52,6 +52,8 @@ class ServerCoordinator(
 
     fun getServer(id: String): Server? = serverManager.get(id)
 
+    val activeIds: Set<String> get() = serverManager.activeIds
+
     fun getSftpViewModel(id: String): SftpViewModel? = sftpViewModels[id]
 
     fun getReviewViewModel(id: String): ReviewViewModel? = reviewViewModels[id]

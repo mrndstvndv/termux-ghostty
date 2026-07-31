@@ -2,11 +2,13 @@ package com.mrndtvndv.term
 
 import android.app.Application
 import android.util.Log
+import com.mrndtvndv.term.server.AppSessionManager
 
 class TermApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        AppSessionManager.init(this)
 
         val previousHandler = Thread.getDefaultUncaughtExceptionHandler()
         val crashReporter = CrashReporter(this)

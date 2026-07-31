@@ -13,6 +13,7 @@ import android.os.IBinder
 import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 import com.mrndtvndv.term.MainActivity
+import com.mrndtvndv.term.server.AppSessionManager
 import com.termux.terminal.TerminalSession
 import java.util.concurrent.ConcurrentHashMap
 
@@ -42,7 +43,8 @@ class SshSessionService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_DISCONNECT) {
-            disconnectAll()
+            // Route through the session manager so SSH connections are closed too.
+            AppSessionManager.current?.disconnectAll() ?: disconnectAll()
             return START_NOT_STICKY
         }
         promoteToForeground()
@@ -77,7 +79,7 @@ class SshSessionService : Service() {
         }
     }
 
-    private fun disconnectAll() {
+    fun disconnectAll() {
         sessions.values.forEach { it.finishIfRunning() }
         sessions.clear()
         stopForegroundCompat()

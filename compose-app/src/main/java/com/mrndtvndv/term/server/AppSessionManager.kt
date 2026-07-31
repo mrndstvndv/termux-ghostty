@@ -1,0 +1,239 @@
+package com.mrndtvndv.term.server
+
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.content.ComponentName
+import android.content.Context
+import android.content.Intent
+import android.content.ServiceConnection
+import android.os.Build
+import android.os.IBinder
+import androidx.lifecycle.Lifecycle
+import com.mrndtvndv.term.data.prefs.SharedPreferencesWorkspacePersistence
+import com.mrndtvndv.term.service.SshSessionService
+import com.termux.shared.termux.TermuxConstants
+import com.termux.shared.termux.terminal.TermuxTerminalSessionClientBase
+import com.termux.terminal.TerminalSession
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
+import java.lang.ref.WeakReference
+
+/**
+ * Process-scoped owner of all terminal/SSH connections.
+ *
+ * Lives for the whole process (created by TermApplication), so connections
+ * survive the activity being destroyed — dismissing the app from recents no
+ * longer kills sessions. The activity (via [SessionHost]) only renders and
+ * forwards input; the manager keeps connections, service binding and
+ * notifications independent of the UI.
+ */
+class AppSessionManager private constructor(context: Context) {
+
+    private val appContext = context.applicationContext
+    private val prefs by lazy { appContext.getSharedPreferences("ssh_prefs", Context.MODE_PRIVATE) }
+
+    val serverRepository by lazy { ServerRepository(prefs) }
+    private val persistence by lazy { SharedPreferencesWorkspacePersistence(prefs) }
+
+    private val serverFactory by lazy {
+        ServerFactory(
+            context = appContext,
+            persistence = persistence,
+            onSessionClientCreated = { createDefaultSessionClient() },
+            onServiceBind = { bindTerminalSession(it) },
+            onSessionFinished = { serverId -> onServerSessionFinished(serverId) },
+        )
+    }
+    private val serverManager by lazy { ServerManager(serverFactory) }
+    val coordinator by lazy { ServerCoordinator(serverManager, serverRepository) }
+
+    private val _sessionFinished = MutableSharedFlow<String>()
+    /** Emits a server id whenever one of its sessions finished on its own. */
+    val sessionFinished: SharedFlow<String> = _sessionFinished.asSharedFlow()
+
+    private var hostRef: WeakReference<SessionHost>? = null
+
+    // ── Host (activity) ──────────────────────────────────────────────
+
+    fun setHost(host: SessionHost?) {
+        hostRef = host?.let { WeakReference(it) }
+    }
+
+    // ── Connection lifecycle ─────────────────────────────────────────
+
+    suspend fun connect(id: String): Result<Server> = coordinator.connect(id)
+
+    fun disconnectAll() {
+        coordinator.disconnectAll()
+        sshService?.disconnectAll()
+    }
+
+    private fun onServerSessionFinished(serverId: String) {
+        coordinator.disconnect(serverId)
+        _sessionFinished.tryEmit(serverId)
+    }
+
+    // ── Terminal protocol notifications ──────────────────────────────
+
+    fun handleTerminalNotification(title: String?, body: String?) {
+        val host = hostRef?.get()
+        if (host != null && host.isAtLeast(Lifecycle.State.RESUMED)) {
+            host.showInAppNotification(title, body)
+        } else {
+            showSystemNotification(title, body)
+        }
+    }
+
+    private var nextNotificationId =
+        TermuxConstants.TERMUX_TERMINAL_PROTOCOL_NOTIFICATION_ID_BASE
+
+    @Synchronized
+    private fun getNextTerminalProtocolNotificationId(): Int {
+        val id = nextNotificationId
+        nextNotificationId++
+        return id
+    }
+
+    private fun showSystemNotification(title: String?, body: String?) {
+        val notificationManager =
+            com.termux.shared.notification.NotificationUtils.getNotificationManager(appContext) ?: return
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            com.termux.shared.notification.NotificationUtils.setupNotificationChannel(
+                appContext,
+                TermuxConstants.TERMUX_TERMINAL_PROTOCOL_NOTIFICATIONS_NOTIFICATION_CHANNEL_ID,
+                TermuxConstants.TERMUX_TERMINAL_PROTOCOL_NOTIFICATIONS_NOTIFICATION_CHANNEL_NAME,
+                NotificationManager.IMPORTANCE_DEFAULT,
+            )
+        }
+
+        val normalizedTitle = title ?: "Terminal Notification"
+        val normalizedBody = body ?: ""
+
+        val intent = Intent(appContext, com.mrndtvndv.term.MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+        }
+        val contentIntent = PendingIntent.getActivity(
+            appContext,
+            0,
+            intent,
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M)
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+            else PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+
+        val builder = com.termux.shared.notification.NotificationUtils.geNotificationBuilder(
+            appContext,
+            TermuxConstants.TERMUX_TERMINAL_PROTOCOL_NOTIFICATIONS_NOTIFICATION_CHANNEL_ID,
+            0, // Notification.PRIORITY_DEFAULT (deprecated in Java, inlined)
+            normalizedTitle,
+            normalizedBody,
+            normalizedBody,
+            contentIntent,
+            null,
+            com.termux.shared.notification.NotificationUtils.NOTIFICATION_MODE_ALL,
+        ) ?: return
+
+        builder.setSmallIcon(android.R.drawable.ic_dialog_info)
+        builder.setAutoCancel(true)
+
+        notificationManager.notify(
+            getNextTerminalProtocolNotificationId(),
+            builder.build(),
+        )
+    }
+
+    // ── Session service binding ──────────────────────────────────────
+
+    private var sshService: SshSessionService? = null
+    private val pendingSessions = mutableSetOf<TerminalSession>()
+
+    private val connection = object : ServiceConnection {
+        override fun onServiceConnected(className: ComponentName, service: IBinder) {
+            val binder = service as SshSessionService.LocalBinder
+            val s = binder.getService()
+            sshService = s
+            pendingSessions.forEach { s.addSession(it) }
+            pendingSessions.clear()
+        }
+
+        override fun onServiceDisconnected(arg0: ComponentName) {
+            sshService = null
+        }
+    }
+
+    private fun bindTerminalSession(termSession: TerminalSession) {
+        val intent = Intent(appContext, SshSessionService::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            appContext.startForegroundService(intent)
+        } else {
+            appContext.startService(intent)
+        }
+        val service = sshService
+        if (service != null) {
+            service.addSession(termSession)
+        } else {
+            pendingSessions.add(termSession)
+        }
+        appContext.bindService(intent, connection, Context.BIND_AUTO_CREATE)
+    }
+
+    private fun unbindTerminalSession(termSession: TerminalSession) {
+        sshService?.removeSession(termSession.mHandle)
+        pendingSessions.remove(termSession)
+    }
+
+    // ── Default session client ───────────────────────────────────────
+
+    /**
+     * Activity-agnostic session client: every callback is routed through the
+     * current [SessionHost] (or dropped when the UI is gone), so one client
+     * stays valid across activity recreations.
+     */
+    private fun createDefaultSessionClient(): TermuxTerminalSessionClientBase {
+        return object : TermuxTerminalSessionClientBase() {
+            override fun onFrameAvailable(changedSession: TerminalSession) {
+                val host = hostRef?.get() ?: return
+                if (!host.isAtLeast(Lifecycle.State.STARTED)) return
+                host.onFrameAvailable()
+            }
+
+            override fun onCopyTextToClipboard(session: TerminalSession, text: String) {
+                hostRef?.get()?.copyToClipboard(text)
+            }
+
+            override fun onPasteTextFromClipboard(session: TerminalSession?) {
+                val host = hostRef?.get() ?: return
+                val text = host.pasteFromClipboard() ?: return
+                session?.paste(text)
+            }
+
+            override fun onTerminalProtocolNotification(
+                session: TerminalSession,
+                title: String?,
+                body: String?,
+            ) {
+                handleTerminalNotification(title, body)
+            }
+
+            override fun onSessionFinished(finishedSession: TerminalSession) {
+                unbindTerminalSession(finishedSession)
+            }
+        }
+    }
+
+    companion object {
+        @Volatile
+        private var instance: AppSessionManager? = null
+
+        fun init(context: Context) {
+            if (instance == null) {
+                instance = AppSessionManager(context.applicationContext)
+            }
+        }
+
+        val current: AppSessionManager?
+            get() = instance
+    }
+}

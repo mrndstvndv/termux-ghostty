@@ -418,16 +418,28 @@ public class TerminalView extends View {
                 }
                 String current = text != null ? text.toString() : "";
 
+                // Same text with a different cursor position (Gboard spacebar-swipe cursor mode,
+                // recorrection, underline refresh). Nothing changed in the terminal, so do not
+                // treat it as a replacement, which would fire DELs and re-send the word.
+                if (current.equals(mComposingText)) {
+                    return super.setComposingText(text, newCursorPosition);
+                }
+
                 // Append: composing text grew (new characters typed)
                 if (current.length() > mComposingText.length() && current.startsWith(mComposingText)) {
                     String delta = current.substring(mComposingText.length());
                     sendTextToTerminal(delta);
                 }
-                // Backspace: composing text shrunk (character removed)
+                // Shrink: either a real backspace (one code point) or an IME-initiated composition
+                // collapse, e.g. Gboard cancelling the composition when entering spacebar-swipe
+                // cursor mode on a TYPE_NULL field. The composing text was already sent to the
+                // terminal as it grew, so a collapse must not be translated into backspaces.
                 else if (current.length() < mComposingText.length() && mComposingText.startsWith(current)) {
-                    int removed = mComposingText.length() - current.length();
-                    KeyEvent deleteKey = new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DEL);
-                    for (int i = 0; i < removed; i++) sendKeyEvent(deleteKey);
+                    int composingCodePoints = Character.codePointCount(mComposingText, 0, mComposingText.length());
+                    int currentCodePoints = Character.codePointCount(current, 0, current.length());
+                    if (composingCodePoints - currentCodePoints == 1) {
+                        sendKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DEL));
+                    }
                 }
                 // Replacement: text was corrected/replaced entirely (auto-correct, suggestion)
                 else if (!mComposingText.isEmpty()) {
@@ -465,12 +477,12 @@ public class TerminalView extends View {
                     // Only send the suffix — the composing portion was already sent
                     String delta = committed.substring(mComposingText.length());
                     if (!delta.isEmpty()) sendTextToTerminal(delta);
-                } else if (!mComposingText.isEmpty()) {
+                } else if (!mComposingText.isEmpty() && !committed.isEmpty()) {
                     // Auto-correct: undo composing chars, send replacement
                     KeyEvent deleteKey = new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DEL);
                     for (int i = 0; i < mComposingText.length(); i++) sendKeyEvent(deleteKey);
                     sendTextToTerminal(committed);
-                } else {
+                } else if (!committed.isEmpty()) {
                     sendTextToTerminal(committed);
                 }
                 mComposingText = "";

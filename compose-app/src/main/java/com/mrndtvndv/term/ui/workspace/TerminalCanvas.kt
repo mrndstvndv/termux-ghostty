@@ -477,11 +477,12 @@ fun TerminalCanvas(
                                     }
                                 }
                                 text.isEmpty() -> {
-                                    // Empty commit while composing = Gboard dismissing the
-                                    // recorrection on the first backspace press after gesture
-                                    // typing. The word was already echoed to the terminal as it
-                                    // grew, so honor the backspace with a single delete.
-                                    sendDelete(session, extraKeysController)
+                                    // Lone empty commit = Gboard dismissing the recorrection
+                                    // on the first backspace press after gesture typing (the
+                                    // swipe sends SetSelectionCommand instead, never this).
+                                    // The user expects one backspace to remove the gestured
+                                    // word — delete the whole composing word.
+                                    for (ch in composingText) { sendDelete(session, extraKeysController) }
                                 }
                                 else -> {
                                     // Auto-correct replaced the composing text entirely

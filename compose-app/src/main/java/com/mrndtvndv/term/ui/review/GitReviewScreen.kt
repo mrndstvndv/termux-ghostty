@@ -83,6 +83,8 @@ fun GitReviewScreen(
     var commitMessage by remember { mutableStateOf("") }
     var renameCommitTarget by remember { mutableStateOf<GitCommit?>(null) }
     var renameCommitSubject by remember { mutableStateOf("") }
+    var softResetTarget by remember { mutableStateOf<GitCommit?>(null) }
+    var hardResetTarget by remember { mutableStateOf<GitCommit?>(null) }
     var showBranchDialog by remember { mutableStateOf(false) }
     var showCreateBranchDialog by remember { mutableStateOf(false) }
 
@@ -133,6 +135,104 @@ fun GitReviewScreen(
             dismissButton = {
                 TextButton(
                     onClick = { renameCommitTarget = null },
+                    enabled = !isCommitInProgress
+                ) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    if (softResetTarget != null) {
+        AlertDialog(
+            onDismissRequest = { if (!isCommitInProgress) softResetTarget = null },
+            title = { Text("Soft Reset to Commit") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "Reset to ${softResetTarget?.shortHash}?",
+                        style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                    )
+                    Text(
+                        "Commits after ${softResetTarget?.shortHash} will be undone and their changes " +
+                            "moved to the staged area. Working tree changes are kept."
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val commit = softResetTarget
+                        softResetTarget = null
+                        if (commit != null) viewModel.softReset(commit)
+                    },
+                    enabled = !isCommitInProgress
+                ) {
+                    if (isCommitInProgress) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp
+                        )
+                    } else {
+                        Text("Reset")
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { softResetTarget = null },
+                    enabled = !isCommitInProgress
+                ) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    if (hardResetTarget != null) {
+        AlertDialog(
+            onDismissRequest = { if (!isCommitInProgress) hardResetTarget = null },
+            title = { Text("Hard Reset to Commit") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "Reset to ${hardResetTarget?.shortHash}?",
+                        style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                    )
+                    Text(
+                        "All commits after ${hardResetTarget?.shortHash} AND all uncommitted changes " +
+                            "will be permanently discarded. This cannot be undone."
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val commit = hardResetTarget
+                        hardResetTarget = null
+                        if (commit != null) viewModel.hardReset(commit)
+                    },
+                    enabled = !isCommitInProgress,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError
+                    )
+                ) {
+                    if (isCommitInProgress) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp
+                        )
+                    } else {
+                        Text("Delete & Reset")
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { hardResetTarget = null },
                     enabled = !isCommitInProgress
                 ) {
                     Text("Cancel")
@@ -287,6 +387,8 @@ fun GitReviewScreen(
                         renameCommitTarget = commit
                         renameCommitSubject = commit.subject
                     },
+                    onSoftResetClick = { softResetTarget = it },
+                    onHardResetClick = { hardResetTarget = it },
                     onLoadMoreCommits = { viewModel.loadMoreCommits() },
                     onStage = { viewModel.stageFile(it) },
                     onUnstage = { viewModel.unstageFile(it) },
@@ -353,6 +455,8 @@ fun GitReviewScreen(
                             renameCommitTarget = commit
                             renameCommitSubject = commit.subject
                         },
+                        onSoftResetClick = { softResetTarget = it },
+                        onHardResetClick = { hardResetTarget = it },
                         onLoadMoreCommits = { viewModel.loadMoreCommits() },
                         onStage = { viewModel.stageFile(it) },
                         onUnstage = { viewModel.unstageFile(it) },
@@ -592,6 +696,8 @@ fun FileChangesList(
     onFileSelected: (GitFileStatus) -> Unit,
     onCommitSelected: (GitCommit) -> Unit = {},
     onRenameCommitClick: (GitCommit) -> Unit = {},
+    onSoftResetClick: (GitCommit) -> Unit = {},
+    onHardResetClick: (GitCommit) -> Unit = {},
     onLoadMoreCommits: () -> Unit = {},
     onStage: (GitFileStatus) -> Unit,
     onUnstage: (GitFileStatus) -> Unit,
@@ -842,7 +948,9 @@ fun FileChangesList(
                                             commit = commit,
                                             isSelected = selectedCommit == commit,
                                             onClick = { onCommitSelected(commit) },
-                                            onRenameClick = { onRenameCommitClick(commit) }
+                                            onRenameClick = { onRenameCommitClick(commit) },
+                                            onSoftResetClick = { onSoftResetClick(commit) },
+                                            onHardResetClick = { onHardResetClick(commit) }
                                         )
                                     }
                                     if (uiState.hasMoreCommits) {
@@ -1117,7 +1225,9 @@ fun CommitItem(
     commit: GitCommit,
     isSelected: Boolean,
     onClick: () -> Unit,
-    onRenameClick: () -> Unit = {}
+    onRenameClick: () -> Unit = {},
+    onSoftResetClick: () -> Unit = {},
+    onHardResetClick: () -> Unit = {}
 ) {
     val bg = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f) else Color.Transparent
     var showMenu by remember { mutableStateOf(false) }
@@ -1201,6 +1311,33 @@ fun CommitItem(
                 onClick = {
                     showMenu = false
                     onRenameClick()
+                }
+            )
+            DropdownMenuItem(
+                text = { Text("Soft Reset to Here") },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.Undo,
+                        contentDescription = "Soft Reset to Here"
+                    )
+                },
+                onClick = {
+                    showMenu = false
+                    onSoftResetClick()
+                }
+            )
+            DropdownMenuItem(
+                text = { Text("Hard Reset to Here") },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.DeleteForever,
+                        contentDescription = "Hard Reset to Here",
+                        tint = MaterialTheme.colorScheme.error
+                    )
+                },
+                onClick = {
+                    showMenu = false
+                    onHardResetClick()
                 }
             )
         }

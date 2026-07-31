@@ -125,20 +125,6 @@ class ReviewViewModel(
         _showLineNumbers.value = !_showLineNumbers.value
     }
 
-    private suspend fun getRepoRoot(dir: String): String {
-        return try {
-            val command = "export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; cd \"$dir\" && git rev-parse --show-toplevel"
-            val output = execCommand(command).trim()
-            if (output.isNotEmpty() && !output.startsWith("fatal:") && !output.contains("error")) {
-                output
-            } else {
-                dir
-            }
-        } catch (e: Exception) {
-            dir
-        }
-    }
-
     private suspend fun fetchCommits(repoRoot: String, limit: Int = 15, skip: Int = 0): List<GitCommit> {
         return try {
             val command = "export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; cd \"$repoRoot\" && " +
@@ -169,7 +155,7 @@ class ReviewViewModel(
         val currentCommits = currentState.recentCommits
         viewModelScope.launch {
             val dir = workspaceDir.value
-            val repoRoot = getRepoRoot(dir)
+            val repoRoot = getRepoRoot(execCommand, dir)
             val nextCommits = fetchCommits(repoRoot, limit = 15, skip = currentCommits.size)
             val updatedList = currentCommits + nextCommits
             _uiState.value = currentState.copy(
@@ -233,6 +219,8 @@ class ReviewViewModel(
     }
 
     @Suppress("LongMethod")
+    private val gitReset = GitResetOperations(execCommand, workspaceDir)
+
     fun refresh() {
         viewModelScope.launch {
             if (_uiState.value !is ReviewUiState.Success) {
@@ -243,50 +231,11 @@ class ReviewViewModel(
 
             val dir = workspaceDir.value
             try {
-                val repoRoot = getRepoRoot(dir)
+                val repoRoot = getRepoRoot(execCommand, dir)
                 val command = "export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; " +
                     "cd \"$repoRoot\" && git status --porcelain"
                 val output = execCommand(command)
-                
-                val staged = mutableListOf<GitFileStatus>()
-                val unstaged = mutableListOf<GitFileStatus>()
-
-                output.lines().forEach { rawLine ->
-                    val line = rawLine.trimEnd('\r')
-                    if (line.length >= 4) {
-                        val col0 = line[0]
-                        val col1 = line[1]
-                        val rawPath = line.substring(3).trim()
-                        
-                        val cleanPath = if (rawPath.contains(" -> ")) {
-                            rawPath.substringAfter(" -> ").trim().removeSurrounding("\"").trimEnd('/')
-                        } else {
-                            rawPath.removeSurrounding("\"").trimEnd('/')
-                        }
-
-                        if (col0 != ' ' && col0 != '?') {
-                            staged.add(
-                                GitFileStatus(
-                                    originalPath = rawPath,
-                                    path = cleanPath,
-                                    status = col0.toString(),
-                                    isStaged = true
-                                )
-                            )
-                        }
-                        if (col1 != ' ' || col0 == '?') {
-                            val status = if (col0 == '?') "??" else col1.toString()
-                            unstaged.add(
-                                GitFileStatus(
-                                    originalPath = rawPath,
-                                    path = cleanPath,
-                                    status = status,
-                                    isStaged = false
-                                )
-                            )
-                        }
-                    }
-                }
+                val (staged, unstaged) = parseStatusOutput(output)
 
                 val currentSelFile = _selectedFile.value
                 if (currentSelFile != null) {
@@ -323,6 +272,48 @@ class ReviewViewModel(
         }
     }
 
+    private fun parseStatusOutput(output: String): Pair<List<GitFileStatus>, List<GitFileStatus>> {
+        val staged = mutableListOf<GitFileStatus>()
+        val unstaged = mutableListOf<GitFileStatus>()
+
+        output.lines().forEach { rawLine ->
+            val line = rawLine.trimEnd('\r')
+            if (line.length < 4) return@forEach
+            val col0 = line[0]
+            val col1 = line[1]
+            val rawPath = line.substring(3).trim()
+
+            val cleanPath = if (rawPath.contains(" -> ")) {
+                rawPath.substringAfter(" -> ").trim().removeSurrounding("\"").trimEnd('/')
+            } else {
+                rawPath.removeSurrounding("\"").trimEnd('/')
+            }
+
+            if (col0 != ' ' && col0 != '?') {
+                staged.add(
+                    GitFileStatus(
+                        originalPath = rawPath,
+                        path = cleanPath,
+                        status = col0.toString(),
+                        isStaged = true
+                    )
+                )
+            }
+            if (col1 != ' ' || col0 == '?') {
+                val status = if (col0 == '?') "??" else col1.toString()
+                unstaged.add(
+                    GitFileStatus(
+                        originalPath = rawPath,
+                        path = cleanPath,
+                        status = status,
+                        isStaged = false
+                    )
+                )
+            }
+        }
+        return staged to unstaged
+    }
+
     fun selectFile(file: GitFileStatus) {
         _selectedFile.value = file
         _selectedCommit.value = null
@@ -347,7 +338,7 @@ class ReviewViewModel(
             _selectedFileDiff.value = null
             val dir = workspaceDir.value
             try {
-                val repoRoot = getRepoRoot(dir)
+                val repoRoot = getRepoRoot(execCommand, dir)
                 val command = "export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; cd \"$repoRoot\" && " +
                     "git show --stat -p \"${commit.hash}\""
                 val diffOutput = execCommand(command)
@@ -367,7 +358,7 @@ class ReviewViewModel(
             val dir = workspaceDir.value
             val contextFlag = if (_isFullFileMode.value) "-U999999 " else ""
             try {
-                val repoRoot = getRepoRoot(dir)
+                val repoRoot = getRepoRoot(execCommand, dir)
                 val command = when {
                     file.status == "??" -> {
                         "export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; cd \"$repoRoot\" && " +
@@ -397,7 +388,7 @@ class ReviewViewModel(
         viewModelScope.launch {
             val dir = workspaceDir.value
             try {
-                val repoRoot = getRepoRoot(dir)
+                val repoRoot = getRepoRoot(execCommand, dir)
                 val pathsArg = files.joinToString(" ") { "\"${it.path}\"" }
                 val command = "export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; " +
                     "cd \"$repoRoot\" && git add -- $pathsArg"
@@ -414,7 +405,7 @@ class ReviewViewModel(
         viewModelScope.launch {
             val dir = workspaceDir.value
             try {
-                val repoRoot = getRepoRoot(dir)
+                val repoRoot = getRepoRoot(execCommand, dir)
                 val pathsArg = files.joinToString(" ") { "\"${it.path}\"" }
                 val command = "export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; " +
                     "cd \"$repoRoot\" && (git restore --staged -- $pathsArg || git reset HEAD -- $pathsArg)"
@@ -431,7 +422,7 @@ class ReviewViewModel(
         viewModelScope.launch {
             val dir = workspaceDir.value
             try {
-                val repoRoot = getRepoRoot(dir)
+                val repoRoot = getRepoRoot(execCommand, dir)
                 val untracked = files.filter { it.status == "??" }
                 val staged = files.filter { it.isStaged && it.status != "??" }
                 val unstaged = files.filter { !it.isStaged && it.status != "??" }
@@ -484,7 +475,7 @@ class ReviewViewModel(
             _isCommitInProgress.value = true
             val dir = workspaceDir.value
             try {
-                val repoRoot = getRepoRoot(dir)
+                val repoRoot = getRepoRoot(execCommand, dir)
                 val command = "export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; " +
                     "cd ${shellQuote(repoRoot)} && " +
                     "git commit -m ${shellQuote(commitMessage)} 2>&1; " +
@@ -528,7 +519,7 @@ class ReviewViewModel(
             _isCommitInProgress.value = true
             val dir = workspaceDir.value
             try {
-                val repoRoot = getRepoRoot(dir)
+                val repoRoot = getRepoRoot(execCommand, dir)
                 val escapedSubject = shellQuote(newSubject)
                 val pathEnv = "export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; "
                 val headHash = try {
@@ -559,6 +550,34 @@ class ReviewViewModel(
         }
     }
 
+    fun softReset(commit: GitCommit) {
+        runReset(commit) { gitReset.softReset(it) }
+    }
+
+    fun hardReset(commit: GitCommit) {
+        runReset(commit) { gitReset.hardReset(it) }
+    }
+
+    private fun runReset(commit: GitCommit, operation: suspend (GitCommit) -> String?) {
+        if (_isCommitInProgress.value) return
+        viewModelScope.launch {
+            _isCommitInProgress.value = true
+            try {
+                val error = operation(commit)
+                if (error == null) {
+                    _errorMessage.value = null
+                    refresh()
+                } else {
+                    _errorMessage.value = error
+                }
+            } catch (e: Exception) {
+                _errorMessage.value = "Failed to reset: ${e.localizedMessage}"
+            } finally {
+                _isCommitInProgress.value = false
+            }
+        }
+    }
+
     @Suppress("LongMethod", "CyclomaticComplexMethod")
     fun checkoutBranch(branch: GitBranch) {
         if (_isBranchOperationInProgress.value) return
@@ -566,7 +585,7 @@ class ReviewViewModel(
             _isBranchOperationInProgress.value = true
             val dir = workspaceDir.value
             try {
-                val repoRoot = getRepoRoot(dir)
+                val repoRoot = getRepoRoot(execCommand, dir)
                 val targetName = branch.name
                 val pathEnv = "export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; "
                 val command = if (branch.isRemote) {
@@ -627,7 +646,7 @@ class ReviewViewModel(
             _isBranchOperationInProgress.value = true
             val dir = workspaceDir.value
             try {
-                val repoRoot = getRepoRoot(dir)
+                val repoRoot = getRepoRoot(execCommand, dir)
                 val pathEnv = "export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; "
                 val command = pathEnv + "cd ${shellQuote(repoRoot)} && " +
                     "git checkout -b ${shellQuote(name)} 2>&1; " +
@@ -669,6 +688,4 @@ class ReviewViewModel(
     fun clearErrorMessage() {
         _errorMessage.value = null
     }
-
-    private fun shellQuote(value: String): String = "'${value.replace("'", "'\"'\"'")}'"
 }

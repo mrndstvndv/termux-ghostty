@@ -5,8 +5,12 @@ import android.graphics.Typeface
 import android.view.KeyEvent
 import android.view.MotionEvent
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculateCentroid
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -618,82 +622,112 @@ fun TerminalCanvas(
                     text = AnnotatedString(visibleText)
                 }
                 .pointerInput(inputView, session) {
-                    var scaleAccumulator = 1f
-                    var dragAccumulator = 0f
-                    var gestureStartY = 0f
-                    var initialScrollSet = false
-                    detectTransformGestures { centroid, pan, zoom, _ ->
-                        if (isSelectingText.value) return@detectTransformGestures
+                    awaitEachGesture {
+                        var scaleAccumulator = 1f
+                        var dragAccumulator = 0f
+                        var gestureStartY = 0f
+                        var initialScrollSet = false
+                        var isVerticalScroll = false
+                        var isHorizontalSwipe = false
+                        var isPinchZoom = false
+                        var totalPanX = 0f
+                        var totalPanY = 0f
+                        val touchSlop = viewConfiguration.touchSlop
 
-                        val renderer = inputView.mRenderer
-                        if (renderer != null) {
-                            if (zoom != 1f) {
-                                scaleAccumulator *= zoom
-                                if (scaleAccumulator < 0.9f || scaleAccumulator > 1.1f) {
-                                    val increase = scaleAccumulator > 1f
-                                    val currentSize = renderer.mTextSize
-                                    val newSize = currentSize + (if (increase) 1 else -1) * 2
-                                    val clampedSize = newSize.coerceIn(sizes[1], sizes[2])
-                                    if (clampedSize != currentSize) {
-                                        currentFontSize.value = clampedSize
-                                        sharedPreferences.edit().putInt("font_size", clampedSize).apply()
-                                    }
-                                    scaleAccumulator = 1f
+                        awaitFirstDown(requireUnconsumed = false)
+                        if (isSelectingText.value) return@awaitEachGesture
+
+                        do {
+                            val event = awaitPointerEvent()
+                            val canceled = event.changes.any { it.isConsumed }
+                            if (!canceled) {
+                                val zoomChange = event.calculateZoom()
+                                val panChange = event.calculatePan()
+                                val pointerCount = event.changes.size
+
+                                if (pointerCount > 1 || zoomChange != 1f) {
+                                    isPinchZoom = true
                                 }
-                            }
 
-                            // Touch drag always scrolls (same as original GestureAndScaleRecognizer behavior)
-                            // MOTION events via touch are only for real mice, never for touch input
-                            if (pan.y != 0f) {
-                                // Set initial scroll position from the starting touch position
-                                // Only for viewport scrollback (non-mouse-tracking). When mouse
-                                // tracking is active (e.g. tmux splits), the terminal handles
-                                // per-pane scrolling via mouse coordinates — don't interfere with mTopRow.
-                                if (!initialScrollSet) {
-                                    initialScrollSet = true
-                                    gestureStartY = centroid.y
+                                if (isPinchZoom) {
+                                    event.changes.forEach { if (it.positionChanged()) it.consume() }
+                                    val renderer = inputView.mRenderer
+                                    if (renderer != null && zoomChange != 1f) {
+                                        scaleAccumulator *= zoomChange
+                                        if (scaleAccumulator < 0.9f || scaleAccumulator > 1.1f) {
+                                            val increase = scaleAccumulator > 1f
+                                            val currentSize = renderer.mTextSize
+                                            val newSize = currentSize + (if (increase) 1 else -1) * 2
+                                            val clampedSize = newSize.coerceIn(sizes[1], sizes[2])
+                                            if (clampedSize != currentSize) {
+                                                currentFontSize.value = clampedSize
+                                                sharedPreferences.edit().putInt("font_size", clampedSize).apply()
+                                            }
+                                            scaleAccumulator = 1f
+                                        }
+                                    }
+                                } else if (!isHorizontalSwipe) {
+                                    totalPanX += panChange.x
+                                    totalPanY += panChange.y
 
-                                    if (!session.isMouseTrackingActive()
-                                        && !session.isAlternateBufferActive()
-                                        && session.hasActiveTerminalBackend()
-                                    ) {
-                                        val viewHeight = inputView.height.toFloat()
-                                        if (viewHeight > 0f) {
-                                            val transcriptRows = session.getActiveTranscriptRows()
-                                            if (transcriptRows > 0) {
-                                                // Map touch Y to proportional scroll position:
-                                                //   top of viewport → earliest content (most negative topRow)
-                                                //   bottom of viewport → latest content (topRow = 0)
-                                                val ratio = (gestureStartY / viewHeight).coerceIn(0f, 1f)
-                                                val targetTopRow = -(transcriptRows * ratio).toInt()
-                                                    .coerceIn(-transcriptRows, 0)
-                                                inputView.setTopRow(targetTopRow)
-                                                session.setGhosttyTopRow(targetTopRow)
-                                                inputView.invalidate()
+                                    val dist = kotlin.math.sqrt(totalPanX * totalPanX + totalPanY * totalPanY)
+
+                                    if (!isVerticalScroll && dist > touchSlop) {
+                                        if (kotlin.math.abs(totalPanX) > kotlin.math.abs(totalPanY)) {
+                                            isHorizontalSwipe = true
+                                        } else {
+                                            isVerticalScroll = true
+                                        }
+                                    }
+
+                                    if (isVerticalScroll && panChange.y != 0f) {
+                                        event.changes.forEach { if (it.positionChanged()) it.consume() }
+
+                                        val renderer = inputView.mRenderer
+                                        if (renderer != null) {
+                                            val centroid = event.calculateCentroid()
+                                            if (!initialScrollSet) {
+                                                initialScrollSet = true
+                                                gestureStartY = centroid.y
+
+                                                if (!session.isMouseTrackingActive() &&
+                                                    !session.isAlternateBufferActive() &&
+                                                    session.hasActiveTerminalBackend()
+                                                ) {
+                                                    val viewHeight = inputView.height.toFloat()
+                                                    if (viewHeight > 0f) {
+                                                        val transcriptRows = session.getActiveTranscriptRows()
+                                                        if (transcriptRows > 0) {
+                                                            val ratio = (gestureStartY / viewHeight).coerceIn(0f, 1f)
+                                                            val targetTopRow = -(transcriptRows * ratio).toInt()
+                                                                .coerceIn(-transcriptRows, 0)
+                                                            inputView.setTopRow(targetTopRow)
+                                                            session.setGhosttyTopRow(targetTopRow)
+                                                            inputView.invalidate()
+                                                        }
+                                                    }
+                                                }
+                                            }
+
+                                            dragAccumulator += panChange.y
+                                            val fontHeight = renderer.getFontLineSpacing()
+                                            val deltaRows = (dragAccumulator / fontHeight).toInt()
+                                            if (deltaRows != 0) {
+                                                dragAccumulator -= deltaRows * fontHeight
+                                                val time = android.os.SystemClock.uptimeMillis()
+                                                val me = MotionEvent.obtain(
+                                                    time, time,
+                                                    MotionEvent.ACTION_MOVE,
+                                                    centroid.x, centroid.y, 0
+                                                )
+                                                inputView.doScroll(me, -deltaRows)
+                                                me.recycle()
                                             }
                                         }
                                     }
                                 }
-
-                                dragAccumulator += pan.y
-                                val fontHeight = renderer.getFontLineSpacing()
-                                val deltaRows = (dragAccumulator / fontHeight).toInt()
-                                if (deltaRows != 0) {
-                                    dragAccumulator -= deltaRows * fontHeight
-                                    // Pass a MotionEvent at the real touch position so that when
-                                    // mouse tracking is active (tmux splits), scroll wheel events
-                                    // are sent at the correct coordinates and routed to the right pane.
-                                    val time = android.os.SystemClock.uptimeMillis()
-                                    val me = MotionEvent.obtain(
-                                        time, time,
-                                        MotionEvent.ACTION_MOVE,
-                                        centroid.x, centroid.y, 0
-                                    )
-                                    inputView.doScroll(me, -deltaRows)
-                                    me.recycle()
-                                }
                             }
-                        }
+                        } while (!canceled && event.changes.any { it.pressed })
                     }
                 }
                 .pointerInput(inputView, session) {

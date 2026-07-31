@@ -61,6 +61,7 @@ fun GitReviewScreen(
     val selectedFileDiff by viewModel.selectedFileDiff.collectAsState()
     val isDiffLoading by viewModel.isDiffLoading.collectAsState()
     val isFullFileMode by viewModel.isFullFileMode.collectAsState()
+    val showLineNumbers by viewModel.showLineNumbers.collectAsState()
     val isStagedExpanded by viewModel.isStagedExpanded.collectAsState()
     val isUnstagedExpanded by viewModel.isUnstagedExpanded.collectAsState()
     val isCommitsExpanded by viewModel.isCommitsExpanded.collectAsState()
@@ -308,6 +309,8 @@ fun GitReviewScreen(
                     isLoading = isDiffLoading,
                     isFullFileMode = isFullFileMode,
                     onToggleFullFileMode = { viewModel.toggleFullFileMode() },
+                    showLineNumbers = showLineNumbers,
+                    onToggleLineNumbers = { viewModel.toggleLineNumbers() },
                     showHeader = true
                 )
             }
@@ -390,23 +393,40 @@ fun GitReviewScreen(
                                     }
                                 },
                                 actions = {
-                                    FilterChip(
-                                        selected = isFullFileMode,
-                                        onClick = { viewModel.toggleFullFileMode() },
-                                        label = { Text(if (isFullFileMode) "Full File" else "Diff Only") },
-                                        leadingIcon = {
-                                            Icon(
-                                                imageVector = if (isFullFileMode) {
-                                                    Icons.Default.Visibility
-                                                } else {
-                                                    Icons.Default.UnfoldMore
-                                                },
-                                                contentDescription = "Toggle full file mode",
-                                                modifier = Modifier.size(16.dp)
-                                            )
-                                        },
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
                                         modifier = Modifier.padding(end = 8.dp)
-                                    )
+                                    ) {
+                                        FilterChip(
+                                            selected = showLineNumbers,
+                                            onClick = { viewModel.toggleLineNumbers() },
+                                            label = { Text(if (showLineNumbers) "Line #s" else "No #s") },
+                                            leadingIcon = {
+                                                Icon(
+                                                    imageVector = Icons.Default.FormatListNumbered,
+                                                    contentDescription = "Toggle line numbers",
+                                                    modifier = Modifier.size(16.dp)
+                                                )
+                                            }
+                                        )
+                                        FilterChip(
+                                            selected = isFullFileMode,
+                                            onClick = { viewModel.toggleFullFileMode() },
+                                            label = { Text(if (isFullFileMode) "Full File" else "Diff Only") },
+                                            leadingIcon = {
+                                                Icon(
+                                                    imageVector = if (isFullFileMode) {
+                                                        Icons.Default.Visibility
+                                                    } else {
+                                                        Icons.Default.UnfoldMore
+                                                    },
+                                                    contentDescription = "Toggle full file mode",
+                                                    modifier = Modifier.size(16.dp)
+                                                )
+                                            }
+                                        )
+                                    }
                                 },
                                 colors = TopAppBarDefaults.topAppBarColors(
                                     containerColor = MaterialTheme.colorScheme.surface
@@ -422,6 +442,8 @@ fun GitReviewScreen(
                                 isLoading = isDiffLoading,
                                 isFullFileMode = isFullFileMode,
                                 onToggleFullFileMode = { viewModel.toggleFullFileMode() },
+                                showLineNumbers = showLineNumbers,
+                                onToggleLineNumbers = { viewModel.toggleLineNumbers() },
                                 showHeader = false
                             )
                         }
@@ -459,6 +481,21 @@ fun GitReviewScreen(
                                         )
                                     }
                                 },
+                                actions = {
+                                    FilterChip(
+                                        selected = showLineNumbers,
+                                        onClick = { viewModel.toggleLineNumbers() },
+                                        label = { Text(if (showLineNumbers) "Line #s" else "No #s") },
+                                        leadingIcon = {
+                                            Icon(
+                                                imageVector = Icons.Default.FormatListNumbered,
+                                                contentDescription = "Toggle line numbers",
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        },
+                                        modifier = Modifier.padding(end = 8.dp)
+                                    )
+                                },
                                 colors = TopAppBarDefaults.topAppBarColors(
                                     containerColor = MaterialTheme.colorScheme.surface
                                 )
@@ -473,6 +510,8 @@ fun GitReviewScreen(
                                 isLoading = isDiffLoading,
                                 isFullFileMode = isFullFileMode,
                                 onToggleFullFileMode = { viewModel.toggleFullFileMode() },
+                                showLineNumbers = showLineNumbers,
+                                onToggleLineNumbers = { viewModel.toggleLineNumbers() },
                                 showHeader = false
                             )
                         }
@@ -1279,11 +1318,14 @@ fun CommitDiffHeader(commit: GitCommit) {
     HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
 }
 
+@Suppress("LongMethod")
 @Composable
 fun DiffHeader(
     selectedFile: GitFileStatus,
     isFullFileMode: Boolean,
-    onToggleFullFileMode: () -> Unit
+    onToggleFullFileMode: () -> Unit,
+    showLineNumbers: Boolean = true,
+    onToggleLineNumbers: () -> Unit = {}
 ) {
     Surface(
         tonalElevation = 2.dp,
@@ -1310,28 +1352,46 @@ fun DiffHeader(
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                 )
             }
-            Spacer(modifier = Modifier.width(12.dp))
-            FilterChip(
-                selected = isFullFileMode,
-                onClick = onToggleFullFileMode,
-                label = { Text(if (isFullFileMode) "Full File" else "Diff Only") },
-                leadingIcon = {
-                    Icon(
-                        imageVector = if (isFullFileMode) {
-                            Icons.Default.Visibility
-                        } else {
-                            Icons.Default.UnfoldMore
-                        },
-                        contentDescription = "Toggle full file mode",
-                        modifier = Modifier.size(16.dp)
-                    )
-                }
-            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                FilterChip(
+                    selected = showLineNumbers,
+                    onClick = onToggleLineNumbers,
+                    label = { Text(if (showLineNumbers) "Line #s" else "No #s") },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Default.FormatListNumbered,
+                            contentDescription = "Toggle line numbers",
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                )
+                FilterChip(
+                    selected = isFullFileMode,
+                    onClick = onToggleFullFileMode,
+                    label = { Text(if (isFullFileMode) "Full File" else "Diff Only") },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = if (isFullFileMode) {
+                                Icons.Default.Visibility
+                            } else {
+                                Icons.Default.UnfoldMore
+                            },
+                            contentDescription = "Toggle full file mode",
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                )
+            }
         }
     }
     HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
 }
 
+@Suppress("LongParameterList", "LongMethod")
 @Composable
 fun DiffViewer(
     selectedFile: GitFileStatus?,
@@ -1340,6 +1400,8 @@ fun DiffViewer(
     isLoading: Boolean,
     isFullFileMode: Boolean = false,
     onToggleFullFileMode: () -> Unit = {},
+    showLineNumbers: Boolean = true,
+    onToggleLineNumbers: () -> Unit = {},
     showHeader: Boolean = false
 ) {
     if (selectedFile == null && selectedCommit == null) {
@@ -1358,7 +1420,9 @@ fun DiffViewer(
                 DiffHeader(
                     selectedFile = selectedFile,
                     isFullFileMode = isFullFileMode,
-                    onToggleFullFileMode = onToggleFullFileMode
+                    onToggleFullFileMode = onToggleFullFileMode,
+                    showLineNumbers = showLineNumbers,
+                    onToggleLineNumbers = onToggleLineNumbers
                 )
             } else if (selectedCommit != null) {
                 CommitDiffHeader(commit = selectedCommit)
@@ -1383,7 +1447,10 @@ fun DiffViewer(
                     }
                 }
                 else -> {
-                    DiffContent(diffText = diffText)
+                    DiffContent(
+                        diffText = diffText,
+                        showLineNumbers = showLineNumbers
+                    )
                 }
             }
         }
@@ -1547,6 +1614,7 @@ fun FileDiffHeader(
 @Composable
 fun DiffContent(
     diffText: String,
+    showLineNumbers: Boolean = true,
     modifier: Modifier = Modifier
 ) {
     var fontScale by remember { mutableFloatStateOf(1f) }
@@ -1610,7 +1678,8 @@ fun DiffContent(
                         dims = dims,
                         horizScrollState = horizScrollState,
                         isDark = isDark,
-                        fallbackColor = fallbackColor
+                        fallbackColor = fallbackColor,
+                        showLineNumbers = showLineNumbers
                     )
                 }
             }
@@ -1643,27 +1712,30 @@ private fun DiffRowsLayout(
     dims: ScaledDiffDimensions,
     horizScrollState: androidx.compose.foundation.ScrollState,
     isDark: Boolean,
-    fallbackColor: Color
+    fallbackColor: Color,
+    showLineNumbers: Boolean = true
 ) {
     Row(
         modifier = Modifier.fillMaxWidth()
     ) {
-        LineNumberColumn(
-            parsedLines = parsedLines,
-            numWidth = dims.numWidth,
-            columnWidth = dims.columnWidth,
-            lineHeight = dims.lineHeight,
-            fontSize = dims.lineNumFontSize,
-            isDark = isDark,
-            fallbackColor = fallbackColor
-        )
+        if (showLineNumbers) {
+            LineNumberColumn(
+                parsedLines = parsedLines,
+                numWidth = dims.numWidth,
+                columnWidth = dims.columnWidth,
+                lineHeight = dims.lineHeight,
+                fontSize = dims.lineNumFontSize,
+                isDark = isDark,
+                fallbackColor = fallbackColor
+            )
 
-        Box(
-            modifier = Modifier
-                .width(1.dp)
-                .height((parsedLines.size * dims.lineHeight.value).dp)
-                .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
-        )
+            Box(
+                modifier = Modifier
+                    .width(1.dp)
+                    .height((parsedLines.size * dims.lineHeight.value).dp)
+                    .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+            )
+        }
 
         CodeLinesColumn(
             parsedLines = parsedLines,

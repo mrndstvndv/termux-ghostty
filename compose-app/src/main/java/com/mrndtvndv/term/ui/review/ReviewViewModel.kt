@@ -68,6 +68,9 @@ class ReviewViewModel(
     private val _isFullFileMode = MutableStateFlow(false)
     val isFullFileMode = _isFullFileMode.asStateFlow()
 
+    private val _showLineNumbers = MutableStateFlow(true)
+    val showLineNumbers = _showLineNumbers.asStateFlow()
+
     private val _isCommitInProgress = MutableStateFlow(false)
     val isCommitInProgress = _isCommitInProgress.asStateFlow()
 
@@ -116,6 +119,10 @@ class ReviewViewModel(
         _selectedFile.value?.let { file ->
             loadDiff(file)
         }
+    }
+
+    fun toggleLineNumbers() {
+        _showLineNumbers.value = !_showLineNumbers.value
     }
 
     private suspend fun getRepoRoot(dir: String): String {

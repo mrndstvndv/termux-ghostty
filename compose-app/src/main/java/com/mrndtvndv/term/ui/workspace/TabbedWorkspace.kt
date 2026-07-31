@@ -50,11 +50,11 @@ fun TabbedWorkspace(
     val activeTabs = remember(sftpViewModel, reviewViewModel, isLocal) {
         buildList {
             add(WorkspaceTab.Terminal)
-            if (sftpViewModel != null) {
-                add(WorkspaceTab.Sftp)
-            }
             if (reviewViewModel != null) {
                 add(WorkspaceTab.Review)
+            }
+            if (sftpViewModel != null) {
+                add(WorkspaceTab.Sftp)
             }
             if (!isLocal) {
                 add(WorkspaceTab.Browser)

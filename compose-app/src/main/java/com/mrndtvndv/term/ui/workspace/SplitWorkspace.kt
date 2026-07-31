@@ -48,11 +48,11 @@ fun SplitWorkspace(
 
         val rightTabs = remember(sftpViewModel, reviewViewModel, isLocal) {
             buildList {
-                if (sftpViewModel != null) {
-                    add(WorkspaceTab.Sftp)
-                }
                 if (reviewViewModel != null) {
                     add(WorkspaceTab.Review)
+                }
+                if (sftpViewModel != null) {
+                    add(WorkspaceTab.Sftp)
                 }
                 if (!isLocal) {
                     add(WorkspaceTab.Browser)

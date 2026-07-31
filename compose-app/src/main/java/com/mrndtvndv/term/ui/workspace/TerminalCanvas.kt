@@ -303,6 +303,10 @@ fun TerminalCanvas(
             isFocusableInTouchMode = true
             setTextSize(currentFontSize.value)
             setTypeface(face)
+            // TODO(debug): temporary — captures every IME call (setComposingText/commitText/
+            // deleteSurroundingText) and key event to logcat for diagnosing word deletions
+            // from Gboard's spacebar-swipe cursor mode. Remove once fixed.
+            setIsTerminalViewKeyLoggingEnabled(true)
 
             setTerminalViewClient(object : com.termux.shared.termux.terminal.TermuxTerminalViewClientBase() {
                 override fun onSingleTapUp(e: MotionEvent) {

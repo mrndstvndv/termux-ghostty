@@ -674,7 +674,7 @@ fun TerminalCanvas(
                                     val dist = kotlin.math.sqrt(totalPanX * totalPanX + totalPanY * totalPanY)
 
                                     if (!isVerticalScroll && dist > touchSlop) {
-                                        if (kotlin.math.abs(totalPanX) > kotlin.math.abs(totalPanY)) {
+                                        if (kotlin.math.abs(totalPanX) > 1.5f * kotlin.math.abs(totalPanY)) {
                                             isHorizontalSwipe = true
                                         } else {
                                             isVerticalScroll = true

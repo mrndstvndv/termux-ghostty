@@ -20,6 +20,17 @@ import com.termux.view.TerminalView
 import com.mrndtvndv.term.ui.browser.InAppBrowser
 import com.mrndtvndv.term.ui.review.ReviewViewModel
 import com.mrndtvndv.term.ui.review.GitReviewScreen
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.pager.PagerDefaults
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalViewConfiguration
+import androidx.compose.ui.unit.Velocity
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -71,6 +82,54 @@ fun TabbedWorkspace(
         pageCount = { activeTabs.size }
     )
     val coroutineScope = rememberCoroutineScope()
+
+    var isPagerScrollAllowed by remember { mutableStateOf(true) }
+    val viewConfiguration = LocalViewConfiguration.current
+    val touchSlop = viewConfiguration.touchSlop
+
+    // pageNestedScrollConnection is @Composable in foundation 1.11+, so it must be
+    // called from the composable body, not inside remember {} or the object expression.
+    val defaultPagerNestedScrollConnection = PagerDefaults.pageNestedScrollConnection(
+        pagerState,
+        Orientation.Horizontal
+    )
+    val pageNestedScrollConnection = remember(pagerState) {
+        object : NestedScrollConnection {
+            private val defaultConn = defaultPagerNestedScrollConnection
+
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                if (kotlin.math.abs(available.x) > kotlin.math.abs(available.y) * 1.5f) {
+                    return defaultConn.onPreScroll(available, source)
+                }
+                return Offset.Zero
+            }
+
+            override fun onPostScroll(
+                consumed: Offset,
+                available: Offset,
+                source: NestedScrollSource
+            ): Offset {
+                if (kotlin.math.abs(available.x) > kotlin.math.abs(available.y) * 1.5f) {
+                    return defaultConn.onPostScroll(consumed, available, source)
+                }
+                return Offset.Zero
+            }
+
+            override suspend fun onPreFling(available: Velocity): Velocity {
+                if (kotlin.math.abs(available.x) > kotlin.math.abs(available.y) * 1.5f) {
+                    return defaultConn.onPreFling(available)
+                }
+                return Velocity.Zero
+            }
+
+            override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
+                if (kotlin.math.abs(available.x) > kotlin.math.abs(available.y) * 1.5f) {
+                    return defaultConn.onPostFling(consumed, available)
+                }
+                return Velocity.Zero
+            }
+        }
+    }
 
     // Sync pagerState when activeTab changes
     LaunchedEffect(activePageIndex) {
@@ -127,12 +186,38 @@ fun TabbedWorkspace(
     ) { paddingValues ->
         HorizontalPager(
             state = pagerState,
-            userScrollEnabled = true,
+            userScrollEnabled = isPagerScrollAllowed,
+            pageNestedScrollConnection = pageNestedScrollConnection,
             key = { index -> activeTabs.getOrNull(index)?.let { "${index}_${it.title}" } ?: index.toString() },
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
                 .clipToBounds()
+                .pointerInput(touchSlop) {
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        var isLocked = false
+                        do {
+                            val event = awaitPointerEvent(PointerEventPass.Initial)
+                            if (!isLocked) {
+                                val pointer = event.changes.firstOrNull { it.id == down.id }
+                                    ?: event.changes.firstOrNull()
+                                if (pointer != null) {
+                                    val dx = kotlin.math.abs(pointer.position.x - down.position.x)
+                                    val dy = kotlin.math.abs(pointer.position.y - down.position.y)
+                                    val dist = kotlin.math.sqrt(dx * dx + dy * dy)
+                                    if (dist > touchSlop) {
+                                        isLocked = true
+                                        if (dy > dx * 0.7f) {
+                                            isPagerScrollAllowed = false
+                                        }
+                                    }
+                                }
+                            }
+                        } while (event.changes.any { it.pressed })
+                        isPagerScrollAllowed = true
+                    }
+                }
         ) { page ->
             if (page < activeTabs.size) {
                 when (activeTabs[page]) {

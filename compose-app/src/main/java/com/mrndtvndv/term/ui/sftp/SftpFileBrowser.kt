@@ -266,7 +266,7 @@ fun SftpFileBrowser(
                                             supportingContent = run {
                                                 val lastModified = formatLastModified(file.modifiedTime)
                                                 val desc = if (file.isDirectory) {
-                                                    lastModified
+                                                    ""
                                                 } else {
                                                     val sizeStr = formatBytes(file.size)
                                                     if (lastModified.isNotEmpty()) {

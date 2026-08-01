@@ -42,6 +42,7 @@ class NativeSshSession : SshSession {
         }
     }
 
+    @Suppress("TooGenericExceptionCaught")
     override suspend fun openShellChannel(
         termType: String,
         cols: Int,
@@ -64,25 +65,31 @@ class NativeSshSession : SshSession {
             }
 
             synchronized(lock) {
-                val handle = GhosttyNative.nativeSshInit(
-                    fd,
-                    username,
-                    passwordOrKey,
-                    isPassword,
-                    termType,
-                    cols,
-                    rows,
-                    herdrIntegration
-                )
+                val handle = try {
+                    GhosttyNative.nativeSshInit(
+                        fd,
+                        username,
+                        passwordOrKey,
+                        isPassword,
+                        termType,
+                        cols,
+                        rows,
+                        herdrIntegration
+                    )
+                } catch (e: Throwable) {
+                    com.termux.terminal.JNI.close(fd)
+                    throw e
+                }
 
                 if (handle == 0L) {
+                    com.termux.terminal.JNI.close(fd)
                     throw IllegalStateException("Failed to initialize native SSH session")
                 }
 
                 nativeSessionHandle = handle
                 GhosttyNative.nativeSshStart(handle)
 
-                NativeSshShellChannel(handle)
+                NativeSshShellChannel(this@NativeSshSession)
             }
         }
     }
@@ -90,6 +97,7 @@ class NativeSshSession : SshSession {
     override suspend fun openSftpClient(): SftpClient = synchronized(lock) {
         val handle = nativeSessionHandle
         if (handle == 0L) throw IllegalStateException("Not connected")
+        activeSftpClient?.close()
         val sftpHandle = GhosttyNative.nativeSftpInit(handle)
         if (sftpHandle == 0L) throw IOException("Failed to initialize native SFTP subsystem")
         val client = NativeSftpClient(sftpHandle, handle)
@@ -124,25 +132,31 @@ class NativeSshSession : SshSession {
     }
 }
 
-class NativeSshShellChannel(val nativeHandle: Long) : SshShellChannel {
+class NativeSshShellChannel(private val session: NativeSshSession) : SshShellChannel {
     override val inputStream: InputStream = object : InputStream() {
         override fun read(): Int = -1
     }
-    
+
     override val outputStream: OutputStream = object : OutputStream() {
         override fun write(b: Int) {
             val buf = ByteArray(1)
             buf[0] = b.toByte()
             write(buf, 0, 1)
         }
-        
+
         override fun write(b: ByteArray, off: Int, len: Int) {
-            GhosttyNative.nativeSshWrite(nativeHandle, b, off, len)
+            val handle = session.nativeSessionHandle
+            if (handle != 0L) {
+                GhosttyNative.nativeSshWrite(handle, b, off, len)
+            }
         }
     }
 
     override fun resizeWindow(cols: Int, rows: Int, widthPx: Int, heightPx: Int) {
-        GhosttyNative.nativeSshResize(nativeHandle, cols, rows)
+        val handle = session.nativeSessionHandle
+        if (handle != 0L) {
+            GhosttyNative.nativeSshResize(handle, cols, rows)
+        }
     }
 
     override fun close() {

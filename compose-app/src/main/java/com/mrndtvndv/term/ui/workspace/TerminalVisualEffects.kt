@@ -29,6 +29,25 @@ import com.termux.view.TerminalRenderer
 import kotlin.math.abs
 import kotlin.math.sqrt
 
+enum class VisualEffectFrameRate(
+    val key: String,
+    val label: String,
+    val framesPerSecond: Float?
+) {
+    VSYNC("vsync", "VSync (display rate)", null),
+    FPS_30("30", "30 FPS", 30f),
+    FPS_60("60", "60 FPS", 60f),
+    FPS_90("90", "90 FPS", 90f),
+    FPS_120("120", "120 FPS", 120f);
+
+    companion object {
+        fun fromPref(value: String?): VisualEffectFrameRate {
+            if (value == "display") return VSYNC
+            return entries.firstOrNull { it.key == value } ?: VSYNC
+        }
+    }
+}
+
 /** Cursor trails adapted from sahaj-b/ghostty-cursor-shaders (MIT License). */
 enum class CursorTrailEffect(val key: String, val label: String) {
     NONE("none", "None"),
@@ -70,9 +89,11 @@ internal class TerminalVisualEffects(
     private val bitmapRenderState = BitmapRenderState()
     private val cursorTrailState = CursorTrailState()
 
+    val isContinuouslyAnimated: Boolean
+        get() = terminalEffect.animated && postShader != null
+
     val isAnimated: Boolean
-        get() = (terminalEffect.animated && postShader != null) ||
-            cursorTrailEffect != CursorTrailEffect.NONE
+        get() = isContinuouslyAnimated || cursorTrailEffect != CursorTrailEffect.NONE
 
     /**
      * Whether the animation clock must keep ticking (and thus the canvas redrawing).

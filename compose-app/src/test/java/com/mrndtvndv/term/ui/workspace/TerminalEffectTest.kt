@@ -1,5 +1,6 @@
 package com.mrndtvndv.term.ui.workspace
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -25,5 +26,18 @@ class TerminalEffectTest {
         assertTrue(TerminalEffect.GLITCH.usesResolutionUniform)
         assertTrue(TerminalEffect.MATRIX.usesTimeUniform)
         assertTrue(TerminalEffect.MATRIX.usesResolutionUniform)
+    }
+
+    @Test
+    fun visualEffectsUseVsyncByDefault() {
+        assertEquals(VisualEffectFrameRate.VSYNC, VisualEffectFrameRate.fromPref(null))
+        assertEquals(VisualEffectFrameRate.VSYNC, VisualEffectFrameRate.fromPref("invalid"))
+        assertEquals(VisualEffectFrameRate.VSYNC, VisualEffectFrameRate.fromPref("display"))
+    }
+
+    @Test
+    fun visualEffectFrameRateRestoresSavedCap() {
+        assertEquals(VisualEffectFrameRate.FPS_120, VisualEffectFrameRate.fromPref("120"))
+        assertEquals(120f, VisualEffectFrameRate.FPS_120.framesPerSecond)
     }
 }

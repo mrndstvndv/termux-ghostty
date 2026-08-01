@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Typeface
 import android.view.KeyEvent
 import android.view.MotionEvent
+import android.view.accessibility.AccessibilityManager
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -36,6 +37,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.preferredFrameRate
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusTarget
@@ -64,6 +66,7 @@ import com.termux.terminal.TerminalSession
 import com.termux.terminal.KeyHandler
 import com.termux.terminal.GhosttyMouseEvent
 import java.io.File
+import kotlinx.coroutines.channels.Channel
 
 fun getValidCurX(content: com.termux.terminal.TerminalContent, cy: Int, cx: Int): Int {
     val line = content.getSelectedText(0, cy, cx, cy)
@@ -227,6 +230,24 @@ private val selectionHandleVisualSize = 20.dp
 private val selectionHandleTouchTargetSize = 48.dp
 
 @Composable
+private fun rememberAccessibilityEnabled(context: Context): State<Boolean> {
+    val manager = remember(context) {
+        context.getSystemService(Context.ACCESSIBILITY_SERVICE) as AccessibilityManager
+    }
+    val enabled = remember(manager) { mutableStateOf(manager.isEnabled) }
+
+    DisposableEffect(manager) {
+        val listener = AccessibilityManager.AccessibilityStateChangeListener { isEnabled ->
+            enabled.value = isEnabled
+        }
+        manager.addAccessibilityStateChangeListener(listener)
+        onDispose { manager.removeAccessibilityStateChangeListener(listener) }
+    }
+
+    return enabled
+}
+
+@Composable
 private fun SelectionHandle(
     pointsLeft: Boolean,
     contentDescription: String,
@@ -284,13 +305,16 @@ fun TerminalCanvas(
         sharedPreferences.getString("cursor_trail_effect", null),
         sharedPreferences.getBoolean("cursor_trail", false)
     )
+    val visualEffectFrameRate = VisualEffectFrameRate.fromPref(
+        sharedPreferences.getString("visual_effect_frame_rate", null)
+    )
     val visualEffects = rememberTerminalVisualEffects(terminalEffect, cursorTrailEffect)
 
-    var frameTrigger by remember { mutableStateOf(0) }
     // Bumped only when terminal content changes. The animation clock invalidates the draw
     // scope without changing this version, so the offscreen bitmap is only re-rendered and
     // re-uploaded when content is dirty; doing that every frame caused torn/black frames.
-    var contentDirty by remember { mutableIntStateOf(0) }
+    var contentVersion by remember { mutableIntStateOf(0) }
+    val animationRequests = remember { Channel<Unit>(Channel.CONFLATED) }
     val renderSelection = remember { RenderSelection() }
 
     val inputView = remember(session) {
@@ -340,29 +364,39 @@ fun TerminalCanvas(
         }
     }
 
-    LaunchedEffect(inputView) {
+    DisposableEffect(inputView, animationRequests) {
         inputView.onInvalidateCallback = {
-            contentDirty++
-            frameTrigger++
+            contentVersion++
+            animationRequests.trySend(Unit)
         }
+        onDispose { inputView.onInvalidateCallback = null }
     }
 
     LaunchedEffect(currentFontSize.value) {
         inputView.setTextSize(currentFontSize.value)
     }
 
-    // Read the clock from the Canvas draw scope so animation invalidates drawing only. Updating
-    // frameTrigger here would recompose the entire terminal hierarchy once per display frame.
-    // Restarting on terminal invalidation lets a cursor trail request frames only while active;
-    // an idle trail does not keep a display-frame coroutine subscribed forever.
-    LaunchedEffect(visualEffects, isTerminalActive, frameTrigger) {
+    // Keep terminal invalidations out of composition. Continuous shaders own one frame loop;
+    // cursor-only effects sleep until the view signals that the cursor may have moved.
+    LaunchedEffect(visualEffects, isTerminalActive, animationRequests) {
         if (!isTerminalActive || !visualEffects.isAnimated) return@LaunchedEffect
 
-        do {
-            withFrameNanos { nanos ->
-                visualEffects.updateAnimationTime(nanos / 1_000_000_000f)
+        if (visualEffects.isContinuouslyAnimated) {
+            while (true) {
+                withFrameNanos { nanos ->
+                    visualEffects.updateAnimationTime(nanos / 1_000_000_000f)
+                }
             }
-        } while (visualEffects.needsFrame())
+        }
+
+        while (true) {
+            animationRequests.receive()
+            do {
+                withFrameNanos { nanos ->
+                    visualEffects.updateAnimationTime(nanos / 1_000_000_000f)
+                }
+            } while (visualEffects.needsFrame())
+        }
     }
 
     DisposableEffect(session, inputView) {
@@ -481,16 +515,28 @@ fun TerminalCanvas(
         }
     }
 
-    // Screen text snapshot for screen readers
-    val visibleText = remember(session, frameTrigger) {
-        val top = inputView.getTopRow()
-        val text = session.getSelectedText(0, top, session.columns, top + session.rows)
-        text ?: ""
+    // Building a full visible-text snapshot on every frame is expensive. Keep it entirely off
+    // the render hot path unless an accessibility service is enabled.
+    val accessibilityEnabled by rememberAccessibilityEnabled(context)
+    val visibleText = if (accessibilityEnabled) {
+        remember(session, contentVersion) {
+            val top = inputView.getTopRow()
+            session.getSelectedText(0, top, session.columns, top + session.rows) ?: ""
+        }
+    } else {
+        ""
     }
 
     Box(
         modifier = modifier
             .fillMaxSize()
+            .then(
+                if (visualEffects.isAnimated && visualEffectFrameRate.framesPerSecond != null) {
+                    Modifier.preferredFrameRate(visualEffectFrameRate.framesPerSecond)
+                } else {
+                    Modifier
+                }
+            )
             .onSizeChanged { size ->
                 inputView.layout(0, 0, size.width, size.height)
                 inputView.updateSize(true)
@@ -700,8 +746,8 @@ fun TerminalCanvas(
             val renderer = inputView.mRenderer ?: return@Canvas
             val renderCache = inputView.renderFrameCache ?: return@Canvas
 
-            @Suppress("UNUSED_VARIABLE") // trigger forces Canvas redraw by reading frameTrigger state inside draw scope
-            val trigger = frameTrigger
+            @Suppress("UNUSED_VARIABLE") // trigger forces Canvas redraw from draw scope only
+            val trigger = contentVersion
 
             val currentSnapshot = renderCache.getSnapshotForRender(
                 session.isGhosttyCursorBlinkingEnabled,
@@ -721,7 +767,7 @@ fun TerminalCanvas(
                 drawScope = this,
                 snapshot = currentSnapshot,
                 renderer = renderer,
-                contentVersion = contentDirty,
+                contentVersion = contentVersion,
                 selection = renderSelection
             )
         }
@@ -732,7 +778,7 @@ fun TerminalCanvas(
                 val renderCache = inputView.renderFrameCache ?: return@Canvas
 
                 @Suppress("UNUSED_VARIABLE")
-                val trigger = frameTrigger
+                val trigger = contentVersion
 
                 val currentSnapshot = renderCache.getSnapshotForRender(
                     session.isGhosttyCursorBlinkingEnabled,

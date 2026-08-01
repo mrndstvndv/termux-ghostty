@@ -26,6 +26,7 @@ import com.mrndtvndv.term.ui.keyboard.ExtraKeysController
 import com.mrndtvndv.term.ui.keyboard.ExtraKeysToolbar
 import com.mrndtvndv.term.ui.workspace.CursorTrailEffect
 import com.mrndtvndv.term.ui.workspace.TerminalEffect
+import com.mrndtvndv.term.ui.workspace.VisualEffectFrameRate
 
 @Suppress("LongParameterList", "LongMethod", "CyclomaticComplexMethod")
 @OptIn(ExperimentalMaterial3Api::class)
@@ -58,6 +59,8 @@ fun SettingsScreen(
     onTerminalEffectChange: (String) -> Unit = {},
     cursorTrail: String = CursorTrailEffect.NONE.key,
     onCursorTrailChange: (String) -> Unit = {},
+    visualEffectFrameRate: String = VisualEffectFrameRate.VSYNC.key,
+    onVisualEffectFrameRateChange: (String) -> Unit = {},
     onBack: () -> Unit
 ) {
     val scrollState = rememberScrollState()
@@ -70,6 +73,7 @@ fun SettingsScreen(
     val selectedTerminalEffect = TerminalEffect.fromPref(terminalEffect)
         .takeIf { it in availableTerminalEffects }
         ?: TerminalEffect.NONE
+    val selectedVisualEffectFrameRate = VisualEffectFrameRate.fromPref(visualEffectFrameRate)
 
     Scaffold(
         topBar = {
@@ -508,6 +512,51 @@ fun SettingsScreen(
                                         onClick = {
                                             onCursorTrailChange(effect.key)
                                             trailExpanded = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Effects Frame Rate", style = MaterialTheme.typography.bodyLarge)
+                            Text(
+                                text = "VSync follows the display refresh rate; lower caps reduce GPU load",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        var frameRateExpanded by remember { mutableStateOf(false) }
+                        Box {
+                            OutlinedButton(
+                                onClick = { frameRateExpanded = true },
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                                modifier = Modifier.height(36.dp),
+                                shape = RoundedCornerShape(18.dp)
+                            ) {
+                                Text(
+                                    text = selectedVisualEffectFrameRate.label,
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                            }
+                            DropdownMenu(
+                                expanded = frameRateExpanded,
+                                onDismissRequest = { frameRateExpanded = false }
+                            ) {
+                                VisualEffectFrameRate.entries.forEach { frameRate ->
+                                    DropdownMenuItem(
+                                        text = { Text(frameRate.label) },
+                                        onClick = {
+                                            onVisualEffectFrameRateChange(frameRate.key)
+                                            frameRateExpanded = false
                                         }
                                     )
                                 }

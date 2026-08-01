@@ -34,6 +34,7 @@ import com.mrndtvndv.term.ui.theme.TerminalThemeSync
 import com.mrndtvndv.term.ui.theme.TermuxGhosttyTheme
 import com.mrndtvndv.term.ui.workspace.CursorTrailEffect
 import com.mrndtvndv.term.ui.workspace.TerminalWorkspaceScreen
+import com.mrndtvndv.term.ui.workspace.VisualEffectFrameRate
 import com.termux.view.TerminalView
 import java.io.File
 
@@ -83,6 +84,9 @@ fun MainContent(
         sharedPreferences.getString("cursor_trail_effect", null),
         sharedPreferences.getBoolean("cursor_trail", false)
     ).key
+    val savedVisualEffectFrameRate = VisualEffectFrameRate.fromPref(
+        sharedPreferences.getString("visual_effect_frame_rate", null)
+    ).key
 
     var appTheme by remember { mutableStateOf(savedTheme) }
 
@@ -112,6 +116,7 @@ fun MainContent(
             var unconditionalSoftKeyboardOnTap by remember { mutableStateOf(savedUnconditionalSoftKeyboardOnTap) }
             var terminalEffect by remember { mutableStateOf(savedTerminalEffect) }
             var cursorTrail by remember { mutableStateOf(savedCursorTrail) }
+            var visualEffectFrameRate by remember { mutableStateOf(savedVisualEffectFrameRate) }
 
             val pickFontLauncher = rememberLauncherForActivityResult(
                 contract = ActivityResultContracts.GetContent()
@@ -237,6 +242,13 @@ fun MainContent(
                                     sharedPreferences.edit()
                                         .putString("cursor_trail_effect", effect)
                                         .putBoolean("cursor_trail", effect != CursorTrailEffect.NONE.key)
+                                        .apply()
+                                },
+                                visualEffectFrameRate = visualEffectFrameRate,
+                                onVisualEffectFrameRateChange = { frameRate ->
+                                    visualEffectFrameRate = frameRate
+                                    sharedPreferences.edit()
+                                        .putString("visual_effect_frame_rate", frameRate)
                                         .apply()
                                 },
                                 onBack = { navigator.goBack() },

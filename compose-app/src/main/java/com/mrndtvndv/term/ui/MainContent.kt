@@ -65,7 +65,7 @@ fun MainContent(
     val context = LocalContext.current
     val notification by viewModel.notificationState.notification.collectAsState()
     val navigator = rememberAppNavigator(
-        activeTab = uiState.activeTab,
+        activeTab = { uiState.activeTab },
         onSetTab = { tab -> viewModel.setTab(tab) },
         onNavigateBack = { viewModel.navigateBack() },
     )

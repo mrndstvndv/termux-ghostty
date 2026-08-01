@@ -43,12 +43,12 @@ class Navigator(
 
 @Composable
 fun rememberAppNavigator(
-    activeTab: WorkspaceTab,
+    activeTab: () -> WorkspaceTab,
     onSetTab: (WorkspaceTab) -> Unit,
     onNavigateBack: () -> Unit,
 ): Navigator {
     val backStack = rememberNavBackStack(AppNavKey.ServerList)
     return remember(backStack) {
-        Navigator(backStack, { activeTab }, onSetTab, onNavigateBack)
+        Navigator(backStack, activeTab, onSetTab, onNavigateBack)
     }
 }

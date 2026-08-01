@@ -23,6 +23,8 @@ internal class TerminalRenderNodeRenderer(
     private val graphicsContext: GraphicsContext,
     private val shaders: List<CompiledShader>
 ) {
+    private val hasAnimatedShader = shaders.any { it.definition.usesTimeUniform }
+    private val animatedBitmapRenderer = AnimatedTerminalBitmapRenderer(shaders)
     private class RowState(
         val layer: GraphicsLayer
     ) {
@@ -37,6 +39,7 @@ internal class TerminalRenderNodeRenderer(
 
     private var parentLayer = graphicsContext.createGraphicsLayer()
     private var rows: Array<RowState> = emptyArray()
+    private var visibleRowCount = 0
     private var renderer: TerminalRenderer? = null
     private var width = -1
     private var height = -1
@@ -67,6 +70,18 @@ internal class TerminalRenderNodeRenderer(
         selection: RenderSelection,
         timeSeconds: Float
     ) {
+        if (hasAnimatedShader) {
+            animatedBitmapRenderer.draw(
+                drawScope = drawScope,
+                snapshot = snapshot,
+                renderer = renderer,
+                contentVersion = contentVersion,
+                selection = selection,
+                timeSeconds = timeSeconds
+            )
+            return
+        }
+
         val targetWidth = drawScope.size.width.toInt().coerceAtLeast(1)
         val targetHeight = drawScope.size.height.toInt().coerceAtLeast(1)
         ensureLayout(snapshot, renderer, targetWidth, targetHeight)
@@ -75,7 +90,9 @@ internal class TerminalRenderNodeRenderer(
 
         if (shaders.isEmpty()) {
             drawScope.drawRect(backgroundColor)
-            rows.forEach { row -> drawScope.drawLayer(row.layer) }
+            for (rowIndex in 0 until visibleRowCount) {
+                drawScope.drawLayer(rows[rowIndex].layer)
+            }
             return
         }
 
@@ -85,8 +102,11 @@ internal class TerminalRenderNodeRenderer(
     }
 
     fun release() {
-        rows.forEach { row -> graphicsContext.releaseGraphicsLayer(row.layer) }
+        animatedBitmapRenderer.release()
+        parentLayer.renderEffect = null
+        releaseRows()
         rows = emptyArray()
+        visibleRowCount = 0
         graphicsContext.releaseGraphicsLayer(parentLayer)
     }
 
@@ -97,33 +117,64 @@ internal class TerminalRenderNodeRenderer(
         targetHeight: Int
     ) {
         val nextLineHeight = nextRenderer.fontLineSpacing
-        val layoutChanged =
+        val rowGeometryChanged =
             renderer !== nextRenderer ||
                 width != targetWidth ||
-                height != targetHeight ||
-                lineHeight != nextLineHeight ||
-                rows.size != snapshot.rows
-        if (!layoutChanged) return
+                lineHeight != nextLineHeight
+        val visibleRowsChanged = visibleRowCount != snapshot.rows
+        val parentSizeChanged = height != targetHeight
+        if (!rowGeometryChanged && !visibleRowsChanged && !parentSizeChanged) return
 
-        rows.forEach { row -> graphicsContext.releaseGraphicsLayer(row.layer) }
-        graphicsContext.releaseGraphicsLayer(parentLayer)
-        renderer = nextRenderer
-        width = targetWidth
-        height = targetHeight
-        lineHeight = nextLineHeight
-        parentLayer = graphicsContext.createGraphicsLayer()
-        rows = Array(snapshot.rows) { rowIndex ->
-            RowState(
-                graphicsContext.createGraphicsLayer().apply {
-                    topLeft = IntOffset(0, rowIndex * lineHeight)
-                }
-            )
+        if (rowGeometryChanged) {
+            parentLayer.renderEffect = null
+            releaseRows()
+            graphicsContext.releaseGraphicsLayer(parentLayer)
+            renderer = nextRenderer
+            width = targetWidth
+            height = targetHeight
+            lineHeight = nextLineHeight
+            parentLayer = graphicsContext.createGraphicsLayer()
+            rows = Array(snapshot.rows) { rowIndex -> createRowLayer(rowIndex) }
+            visibleRowCount = snapshot.rows
+            boundShaders = emptyList()
+            shaderResolutionWidth = Float.NaN
+            shaderResolutionHeight = Float.NaN
+            parentDisplayListDirty = true
+            invalidateProcessedFrame()
+            return
         }
-        boundShaders = emptyList()
-        shaderResolutionWidth = Float.NaN
-        shaderResolutionHeight = Float.NaN
-        parentDisplayListDirty = true
-        invalidateProcessedFrame()
+
+        if (visibleRowsChanged) {
+            ensureRowCapacity(snapshot.rows)
+            visibleRowCount = snapshot.rows
+            parentDisplayListDirty = true
+            invalidateProcessedFrame()
+        }
+        if (parentSizeChanged) {
+            height = targetHeight
+            parentDisplayListDirty = true
+        }
+    }
+
+    private fun ensureRowCapacity(requiredRows: Int) {
+        if (requiredRows <= rows.size) return
+
+        val existingRows = rows
+        rows = Array(requiredRows) { rowIndex ->
+            if (rowIndex < existingRows.size) existingRows[rowIndex]
+            else createRowLayer(rowIndex)
+        }
+    }
+
+    private fun createRowLayer(rowIndex: Int): RowState =
+        RowState(
+            graphicsContext.createGraphicsLayer().apply {
+                topLeft = IntOffset(0, rowIndex * lineHeight)
+            }
+        )
+
+    private fun releaseRows() {
+        rows.forEach { row -> graphicsContext.releaseGraphicsLayer(row.layer) }
     }
 
     // This is one allocation-free pass over retained rows; splitting its state comparison into
@@ -156,7 +207,8 @@ internal class TerminalRenderNodeRenderer(
                 reverseVideo == lastReverseVideo
         if (contentVersion == lastProcessedContentVersion && overlaysUnchanged && !frameChanged) return
 
-        rows.forEachIndexed { rowIndex, rowState ->
+        for (rowIndex in 0 until visibleRowCount) {
+            val rowState = rows[rowIndex]
             val absoluteRow = snapshot.topRow + rowIndex
             val selectionStart = if (absoluteRow == selection.y1) selection.x1 else -1
             val selectionEnd = when {
@@ -175,7 +227,7 @@ internal class TerminalRenderNodeRenderer(
                 rowState.reverseVideo == reverseVideo &&
                 rowState.paletteVersion == paletteVersion
             ) {
-                return@forEachIndexed
+                continue
             }
 
             rowState.layer.record(
@@ -241,7 +293,9 @@ internal class TerminalRenderNodeRenderer(
             size = IntSize(width, height)
         ) {
             drawRect(backgroundColor)
-            rows.forEach { row -> drawLayer(row.layer) }
+            for (rowIndex in 0 until visibleRowCount) {
+                drawLayer(rows[rowIndex].layer)
+            }
         }
         parentDisplayListDirty = false
     }
@@ -270,8 +324,7 @@ internal class TerminalRenderNodeRenderer(
             shaderResolutionWidth = width.toFloat()
             shaderResolutionHeight = height.toFloat()
         }
-        val needsAnimation = shaders.any { it.definition.usesTimeUniform }
-        if (!shadersChanged && !needsAnimation) return
+        if (!shadersChanged && !updateResolution) return
 
         var renderEffect = AndroidRenderEffect
             .createRuntimeShaderEffect(shaders.first().shader, "content")

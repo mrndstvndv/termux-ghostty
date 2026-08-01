@@ -419,6 +419,7 @@ fun TerminalCanvas(
     DisposableEffect(session, inputView) {
         onViewCreated(inputView)
         onDispose {
+            inputView.cancelPendingResize()
             inputView.detachSession()
             onViewReleased(inputView)
         }
@@ -556,7 +557,6 @@ fun TerminalCanvas(
             )
             .onSizeChanged { size ->
                 inputView.layout(0, 0, size.width, size.height)
-                inputView.updateSize(true)
             }
             .focusRequester(focusRequester)
             .focusTarget()

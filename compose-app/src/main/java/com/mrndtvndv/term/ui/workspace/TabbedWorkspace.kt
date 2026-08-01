@@ -2,6 +2,7 @@ package com.mrndtvndv.term.ui.workspace
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.systemGestureExclusion
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.*
@@ -73,6 +74,12 @@ fun TabbedWorkspace(
         pageCount = { activeTabs.size }
     )
     val coroutineScope = rememberCoroutineScope()
+
+    // On non-Terminal pages, rightward swipes near the left screen edge would be
+    // captured by the system back gesture (predictive back, API 29+) instead of the
+    // pager — e.g. SFTP→Git becomes a back press that navigates to the Terminal tab.
+    // Hand the edge zone to the pager so those swipes always switch pages.
+    val excludeFromSystemGesture = pagerState.currentPage != 0
 
     var isPagerScrollAllowed by remember { mutableStateOf(true) }
     val viewConfiguration = LocalViewConfiguration.current
@@ -184,6 +191,7 @@ fun TabbedWorkspace(
                 .fillMaxSize()
                 .padding(paddingValues)
                 .clipToBounds()
+                .then(if (excludeFromSystemGesture) Modifier.systemGestureExclusion() else Modifier)
                 .pointerInput(touchSlop) {
                     awaitEachGesture {
                         val down = awaitFirstDown(requireUnconsumed = false)

@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapShader
 import android.graphics.Canvas as AndroidCanvas
 import android.graphics.Paint as AndroidPaint
+import android.graphics.RuntimeShader
 import android.graphics.Shader
 import android.graphics.Typeface
 import android.view.KeyEvent
@@ -301,13 +302,18 @@ fun TerminalCanvas(
     val terminalEffect = TerminalEffect.fromPref(sharedPreferences.getString("terminal_effect", "none"))
     val postShader = rememberRuntimeShader(terminalEffect)
     var shaderTime by remember { mutableFloatStateOf(0f) }
-    var renderTarget by remember { mutableStateOf<Bitmap?>(null) }
 
     // Cursor trail — warp smear ported from ghostty's cursor_warp.glsl shader
     val cursorTrailEnabled = sharedPreferences.getBoolean("cursor_trail", false)
     val cursorWarpState = remember { CursorWarpState() }
 
     var frameTrigger by remember { mutableStateOf(0) }
+    // Bumped only when the terminal content actually changed (view invalidation or a new
+    // ghostty frame). The 60fps animation loop bumps frameTrigger alone, so the offscreen
+    // bitmap is only re-rendered/re-uploaded when the content is dirty — re-rendering and
+    // re-uploading it every frame caused torn/black frames on the GPU.
+    var contentDirty by remember { mutableIntStateOf(0) }
+    val bitmapRenderState = remember { BitmapRenderState() }
 
     val inputView = remember(session) {
         val customFontFile = File(context.filesDir, "font.ttf")
@@ -358,6 +364,7 @@ fun TerminalCanvas(
 
     LaunchedEffect(inputView) {
         inputView.onInvalidateCallback = {
+            contentDirty++
             frameTrigger++
         }
     }
@@ -366,13 +373,13 @@ fun TerminalCanvas(
         inputView.setTextSize(currentFontSize.value)
     }
 
-    // Animated shaders and the cursor trail need a redraw every frame
+    // Read the clock from the Canvas draw scope so animation invalidates drawing only. Updating
+    // frameTrigger here would recompose the entire terminal hierarchy once per display frame.
     LaunchedEffect(terminalEffect, postShader, cursorTrailEnabled) {
         if ((terminalEffect.animated && postShader != null) || cursorTrailEnabled) {
             while (true) {
                 withFrameNanos { nanos ->
                     shaderTime = nanos / 1_000_000_000f
-                    frameTrigger++
                 }
             }
         }
@@ -715,6 +722,9 @@ fun TerminalCanvas(
 
             @Suppress("UNUSED_VARIABLE") // trigger forces Canvas redraw by reading frameTrigger state inside draw scope
             val trigger = frameTrigger
+            // This state read is draw-scoped. It keeps cursor trails animating without making the
+            // animation clock a composition input.
+            val animationTimeSeconds = shaderTime
 
             val currentSnapshot = renderCache.getSnapshotForRender(
                 session.isGhosttyCursorBlinkingEnabled,
@@ -729,25 +739,26 @@ fun TerminalCanvas(
             drawIntoCanvas { canvas ->
                 val native = canvas.nativeCanvas
                 if (postShader != null) {
-                    // 1. Render the terminal frame into an offscreen bitmap
+                    // Render content only when it changes. The animation redraws the shader over
+                    // a stable bitmap; alternating buffers prevents the GPU from sampling a bitmap
+                    // while the UI thread is writing the next terminal frame into it.
                     val targetW = size.width.toInt().coerceAtLeast(1)
                     val targetH = size.height.toInt().coerceAtLeast(1)
-                    var bitmap = renderTarget
-                    if (bitmap == null || bitmap.width != targetW || bitmap.height != targetH) {
-                        bitmap = Bitmap.createBitmap(targetW, targetH, Bitmap.Config.ARGB_8888)
-                        renderTarget = bitmap
+                    bitmapRenderState.renderIfNeeded(
+                        width = targetW,
+                        height = targetH,
+                        contentVersion = contentDirty,
+                        selection = RenderSelection(startY, endY, startX, endX)
+                    ) { bitmapCanvas ->
+                        renderer.render(currentSnapshot, bitmapCanvas, startY, endY, startX, endX)
                     }
-                    val bitmapCanvas = AndroidCanvas(bitmap)
-                    renderer.render(currentSnapshot, bitmapCanvas, startY, endY, startX, endX)
-
-                    // 2. Push the frame through the shader as the "content" input
-                    postShader.updateUniforms(shaderTime, size.width, size.height)
-                    postShader.setInputShader(
-                        "content",
-                        BitmapShader(bitmap, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
+                    bitmapRenderState.draw(
+                        canvas = native,
+                        shader = postShader,
+                        timeSeconds = animationTimeSeconds,
+                        width = size.width,
+                        height = size.height
                     )
-                    val shaderPaint = AndroidPaint().apply { shader = postShader }
-                    native.drawRect(0f, 0f, size.width, size.height, shaderPaint)
                 } else {
                     renderer.render(currentSnapshot, native, startY, endY, startX, endX)
                 }
@@ -1113,6 +1124,91 @@ private class CursorWarpState {
     var changeNanos = 0L
 }
 
+private data class RenderSelection(
+    val y1: Int,
+    val y2: Int,
+    val x1: Int,
+    val x2: Int
+)
+
+/**
+ * Owns the software-rendered shader inputs. Content changes alternate between two bitmaps so a
+ * hardware canvas never samples the same bitmap that the UI thread is currently repainting.
+ */
+private class BitmapRenderState {
+    private data class Buffer(
+        val bitmap: Bitmap,
+        val shader: BitmapShader
+    )
+
+    private val shaderPaint = AndroidPaint()
+    private var buffers: Array<Buffer> = emptyArray()
+    private var activeBufferIndex = -1
+    private var renderedContentVersion = Int.MIN_VALUE
+    private var renderedSelectionY1 = Int.MIN_VALUE
+    private var renderedSelectionY2 = Int.MIN_VALUE
+    private var renderedSelectionX1 = Int.MIN_VALUE
+    private var renderedSelectionX2 = Int.MIN_VALUE
+
+    fun renderIfNeeded(
+        width: Int,
+        height: Int,
+        contentVersion: Int,
+        selection: RenderSelection,
+        render: (AndroidCanvas) -> Unit
+    ) {
+        ensureSize(width, height)
+        if (!needsRender(contentVersion, selection)) return
+
+        val nextBufferIndex = (activeBufferIndex + 1) % buffers.size
+        render(AndroidCanvas(buffers[nextBufferIndex].bitmap))
+        activeBufferIndex = nextBufferIndex
+        renderedContentVersion = contentVersion
+        renderedSelectionY1 = selection.y1
+        renderedSelectionY2 = selection.y2
+        renderedSelectionX1 = selection.x1
+        renderedSelectionX2 = selection.x2
+    }
+
+    fun draw(
+        canvas: AndroidCanvas,
+        shader: RuntimeShader,
+        timeSeconds: Float,
+        width: Float,
+        height: Float
+    ) {
+        shader.updateUniforms(timeSeconds, width, height)
+        shader.setInputShader("content", buffers[activeBufferIndex].shader)
+        shaderPaint.shader = shader
+        canvas.drawRect(0f, 0f, width, height, shaderPaint)
+    }
+
+    private fun ensureSize(width: Int, height: Int) {
+        if (buffers.size == 2 && buffers[0].bitmap.width == width && buffers[0].bitmap.height == height) return
+
+        buffers = Array(2) {
+            val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+            Buffer(
+                bitmap = bitmap,
+                shader = BitmapShader(bitmap, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
+            )
+        }
+        activeBufferIndex = -1
+        renderedContentVersion = Int.MIN_VALUE
+        renderedSelectionY1 = Int.MIN_VALUE
+        renderedSelectionY2 = Int.MIN_VALUE
+        renderedSelectionX1 = Int.MIN_VALUE
+        renderedSelectionX2 = Int.MIN_VALUE
+    }
+
+    private fun needsRender(contentVersion: Int, selection: RenderSelection): Boolean =
+        activeBufferIndex == -1 ||
+            contentVersion != renderedContentVersion ||
+            selection.y1 != renderedSelectionY1 ||
+            selection.y2 != renderedSelectionY2 ||
+            selection.x1 != renderedSelectionX1 ||
+            selection.x2 != renderedSelectionX2
+}
 
 // Cursor warp trail — port of ghostty's cursor_warp.glsl shader
 private const val WarpDurationSeconds = 0.2f

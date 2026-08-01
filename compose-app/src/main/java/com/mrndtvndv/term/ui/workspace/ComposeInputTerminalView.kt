@@ -12,8 +12,9 @@ class ComposeInputTerminalView(context: Context) : TerminalView(context, null) {
     }
 
     override fun onFrameAvailable() {
+        // TerminalView.applyScreenUpdate() calls invalidate(), which is overridden below.
+        // Calling the callback here as well double-counts every Ghostty frame.
         super.onFrameAvailable()
-        onInvalidateCallback?.invoke()
     }
 
     override fun invalidate() {

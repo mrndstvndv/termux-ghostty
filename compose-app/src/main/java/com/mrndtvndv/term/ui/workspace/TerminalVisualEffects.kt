@@ -58,6 +58,7 @@ internal class CursorTrailState {
     var currCol = -1
     var currRow = -1
     var changeNanos = 0L
+    var changeSeconds = 0f
 }
 
 internal class TerminalVisualEffects(
@@ -89,18 +90,18 @@ internal class TerminalVisualEffects(
         animationTimeSeconds = timeSeconds
     }
 
-    fun draw(
+    fun drawTerminal(
         drawScope: DrawScope,
         snapshot: ScreenSnapshot,
         renderer: TerminalRenderer,
-        topRow: Int,
         contentVersion: Int,
         selection: RenderSelection
     ) {
-        // Read the animation clock inside the draw scope. With no post shader this read is
-        // what makes the frame loop invalidate the canvas — without it the cursor trail
-        // freezes as soon as the terminal content stops changing.
-        val timeSeconds = animationTimeSeconds
+        val timeSeconds = if (terminalEffect.animated && postShader != null) {
+            animationTimeSeconds
+        } else {
+            0f
+        }
         drawScope.drawIntoCanvas { canvas ->
             val native = canvas.nativeCanvas
             if (postShader == null) {
@@ -112,44 +113,57 @@ internal class TerminalVisualEffects(
                     selection.x1,
                     selection.x2
                 )
-            } else {
-                val targetW = drawScope.size.width.toInt().coerceAtLeast(1)
-                val targetH = drawScope.size.height.toInt().coerceAtLeast(1)
-                val bitmapCanvas = bitmapRenderState.beginRenderIfNeeded(
-                    width = targetW,
-                    height = targetH,
-                    contentVersion = contentVersion,
-                    selection = selection
-                )
-                if (bitmapCanvas != null) {
-                    renderer.render(
-                        snapshot,
-                        bitmapCanvas,
-                        selection.y1,
-                        selection.y2,
-                        selection.x1,
-                        selection.x2
-                    )
-                    bitmapRenderState.finishRender(contentVersion, selection)
-                }
-                bitmapRenderState.draw(
-                    canvas = native,
-                    shader = postShader,
-                    timeSeconds = timeSeconds,
-                    width = drawScope.size.width,
-                    height = drawScope.size.height
-                )
+                return@drawIntoCanvas
             }
-        }
-        if (cursorTrailEffect != CursorTrailEffect.NONE) {
-            drawScope.drawCursorTrail(
-                effect = cursorTrailEffect,
-                snapshot = snapshot,
-                state = cursorTrailState,
-                renderer = renderer,
-                topRow = topRow
+
+            val targetW = drawScope.size.width.toInt().coerceAtLeast(1)
+            val targetH = drawScope.size.height.toInt().coerceAtLeast(1)
+            val bitmapCanvas = bitmapRenderState.beginRenderIfNeeded(
+                width = targetW,
+                height = targetH,
+                contentVersion = contentVersion,
+                selection = selection
+            )
+            if (bitmapCanvas != null) {
+                renderer.render(
+                    snapshot,
+                    bitmapCanvas,
+                    selection.y1,
+                    selection.y2,
+                    selection.x1,
+                    selection.x2
+                )
+                bitmapRenderState.finishRender(contentVersion, selection)
+            }
+            bitmapRenderState.draw(
+                canvas = native,
+                shader = postShader,
+                timeSeconds = timeSeconds,
+                width = drawScope.size.width,
+                height = drawScope.size.height
             )
         }
+    }
+
+    fun drawCursorTrail(
+        drawScope: DrawScope,
+        snapshot: ScreenSnapshot,
+        renderer: TerminalRenderer,
+        topRow: Int
+    ) {
+        if (cursorTrailEffect == CursorTrailEffect.NONE) return
+
+        // Keep the animation clock read in the overlay draw scope. The terminal canvas should
+        // only be invalidated by terminal content; cursor animation must not rerender every cell.
+        val timeSeconds = animationTimeSeconds
+        drawScope.drawCursorTrail(
+            effect = cursorTrailEffect,
+            snapshot = snapshot,
+            state = cursorTrailState,
+            renderer = renderer,
+            topRow = topRow,
+            timeSeconds = timeSeconds
+        )
     }
 }
 
@@ -367,7 +381,8 @@ private fun DrawScope.drawCursorTrail(
     snapshot: ScreenSnapshot,
     state: CursorTrailState,
     renderer: TerminalRenderer,
-    topRow: Int
+    topRow: Int,
+    timeSeconds: Float
 ) {
     if (!snapshot.isCursorVisible) return
 
@@ -379,6 +394,7 @@ private fun DrawScope.drawCursorTrail(
         state.currCol = col
         state.currRow = row
         state.changeNanos = System.nanoTime()
+        state.changeSeconds = timeSeconds
     }
 
     if (state.currCol < 0 || state.prevCol < 0) return
@@ -388,7 +404,7 @@ private fun DrawScope.drawCursorTrail(
     val moveDistance = sqrt(moveCols * moveCols + moveRows * moveRows)
     if (moveDistance < TrailMinDistanceCells) return
 
-    val progressSeconds = (System.nanoTime() - state.changeNanos) / 1_000_000_000f
+    val progressSeconds = timeSeconds - state.changeSeconds
     val fontWidth = renderer.getFontWidth()
     val lineHeight = renderer.getFontLineSpacing().toFloat()
     val cursorStyle = snapshot.getCursorStyle()

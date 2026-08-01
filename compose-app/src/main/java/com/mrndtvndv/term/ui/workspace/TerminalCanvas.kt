@@ -353,17 +353,16 @@ fun TerminalCanvas(
 
     // Read the clock from the Canvas draw scope so animation invalidates drawing only. Updating
     // frameTrigger here would recompose the entire terminal hierarchy once per display frame.
-    // The clock write is skipped while nothing animates: no write, no draw invalidation, so an
-    // idle terminal (no trail in flight, no animated shader) doesn't redraw every frame.
-    LaunchedEffect(visualEffects, isTerminalActive) {
+    // Restarting on terminal invalidation lets a cursor trail request frames only while active;
+    // an idle trail does not keep a display-frame coroutine subscribed forever.
+    LaunchedEffect(visualEffects, isTerminalActive, frameTrigger) {
         if (!isTerminalActive || !visualEffects.isAnimated) return@LaunchedEffect
-        while (true) {
+
+        do {
             withFrameNanos { nanos ->
-                if (visualEffects.needsFrame()) {
-                    visualEffects.updateAnimationTime(nanos / 1_000_000_000f)
-                }
+                visualEffects.updateAnimationTime(nanos / 1_000_000_000f)
             }
-        }
+        } while (visualEffects.needsFrame())
     }
 
     DisposableEffect(session, inputView) {
@@ -718,14 +717,35 @@ fun TerminalCanvas(
             renderSelection.y2 = endY
             renderSelection.x1 = startX
             renderSelection.x2 = endX
-            visualEffects.draw(
+            visualEffects.drawTerminal(
                 drawScope = this,
                 snapshot = currentSnapshot,
                 renderer = renderer,
-                topRow = inputView.getTopRow(),
                 contentVersion = contentDirty,
                 selection = renderSelection
             )
+        }
+
+        if (cursorTrailEffect != CursorTrailEffect.NONE) {
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val renderer = inputView.mRenderer ?: return@Canvas
+                val renderCache = inputView.renderFrameCache ?: return@Canvas
+
+                @Suppress("UNUSED_VARIABLE")
+                val trigger = frameTrigger
+
+                val currentSnapshot = renderCache.getSnapshotForRender(
+                    session.isGhosttyCursorBlinkingEnabled,
+                    session.ghosttyCursorBlinkState
+                ) ?: return@Canvas
+
+                visualEffects.drawCursorTrail(
+                    drawScope = this,
+                    snapshot = currentSnapshot,
+                    renderer = renderer,
+                    topRow = inputView.getTopRow()
+                )
+            }
         }
 
         // Selection Handles and Action Toolbar Overlay

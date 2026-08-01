@@ -45,6 +45,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -1910,6 +1911,230 @@ private fun LineNumberColumn(
     }
 }
 
+internal sealed class DiffRowGroup {
+    class Single(val line: ParsedDiffLine) : DiffRowGroup()
+    class WordDiffPair(
+        val oldContent: String,
+        val newContent: String,
+        val oldTokens: List<String>,
+        val newTokens: List<String>,
+        val oldUnchanged: BooleanArray,
+        val newUnchanged: BooleanArray
+    ) : DiffRowGroup()
+}
+
+private const val MaxWordDiffTokens = 400
+
+private val WordTokenRegex = Regex("[\\p{L}\\p{N}_]+|[^\\p{L}\\p{N}_]+")
+
+private fun tokenizeForWordDiff(text: String): List<String> =
+    WordTokenRegex.findAll(text).map { it.value }.toList()
+
+/**
+ * Token-level diff used for intra-line highlighting. Splits both lines into
+ * alphanumeric runs and separators, then runs an LCS to mark which tokens are
+ * unchanged. Returns null when the lines are too long to diff efficiently or
+ * when either side is empty (nothing to highlight against).
+ */
+internal fun computeWordDiff(oldText: String, newText: String): WordDiffTokens? {
+    val oldTokens = tokenizeForWordDiff(oldText)
+    val newTokens = tokenizeForWordDiff(newText)
+    if (oldTokens.isEmpty() || newTokens.isEmpty()) return null
+    if (oldTokens.size > MaxWordDiffTokens || newTokens.size > MaxWordDiffTokens) return null
+
+    // LCS table, flat-indexed to avoid nested allocation.
+    val width = newTokens.size + 1
+    val dp = IntArray((oldTokens.size + 1) * width)
+    for (i in oldTokens.size - 1 downTo 0) {
+        val row = i * width
+        val nextRow = (i + 1) * width
+        for (j in newTokens.size - 1 downTo 0) {
+            dp[row + j] = if (oldTokens[i] == newTokens[j]) {
+                dp[nextRow + j + 1] + 1
+            } else {
+                maxOf(dp[nextRow + j], dp[row + j + 1])
+            }
+        }
+    }
+
+    // Backtrack to find which tokens participate in the LCS.
+    val oldUnchanged = BooleanArray(oldTokens.size)
+    val newUnchanged = BooleanArray(newTokens.size)
+    var i = 0
+    var j = 0
+    while (i < oldTokens.size && j < newTokens.size) {
+        if (oldTokens[i] == newTokens[j]) {
+            oldUnchanged[i] = true
+            newUnchanged[j] = true
+            i++
+            j++
+        } else if (dp[(i + 1) * width + j] >= dp[i * width + j + 1]) {
+            i++
+        } else {
+            j++
+        }
+    }
+    return WordDiffTokens(oldTokens, newTokens, oldUnchanged, newUnchanged)
+}
+
+internal class WordDiffTokens(
+    val oldTokens: List<String>,
+    val newTokens: List<String>,
+    val oldUnchanged: BooleanArray,
+    val newUnchanged: BooleanArray
+)
+
+/**
+ * Groups parsed diff lines for rendering. Runs of deletions followed by
+ * additions (or vice versa) are paired up positionally so each pair can be
+ * rendered with word-level highlighting; unpaired and non-code lines stay
+ * single rows. Every parsed line maps to exactly one rendered row, keeping the
+ * line-number column aligned.
+ */
+internal fun groupDiffRows(lines: List<ParsedDiffLine>): List<DiffRowGroup> {
+    val groups = mutableListOf<DiffRowGroup>()
+    var i = 0
+    while (i < lines.size) {
+        i = appendGroup(groups, lines, i)
+    }
+    return groups
+}
+
+private fun appendGroup(
+    groups: MutableList<DiffRowGroup>,
+    lines: List<ParsedDiffLine>,
+    start: Int
+): Int {
+    val type = lines[start].type
+    if (type != DiffLineType.DELETION && type != DiffLineType.ADDITION) {
+        groups.add(DiffRowGroup.Single(lines[start]))
+        return start + 1
+    }
+    val (run, runEnd) = collectRun(lines, start, type)
+    val oppositeType =
+        if (type == DiffLineType.DELETION) DiffLineType.ADDITION else DiffLineType.DELETION
+    val (oppositeRun, oppositeEnd) = collectRun(lines, runEnd, oppositeType)
+    if (oppositeRun.isEmpty()) {
+        run.forEach { groups.add(DiffRowGroup.Single(it)) }
+        return runEnd
+    }
+    val oldLines = if (type == DiffLineType.DELETION) run else oppositeRun
+    val newLines = if (type == DiffLineType.DELETION) oppositeRun else run
+    addPairedRows(groups, oldLines, newLines)
+    return oppositeEnd
+}
+
+private fun collectRun(
+    lines: List<ParsedDiffLine>,
+    start: Int,
+    type: DiffLineType
+): Pair<List<ParsedDiffLine>, Int> {
+    val run = mutableListOf<ParsedDiffLine>()
+    var i = start
+    while (i < lines.size && lines[i].type == type) {
+        run.add(lines[i])
+        i++
+    }
+    return run to i
+}
+
+private fun addPairedRows(
+    groups: MutableList<DiffRowGroup>,
+    oldLines: List<ParsedDiffLine>,
+    newLines: List<ParsedDiffLine>
+) {
+    val pairCount = minOf(oldLines.size, newLines.size)
+    for (k in 0 until pairCount) {
+        val oldText = oldLines[k].text.drop(1)
+        val newText = newLines[k].text.drop(1)
+        val wordDiff = computeWordDiff(oldText, newText)
+        if (wordDiff != null) {
+            groups.add(
+                DiffRowGroup.WordDiffPair(
+                    oldText, newText,
+                    wordDiff.oldTokens, wordDiff.newTokens,
+                    wordDiff.oldUnchanged, wordDiff.newUnchanged
+                )
+            )
+        } else {
+            groups.add(DiffRowGroup.Single(oldLines[k]))
+            groups.add(DiffRowGroup.Single(newLines[k]))
+        }
+    }
+    if (oldLines.size > pairCount) {
+        oldLines.drop(pairCount).forEach { groups.add(DiffRowGroup.Single(it)) }
+    }
+    if (newLines.size > pairCount) {
+        newLines.drop(pairCount).forEach { groups.add(DiffRowGroup.Single(it)) }
+    }
+}
+
+private fun buildDiffLineText(
+    line: ParsedDiffLine,
+    isDark: Boolean,
+    textColor: Color
+): AnnotatedString {
+    val type = line.type
+    return if (type == DiffLineType.ADDITION || type == DiffLineType.DELETION ||
+        type == DiffLineType.CONTEXT
+    ) {
+        val prefix = line.text.take(1)
+        val remainingText = line.text.drop(1)
+
+        androidx.compose.ui.text.buildAnnotatedString {
+            withStyle(androidx.compose.ui.text.SpanStyle(color = textColor)) {
+                append(prefix)
+            }
+            append(highlightCode(remainingText, isDark))
+        }
+    } else {
+        androidx.compose.ui.text.buildAnnotatedString {
+            withStyle(androidx.compose.ui.text.SpanStyle(color = textColor)) {
+                append(line.text)
+            }
+        }
+    }
+}
+
+/**
+ * Renders one side of a word-diff pair: syntax highlighting for the whole
+ * line, then a stronger background (plus the line's accent color) over the
+ * tokens that changed, so the changed words stand out inside the line.
+ */
+private fun buildWordDiffLineText(
+    prefix: String,
+    content: String,
+    tokens: List<String>,
+    unchanged: BooleanArray,
+    isDark: Boolean,
+    textColor: Color,
+    changedBackground: Color
+): AnnotatedString {
+    val builder = androidx.compose.ui.text.AnnotatedString.Builder()
+    builder.withStyle(androidx.compose.ui.text.SpanStyle(color = textColor)) {
+        append(prefix)
+    }
+    builder.append(highlightCode(content, isDark))
+    var offset = prefix.length
+    tokens.forEachIndexed { index, token ->
+        if (!unchanged[index]) {
+            builder.addStyle(
+                androidx.compose.ui.text.SpanStyle(color = textColor, background = changedBackground),
+                offset,
+                offset + token.length
+            )
+        }
+        offset += token.length
+    }
+    return builder.toAnnotatedString()
+}
+
+private fun changedWordBackground(type: DiffLineType, isDark: Boolean): Color = when (type) {
+    DiffLineType.ADDITION -> if (isDark) Color(0x662EA043) else Color(0xFFACF2BD)
+    DiffLineType.DELETION -> if (isDark) Color(0x66F85149) else Color(0xFFFDB8C0)
+    else -> Color.Transparent
+}
+
 @Composable
 private fun RowScope.CodeLinesColumn(
     parsedLines: List<ParsedDiffLine>,
@@ -1919,53 +2144,84 @@ private fun RowScope.CodeLinesColumn(
     isDark: Boolean,
     fallbackColor: Color
 ) {
+    val groups = remember(parsedLines) { groupDiffRows(parsedLines) }
+
     Column(
         modifier = Modifier
             .weight(1f)
             .horizontalScroll(horizScrollState)
     ) {
-        parsedLines.forEach { parsedLine ->
-            val (bgColor, textColor) = getColors(parsedLine.type, isDark, fallbackColor)
-
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(lineHeight)
-                    .background(bgColor)
-                    .padding(horizontal = 8.dp),
-                contentAlignment = Alignment.CenterStart
-            ) {
-                val annotatedText = remember(parsedLine.text, parsedLine.type, isDark, textColor) {
-                    val type = parsedLine.type
-                    if (type == DiffLineType.ADDITION || type == DiffLineType.DELETION ||
-                        type == DiffLineType.CONTEXT
-                    ) {
-                        val prefix = parsedLine.text.take(1)
-                        val remainingText = parsedLine.text.drop(1)
-
-                        androidx.compose.ui.text.buildAnnotatedString {
-                            withStyle(androidx.compose.ui.text.SpanStyle(color = textColor)) {
-                                append(prefix)
-                            }
-                            append(highlightCode(remainingText, isDark))
-                        }
-                    } else {
-                        androidx.compose.ui.text.buildAnnotatedString {
-                            withStyle(androidx.compose.ui.text.SpanStyle(color = textColor)) {
-                                append(parsedLine.text)
-                            }
-                        }
+        groups.forEach { group ->
+            when (group) {
+                is DiffRowGroup.Single -> {
+                    val line = group.line
+                    val (bgColor, textColor) = getColors(line.type, isDark, fallbackColor)
+                    val annotatedText = remember(line, isDark, textColor) {
+                        buildDiffLineText(line, isDark, textColor)
                     }
+                    DiffLineBox(
+                        text = annotatedText,
+                        bgColor = bgColor,
+                        lineHeight = lineHeight,
+                        fontSize = fontSize
+                    )
                 }
-
-                Text(
-                    text = annotatedText,
-                    fontSize = fontSize,
-                    fontFamily = codeFontFamily(),
-                    softWrap = false
-                )
+                is DiffRowGroup.WordDiffPair -> {
+                    val (oldBg, oldTextColor) = getColors(DiffLineType.DELETION, isDark, fallbackColor)
+                    val (newBg, newTextColor) = getColors(DiffLineType.ADDITION, isDark, fallbackColor)
+                    val oldText = remember(group, isDark, oldTextColor) {
+                        buildWordDiffLineText(
+                            "-", group.oldContent, group.oldTokens, group.oldUnchanged,
+                            isDark, oldTextColor,
+                            changedWordBackground(DiffLineType.DELETION, isDark)
+                        )
+                    }
+                    val newText = remember(group, isDark, newTextColor) {
+                        buildWordDiffLineText(
+                            "+", group.newContent, group.newTokens, group.newUnchanged,
+                            isDark, newTextColor,
+                            changedWordBackground(DiffLineType.ADDITION, isDark)
+                        )
+                    }
+                    DiffLineBox(
+                        text = oldText,
+                        bgColor = oldBg,
+                        lineHeight = lineHeight,
+                        fontSize = fontSize
+                    )
+                    DiffLineBox(
+                        text = newText,
+                        bgColor = newBg,
+                        lineHeight = lineHeight,
+                        fontSize = fontSize
+                    )
+                }
             }
         }
+    }
+}
+
+@Composable
+private fun DiffLineBox(
+    text: AnnotatedString,
+    bgColor: Color,
+    lineHeight: androidx.compose.ui.unit.Dp,
+    fontSize: androidx.compose.ui.unit.TextUnit
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(lineHeight)
+            .background(bgColor)
+            .padding(horizontal = 8.dp),
+        contentAlignment = Alignment.CenterStart
+    ) {
+        Text(
+            text = text,
+            fontSize = fontSize,
+            fontFamily = codeFontFamily(),
+            softWrap = false
+        )
     }
 }
 

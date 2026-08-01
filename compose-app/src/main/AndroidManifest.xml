@@ -18,7 +18,7 @@
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:name=".TermApplication"
-        android:label="Termux Ghostty Compose"
+        android:label="Ecto"
         android:theme="@android:style/Theme.DeviceDefault.NoActionBar"
         android:usesCleartextTraffic="true">
         

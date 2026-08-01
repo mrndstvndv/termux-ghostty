@@ -36,7 +36,7 @@ class CrashReporter(private val context: Context) {
         val stackTrace = StringWriter()
         throwable.printStackTrace(PrintWriter(stackTrace))
         return """
-            Termux Ghostty Compose crash report
+            Ecto crash report
             Time: $timestamp
             Thread: ${thread.name}
 

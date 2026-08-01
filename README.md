@@ -18,6 +18,23 @@ An experimental Android terminal app using libghostty-vt as the terminal backend
 - **Remember soft keyboard state** — Optional `termux.properties` support via `remember-soft-keyboard-state=true` to restore the last soft keyboard visibility state when reopening the app.
 - **Material You theming** — Optional `termux.properties` support via `material-you-theme=disabled|light|dark|black|system` to theme the entire app (chrome + terminal ANSI palette) with wallpaper-derived Material 3 colors on Android 12+. `black` uses dynamic accent colors with pure black backgrounds. When enabled, `colors.properties` is ignored. Recreates automatically on wallpaper changes.
 
+## Ecto (`compose-app`)
+
+A vibe coding companion for Android — an SSH client with Herdr integration and a Ghostty terminal backend, built as a separate Jetpack Compose app (`com.mrndtvndv.term`).
+
+### Features
+
+- **Ghostty terminal backend** — Native VT parsing and terminal state via `libghostty-vt`, rendered with Compose Canvas.
+- **SSH client** — Native SSH sessions with a server manager (add/edit servers, one-tap connect).
+- **Herdr integration** — Queries `herdr workspace list` / `herdr pane list` and tracks navigation state per workspace.
+- **Git review tab** — Review, stage, and commit changes, edit commit messages, and reset to commits from the app.
+- **SFTP tab** — Browse and transfer files on the connected server, synced to the active workspace's directory.
+- **Cursor trail shaders** — Warp, Sweep, and Tail cursor effects (adapted from ghostty-cursor-shaders).
+- **Local terminal sessions** — Drop into a local shell when you don't need SSH.
+- **Split & tabbed workspaces** — Multiple terminals per workspace.
+- **Material You theming** — Dynamic wallpaper-derived colors.
+- **Extra keys toolbar** — Configurable extra keys row above the soft keyboard.
+
 ## Status
 
 Experimental and fast-moving.

@@ -2,7 +2,6 @@
 
 package com.mrndtvndv.term.ui.workspace
 
-import android.graphics.RuntimeShader
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -77,21 +76,19 @@ internal class CursorTrailState {
 }
 
 internal class TerminalVisualEffects(
-    private val terminalEffect: TerminalEffect,
-    private val postShader: RuntimeShader?,
+    private val postShaders: List<CompiledShader>,
     private val cursorTrailEffect: CursorTrailEffect,
     graphicsContext: GraphicsContext
 ) {
     private var animationTimeSeconds by mutableFloatStateOf(0f)
     private val renderNodeRenderer = TerminalRenderNodeRenderer(
         graphicsContext = graphicsContext,
-        terminalEffect = terminalEffect,
-        shader = postShader
+        shaders = postShaders
     )
     private val cursorTrailState = CursorTrailState()
 
     val isContinuouslyAnimated: Boolean
-        get() = terminalEffect.animated && postShader != null
+        get() = postShaders.any { it.definition.animated }
 
     val isAnimated: Boolean
         get() = isContinuouslyAnimated || cursorTrailEffect != CursorTrailEffect.NONE
@@ -102,7 +99,7 @@ internal class TerminalVisualEffects(
      * duration of the trail after a move, so an idle terminal doesn't redraw forever.
      */
     fun needsFrame(): Boolean {
-        if (terminalEffect.animated && postShader != null) return true
+        if (isContinuouslyAnimated) return true
         if (cursorTrailEffect == CursorTrailEffect.NONE) return false
         val elapsed = (System.nanoTime() - cursorTrailState.changeNanos) / 1_000_000_000f
         return elapsed < MaxTrailDurationSeconds + TrailFrameGraceSeconds
@@ -119,7 +116,7 @@ internal class TerminalVisualEffects(
         contentVersion: Int,
         selection: RenderSelection
     ) {
-        val timeSeconds = if (terminalEffect.animated && postShader != null) {
+        val timeSeconds = if (isContinuouslyAnimated) {
             animationTimeSeconds
         } else {
             0f
@@ -162,13 +159,18 @@ internal class TerminalVisualEffects(
 
 @Composable
 internal fun rememberTerminalVisualEffects(
-    terminalEffect: TerminalEffect,
+    shaderDefinitions: List<ShaderDefinition>,
     cursorTrailEffect: CursorTrailEffect
 ): TerminalVisualEffects {
-    val postShader = rememberRuntimeShader(terminalEffect)
+    val postShaders = rememberRuntimeShaders(shaderDefinitions)
     val graphicsContext = LocalGraphicsContext.current
-    val visualEffects = remember(terminalEffect, cursorTrailEffect, postShader, graphicsContext) {
-        TerminalVisualEffects(terminalEffect, postShader, cursorTrailEffect, graphicsContext)
+    val visualEffects = remember(
+        shaderDefinitions.map { it.id to it.source },
+        cursorTrailEffect,
+        postShaders,
+        graphicsContext
+    ) {
+        TerminalVisualEffects(postShaders, cursorTrailEffect, graphicsContext)
     }
     DisposableEffect(visualEffects) {
         onDispose { visualEffects.release() }

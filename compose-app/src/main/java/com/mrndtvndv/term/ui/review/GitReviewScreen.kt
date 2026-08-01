@@ -67,6 +67,7 @@ fun GitReviewScreen(
     val isDiffLoading by viewModel.isDiffLoading.collectAsState()
     val isFullFileMode by viewModel.isFullFileMode.collectAsState()
     val showLineNumbers by viewModel.showLineNumbers.collectAsState()
+    val isWordDiffEnabled by viewModel.isWordDiffEnabled.collectAsState()
     val isStagedExpanded by viewModel.isStagedExpanded.collectAsState()
     val isUnstagedExpanded by viewModel.isUnstagedExpanded.collectAsState()
     val isCommitsExpanded by viewModel.isCommitsExpanded.collectAsState()
@@ -418,6 +419,8 @@ fun GitReviewScreen(
                     onToggleFullFileMode = { viewModel.toggleFullFileMode() },
                     showLineNumbers = showLineNumbers,
                     onToggleLineNumbers = { viewModel.toggleLineNumbers() },
+                    isWordDiffEnabled = isWordDiffEnabled,
+                    onToggleWordDiff = { viewModel.toggleWordDiff() },
                     showHeader = true
                 )
             }
@@ -509,6 +512,10 @@ fun GitReviewScreen(
                                         verticalAlignment = Alignment.CenterVertically,
                                         modifier = Modifier.padding(end = 8.dp)
                                     ) {
+                                        WordDiffToggle(
+                                            isEnabled = isWordDiffEnabled,
+                                            onToggle = { viewModel.toggleWordDiff() }
+                                        )
                                         TooltipBox(
                                             positionProvider = TooltipDefaults.rememberTooltipPositionProvider(
                                                 positioning = TooltipAnchorPosition.Above
@@ -571,6 +578,8 @@ fun GitReviewScreen(
                                 onToggleFullFileMode = { viewModel.toggleFullFileMode() },
                                 showLineNumbers = showLineNumbers,
                                 onToggleLineNumbers = { viewModel.toggleLineNumbers() },
+                                isWordDiffEnabled = isWordDiffEnabled,
+                                onToggleWordDiff = { viewModel.toggleWordDiff() },
                                 showHeader = false
                             )
                         }
@@ -609,23 +618,32 @@ fun GitReviewScreen(
                                     }
                                 },
                                 actions = {
-                                    TooltipBox(
-                                        positionProvider = TooltipDefaults.rememberTooltipPositionProvider(
-                                            positioning = TooltipAnchorPosition.Above
-                                        ),
-                                        tooltip = { PlainTooltip { Text("Line Numbers") } },
-                                        state = rememberTooltipState()
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.padding(end = 8.dp)
                                     ) {
-                                        IconToggleButton(
-                                            checked = showLineNumbers,
-                                            onCheckedChange = { viewModel.toggleLineNumbers() },
-                                            modifier = Modifier.padding(end = 8.dp)
+                                        WordDiffToggle(
+                                            isEnabled = isWordDiffEnabled,
+                                            onToggle = { viewModel.toggleWordDiff() }
+                                        )
+                                        TooltipBox(
+                                            positionProvider = TooltipDefaults.rememberTooltipPositionProvider(
+                                                positioning = TooltipAnchorPosition.Above
+                                            ),
+                                            tooltip = { PlainTooltip { Text("Line Numbers") } },
+                                            state = rememberTooltipState()
                                         ) {
-                                            Icon(
-                                                imageVector = Icons.Default.FormatListNumbered,
-                                                contentDescription = "Toggle line numbers",
-                                                modifier = Modifier.size(16.dp)
-                                            )
+                                            IconToggleButton(
+                                                checked = showLineNumbers,
+                                                onCheckedChange = { viewModel.toggleLineNumbers() }
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.FormatListNumbered,
+                                                    contentDescription = "Toggle line numbers",
+                                                    modifier = Modifier.size(16.dp)
+                                                )
+                                            }
                                         }
                                     }
                                 },
@@ -645,6 +663,8 @@ fun GitReviewScreen(
                                 onToggleFullFileMode = { viewModel.toggleFullFileMode() },
                                 showLineNumbers = showLineNumbers,
                                 onToggleLineNumbers = { viewModel.toggleLineNumbers() },
+                                isWordDiffEnabled = isWordDiffEnabled,
+                                onToggleWordDiff = { viewModel.toggleWordDiff() },
                                 showHeader = false
                             )
                         }
@@ -1363,7 +1383,11 @@ fun CommitItem(
 }
 
 @Composable
-fun CommitDiffHeader(commit: GitCommit) {
+fun CommitDiffHeader(
+    commit: GitCommit,
+    isWordDiffEnabled: Boolean = true,
+    onToggleWordDiff: () -> Unit = {}
+) {
     Surface(
         tonalElevation = 2.dp,
         modifier = Modifier.fillMaxWidth()
@@ -1385,6 +1409,10 @@ fun CommitDiffHeader(commit: GitCommit) {
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f)
+                )
+                WordDiffToggle(
+                    isEnabled = isWordDiffEnabled,
+                    onToggle = onToggleWordDiff
                 )
                 Surface(
                     shape = RoundedCornerShape(4.dp),
@@ -1409,6 +1437,40 @@ fun CommitDiffHeader(commit: GitCommit) {
     HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
 }
 
+@Composable
+@OptIn(ExperimentalMaterial3Api::class)
+private fun WordDiffToggle(
+    isEnabled: Boolean,
+    onToggle: () -> Unit
+) {
+    TooltipBox(
+        positionProvider = TooltipDefaults.rememberTooltipPositionProvider(
+            positioning = TooltipAnchorPosition.Above
+        ),
+        tooltip = {
+            PlainTooltip {
+                Text(if (isEnabled) "Word-level diff on" else "Word-level diff off")
+            }
+        },
+        state = rememberTooltipState()
+    ) {
+        IconToggleButton(
+            checked = isEnabled,
+            onCheckedChange = { onToggle() }
+        ) {
+            Icon(
+                imageVector = Icons.Default.CompareArrows,
+                contentDescription = if (isEnabled) {
+                    "Disable word-level diff"
+                } else {
+                    "Enable word-level diff"
+                },
+                modifier = Modifier.size(16.dp)
+            )
+        }
+    }
+}
+
 @Suppress("LongMethod")
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -1417,7 +1479,9 @@ fun DiffHeader(
     isFullFileMode: Boolean,
     onToggleFullFileMode: () -> Unit,
     showLineNumbers: Boolean = true,
-    onToggleLineNumbers: () -> Unit = {}
+    onToggleLineNumbers: () -> Unit = {},
+    isWordDiffEnabled: Boolean = true,
+    onToggleWordDiff: () -> Unit = {}
 ) {
     Surface(
         tonalElevation = 2.dp,
@@ -1449,6 +1513,10 @@ fun DiffHeader(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                WordDiffToggle(
+                    isEnabled = isWordDiffEnabled,
+                    onToggle = onToggleWordDiff
+                )
                 TooltipBox(
                     positionProvider = TooltipDefaults.rememberTooltipPositionProvider(
                         positioning = TooltipAnchorPosition.Above
@@ -1506,6 +1574,8 @@ fun DiffViewer(
     onToggleFullFileMode: () -> Unit = {},
     showLineNumbers: Boolean = true,
     onToggleLineNumbers: () -> Unit = {},
+    isWordDiffEnabled: Boolean = true,
+    onToggleWordDiff: () -> Unit = {},
     showHeader: Boolean = false
 ) {
     if (selectedFile == null && selectedCommit == null) {
@@ -1526,10 +1596,16 @@ fun DiffViewer(
                     isFullFileMode = isFullFileMode,
                     onToggleFullFileMode = onToggleFullFileMode,
                     showLineNumbers = showLineNumbers,
-                    onToggleLineNumbers = onToggleLineNumbers
+                    onToggleLineNumbers = onToggleLineNumbers,
+                    isWordDiffEnabled = isWordDiffEnabled,
+                    onToggleWordDiff = onToggleWordDiff
                 )
             } else if (selectedCommit != null) {
-                CommitDiffHeader(commit = selectedCommit)
+                CommitDiffHeader(
+                    commit = selectedCommit,
+                    isWordDiffEnabled = isWordDiffEnabled,
+                    onToggleWordDiff = onToggleWordDiff
+                )
             }
         }
 
@@ -1553,7 +1629,8 @@ fun DiffViewer(
                 else -> {
                     DiffContent(
                         diffText = diffText,
-                        showLineNumbers = showLineNumbers
+                        showLineNumbers = showLineNumbers,
+                        isWordDiffEnabled = isWordDiffEnabled
                     )
                 }
             }
@@ -1719,6 +1796,7 @@ fun FileDiffHeader(
 fun DiffContent(
     diffText: String,
     showLineNumbers: Boolean = true,
+    isWordDiffEnabled: Boolean = true,
     modifier: Modifier = Modifier
 ) {
     var fontScale by remember { mutableFloatStateOf(1f) }
@@ -1783,7 +1861,8 @@ fun DiffContent(
                         horizScrollState = horizScrollState,
                         isDark = isDark,
                         fallbackColor = fallbackColor,
-                        showLineNumbers = showLineNumbers
+                        showLineNumbers = showLineNumbers,
+                        isWordDiffEnabled = isWordDiffEnabled
                     )
                 }
             }
@@ -1817,7 +1896,8 @@ private fun DiffRowsLayout(
     horizScrollState: androidx.compose.foundation.ScrollState,
     isDark: Boolean,
     fallbackColor: Color,
-    showLineNumbers: Boolean = true
+    showLineNumbers: Boolean = true,
+    isWordDiffEnabled: Boolean = true
 ) {
     Row(
         modifier = Modifier.fillMaxWidth()
@@ -1848,7 +1928,8 @@ private fun DiffRowsLayout(
                 lineHeight = dims.lineHeight,
                 fontSize = dims.codeFontSize,
                 isDark = isDark,
-                fallbackColor = fallbackColor
+                fallbackColor = fallbackColor,
+                isWordDiffEnabled = isWordDiffEnabled
             )
         }
     }
@@ -2135,6 +2216,7 @@ private fun changedWordBackground(type: DiffLineType, isDark: Boolean): Color = 
     else -> Color.Transparent
 }
 
+@Suppress("LongMethod")
 @Composable
 private fun RowScope.CodeLinesColumn(
     parsedLines: List<ParsedDiffLine>,
@@ -2142,9 +2224,16 @@ private fun RowScope.CodeLinesColumn(
     lineHeight: androidx.compose.ui.unit.Dp,
     fontSize: androidx.compose.ui.unit.TextUnit,
     isDark: Boolean,
-    fallbackColor: Color
+    fallbackColor: Color,
+    isWordDiffEnabled: Boolean
 ) {
-    val groups = remember(parsedLines) { groupDiffRows(parsedLines) }
+    val groups = remember(parsedLines, isWordDiffEnabled) {
+        if (isWordDiffEnabled) {
+            groupDiffRows(parsedLines)
+        } else {
+            parsedLines.map { DiffRowGroup.Single(it) }
+        }
+    }
 
     Column(
         modifier = Modifier

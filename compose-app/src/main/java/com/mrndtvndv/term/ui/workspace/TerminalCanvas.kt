@@ -1,6 +1,7 @@
 package com.mrndtvndv.term.ui.workspace
 
 import android.content.Context
+import android.content.SharedPreferences
 import android.graphics.Typeface
 import android.view.KeyEvent
 import android.view.MotionEvent
@@ -300,7 +301,23 @@ fun TerminalCanvas(
     val sizes = remember(context) { TermuxAppSharedPreferences.getDefaultFontSizes(context) }
     val currentFontSize = remember { mutableStateOf(sharedPreferences.getInt("font_size", sizes[0])) }
 
-    val terminalEffect = TerminalEffect.fromPref(sharedPreferences.getString("terminal_effect", "none"))
+    val shaderRepository = remember(context) { ShaderRepository(context) }
+    var shaderIds by remember {
+        mutableStateOf(loadSelectedShaderIds(sharedPreferences))
+    }
+    DisposableEffect(sharedPreferences) {
+        val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == "terminal_effects" || key == "terminal_effect") {
+                shaderIds = loadSelectedShaderIds(sharedPreferences)
+            }
+        }
+        sharedPreferences.registerOnSharedPreferenceChangeListener(listener)
+        onDispose { sharedPreferences.unregisterOnSharedPreferenceChangeListener(listener) }
+    }
+    val shaderDefinitions = remember(shaderRepository, shaderIds) {
+        shaderIds.mapNotNull { shaderRepository.find(it) }
+            .filter { it.id != "none" }
+    }
     val cursorTrailEffect = CursorTrailEffect.fromPref(
         sharedPreferences.getString("cursor_trail_effect", null),
         sharedPreferences.getBoolean("cursor_trail", false)
@@ -308,7 +325,7 @@ fun TerminalCanvas(
     val visualEffectFrameRate = VisualEffectFrameRate.fromPref(
         sharedPreferences.getString("visual_effect_frame_rate", null)
     )
-    val visualEffects = rememberTerminalVisualEffects(terminalEffect, cursorTrailEffect)
+    val visualEffects = rememberTerminalVisualEffects(shaderDefinitions, cursorTrailEffect)
 
     // Bumped only when terminal content changes. The animation clock invalidates the draw
     // scope without changing this version, so the offscreen bitmap is only re-rendered and

@@ -8,12 +8,39 @@ import androidx.compose.runtime.remember
 
 private const val TAG = "TerminalEffect"
 
+internal data class CompiledShader(
+    val definition: ShaderDefinition,
+    val shader: RuntimeShader
+)
+
 /**
  * Whole-frame post-processing effects for the terminal view.
  *
  * Available on Android 13+ (API 33+), where [RuntimeShader] is supported.
  * Older devices expose no terminal shader effects.
  */
+data class ShaderDefinition(
+    val id: String,
+    val label: String,
+    val source: String,
+    val animated: Boolean,
+    val usesTimeUniform: Boolean,
+    val usesResolutionUniform: Boolean,
+    val isBuiltIn: Boolean
+) {
+    companion object {
+        fun none(): ShaderDefinition = ShaderDefinition(
+            id = "none",
+            label = "None",
+            source = "",
+            animated = false,
+            usesTimeUniform = false,
+            usesResolutionUniform = false,
+            isBuiltIn = true
+        )
+    }
+}
+
 enum class TerminalEffect(
     val key: String,
     val label: String,
@@ -23,6 +50,14 @@ enum class TerminalEffect(
 ) {
     NONE("none", "None", false, false, false),
     CRT("crt", "CRT", false, false, true),
+    RETRO_CRT("retro_crt", "Retro CRT", true, true, true),
+    SCREEN_CURVATURE("curvature", "Curvature", false, false, true),
+    BLOOM("bloom", "Bloom", false, false, true),
+    GLOWING_LINE("glowing_line", "Glowing Lines", false, false, false),
+    STATIC_NOISE("static_noise", "Static Noise", true, true, true),
+    CHROMATIC("chromatic", "Chromatic", false, false, true),
+    RGB_SHIFT("rgb_shift", "RGB Shift", false, false, true),
+    FLICKER("flicker", "Flicker", true, true, false),
     SCANLINES("scanlines", "Scanlines", false, false, false),
     VIGNETTE("vignette", "Vignette", false, false, true),
     GLITCH("glitch", "Glitch", true, true, true),
@@ -34,10 +69,42 @@ enum class TerminalEffect(
     }
 }
 
+internal fun TerminalEffect.toShaderDefinition(): ShaderDefinition {
+    if (this == TerminalEffect.NONE) return ShaderDefinition.none()
+
+    return ShaderDefinition(
+        id = key,
+        label = label,
+        source = sourceFor(this),
+        animated = animated,
+        usesTimeUniform = usesTimeUniform,
+        usesResolutionUniform = usesResolutionUniform,
+        isBuiltIn = true
+    )
+}
+
+private fun sourceFor(effect: TerminalEffect): String = when (effect) {
+    TerminalEffect.CRT -> AgslSources.CRT
+    TerminalEffect.RETRO_CRT -> AgslSources.RETRO_CRT
+    TerminalEffect.SCREEN_CURVATURE -> AgslSources.SCREEN_CURVATURE
+    TerminalEffect.BLOOM -> AgslSources.BLOOM
+    TerminalEffect.GLOWING_LINE -> AgslSources.GLOWING_LINE
+    TerminalEffect.STATIC_NOISE -> AgslSources.STATIC_NOISE
+    TerminalEffect.CHROMATIC -> AgslSources.CHROMATIC
+    TerminalEffect.RGB_SHIFT -> AgslSources.RGB_SHIFT
+    TerminalEffect.FLICKER -> AgslSources.FLICKER
+    TerminalEffect.SCANLINES -> AgslSources.SCANLINES
+    TerminalEffect.VIGNETTE -> AgslSources.VIGNETTE
+    TerminalEffect.GLITCH -> AgslSources.GLITCH
+    TerminalEffect.MATRIX -> AgslSources.MATRIX
+    TerminalEffect.NONE -> ""
+}
+
 /** AGSL sources. Every declared uniform is referenced so it survives optimization.
  * CRT, Glitch and Matrix are ports of ghostty-shaders (github.com/0xhckr/ghostty-shaders):
  * crt.glsl (CRTS by Timothy Lottes, UNLICENSE), glitchy.glsl (shadertoy wld3WN),
  * matrix-hallway.glsl ([SH17A] by Reinder Nijhoff, CC BY-NC-SA 4.0). */
+@Suppress("LargeClass") // intentionally a single collection of AGSL shader source constants
 private object AgslSources {
 
     const val CRT = """
@@ -208,6 +275,309 @@ private object AgslSources {
             );
             // Linear to SRGB for output
             return half4(ToSrgb(col), 1.0);
+        }
+    """
+
+    const val RETRO_CRT = """
+        // "Retro CRT" — an original AGSL re-implementation of the cool-retro-term
+        // effect set (https://github.com/Swordfish90/cool-retro-term, GPL-2.0+).
+        // This is not a port of their shader source; it re-implements the same
+        // visual effects directly in AGSL: screen curvature, bloom, glowing
+        // scanlines, static noise, chromatic aberration, flicker, jitter and
+        // horizontal-sync wobble, plus brightness/contrast/saturation and vignette.
+        uniform shader content;
+        uniform float time;
+        uniform vec2 resolution;
+
+        // Intensities tuned to the cool-retro-term "Default" amber profile.
+        const float CURVATURE    = 0.20;
+        const float BLOOM        = 0.55;
+        const float BLOOM_RADIUS = 4.0;
+        const float GLOWING_LINE = 0.30;
+        const float STATIC_NOISE = 0.10;
+        const float CHROMA       = 1.8;
+        const float FLICKER      = 0.06;
+        const float JITTER       = 1.4;
+        const float HSYNC        = 1.6;
+        const float VIGNETTE     = 0.55;
+        const float BRIGHTNESS   = 1.10;
+        const float CONTRAST     = 1.15;
+        const float SATURATION   = 1.18;
+        const float SCAN_PERIOD  = 3.0;
+        const float PI           = 3.14159265;
+
+        float hash21(vec2 p) {
+            p = fract(p * vec2(123.34, 345.45));
+            p += dot(p, p + 34.345);
+            return fract(p.x * p.y);
+        }
+
+        float hash11(float p) {
+            p = fract(p * 0.1031);
+            p *= p + 33.33;
+            return fract(p * p);
+        }
+
+        float vnoise(vec2 p) {
+            vec2 i = floor(p);
+            vec2 f = fract(p);
+            f = f * f * (3.0 - 2.0 * f);
+            float a = hash21(i);
+            float b = hash21(i + vec2(1.0, 0.0));
+            float c = hash21(i + vec2(0.0, 1.0));
+            float d = hash21(i + vec2(1.0, 1.0));
+            return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+        }
+
+        // Sample the content texture at a normalized uv; clamp so out-of-bounds
+        // evals (which would return transparent black) can never happen.
+        vec3 sampleAt(vec2 uv) {
+            vec2 b = max(resolution - vec2(1.0), vec2(0.0));
+            return content.eval(clamp(uv * resolution, vec2(0.0), b)).rgb;
+        }
+
+        // Barrel distortion mimicking a curved CRT face.
+        vec2 curve(vec2 uv) {
+            vec2 p = uv * 2.0 - 1.0;
+            float r2 = dot(p, p);
+            p *= 1.0 + CURVATURE * r2;
+            return p * 0.5 + 0.5;
+        }
+
+        half4 main(vec2 fragCoord) {
+            vec2 res = max(resolution, vec2(1.0));
+            vec2 uv = fragCoord / res;
+
+            // 1. whole-frame jitter + per-line horizontal-sync wobble
+            float jx = (hash11(floor(time * 23.0)) - 0.5) * JITTER;
+            float jy = (hash11(floor(time * 19.0) + 7.0) - 0.5) * JITTER * 0.6;
+            float hs = (vnoise(vec2(uv.y * 90.0, time * 12.0)) - 0.5) * HSYNC;
+            vec2 wobble = vec2(hs + jx, jy) / res;
+
+            // 2. barrel curvature (applied after wobble)
+            vec2 cuv = curve(uv + wobble);
+
+            // 3. chromatic aberration along the radial direction
+            vec2 dir = cuv - 0.5;
+            float ca = CHROMA / res.x;
+            vec3 col;
+            col.r = sampleAt(cuv + dir * ca).r;
+            col.g = sampleAt(cuv).g;
+            col.b = sampleAt(cuv - dir * ca).b;
+
+            // 4. bloom — gather bright neighbours (8-tap ring)
+            vec3 bloom = vec3(0.0);
+            float total = 0.0;
+            for (int i = 0; i < 8; i++) {
+                float a = float(i) * (PI * 0.25);
+                vec2 off = vec2(cos(a), sin(a)) * BLOOM_RADIUS;
+                vec3 s = sampleAt(cuv + off / res);
+                float l = dot(s, vec3(0.299, 0.587, 0.114));
+                float w = smoothstep(0.45, 1.0, l);
+                bloom += s * w;
+                total += w;
+            }
+            bloom = total > 0.001 ? bloom / total : vec3(0.0);
+            col += bloom * BLOOM * 0.7;
+
+            // 5. glowing scanlines
+            float scan = 0.5 + 0.5 * cos(fragCoord.y * 2.0 * PI / SCAN_PERIOD);
+            col *= 1.0 - GLOWING_LINE * (1.0 - scan);
+            float lum = dot(col, vec3(0.299, 0.587, 0.114));
+            col += col * GLOWING_LINE * 0.35 * (1.0 - scan) * smoothstep(0.3, 1.0, lum);
+
+            // 6. static noise
+            float n = hash21(fragCoord + floor(time * 30.0) * 17.0);
+            col += (n - 0.5) * STATIC_NOISE;
+
+            // 7. flicker
+            float fl = 1.0 - FLICKER * (0.5 + 0.5 * sin(time * 7.5))
+                * (0.4 + 0.6 * vnoise(vec2(time * 2.7)));
+            col *= fl;
+
+            // 8. brightness / contrast / saturation
+            col = (col - 0.5) * CONTRAST + 0.5;
+            col *= BRIGHTNESS;
+            float gl = dot(col, vec3(0.299, 0.587, 0.114));
+            col = mix(vec3(gl), col, SATURATION);
+
+            // 9. vignette
+            float vig = 1.0 - dot(dir, dir) * VIGNETTE * 2.2;
+            col *= clamp(vig, 0.25, 1.0);
+
+            return half4(clamp(col, 0.0, 1.0), 1.0);
+        }
+    """
+
+    const val SCREEN_CURVATURE = """
+        // Barrel distortion mimicking a curved CRT face — standalone effect from
+        // the cool-retro-term set (screenCurvature). Original AGSL implementation.
+        uniform shader content;
+        uniform vec2 resolution;
+
+        const float CURVATURE = 0.25;
+
+        vec2 curve(vec2 uv) {
+            vec2 p = uv * 2.0 - 1.0;
+            float r2 = dot(p, p);
+            p *= 1.0 + CURVATURE * r2;
+            return p * 0.5 + 0.5;
+        }
+
+        half4 main(vec2 fragCoord) {
+            vec2 res = max(resolution, vec2(1.0));
+            vec2 cuv = curve(fragCoord / res);
+            if (cuv.x < 0.0 || cuv.x > 1.0 || cuv.y < 0.0 || cuv.y > 1.0) {
+                return half4(0.0, 0.0, 0.0, 1.0);
+            }
+            vec2 b = max(resolution - vec2(1.0), vec2(0.0));
+            return half4(content.eval(clamp(cuv * resolution, vec2(0.0), b)).rgb, 1.0);
+        }
+    """
+
+    const val BLOOM = """
+        // Bloom — gathers bright neighbours in an 8-tap ring and adds their glow
+        // back. Standalone effect from the cool-retro-term set (bloom).
+        uniform shader content;
+        uniform vec2 resolution;
+
+        const float BLOOM_AMOUNT = 0.55;
+        const float BLOOM_RADIUS = 4.0;
+        const float PI = 3.14159265;
+
+        half4 main(vec2 fragCoord) {
+            vec2 b = max(resolution - vec2(1.0), vec2(0.0));
+            vec3 col = content.eval(clamp(fragCoord, vec2(0.0), b)).rgb;
+            vec3 bloom = vec3(0.0);
+            float total = 0.0;
+            for (int i = 0; i < 8; i++) {
+                float a = float(i) * (PI * 0.25);
+                vec2 off = vec2(cos(a), sin(a)) * BLOOM_RADIUS;
+                vec3 s = content.eval(clamp(fragCoord + off, vec2(0.0), b)).rgb;
+                float l = dot(s, vec3(0.299, 0.587, 0.114));
+                float w = smoothstep(0.45, 1.0, l);
+                bloom += s * w;
+                total += w;
+            }
+            bloom = total > 0.001 ? bloom / total : vec3(0.0);
+            col += bloom * BLOOM_AMOUNT * 0.7;
+            return half4(clamp(col, 0.0, 1.0), 1.0);
+        }
+    """
+
+    const val GLOWING_LINE = """
+        // Glowing scanlines — sinusoidal darkening with a phosphor glow on the
+        // bright gaps. Standalone effect from the cool-retro-term set (glowingLine).
+        uniform shader content;
+
+        const float GLOW = 0.30;
+        const float SCAN_PERIOD = 3.0;
+        const float PI = 3.14159265;
+
+        half4 main(vec2 fragCoord) {
+            vec3 col = content.eval(fragCoord).rgb;
+            float scan = 0.5 + 0.5 * cos(fragCoord.y * 2.0 * PI / SCAN_PERIOD);
+            col *= 1.0 - GLOW * (1.0 - scan);
+            float lum = dot(col, vec3(0.299, 0.587, 0.114));
+            col += col * GLOW * 0.35 * (1.0 - scan) * smoothstep(0.3, 1.0, lum);
+            return half4(clamp(col, 0.0, 1.0), 1.0);
+        }
+    """
+
+    const val STATIC_NOISE = """
+        // TV static noise — per-frame random grain. Animated effect from the
+        // cool-retro-term set (staticNoise). Original AGSL implementation.
+        uniform shader content;
+        uniform float time;
+        uniform vec2 resolution;
+
+        const float NOISE = 0.10;
+
+        float hash21(vec2 p) {
+            p = fract(p * vec2(123.34, 345.45));
+            p += dot(p, p + 34.345);
+            return fract(p.x * p.y);
+        }
+
+        half4 main(vec2 fragCoord) {
+            vec2 b = max(resolution - vec2(1.0), vec2(0.0));
+            vec3 col = content.eval(clamp(fragCoord, vec2(0.0), b)).rgb;
+            float n = hash21(fragCoord + floor(time * 30.0) * 17.0);
+            col += (n - 0.5) * NOISE;
+            return half4(clamp(col, 0.0, 1.0), 1.0);
+        }
+    """
+
+    const val CHROMATIC = """
+        // Chromatic aberration — R and B channels sampled at radial offsets so
+        // the fringe increases toward the corners. cool-retro-term set (chromaColor).
+        uniform shader content;
+        uniform vec2 resolution;
+
+        const float CHROMA = 4.0;
+
+        half4 main(vec2 fragCoord) {
+            vec2 res = max(resolution, vec2(1.0));
+            vec2 uv = fragCoord / res;
+            vec2 dir = uv - 0.5;
+            float ca = CHROMA / res.x;
+            vec2 b = max(resolution - vec2(1.0), vec2(0.0));
+            vec3 col;
+            col.r = content.eval(clamp((uv + dir * ca) * resolution, vec2(0.0), b)).r;
+            col.g = content.eval(clamp(uv * resolution, vec2(0.0), b)).g;
+            col.b = content.eval(clamp((uv - dir * ca) * resolution, vec2(0.0), b)).b;
+            return half4(col, 1.0);
+        }
+    """
+
+    const val RGB_SHIFT = """
+        // RGB shift — fixed horizontal channel offset. cool-retro-term set (rgbShift).
+        uniform shader content;
+        uniform vec2 resolution;
+
+        const float SHIFT = 2.0;
+
+        half4 main(vec2 fragCoord) {
+            vec2 b = max(resolution - vec2(1.0), vec2(0.0));
+            vec3 col;
+            col.r = content.eval(clamp(fragCoord + vec2(SHIFT, 0.0), vec2(0.0), b)).r;
+            col.g = content.eval(clamp(fragCoord, vec2(0.0), b)).g;
+            col.b = content.eval(clamp(fragCoord - vec2(SHIFT, 0.0), vec2(0.0), b)).b;
+            return half4(col, 1.0);
+        }
+    """
+
+    const val FLICKER = """
+        // Flicker — slow brightness modulation with value-noise variation.
+        // Animated effect from the cool-retro-term set (flickering).
+        uniform shader content;
+        uniform float time;
+
+        const float FLICKER = 0.06;
+
+        float hash21(vec2 p) {
+            p = fract(p * vec2(123.34, 345.45));
+            p += dot(p, p + 34.345);
+            return fract(p.x * p.y);
+        }
+
+        float vnoise(vec2 p) {
+            vec2 i = floor(p);
+            vec2 f = fract(p);
+            f = f * f * (3.0 - 2.0 * f);
+            float a = hash21(i);
+            float b = hash21(i + vec2(1.0, 0.0));
+            float c = hash21(i + vec2(0.0, 1.0));
+            float d = hash21(i + vec2(1.0, 1.0));
+            return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+        }
+
+        half4 main(vec2 fragCoord) {
+            vec3 col = content.eval(fragCoord).rgb;
+            float fl = 1.0 - FLICKER * (0.5 + 0.5 * sin(time * 7.5))
+                * (0.4 + 0.6 * vnoise(vec2(time * 2.7)));
+            col *= fl;
+            return half4(col, 1.0);
         }
     """
 
@@ -390,32 +760,42 @@ private object AgslSources {
 }
 
 /**
- * Creates the AGSL shader for [effect] on API 33+, or null when unavailable.
- * Compile failures degrade to null (effect simply doesn't render) instead of crashing.
+ * Creates the AGSL shader for [definition] on API 33+, or null when unavailable.
+ * Compile failures degrade to null (the effect simply does not render) instead of crashing.
  */
 @Suppress("SwallowedException") // invalid AGSL for this device — degrade to no effect instead of crashing
+private fun compileRuntimeShader(definition: ShaderDefinition): RuntimeShader? {
+    if (definition.source.isBlank()) return null
+
+    return try {
+        RuntimeShader(definition.source)
+    } catch (e: IllegalArgumentException) {
+        Log.w(TAG, "AGSL compile failed for ${definition.label}", e)
+        null
+    }
+}
+
 @Composable
-fun rememberRuntimeShader(effect: TerminalEffect): RuntimeShader? {
-    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return null
-    return remember(effect) {
-        if (effect == TerminalEffect.NONE) return@remember null
-        try {
-            RuntimeShader(
-                when (effect) {
-                    TerminalEffect.CRT -> AgslSources.CRT
-                    TerminalEffect.SCANLINES -> AgslSources.SCANLINES
-                    TerminalEffect.VIGNETTE -> AgslSources.VIGNETTE
-                    TerminalEffect.GLITCH -> AgslSources.GLITCH
-                    TerminalEffect.MATRIX -> AgslSources.MATRIX
-                    TerminalEffect.NONE -> ""
-                }
-            )
-        } catch (e: IllegalArgumentException) {
-            Log.w(TAG, "AGSL compile failed for ${effect.label}", e)
-            null
+internal fun rememberRuntimeShaders(definitions: List<ShaderDefinition>): List<CompiledShader> {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return emptyList()
+
+    val shaderKey = definitions.map { it.id to it.source }
+    return remember(shaderKey) {
+        definitions.mapNotNull { definition ->
+            compileRuntimeShader(definition)?.let { shader ->
+                CompiledShader(definition, shader)
+            }
         }
     }
 }
+
+@Composable
+internal fun rememberRuntimeShader(definition: ShaderDefinition): RuntimeShader? =
+    rememberRuntimeShaders(listOf(definition)).firstOrNull()?.shader
+
+@Composable
+internal fun rememberRuntimeShader(effect: TerminalEffect): RuntimeShader? =
+    rememberRuntimeShader(effect.toShaderDefinition())
 
 /** Pushes only uniforms declared by the selected shader. */
 fun RuntimeShader.updateUniforms(

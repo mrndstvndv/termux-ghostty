@@ -1,7 +1,6 @@
 package com.mrndtvndv.term.ui.workspace
 
 import android.graphics.RenderEffect as AndroidRenderEffect
-import android.graphics.RuntimeShader
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.GraphicsContext
 import androidx.compose.ui.graphics.asComposeRenderEffect
@@ -22,8 +21,7 @@ import com.termux.view.TerminalRenderer
  */
 internal class TerminalRenderNodeRenderer(
     private val graphicsContext: GraphicsContext,
-    private val terminalEffect: TerminalEffect,
-    private val shader: RuntimeShader?
+    private val shaders: List<CompiledShader>
 ) {
     private class RowState(
         val layer: GraphicsLayer
@@ -57,7 +55,7 @@ internal class TerminalRenderNodeRenderer(
     private var lastReverseVideo = false
     private var lastFrameSequence = Long.MIN_VALUE
     private var paletteVersion = 0
-    private var boundShader: RuntimeShader? = null
+    private var boundShaders: List<CompiledShader> = emptyList()
     private var shaderResolutionWidth = Float.NaN
     private var shaderResolutionHeight = Float.NaN
 
@@ -75,14 +73,14 @@ internal class TerminalRenderNodeRenderer(
         updateRowsIfNeeded(drawScope, snapshot, renderer, contentVersion, selection)
         updateBackground(snapshot)
 
-        if (shader == null) {
+        if (shaders.isEmpty()) {
             drawScope.drawRect(backgroundColor)
             rows.forEach { row -> drawScope.drawLayer(row.layer) }
             return
         }
 
         updateParentDisplayList(drawScope)
-        updateShader(shader, timeSeconds)
+        updateShaders(timeSeconds)
         drawScope.drawLayer(parentLayer)
     }
 
@@ -121,7 +119,7 @@ internal class TerminalRenderNodeRenderer(
                 }
             )
         }
-        boundShader = null
+        boundShaders = emptyList()
         shaderResolutionWidth = Float.NaN
         shaderResolutionHeight = Float.NaN
         parentDisplayListDirty = true
@@ -248,33 +246,42 @@ internal class TerminalRenderNodeRenderer(
         parentDisplayListDirty = false
     }
 
-    private fun updateShader(shader: RuntimeShader, timeSeconds: Float) {
-        val usesTimeUniform = terminalEffect.usesTimeUniform
-        val usesResolutionUniform = terminalEffect.usesResolutionUniform
-        val shaderChanged = boundShader !== shader
-        if (shaderChanged) {
+    private fun updateShaders(timeSeconds: Float) {
+        val shadersChanged = shaders.size != boundShaders.size ||
+            shaders.indices.any { index -> shaders[index].shader !== boundShaders[index].shader }
+        if (shadersChanged) {
             shaderResolutionWidth = Float.NaN
             shaderResolutionHeight = Float.NaN
         }
-        val updateResolution = usesResolutionUniform &&
+
+        val updateResolution = shaders.any { it.definition.usesResolutionUniform } &&
             (shaderResolutionWidth != width.toFloat() || shaderResolutionHeight != height.toFloat())
-        shader.updateUniforms(
-            timeSeconds = timeSeconds,
-            width = width.toFloat(),
-            height = height.toFloat(),
-            updateTimeUniform = usesTimeUniform,
-            updateResolutionUniform = updateResolution
-        )
+        shaders.forEach { compiledShader ->
+            compiledShader.shader.updateUniforms(
+                timeSeconds = timeSeconds,
+                width = width.toFloat(),
+                height = height.toFloat(),
+                updateTimeUniform = compiledShader.definition.usesTimeUniform,
+                updateResolutionUniform = updateResolution &&
+                    compiledShader.definition.usesResolutionUniform
+            )
+        }
         if (updateResolution) {
             shaderResolutionWidth = width.toFloat()
             shaderResolutionHeight = height.toFloat()
         }
-        if (!shaderChanged && !usesTimeUniform) return
+        val needsAnimation = shaders.any { it.definition.usesTimeUniform }
+        if (!shadersChanged && !needsAnimation) return
 
-        parentLayer.renderEffect = AndroidRenderEffect
-            .createRuntimeShaderEffect(shader, "content")
-            .asComposeRenderEffect()
-        boundShader = shader
+        var renderEffect = AndroidRenderEffect
+            .createRuntimeShaderEffect(shaders.first().shader, "content")
+        shaders.drop(1).forEach { compiledShader ->
+            val outerEffect = AndroidRenderEffect
+                .createRuntimeShaderEffect(compiledShader.shader, "content")
+            renderEffect = AndroidRenderEffect.createChainEffect(outerEffect, renderEffect)
+        }
+        parentLayer.renderEffect = renderEffect.asComposeRenderEffect()
+        boundShaders = shaders
     }
 
     private fun invalidateProcessedFrame() {

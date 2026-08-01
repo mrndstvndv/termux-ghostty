@@ -149,35 +149,39 @@ fun TabbedWorkspace(
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
-            SecondaryTabRow(
-                selectedTabIndex = pagerState.currentPage,
-                containerColor = MaterialTheme.colorScheme.surface,
-                contentColor = MaterialTheme.colorScheme.onSurface,
-            ) {
-                activeTabs.forEachIndexed { index, tab ->
-                    val isSelected = pagerState.currentPage == index
-                    Tab(
-                        selected = isSelected,
-                        onClick = {
-                            if (tab == WorkspaceTab.Sftp || tab == WorkspaceTab.Review) {
-                                onRefreshWorkspace()
+            if (activeTabs.size > 1) {
+                SecondaryTabRow(
+                    modifier = Modifier.statusBarsPadding(),
+                    selectedTabIndex = pagerState.currentPage,
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    contentColor = MaterialTheme.colorScheme.onSurface,
+                ) {
+                    activeTabs.forEachIndexed { index, tab ->
+                        val isSelected = pagerState.currentPage == index
+                        Tab(
+                            selected = isSelected,
+                            onClick = {
+                                if (tab == WorkspaceTab.Sftp || tab == WorkspaceTab.Review) {
+                                    onRefreshWorkspace()
+                                }
+                                onTabSelected(tab)
+                                coroutineScope.launch {
+                                    pagerState.animateScrollToPage(index)
+                                }
+                            },
+                            selectedContentColor = MaterialTheme.colorScheme.primary,
+                            unselectedContentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                            text = {
+                                Text(
+                                    text = tab.title,
+                                    color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                )
                             }
-                            onTabSelected(tab)
-                            coroutineScope.launch {
-                                pagerState.animateScrollToPage(index)
-                            }
-                        },
-                        selectedContentColor = MaterialTheme.colorScheme.primary,
-                        unselectedContentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                        text = {
-                            Text(
-                                text = tab.title,
-                                color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                            )
-                        }
-                    )
+                        )
+                    }
                 }
             }
         }
@@ -190,6 +194,9 @@ fun TabbedWorkspace(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
+                .then(if (activeTabs.size <= 1) Modifier.statusBarsPadding() else Modifier)
+                .navigationBarsPadding()
+                .imePadding()
                 .clipToBounds()
                 .then(if (excludeFromSystemGesture) Modifier.systemGestureExclusion() else Modifier)
                 .pointerInput(touchSlop) {

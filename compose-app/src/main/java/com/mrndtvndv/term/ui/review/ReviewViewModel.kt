@@ -71,6 +71,9 @@ class ReviewViewModel(
     private val _showLineNumbers = MutableStateFlow(true)
     val showLineNumbers = _showLineNumbers.asStateFlow()
 
+    private val _isWordDiffEnabled = MutableStateFlow(true)
+    val isWordDiffEnabled = _isWordDiffEnabled.asStateFlow()
+
     private val _isCommitInProgress = MutableStateFlow(false)
     val isCommitInProgress = _isCommitInProgress.asStateFlow()
 
@@ -123,6 +126,10 @@ class ReviewViewModel(
 
     fun toggleLineNumbers() {
         _showLineNumbers.value = !_showLineNumbers.value
+    }
+
+    fun toggleWordDiff() {
+        _isWordDiffEnabled.value = !_isWordDiffEnabled.value
     }
 
     private suspend fun fetchCommits(repoRoot: String, limit: Int = 15, skip: Int = 0): List<GitCommit> {

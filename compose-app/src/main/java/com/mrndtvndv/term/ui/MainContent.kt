@@ -33,7 +33,10 @@ import com.mrndtvndv.term.ui.sftp.SftpFileViewerScreen
 import com.mrndtvndv.term.ui.theme.TerminalThemeSync
 import com.mrndtvndv.term.ui.theme.TermuxGhosttyTheme
 import com.mrndtvndv.term.ui.workspace.CursorTrailEffect
+import com.mrndtvndv.term.ui.workspace.ShaderRepository
 import com.mrndtvndv.term.ui.workspace.TerminalWorkspaceScreen
+import com.mrndtvndv.term.ui.workspace.loadSelectedShaderIds
+import com.mrndtvndv.term.ui.workspace.saveSelectedShaderIds
 import com.mrndtvndv.term.ui.workspace.VisualEffectFrameRate
 import com.termux.view.TerminalView
 import java.io.File
@@ -64,6 +67,10 @@ fun MainContent(
     val useCustomFontForWholeUi by viewModel.userPrefs.useCustomFontForWholeUi.collectAsState()
     val nativeLogcatLoggingEnabled by viewModel.userPrefs.nativeLogcatLoggingEnabled.collectAsState()
     val context = LocalContext.current
+    val shaderRepository = remember(context) { ShaderRepository(context) }
+    var shaderDefinitions by remember(shaderRepository) {
+        mutableStateOf(shaderRepository.definitions())
+    }
     val notification by viewModel.notificationState.notification.collectAsState()
     val navigator = rememberAppNavigator(
         activeTab = { uiState.activeTab },
@@ -79,7 +86,7 @@ fun MainContent(
         sharedPreferences.getString("extra_keys_custom_json", "[]") ?: "[]"
     val savedUnconditionalSoftKeyboardOnTap = sharedPreferences.getBoolean("unconditional_soft_keyboard_on_tap", true)
     val savedFontSize = sharedPreferences.getInt("font_size", 12)
-    val savedTerminalEffect = sharedPreferences.getString("terminal_effect", "none") ?: "none"
+    val savedTerminalEffects = loadSelectedShaderIds(sharedPreferences)
     val savedCursorTrail = CursorTrailEffect.fromPref(
         sharedPreferences.getString("cursor_trail_effect", null),
         sharedPreferences.getBoolean("cursor_trail", false)
@@ -114,7 +121,7 @@ fun MainContent(
             var extraKeysCustomJson by remember { mutableStateOf(savedExtraKeysCustomJson) }
             var fontSize by remember { mutableStateOf(savedFontSize) }
             var unconditionalSoftKeyboardOnTap by remember { mutableStateOf(savedUnconditionalSoftKeyboardOnTap) }
-            var terminalEffect by remember { mutableStateOf(savedTerminalEffect) }
+            var terminalEffects by remember { mutableStateOf(savedTerminalEffects) }
             var cursorTrail by remember { mutableStateOf(savedCursorTrail) }
             var visualEffectFrameRate by remember { mutableStateOf(savedVisualEffectFrameRate) }
 
@@ -122,6 +129,25 @@ fun MainContent(
                 contract = ActivityResultContracts.GetContent()
             ) { uri: Uri? ->
                 uri?.let { copyFontFile(it) }
+            }
+            val pickShaderLauncher = rememberLauncherForActivityResult(
+                contract = ActivityResultContracts.OpenDocument()
+            ) { uri: Uri? ->
+                if (uri == null) return@rememberLauncherForActivityResult
+                runCatching {
+                    context.contentResolver.openInputStream(uri)?.use { input ->
+                        shaderRepository.import(getFileName(uri), input)
+                    } ?: error("Could not read shader file")
+                }.onSuccess { shader ->
+                    shaderDefinitions = shaderRepository.definitions()
+                    terminalEffects = (terminalEffects.filter { it != "none" } + shader.id).distinct()
+                    saveSelectedShaderIds(sharedPreferences, terminalEffects)
+                }.onFailure { error ->
+                    viewModel.notificationState.post(
+                        "Shader import failed",
+                        error.message ?: "Invalid AGSL shader"
+                    )
+                }
             }
 
             val onClearFontInternal: () -> Unit = {
@@ -230,11 +256,24 @@ fun MainContent(
                                         NativeLogcatLogger.stop()
                                     }
                                 },
-                                terminalEffect = terminalEffect,
-                                onTerminalEffectChange = { effect ->
-                                    terminalEffect = effect
-                                    sharedPreferences.edit()
-                                        .putString("terminal_effect", effect).apply()
+                                terminalEffects = terminalEffects,
+                                onTerminalEffectsChange = { effects ->
+                                    terminalEffects = effects
+                                    saveSelectedShaderIds(sharedPreferences, effects)
+                                },
+                                shaderDefinitions = shaderDefinitions,
+                                onImportShader = {
+                                    pickShaderLauncher.launch(
+                                        arrayOf("text/plain", "application/octet-stream", "*/*")
+                                    )
+                                },
+                                onDeleteShader = { shaderId ->
+                                    shaderRepository.delete(shaderId)
+                                    shaderDefinitions = shaderRepository.definitions()
+                                    terminalEffects = terminalEffects
+                                        .filter { it != shaderId }
+                                        .ifEmpty { listOf("none") }
+                                    saveSelectedShaderIds(sharedPreferences, terminalEffects)
                                 },
                                 cursorTrail = cursorTrail,
                                 onCursorTrailChange = { effect ->

@@ -25,8 +25,20 @@ import com.mrndtvndv.term.ui.keyboard.validateExtraKeysJson
 import com.mrndtvndv.term.ui.keyboard.ExtraKeysController
 import com.mrndtvndv.term.ui.keyboard.ExtraKeysToolbar
 import com.mrndtvndv.term.ui.workspace.CursorTrailEffect
-import com.mrndtvndv.term.ui.workspace.TerminalEffect
+import com.mrndtvndv.term.ui.workspace.ShaderDefinition
 import com.mrndtvndv.term.ui.workspace.VisualEffectFrameRate
+
+private fun toggleShader(shaderId: String, selectedShaderIds: List<String>): List<String> {
+    if (shaderId == "none") return listOf("none")
+
+    val next = selectedShaderIds.filter { it != "none" }.toMutableList()
+    if (shaderId in next) {
+        next.remove(shaderId)
+    } else {
+        next += shaderId
+    }
+    return next.ifEmpty { listOf("none") }
+}
 
 @Suppress("LongParameterList", "LongMethod", "CyclomaticComplexMethod")
 @OptIn(ExperimentalMaterial3Api::class)
@@ -55,8 +67,11 @@ fun SettingsScreen(
     onUnconditionalSoftKeyboardOnTapChange: (Boolean) -> Unit = {},
     nativeLogcatLoggingEnabled: Boolean = false,
     onNativeLogcatLoggingEnabledChange: (Boolean) -> Unit = {},
-    terminalEffect: String = "none",
-    onTerminalEffectChange: (String) -> Unit = {},
+    terminalEffects: List<String> = listOf("none"),
+    onTerminalEffectsChange: (List<String>) -> Unit = {},
+    shaderDefinitions: List<ShaderDefinition> = emptyList(),
+    onImportShader: () -> Unit = {},
+    onDeleteShader: (String) -> Unit = {},
     cursorTrail: String = CursorTrailEffect.NONE.key,
     onCursorTrailChange: (String) -> Unit = {},
     visualEffectFrameRate: String = VisualEffectFrameRate.VSYNC.key,
@@ -65,14 +80,17 @@ fun SettingsScreen(
 ) {
     val scrollState = rememberScrollState()
     val shaderEffectsAvailable = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
-    val availableTerminalEffects = if (shaderEffectsAvailable) {
-        TerminalEffect.entries
+    val availableShaders = if (shaderEffectsAvailable) {
+        shaderDefinitions
     } else {
-        listOf(TerminalEffect.NONE)
+        listOf(ShaderDefinition.none())
     }
-    val selectedTerminalEffect = TerminalEffect.fromPref(terminalEffect)
-        .takeIf { it in availableTerminalEffects }
-        ?: TerminalEffect.NONE
+    val selectedShaders = availableShaders.filter { it.id in terminalEffects }
+    val selectedShaderLabel = when {
+        selectedShaders.isEmpty() -> ShaderDefinition.none().label
+        selectedShaders.size == 1 -> selectedShaders.first().label
+        else -> "${selectedShaders.size} shaders"
+    }
     val selectedVisualEffectFrameRate = VisualEffectFrameRate.fromPref(visualEffectFrameRate)
 
     Scaffold(
@@ -431,7 +449,7 @@ fun SettingsScreen(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text("Terminal Effect", style = MaterialTheme.typography.bodyLarge)
+                            Text("Terminal Shaders", style = MaterialTheme.typography.bodyLarge)
                             Text(
                                 text = if (shaderEffectsAvailable) {
                                     "GPU shader overlays on the terminal frame"
@@ -444,32 +462,54 @@ fun SettingsScreen(
                         }
 
                         var effectExpanded by remember { mutableStateOf(false) }
-                        Box {
-                            OutlinedButton(
-                                enabled = shaderEffectsAvailable,
-                                onClick = { effectExpanded = true },
-                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-                                modifier = Modifier.height(36.dp),
-                                shape = RoundedCornerShape(18.dp)
-                            ) {
-                                Text(
-                                    text = selectedTerminalEffect.label,
-                                    style = MaterialTheme.typography.bodyMedium
-                                )
-                            }
-                            DropdownMenu(
-                                expanded = effectExpanded,
-                                onDismissRequest = { effectExpanded = false }
-                            ) {
-                                availableTerminalEffects.forEach { effect ->
-                                    DropdownMenuItem(
-                                        text = { Text(effect.label) },
-                                        onClick = {
-                                            onTerminalEffectChange(effect.key)
-                                            effectExpanded = false
-                                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Box {
+                                OutlinedButton(
+                                    enabled = shaderEffectsAvailable,
+                                    onClick = { effectExpanded = true },
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                                    modifier = Modifier.height(36.dp),
+                                    shape = RoundedCornerShape(18.dp)
+                                ) {
+                                    Text(
+                                        text = selectedShaderLabel,
+                                        style = MaterialTheme.typography.bodyMedium
                                     )
                                 }
+                                DropdownMenu(
+                                    expanded = effectExpanded,
+                                    onDismissRequest = { effectExpanded = false }
+                                ) {
+                                    availableShaders.forEach { shader ->
+                                        DropdownMenuItem(
+                                            text = { Text(shader.label) },
+                                            leadingIcon = {
+                                                Checkbox(
+                                                    checked = shader.id in terminalEffects,
+                                                    onCheckedChange = null
+                                                )
+                                            },
+                                            onClick = {
+                                                onTerminalEffectsChange(toggleShader(shader.id, terminalEffects))
+                                            },
+                                            trailingIcon = if (shader.isBuiltIn) {
+                                                null
+                                            } else {
+                                                {
+                                                    TextButton(onClick = { onDeleteShader(shader.id) }) {
+                                                        Text("Delete")
+                                                    }
+                                                }
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                            TextButton(
+                                enabled = shaderEffectsAvailable,
+                                onClick = onImportShader
+                            ) {
+                                Text("Import")
                             }
                         }
                     }

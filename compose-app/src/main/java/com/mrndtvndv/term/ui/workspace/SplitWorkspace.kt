@@ -36,7 +36,13 @@ fun SplitWorkspace(
     onRefreshWorkspace: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    BoxWithConstraints(modifier = modifier.fillMaxSize()) {
+    BoxWithConstraints(
+        modifier = modifier
+            .fillMaxSize()
+            .statusBarsPadding()
+            .navigationBarsPadding()
+            .imePadding()
+    ) {
         val totalWidth = maxWidth
 
         val rightTabs = remember(sftpViewModel, reviewViewModel) {

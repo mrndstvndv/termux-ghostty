@@ -24,21 +24,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.height
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.platform.LocalTextInputService
-import androidx.compose.ui.text.input.CommitTextCommand
-import androidx.compose.ui.text.input.BackspaceCommand
-import androidx.compose.ui.text.input.DeleteAllCommand
-import androidx.compose.ui.text.input.DeleteSurroundingTextCommand
-import androidx.compose.ui.text.input.DeleteSurroundingTextInCodePointsCommand
-import androidx.compose.ui.text.input.EditCommand
-import androidx.compose.ui.text.input.FinishComposingTextCommand
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.ImeOptions
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.MoveCursorCommand
-import androidx.compose.ui.text.input.SetComposingRegionCommand
-import androidx.compose.ui.text.input.SetComposingTextCommand
-import androidx.compose.ui.text.input.SetSelectionCommand
 import androidx.compose.ui.text.input.TextInputSession
+import com.mrndtvndv.term.input.ImeEditCommandProcessor
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -377,9 +367,6 @@ fun TerminalCanvas(
     @Suppress("DEPRECATION")
     var imeSession by remember { mutableStateOf<TextInputSession?>(null) }
 
-    // Track previous cursor position for Gboard swipe detection
-    var previousCursorPosition by remember { mutableIntStateOf(0) }
-
     // Handle native Android key events (shared between hardware keyboard and IME SendKeyEventCommand)
     fun handleNativeKeyEvent(nativeEvent: android.view.KeyEvent): Boolean {
         if (nativeEvent.action != KeyEvent.ACTION_DOWN) return false
@@ -453,176 +440,11 @@ fun TerminalCanvas(
         return false
     }
 
-    // Track the current composing text so we can send only deltas to the terminal.
-    var composingText by remember { mutableStateOf("") }
-    var lastComposedText by remember { mutableStateOf("") }
-
-    // Handle IME edit commands (soft keyboard input)
-    @Suppress("DEPRECATION") // EditCommand API is deprecated but still needed for soft keyboard input
-    val handleImeCommands: (List<EditCommand>) -> Unit = { commands ->
-        for (cmd in commands) {
-            when (cmd) {
-                is CommitTextCommand -> {
-                    val text = cmd.text
-                    when {
-                        // Active composition — the word was already echoed to the terminal as it grew.
-                        composingText.isNotEmpty() -> {
-                            when {
-                                text.startsWith(composingText) -> {
-                                    // Normal finalization — send only the suffix (space, punctuation)
-                                    val delta = text.substring(composingText.length)
-                                    for (char in delta) {
-                                        val cp = if (char == '\n') 13 else char.code
-                                        inputCodePoint(cp, false, false, session, extraKeysController)
-                                    }
-                                }
-                                text.isEmpty() -> {
-                                    // Lone empty commit = Gboard dismissing the recorrection
-                                    // on the first backspace press after gesture typing (the
-                                    // swipe sends SetSelectionCommand instead, never this).
-                                    // The user expects one backspace to remove the gestured
-                                    // word — delete the whole composing word.
-                                    for (ch in composingText) { sendDelete(session, extraKeysController) }
-                                }
-                                else -> {
-                                    // Auto-correct replaced the composing text entirely
-                                    for (ch in composingText) { sendDelete(session, extraKeysController) }
-                                    for (char in text) {
-                                        val cp = if (char == '\n') 13 else char.code
-                                        inputCodePoint(cp, false, false, session, extraKeysController)
-                                    }
-                                }
-                            }
-                            composingText = ""
-                            lastComposedText = ""
-                        }
-                        // Composition already finished — the word is in the terminal. Never delete;
-                        // send only the suffix if this commit continues the word, else direct input.
-                        lastComposedText.isNotEmpty() -> {
-                            if (text.startsWith(lastComposedText)) {
-                                val delta = text.substring(lastComposedText.length)
-                                for (char in delta) {
-                                    val cp = if (char == '\n') 13 else char.code
-                                    inputCodePoint(cp, false, false, session, extraKeysController)
-                                }
-                            } else if (text.isNotEmpty()) {
-                                for (char in text) {
-                                    val cp = if (char == '\n') 13 else char.code
-                                    inputCodePoint(cp, false, false, session, extraKeysController)
-                                }
-                            }
-                            lastComposedText = ""
-                        }
-                        // No composition — direct input
-                        else -> {
-                            for (char in text) {
-                                val cp = if (char == '\n') 13 else char.code
-                                inputCodePoint(cp, false, false, session, extraKeysController)
-                            }
-                        }
-                    }
-                }
-                is DeleteSurroundingTextCommand -> {
-                    lastComposedText = ""
-                    repeat(cmd.lengthBeforeCursor) {
-                        sendDelete(session, extraKeysController)
-                    }
-                }
-                is DeleteSurroundingTextInCodePointsCommand -> {
-                    lastComposedText = ""
-                    repeat(cmd.lengthBeforeCursor) {
-                        sendDelete(session, extraKeysController)
-                    }
-                }
-                is BackspaceCommand -> {
-                    lastComposedText = ""
-                    sendDelete(session, extraKeysController)
-                }
-                is DeleteAllCommand -> {
-                    lastComposedText = ""
-                    repeat(100) { sendDelete(session, extraKeysController) }
-                }
-                is MoveCursorCommand -> {
-                    lastComposedText = ""
-                    val keyCode = if (cmd.amount < 0) KeyEvent.KEYCODE_DPAD_LEFT else KeyEvent.KEYCODE_DPAD_RIGHT
-                    repeat(Math.abs(cmd.amount)) {
-                        val code = KeyHandler.getCode(
-                            keyCode, 0,
-                            session.isCursorKeysApplicationMode,
-                            session.isKeypadApplicationMode
-                        )
-                        if (code != null) session.write(code)
-                    }
-                }
-                is SetSelectionCommand -> {
-                    lastComposedText = ""
-                    val diff = cmd.start - previousCursorPosition
-                    if (diff != 0) {
-                        val keyCode = if (diff < 0) KeyEvent.KEYCODE_DPAD_LEFT else KeyEvent.KEYCODE_DPAD_RIGHT
-                        repeat(Math.abs(diff)) {
-                            val code = KeyHandler.getCode(
-                                keyCode, 0,
-                                session.isCursorKeysApplicationMode,
-                                session.isKeypadApplicationMode
-                            )
-                            if (code != null) session.write(code)
-                        }
-                    }
-                    previousCursorPosition = cmd.start
-                }
-                is SetComposingTextCommand -> {
-                    lastComposedText = ""
-                    val current = cmd.text
-                    when {
-                        // Same text with a different cursor position (Gboard spacebar-swipe cursor
-                        // mode, recorrection). Nothing changed in the terminal — ignore.
-                        current == composingText -> { }
-                        // Append: composing text grew (new characters typed)
-                        current.length > composingText.length && current.startsWith(composingText) -> {
-                            val delta = current.substring(composingText.length)
-                            for (char in delta) {
-                                val cp = if (char == '\n') 13 else char.code
-                                inputCodePoint(cp, false, false, session, extraKeysController)
-                            }
-                        }
-                        // Shrink: a real backspace removes one code point; a multi-character
-                        // collapse is the IME cancelling the composition (e.g. Gboard spacebar
-                        // swipe) and must not become backspaces — the text was already sent to
-                        // the terminal as it grew.
-                        composingText.length > current.length && composingText.startsWith(current) -> {
-                            val removedCodePoints = Character.codePointCount(composingText, 0, composingText.length) -
-                                Character.codePointCount(current, 0, current.length)
-                            if (removedCodePoints == 1) {
-                                sendDelete(session, extraKeysController)
-                            }
-                        }
-                        // Replacement: text was corrected/replaced entirely (auto-correct, suggestion)
-                        composingText.isNotEmpty() -> {
-                            for (ch in composingText) { sendDelete(session, extraKeysController) }
-                            for (char in current) {
-                                val cp = if (char == '\n') 13 else char.code
-                                inputCodePoint(cp, false, false, session, extraKeysController)
-                            }
-                        }
-                        // First composition character
-                        else -> {
-                            for (char in current) {
-                                val cp = if (char == '\n') 13 else char.code
-                                inputCodePoint(cp, false, false, session, extraKeysController)
-                            }
-                        }
-                    }
-                    composingText = current
-                }
-                is SetComposingRegionCommand -> { }
-                is FinishComposingTextCommand -> {
-                    if (composingText.isNotEmpty()) {
-                        lastComposedText = composingText
-                        composingText = ""
-                    }
-                }
-            }
-        }
+    // IME edit-command handling — the state machine lives in ImeEditCommandProcessor so it
+    // stays unit-testable and survives a terminal backend swap; this adapter maps its
+    // semantic ops onto the Termux session.
+    val imeProcessor = remember(session, extraKeysController) {
+        ImeEditCommandProcessor(SessionTerminalInput(session, extraKeysController))
     }
 
     // Clean up the IME session when this composable leaves composition
@@ -796,7 +618,7 @@ fun TerminalCanvas(
                                                 imeAction = ImeAction.None,
                                                 autoCorrect = false
                                             ),
-                                            onEditCommand = handleImeCommands,
+                                            onEditCommand = imeProcessor::process,
                                             onImeActionPerformed = { }
                                         )
                                     }
@@ -1172,6 +994,41 @@ fun TerminalCanvas(
                     }
                 }
             }
+        }
+    }
+}
+
+/**
+ * Adapter from the IME's semantic terminal ops to a Termux session. Swapping the
+ * terminal backend (e.g. a Rust emulator) only requires a new TerminalInput
+ * implementation — the IME state machine itself is untouched.
+ */
+private class SessionTerminalInput(
+    private val session: TerminalSession,
+    private val extraKeysController: com.mrndtvndv.term.ui.keyboard.ExtraKeysController
+) : ImeEditCommandProcessor.TerminalInput {
+
+    override fun inputCodePoint(codePoint: Int) {
+        inputCodePoint(
+            codePoint,
+            ctrlHeldFromEvent = false,
+            altHeldFromEvent = false,
+            session = session,
+            extraKeysController = extraKeysController
+        )
+    }
+
+    override fun delete() = sendDelete(session, extraKeysController)
+
+    override fun moveCursor(delta: Int) {
+        val keyCode = if (delta < 0) KeyEvent.KEYCODE_DPAD_LEFT else KeyEvent.KEYCODE_DPAD_RIGHT
+        repeat(Math.abs(delta)) {
+            val code = KeyHandler.getCode(
+                keyCode, 0,
+                session.isCursorKeysApplicationMode,
+                session.isKeypadApplicationMode
+            )
+            if (code != null) session.write(code)
         }
     }
 }

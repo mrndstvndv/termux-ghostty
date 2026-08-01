@@ -124,7 +124,7 @@ class ImeEditCommandProcessor(
                         sendCodePoints(delta)
                         // Keep tracking the committed text: Gboard may re-compose
                         // across punctuation ("foo." + "b" → "foo.b") and re-send it.
-                        lastComposedText = text
+                        lastComposedText = if (text.isWordLike()) text else ""
                     }
                     text.isEmpty() -> {
                         // Lone empty commit = Gboard dismissing the recorrection
@@ -139,7 +139,7 @@ class ImeEditCommandProcessor(
                         // Auto-correct replaced the composing text entirely
                         repeat(composingText.length) { terminal.delete() }
                         sendCodePoints(text)
-                        lastComposedText = text
+                        lastComposedText = if (text.isWordLike()) text else ""
                     }
                 }
                 composingText = ""
@@ -165,9 +165,12 @@ class ImeEditCommandProcessor(
                         lastComposedText += text
                     }
                     text.isNotEmpty() -> {
-                        // New word after the committed one — send it whole.
+                        // New word after the committed one — send it whole. Whitespace-only
+                        // text (notably the Enter key's "\n") is never tracked as the
+                        // committed word: the next Enter would then look like a re-commit
+                        // of it and be swallowed with an empty delta.
                         sendCodePoints(text)
-                        lastComposedText = text
+                        lastComposedText = if (text.isWordLike()) text else ""
                     }
                     else -> {
                         lastComposedText = ""
@@ -249,7 +252,7 @@ class ImeEditCommandProcessor(
 
     private fun handleFinishComposing() {
         if (composingText.isNotEmpty()) {
-            lastComposedText = composingText
+            lastComposedText = if (composingText.isWordLike()) composingText else ""
             composingText = ""
         }
     }
@@ -259,6 +262,10 @@ class ImeEditCommandProcessor(
         if (isEmpty()) return false
         return all { !it.isLetterOrDigit() && !it.isWhitespace() }
     }
+
+    /** True when the text contains a letter or digit — a real word that Gboard could
+     * re-compose across, unlike "\n" or a lone space. */
+    private fun String.isWordLike(): Boolean = any { it.isLetterOrDigit() }
 
     private fun sendCodePoints(text: String) {
         for (char in text) {

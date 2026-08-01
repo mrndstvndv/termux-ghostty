@@ -224,4 +224,30 @@ class ImeEditCommandProcessorTest {
         val terminal = run(CommitTextCommand("ls\n", -1))
         assertEquals(listOf('l', 's', 13.toChar()), terminal.events.map { it.amount.toChar() })
     }
+
+    // Enter right after a committed word, pressed twice: the first Enter commit must not
+    // become the tracked word, or the second Enter would be swallowed as a "re-commit"
+    // of "\n" with an empty delta.
+    @Test
+    fun enterAfterCommittedWordWorksEveryTime() {
+        val terminal = run(
+            SetComposingTextCommand("foo", 1),
+            CommitTextCommand("foo.", -1),
+            CommitTextCommand("\n", -1),
+            CommitTextCommand("\n", -1)
+        )
+        assertEquals("foo.\r\r", terminal.netText())
+        assertEquals(0, terminal.deleteCount())
+    }
+
+    // Consecutive Enters with nothing else typed are all delivered.
+    @Test
+    fun consecutiveEntersAllReachTerminal() {
+        val terminal = run(
+            CommitTextCommand("\n", -1),
+            CommitTextCommand("\n", -1),
+            CommitTextCommand("\n", -1)
+        )
+        assertEquals("\r\r\r", terminal.netText())
+    }
 }

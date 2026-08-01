@@ -1,6 +1,7 @@
 # Repository Instructions
 
 ## Commit format
+- **Never commit unless the user explicitly asks.** Do not stage or commit changes on your own initiative.
 - Use Conventional Commits so the release changelog tooling can parse them.
 - Required format: `type(scope): description`
 - Allowed types: `feat`, `fix`, `update`, `ui`, `refactor`, `perf`

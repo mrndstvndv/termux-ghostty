@@ -800,6 +800,7 @@ fun FileChangesList(
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         floatingActionButton = {
             if (stagedFiles.isNotEmpty() && !inSelectionMode) {
                 FloatingActionButton(

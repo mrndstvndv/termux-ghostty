@@ -1385,6 +1385,7 @@ fun CommitDiffHeader(commit: GitCommit) {
 }
 
 @Suppress("LongMethod")
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DiffHeader(
     selectedFile: GitFileStatus,
@@ -1423,23 +1424,31 @@ fun DiffHeader(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                FilterChip(
-                    selected = showLineNumbers,
-                    onClick = onToggleLineNumbers,
-                    label = { Text("Line Numbers") },
-                    leadingIcon = {
+                TooltipBox(
+                    positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+                    tooltip = { PlainTooltip { Text("Line Numbers") } },
+                    state = rememberTooltipState()
+                ) {
+                    IconToggleButton(
+                        checked = showLineNumbers,
+                        onCheckedChange = { onToggleLineNumbers() }
+                    ) {
                         Icon(
                             imageVector = Icons.Default.FormatListNumbered,
                             contentDescription = "Toggle line numbers",
                             modifier = Modifier.size(16.dp)
                         )
                     }
-                )
-                FilterChip(
-                    selected = isFullFileMode,
-                    onClick = onToggleFullFileMode,
-                    label = { Text(if (isFullFileMode) "Full File" else "Diff Only") },
-                    leadingIcon = {
+                }
+                TooltipBox(
+                    positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+                    tooltip = { PlainTooltip { Text(if (isFullFileMode) "Full File" else "Diff Only") } },
+                    state = rememberTooltipState()
+                ) {
+                    IconToggleButton(
+                        checked = isFullFileMode,
+                        onCheckedChange = { onToggleFullFileMode() }
+                    ) {
                         Icon(
                             imageVector = if (isFullFileMode) {
                                 Icons.Default.Visibility
@@ -1450,7 +1459,7 @@ fun DiffHeader(
                             modifier = Modifier.size(16.dp)
                         )
                     }
-                )
+                }
             }
         }
     }

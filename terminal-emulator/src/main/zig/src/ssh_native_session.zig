@@ -716,6 +716,26 @@ pub const SshNativeSession = struct {
         }
     }
 
+    fn appendJsonEscaped(output: *std.ArrayList(u8), allocator: std.mem.Allocator, str: []const u8) !void {
+        const writer = output.writer(allocator);
+        for (str) |ch| {
+            switch (ch) {
+                '"' => try writer.writeAll("\\\""),
+                '\\' => try writer.writeAll("\\\\"),
+                '\n' => try writer.writeAll("\\n"),
+                '\r' => try writer.writeAll("\\r"),
+                '\t' => try writer.writeAll("\\t"),
+                else => {
+                    if (ch < 0x20) {
+                        try writer.print("\\u00{x:0>2}", .{ch});
+                    } else {
+                        try writer.writeByte(ch);
+                    }
+                },
+            }
+        }
+    }
+
     fn sftpListCallback(self: *SshNativeSession, command: *Command) void {
         const context: *SftpListContext = @ptrCast(@alignCast(command.context.?));
         const sftp: *c.LIBSSH2_SFTP = @ptrCast(@alignCast(context.handle));
@@ -740,10 +760,17 @@ pub const SshNativeSession = struct {
                 const is_dir = (attributes.flags & c.LIBSSH2_SFTP_ATTR_PERMISSIONS) != 0 and (attributes.permissions & 0xF000) == 0x4000;
                 if (!first) context.output.appendSlice(self.allocator, ",") catch return;
                 first = false;
-                context.output.writer(self.allocator).print("{{\"name\":\"{s}\",\"path\":\"{s}/{s}\",\"isDir\":{s},\"size\":{},\"permissions\":{},\"mtime\":{}}}", .{
-                    name,
-                    context.path,
-                    name,
+
+                const writer = context.output.writer(self.allocator);
+                writer.writeAll("{\"name\":\"") catch return;
+                appendJsonEscaped(context.output, self.allocator, name) catch return;
+                writer.writeAll("\",\"path\":\"") catch return;
+                appendJsonEscaped(context.output, self.allocator, context.path) catch return;
+                if (!std.mem.endsWith(u8, context.path, "/")) {
+                    writer.writeAll("/") catch return;
+                }
+                appendJsonEscaped(context.output, self.allocator, name) catch return;
+                writer.print("\",\"isDir\":{s},\"size\":{},\"permissions\":{},\"mtime\":{}}}", .{
                     if (is_dir) "true" else "false",
                     if (is_dir or (attributes.flags & c.LIBSSH2_SFTP_ATTR_SIZE) == 0) 0 else attributes.filesize,
                     if ((attributes.flags & c.LIBSSH2_SFTP_ATTR_PERMISSIONS) == 0) 0 else attributes.permissions,

@@ -102,6 +102,26 @@ public final class TerminalRenderer {
             linkLayout);
     }
 
+    /** Record one viewport row into a row-local canvas. */
+    public final void renderRow(ScreenSnapshot screenSnapshot, Canvas canvas, int rowIndex,
+                                int selectionStart, int selectionEnd, int cursorX,
+                                int cursorShape, boolean reverseVideo) {
+        if (screenSnapshot == null) {
+            throw new IllegalArgumentException("screenSnapshot must not be null");
+        }
+        if (rowIndex < 0 || rowIndex >= screenSnapshot.getRows()) {
+            throw new IllegalArgumentException("rowIndex out of range: " + rowIndex);
+        }
+
+        prepareRowCaches(screenSnapshot);
+        int row = screenSnapshot.getTopRow() + rowIndex;
+        ScreenSnapshot.RowSnapshot lineObject = screenSnapshot.getRow(rowIndex);
+        RowRenderCache rowRenderCache = obtainRowRenderCache(lineObject, rowIndex,
+            screenSnapshot.getColumns(), row, cursorX, selectionStart, selectionEnd);
+        renderCachedRow(canvas, screenSnapshot, lineObject, rowRenderCache,
+            mFontLineSpacing, cursorShape, reverseVideo);
+    }
+
     public final void render(ScreenSnapshot screenSnapshot, Canvas canvas,
                              int selectionY1, int selectionY2, int selectionX1, int selectionX2,
                              int cursorCol, int cursorRow, boolean cursorVisible, int cursorShape,

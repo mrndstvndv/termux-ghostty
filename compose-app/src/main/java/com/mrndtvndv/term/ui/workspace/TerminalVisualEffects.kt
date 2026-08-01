@@ -2,13 +2,9 @@
 
 package com.mrndtvndv.term.ui.workspace
 
-import android.graphics.Bitmap
-import android.graphics.BitmapShader
-import android.graphics.Canvas as AndroidCanvas
-import android.graphics.Paint as AndroidPaint
 import android.graphics.RuntimeShader
-import android.graphics.Shader
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
@@ -18,10 +14,10 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathFillType
+import androidx.compose.ui.graphics.GraphicsContext
 import androidx.compose.ui.graphics.drawscope.DrawScope
-import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.lerp
-import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.platform.LocalGraphicsContext
 import com.termux.terminal.ScreenSnapshot
 import com.termux.terminal.TerminalConstants
 import com.termux.terminal.TextStyle
@@ -83,10 +79,15 @@ internal class CursorTrailState {
 internal class TerminalVisualEffects(
     private val terminalEffect: TerminalEffect,
     private val postShader: RuntimeShader?,
-    private val cursorTrailEffect: CursorTrailEffect
+    private val cursorTrailEffect: CursorTrailEffect,
+    graphicsContext: GraphicsContext
 ) {
     private var animationTimeSeconds by mutableFloatStateOf(0f)
-    private val bitmapRenderState = BitmapRenderState()
+    private val renderNodeRenderer = TerminalRenderNodeRenderer(
+        graphicsContext = graphicsContext,
+        terminalEffect = terminalEffect,
+        shader = postShader
+    )
     private val cursorTrailState = CursorTrailState()
 
     val isContinuouslyAnimated: Boolean
@@ -123,49 +124,18 @@ internal class TerminalVisualEffects(
         } else {
             0f
         }
-        drawScope.drawIntoCanvas { canvas ->
-            val native = canvas.nativeCanvas
-            if (postShader == null) {
-                renderer.render(
-                    snapshot,
-                    native,
-                    selection.y1,
-                    selection.y2,
-                    selection.x1,
-                    selection.x2
-                )
-                return@drawIntoCanvas
-            }
+        renderNodeRenderer.draw(
+            drawScope = drawScope,
+            snapshot = snapshot,
+            renderer = renderer,
+            contentVersion = contentVersion,
+            selection = selection,
+            timeSeconds = timeSeconds
+        )
+    }
 
-            val targetW = drawScope.size.width.toInt().coerceAtLeast(1)
-            val targetH = drawScope.size.height.toInt().coerceAtLeast(1)
-            val bitmapCanvas = bitmapRenderState.beginRenderIfNeeded(
-                width = targetW,
-                height = targetH,
-                contentVersion = contentVersion,
-                selection = selection
-            )
-            if (bitmapCanvas != null) {
-                renderer.render(
-                    snapshot,
-                    bitmapCanvas,
-                    selection.y1,
-                    selection.y2,
-                    selection.x1,
-                    selection.x2
-                )
-                bitmapRenderState.finishRender(contentVersion, selection)
-            }
-            bitmapRenderState.draw(
-                canvas = native,
-                shader = postShader,
-                timeSeconds = timeSeconds,
-                width = drawScope.size.width,
-                height = drawScope.size.height,
-                usesTimeUniform = terminalEffect.usesTimeUniform,
-                usesResolutionUniform = terminalEffect.usesResolutionUniform
-            )
-        }
+    fun release() {
+        renderNodeRenderer.release()
     }
 
     fun drawCursorTrail(
@@ -196,121 +166,14 @@ internal fun rememberTerminalVisualEffects(
     cursorTrailEffect: CursorTrailEffect
 ): TerminalVisualEffects {
     val postShader = rememberRuntimeShader(terminalEffect)
-    return remember(terminalEffect, cursorTrailEffect, postShader) {
-        TerminalVisualEffects(terminalEffect, postShader, cursorTrailEffect)
+    val graphicsContext = LocalGraphicsContext.current
+    val visualEffects = remember(terminalEffect, cursorTrailEffect, postShader, graphicsContext) {
+        TerminalVisualEffects(terminalEffect, postShader, cursorTrailEffect, graphicsContext)
     }
-}
-
-private class BitmapRenderState {
-    private data class Buffer(
-        val bitmap: Bitmap,
-        val shader: BitmapShader
-    )
-
-    private val shaderPaint = AndroidPaint()
-    private var boundShader: RuntimeShader? = null
-    private var boundBufferIndex = -1
-    private var paintShader: RuntimeShader? = null
-    private var resolutionShader: RuntimeShader? = null
-    private var resolutionWidth = Float.NaN
-    private var resolutionHeight = Float.NaN
-    private var buffers: Array<Buffer> = emptyArray()
-    private var activeBufferIndex = -1
-    private var renderedContentVersion = Int.MIN_VALUE
-    private var renderedSelectionY1 = Int.MIN_VALUE
-    private var renderedSelectionY2 = Int.MIN_VALUE
-    private var renderedSelectionX1 = Int.MIN_VALUE
-    private var renderedSelectionX2 = Int.MIN_VALUE
-
-    private var pendingBufferIndex = -1
-
-    fun beginRenderIfNeeded(
-        width: Int,
-        height: Int,
-        contentVersion: Int,
-        selection: RenderSelection
-    ): AndroidCanvas? {
-        ensureSize(width, height)
-        if (!needsRender(contentVersion, selection)) return null
-
-        pendingBufferIndex = (activeBufferIndex + 1) % buffers.size
-        return AndroidCanvas(buffers[pendingBufferIndex].bitmap)
+    DisposableEffect(visualEffects) {
+        onDispose { visualEffects.release() }
     }
-
-    fun finishRender(contentVersion: Int, selection: RenderSelection) {
-        if (pendingBufferIndex == -1) return
-
-        activeBufferIndex = pendingBufferIndex
-        pendingBufferIndex = -1
-        renderedContentVersion = contentVersion
-        renderedSelectionY1 = selection.y1
-        renderedSelectionY2 = selection.y2
-        renderedSelectionX1 = selection.x1
-        renderedSelectionX2 = selection.x2
-    }
-
-    fun draw(
-        canvas: AndroidCanvas,
-        shader: RuntimeShader,
-        timeSeconds: Float,
-        width: Float,
-        height: Float,
-        usesTimeUniform: Boolean,
-        usesResolutionUniform: Boolean
-    ) {
-        val updateResolutionUniform = usesResolutionUniform &&
-            (resolutionShader !== shader || resolutionWidth != width || resolutionHeight != height)
-        shader.updateUniforms(
-            timeSeconds = timeSeconds,
-            width = width,
-            height = height,
-            updateTimeUniform = usesTimeUniform,
-            updateResolutionUniform = updateResolutionUniform
-        )
-        if (updateResolutionUniform) {
-            resolutionShader = shader
-            resolutionWidth = width
-            resolutionHeight = height
-        }
-        if (boundShader !== shader || boundBufferIndex != activeBufferIndex) {
-            shader.setInputShader("content", buffers[activeBufferIndex].shader)
-            boundShader = shader
-            boundBufferIndex = activeBufferIndex
-        }
-        if (paintShader !== shader) {
-            shaderPaint.shader = shader
-            paintShader = shader
-        }
-        canvas.drawRect(0f, 0f, width, height, shaderPaint)
-    }
-
-    private fun ensureSize(width: Int, height: Int) {
-        if (buffers.size == 2 && buffers[0].bitmap.width == width && buffers[0].bitmap.height == height) return
-
-        buffers = Array(2) {
-            val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-            Buffer(
-                bitmap = bitmap,
-                shader = BitmapShader(bitmap, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
-            )
-        }
-        activeBufferIndex = -1
-        pendingBufferIndex = -1
-        boundBufferIndex = -1
-        renderedContentVersion = Int.MIN_VALUE
-        renderedSelectionY1 = Int.MIN_VALUE
-        renderedSelectionY2 = Int.MIN_VALUE
-        renderedSelectionX1 = Int.MIN_VALUE
-        renderedSelectionX2 = Int.MIN_VALUE
-    }
-
-    private fun needsRender(contentVersion: Int, selection: RenderSelection): Boolean =
-        activeBufferIndex == -1 ||
-            contentVersion != renderedContentVersion ||
-            selection.y1 != renderedSelectionY1 ||
-            selection.y2 != renderedSelectionY2 ||
-            selection.x1 != renderedSelectionX1 ||
-            selection.x2 != renderedSelectionX2
+    return visualEffects
 }
 
 // Cursor warp trail — port of ghostty's cursor_warp.glsl shader

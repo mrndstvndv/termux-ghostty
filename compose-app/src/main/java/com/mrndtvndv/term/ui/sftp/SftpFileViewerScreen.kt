@@ -19,12 +19,12 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.luminance
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.mrndtvndv.term.ui.highlightCode
+import com.mrndtvndv.term.ui.theme.codeFontFamily
 import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -126,7 +126,7 @@ private fun CodeViewer(code: String) {
                                 text = (index + 1).toString(),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
                                 fontSize = dims.lineNumFontSize,
-                                fontFamily = FontFamily.Monospace
+                                fontFamily = codeFontFamily()
                             )
                         }
                     }
@@ -156,7 +156,7 @@ private fun CodeViewer(code: String) {
                                 Text(
                                     text = highlightCode(line, isDark),
                                     fontSize = dims.codeFontSize,
-                                    fontFamily = FontFamily.Monospace,
+                                    fontFamily = codeFontFamily(),
                                     softWrap = false,
                                     maxLines = 1
                                 )

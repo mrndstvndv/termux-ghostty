@@ -2,13 +2,17 @@ package com.mrndtvndv.term.ui.theme
 
 import android.os.Build
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
 
 private val DarkColorScheme = darkColorScheme(
     primary = Primary,
@@ -61,10 +65,17 @@ private val BlackColorScheme = darkColorScheme(
     error = ErrorColor
 )
 
+/** Custom font chosen for the whole UI, if enabled in settings. */
+val LocalCustomFontFamily = compositionLocalOf<FontFamily?> { null }
+
+/** Font for code/diff views: custom font when "apply to whole UI" is on, otherwise monospace. */
+@Composable
+fun codeFontFamily(): FontFamily = LocalCustomFontFamily.current ?: FontFamily.Monospace
+
 @Composable
 fun TermuxGhosttyTheme(
     theme: String = "Dark",
-    customFontFamily: androidx.compose.ui.text.font.FontFamily? = null,
+    customFontFamily: FontFamily? = null,
     content: @Composable () -> Unit
 ) {
     val context = LocalContext.current
@@ -101,31 +112,34 @@ fun TermuxGhosttyTheme(
         }
     }
 
-    val typography = if (customFontFamily != null) {
-        androidx.compose.material3.Typography(
-            displayLarge = Typography.displayLarge.copy(fontFamily = customFontFamily),
-            displayMedium = Typography.displayMedium.copy(fontFamily = customFontFamily),
-            displaySmall = Typography.displaySmall.copy(fontFamily = customFontFamily),
-            headlineLarge = Typography.headlineLarge.copy(fontFamily = customFontFamily),
-            headlineMedium = Typography.headlineMedium.copy(fontFamily = customFontFamily),
-            headlineSmall = Typography.headlineSmall.copy(fontFamily = customFontFamily),
-            titleLarge = Typography.titleLarge.copy(fontFamily = customFontFamily),
-            titleMedium = Typography.titleMedium.copy(fontFamily = customFontFamily),
-            titleSmall = Typography.titleSmall.copy(fontFamily = customFontFamily),
-            bodyLarge = Typography.bodyLarge.copy(fontFamily = customFontFamily),
-            bodyMedium = Typography.bodyMedium.copy(fontFamily = customFontFamily),
-            bodySmall = Typography.bodySmall.copy(fontFamily = customFontFamily),
-            labelLarge = Typography.labelLarge.copy(fontFamily = customFontFamily),
-            labelMedium = Typography.labelMedium.copy(fontFamily = customFontFamily),
-            labelSmall = Typography.labelSmall.copy(fontFamily = customFontFamily)
-        )
-    } else {
-        Typography
-    }
+    val typography = typographyWithCustomFont(customFontFamily)
 
-    MaterialTheme(
-        colorScheme = colorScheme,
-        typography = typography,
-        content = content
+    CompositionLocalProvider(LocalCustomFontFamily provides customFontFamily) {
+        MaterialTheme(
+            colorScheme = colorScheme,
+            typography = typography,
+            content = content
+        )
+    }
+}
+
+private fun typographyWithCustomFont(customFontFamily: FontFamily?): Typography {
+    if (customFontFamily == null) return Typography
+    return Typography(
+        displayLarge = Typography.displayLarge.copy(fontFamily = customFontFamily),
+        displayMedium = Typography.displayMedium.copy(fontFamily = customFontFamily),
+        displaySmall = Typography.displaySmall.copy(fontFamily = customFontFamily),
+        headlineLarge = Typography.headlineLarge.copy(fontFamily = customFontFamily),
+        headlineMedium = Typography.headlineMedium.copy(fontFamily = customFontFamily),
+        headlineSmall = Typography.headlineSmall.copy(fontFamily = customFontFamily),
+        titleLarge = Typography.titleLarge.copy(fontFamily = customFontFamily),
+        titleMedium = Typography.titleMedium.copy(fontFamily = customFontFamily),
+        titleSmall = Typography.titleSmall.copy(fontFamily = customFontFamily),
+        bodyLarge = Typography.bodyLarge.copy(fontFamily = customFontFamily),
+        bodyMedium = Typography.bodyMedium.copy(fontFamily = customFontFamily),
+        bodySmall = Typography.bodySmall.copy(fontFamily = customFontFamily),
+        labelLarge = Typography.labelLarge.copy(fontFamily = customFontFamily),
+        labelMedium = Typography.labelMedium.copy(fontFamily = customFontFamily),
+        labelSmall = Typography.labelSmall.copy(fontFamily = customFontFamily)
     )
 }

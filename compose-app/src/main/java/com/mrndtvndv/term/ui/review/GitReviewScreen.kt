@@ -10,6 +10,7 @@ import androidx.navigation3.runtime.rememberNavBackStack
 import androidx.navigation3.ui.NavDisplay
 import com.mrndtvndv.term.ui.ReviewNavKey
 import com.mrndtvndv.term.ui.highlightCode
+import com.mrndtvndv.term.ui.theme.codeFontFamily
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -44,7 +45,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -99,7 +99,7 @@ fun GitReviewScreen(
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
                         text = "Commit ${renameCommitTarget?.shortHash}",
-                        style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                        style = MaterialTheme.typography.bodySmall.copy(fontFamily = codeFontFamily()),
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                     )
                     OutlinedTextField(
@@ -152,7 +152,7 @@ fun GitReviewScreen(
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
                         text = "Reset to ${softResetTarget?.shortHash}?",
-                        style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                        style = MaterialTheme.typography.bodySmall.copy(fontFamily = codeFontFamily()),
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                     )
                     Text(
@@ -199,7 +199,7 @@ fun GitReviewScreen(
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
                         text = "Reset to ${hardResetTarget?.shortHash}?",
-                        style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                        style = MaterialTheme.typography.bodySmall.copy(fontFamily = codeFontFamily()),
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                     )
                     Text(
@@ -696,7 +696,7 @@ fun StatusBadge(status: String) {
                 color = fg,
                 style = MaterialTheme.typography.bodySmall.copy(
                     fontWeight = FontWeight.Bold,
-                    fontFamily = FontFamily.Monospace
+                    fontFamily = codeFontFamily()
                 )
             )
         }
@@ -1277,7 +1277,7 @@ fun CommitItem(
                 ) {
                     Text(
                         text = commit.shortHash,
-                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = codeFontFamily()),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                     )
@@ -1392,7 +1392,7 @@ fun CommitDiffHeader(commit: GitCommit) {
                 ) {
                     Text(
                         text = commit.shortHash,
-                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = codeFontFamily()),
                         color = MaterialTheme.colorScheme.onPrimaryContainer,
                         modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                     )
@@ -1696,7 +1696,7 @@ fun FileDiffHeader(
                     text = filePath,
                     style = MaterialTheme.typography.bodyMedium.copy(
                         fontWeight = FontWeight.Bold,
-                        fontFamily = FontFamily.Monospace
+                        fontFamily = codeFontFamily()
                     ),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -1892,7 +1892,7 @@ private fun LineNumberColumn(
                     text = parsedLine.oldLineNum,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
                     fontSize = fontSize,
-                    fontFamily = FontFamily.Monospace,
+                    fontFamily = codeFontFamily(),
                     modifier = Modifier.width(numWidth),
                     textAlign = androidx.compose.ui.text.style.TextAlign.End
                 )
@@ -1901,7 +1901,7 @@ private fun LineNumberColumn(
                     text = parsedLine.newLineNum,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
                     fontSize = fontSize,
-                    fontFamily = FontFamily.Monospace,
+                    fontFamily = codeFontFamily(),
                     modifier = Modifier.width(numWidth),
                     textAlign = androidx.compose.ui.text.style.TextAlign.End
                 )
@@ -1961,7 +1961,7 @@ private fun RowScope.CodeLinesColumn(
                 Text(
                     text = annotatedText,
                     fontSize = fontSize,
-                    fontFamily = FontFamily.Monospace,
+                    fontFamily = codeFontFamily(),
                     softWrap = false
                 )
             }

@@ -43,6 +43,8 @@ class ImeEditCommandProcessorTest {
         }
 
         fun deleteCount(): Int = events.count { it.op == Op.DELETE }
+
+        fun moveCount(): Int = events.count { it.op == Op.MOVE_LEFT || it.op == Op.MOVE_RIGHT }
     }
 
     private fun run(vararg commands: EditCommand): RecordingTerminalInput {
@@ -77,6 +79,54 @@ class ImeEditCommandProcessorTest {
         assertEquals(0, terminal.deleteCount())
     }
 
+    // Third signature of the reported bug: the IME commits the word and the period as
+    // separate commits. The period continues the tracked word ("foo" → "foo."), so the
+    // cross-punctuation re-composition still diffs to just "b".
+    @Test
+    fun periodCommittedSeparatelyStillRecomposesOnlyTheSuffix() {
+        val terminal = run(
+            SetComposingTextCommand("foo", 1),
+            CommitTextCommand("foo", -1),
+            CommitTextCommand(".", -1),
+            SetComposingTextCommand("foo.b", 1)
+        )
+        assertEquals("foo.b", terminal.netText())
+        assertEquals(0, terminal.deleteCount())
+    }
+
+    // Fourth signature: after the period commit the IME syncs the selection to the end of
+    // the committed text. The sync must not move the terminal cursor nor clear the tracked
+    // word, or the re-composition would re-send the whole region ("foo." + "foo.b").
+    @Test
+    fun selectionSyncAfterPeriodCommitDoesNotBreakRecomposition() {
+        val terminal = run(
+            SetComposingTextCommand("foo", 1),
+            CommitTextCommand("foo.", -1),
+            SetSelectionCommand(4, 4),
+            SetComposingTextCommand("foo.b", 1)
+        )
+        assertEquals("foo.b", terminal.netText())
+        assertEquals(0, terminal.deleteCount())
+        assertEquals(0, terminal.moveCount())
+    }
+
+    // Full reproduction: word commit, selection sync, separate period commit, selection
+    // sync, then the next character re-composes the region.
+    @Test
+    fun separatePeriodCommitWithSelectionSyncsRecomposesOnlyTheSuffix() {
+        val terminal = run(
+            SetComposingTextCommand("foo", 1),
+            CommitTextCommand("foo", -1),
+            SetSelectionCommand(3, 3),
+            CommitTextCommand(".", -1),
+            SetSelectionCommand(4, 4),
+            SetComposingTextCommand("foo.b", 1)
+        )
+        assertEquals("foo.b", terminal.netText())
+        assertEquals(0, terminal.deleteCount())
+        assertEquals(0, terminal.moveCount())
+    }
+
     // Gboard marks gesture-typed words as recorrectable: the first backspace is eaten as
     // a lone empty commit, so it must delete the whole word (the terminal never saw a DEL).
     @Test
@@ -102,8 +152,9 @@ class ImeEditCommandProcessorTest {
         assertEquals(0, terminal.deleteCount())
     }
 
-    // Spacebar swipe after the word is committed: selection syncs forward, then the swipe
-    // moves the cursor back over the committed word.
+    // Spacebar swipe after the word is committed: the selection sync to the end of the
+    // committed text is a no-op (the terminal cursor is already there), then the swipe
+    // moves the cursor back over the word.
     @Test
     fun spacebarSwipeAfterCommitMovesCursorBackOverWord() {
         val terminal = run(
@@ -116,10 +167,7 @@ class ImeEditCommandProcessorTest {
             it.op == RecordingTerminalInput.Op.MOVE_LEFT || it.op == RecordingTerminalInput.Op.MOVE_RIGHT
         }
         assertEquals(
-            listOf(
-                RecordingTerminalInput.Event(RecordingTerminalInput.Op.MOVE_RIGHT, 3),
-                RecordingTerminalInput.Event(RecordingTerminalInput.Op.MOVE_LEFT, 3)
-            ),
+            listOf(RecordingTerminalInput.Event(RecordingTerminalInput.Op.MOVE_LEFT, 3)),
             moves
         )
     }

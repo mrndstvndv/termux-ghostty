@@ -1,6 +1,11 @@
 package com.mrndtvndv.term.ui.workspace
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapShader
+import android.graphics.Canvas as AndroidCanvas
+import android.graphics.Paint as AndroidPaint
+import android.graphics.Shader
 import android.graphics.Typeface
 import android.view.KeyEvent
 import android.view.MotionEvent
@@ -41,7 +46,13 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusTarget
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathFillType
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.key.onPreviewKeyEvent
@@ -52,6 +63,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.text
@@ -61,12 +73,15 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Popup
 import com.termux.shared.termux.settings.preferences.TermuxAppSharedPreferences
+import com.termux.terminal.ScreenSnapshot
 import com.termux.terminal.TerminalSession
+import com.termux.terminal.TextStyle
 import com.termux.terminal.KeyHandler
 import com.termux.terminal.TerminalConstants
 import com.termux.terminal.GhosttyMouseEvent
 import com.termux.view.TerminalRenderer
 import java.io.File
+import kotlin.math.sqrt
 
 fun getValidCurX(content: com.termux.terminal.TerminalContent, cy: Int, cx: Int): Int {
     val line = content.getSelectedText(0, cy, cx, cy)
@@ -280,6 +295,18 @@ fun TerminalCanvas(
     val sizes = remember(context) { TermuxAppSharedPreferences.getDefaultFontSizes(context) }
     val currentFontSize = remember { mutableStateOf(sharedPreferences.getInt("font_size", sizes[0])) }
 
+    // Optional whole-frame shader overlay (CRT, glitch, matrix rain, ...) — see TerminalEffects.
+    // The frame is rendered into an offscreen bitmap and pushed through the shader via
+    // setInputShader, which avoids RenderEffect/GPU-cache timing quirks on some devices.
+    val terminalEffect = TerminalEffect.fromPref(sharedPreferences.getString("terminal_effect", "none"))
+    val postShader = rememberRuntimeShader(terminalEffect)
+    var shaderTime by remember { mutableFloatStateOf(0f) }
+    var renderTarget by remember { mutableStateOf<Bitmap?>(null) }
+
+    // Cursor trail — warp smear ported from ghostty's cursor_warp.glsl shader
+    val cursorTrailEnabled = sharedPreferences.getBoolean("cursor_trail", false)
+    val cursorWarpState = remember { CursorWarpState() }
+
     var frameTrigger by remember { mutableStateOf(0) }
 
     val inputView = remember(session) {
@@ -337,6 +364,18 @@ fun TerminalCanvas(
 
     LaunchedEffect(currentFontSize.value) {
         inputView.setTextSize(currentFontSize.value)
+    }
+
+    // Animated shaders and the cursor trail need a redraw every frame
+    LaunchedEffect(terminalEffect, postShader, cursorTrailEnabled) {
+        if ((terminalEffect.animated && postShader != null) || cursorTrailEnabled) {
+            while (true) {
+                withFrameNanos { nanos ->
+                    shaderTime = nanos / 1_000_000_000f
+                    frameTrigger++
+                }
+            }
+        }
     }
 
     DisposableEffect(session, inputView) {
@@ -688,10 +727,40 @@ fun TerminalCanvas(
             val endX = selectionEndCol ?: -1
 
             drawIntoCanvas { canvas ->
-                renderer.render(
-                    currentSnapshot,
-                    canvas.nativeCanvas,
-                    startY, endY, startX, endX
+                val native = canvas.nativeCanvas
+                if (postShader != null) {
+                    // 1. Render the terminal frame into an offscreen bitmap
+                    val targetW = size.width.toInt().coerceAtLeast(1)
+                    val targetH = size.height.toInt().coerceAtLeast(1)
+                    var bitmap = renderTarget
+                    if (bitmap == null || bitmap.width != targetW || bitmap.height != targetH) {
+                        bitmap = Bitmap.createBitmap(targetW, targetH, Bitmap.Config.ARGB_8888)
+                        renderTarget = bitmap
+                    }
+                    val bitmapCanvas = AndroidCanvas(bitmap)
+                    renderer.render(currentSnapshot, bitmapCanvas, startY, endY, startX, endX)
+
+                    // 2. Push the frame through the shader as the "content" input
+                    postShader.updateUniforms(shaderTime, size.width, size.height)
+                    postShader.setInputShader(
+                        "content",
+                        BitmapShader(bitmap, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
+                    )
+                    val shaderPaint = AndroidPaint().apply { shader = postShader }
+                    native.drawRect(0f, 0f, size.width, size.height, shaderPaint)
+                } else {
+                    renderer.render(currentSnapshot, native, startY, endY, startX, endX)
+                }
+            }
+            if (postShader == null && terminalEffect != TerminalEffect.NONE) {
+                drawLegacyOverlay(terminalEffect)
+            }
+            if (cursorTrailEnabled) {
+                drawCursorTrail(
+                    snapshot = currentSnapshot,
+                    state = cursorWarpState,
+                    renderer = renderer,
+                    topRow = inputView.getTopRow()
                 )
             }
         }
@@ -1031,4 +1100,172 @@ private class SessionTerminalInput(
             if (code != null) session.write(code)
         }
     }
+}
+
+/**
+ * Cursor positions for the warp trail — previous/current cursor cell and the time of the last move.
+ */
+private class CursorWarpState {
+    var prevCol = -1
+    var prevRow = -1
+    var currCol = -1
+    var currRow = -1
+    var changeNanos = 0L
+}
+
+
+// Cursor warp trail — port of ghostty's cursor_warp.glsl shader
+private const val WarpDurationSeconds = 0.2f
+private const val WarpTrailSize = 0.8f
+private const val WarpMinDistanceCells = 1.5f
+private const val WarpThicknessY = 1.0f
+private const val WarpThicknessX = 0.9f
+
+/** EaseOutCirc, matching the shader's default easing. */
+private fun easeOutCirc(x: Float): Float = sqrt(1f - (x - 1f) * (x - 1f))
+
+/** Warp quad corners plus the current cursor rect (for the punch-out hole). */
+private class WarpQuad(
+    val topLeft: Offset,
+    val topRight: Offset,
+    val bottomRight: Offset,
+    val bottomLeft: Offset,
+    val cursorRect: Rect
+)
+
+/**
+ * Computes the four eased corners of the warp smear between the previous and
+ * current cursor rects, plus the current cursor rect for the punch-out hole.
+ */
+private fun warpQuad(
+    state: CursorWarpState,
+    topRow: Int,
+    fontWidth: Float,
+    lineHeight: Float,
+    progressSeconds: Float
+): WarpQuad {
+    // Thickness-scaled rect corners (TRAIL_THICKNESS = 1.0, TRAIL_THICKNESS_X = 0.9)
+    fun rectCorners(x: Float, y: Float): List<Offset> {
+        val halfWidth = fontWidth * 0.5f * WarpThicknessX
+        val halfHeight = lineHeight * 0.5f * WarpThicknessY
+        val centerX = x + fontWidth * 0.5f
+        val centerY = y + lineHeight * 0.5f
+        return listOf(
+            Offset(centerX - halfWidth, centerY - halfHeight), // top-left
+            Offset(centerX + halfWidth, centerY - halfHeight), // top-right
+            Offset(centerX + halfWidth, centerY + halfHeight), // bottom-right
+            Offset(centerX - halfWidth, centerY + halfHeight) // bottom-left
+        )
+    }
+
+    val ccRect = rectCorners(state.currCol * fontWidth, (state.currRow - topRow) * lineHeight)
+    val cpRect = rectCorners(state.prevCol * fontWidth, (state.prevRow - topRow) * lineHeight)
+
+    // Per-corner durations from alignment with the move direction
+    val signX = if (state.currCol >= state.prevCol) 1f else -1f
+    val signY = if (state.currRow >= state.prevRow) 1f else -1f
+    val leadDuration = WarpDurationSeconds * (1f - WarpTrailSize)
+    val sideDuration = (leadDuration + WarpDurationSeconds) / 2f
+
+    fun durationFromDot(dotValue: Float): Float = when {
+        dotValue >= 0.5f -> leadDuration
+        dotValue >= -0.5f -> sideDuration
+        else -> WarpDurationSeconds
+    }
+
+    var tlDuration = durationFromDot(-signX + signY)
+    var trDuration = durationFromDot(signX + signY)
+    var blDuration = durationFromDot(-signX - signY)
+    var brDuration = durationFromDot(signX - signY)
+
+    // Horizontal-rail correction so leading/trailing edges move as rails
+    val isMovingRight = signX >= 0.5f
+    val isMovingLeft = -signX >= 0.5f
+    val leftRailDuration = durationFromDot(-signX)
+    val rightRailDuration = durationFromDot(signX)
+    if (isMovingLeft) {
+        tlDuration = leftRailDuration
+        blDuration = leftRailDuration
+    }
+    if (isMovingRight) {
+        trDuration = rightRailDuration
+        brDuration = rightRailDuration
+    }
+
+    fun easedCorner(progress: Float, from: Offset, to: Offset): Offset {
+        val t = easeOutCirc(progress.coerceIn(0f, 1f))
+        return Offset(from.x + (to.x - from.x) * t, from.y + (to.y - from.y) * t)
+    }
+
+    val cursorX = state.currCol * fontWidth
+    val cursorY = (state.currRow - topRow) * lineHeight
+    return WarpQuad(
+        topLeft = easedCorner(progressSeconds / tlDuration, cpRect[0], ccRect[0]),
+        topRight = easedCorner(progressSeconds / trDuration, cpRect[1], ccRect[1]),
+        bottomRight = easedCorner(progressSeconds / brDuration, cpRect[2], ccRect[2]),
+        bottomLeft = easedCorner(progressSeconds / blDuration, cpRect[3], ccRect[3]),
+        cursorRect = Rect(cursorX, cursorY, cursorX + fontWidth, cursorY + lineHeight)
+    )
+}
+
+/**
+ * Draws the warp smear between the previous and current cursor positions.
+ * Leading corners ease in fast, trailing corners lag, producing the warp/smear shape.
+ */
+private fun DrawScope.drawCursorTrail(
+    snapshot: ScreenSnapshot,
+    state: CursorWarpState,
+    renderer: TerminalRenderer,
+    topRow: Int
+) {
+    if (snapshot.isCursorVisible) {
+        val col = snapshot.getCursorCol()
+        val row = snapshot.getCursorRow()
+        if (state.currCol != col || state.currRow != row) {
+            state.prevCol = state.currCol
+            state.prevRow = state.currRow
+            state.currCol = col
+            state.currRow = row
+            state.changeNanos = System.nanoTime()
+        }
+    }
+
+    val now = System.nanoTime()
+    if (state.currCol < 0 || state.prevCol < 0) return
+
+    // No trail for tiny moves (threshold in cursor-height units, like the shader)
+    val moveCols = (state.currCol - state.prevCol).toFloat()
+    val moveRows = (state.currRow - state.prevRow).toFloat()
+    if (sqrt(moveCols * moveCols + moveRows * moveRows) < WarpMinDistanceCells) return
+
+    val progressSeconds = (now - state.changeNanos) / 1_000_000_000f
+    if (progressSeconds >= WarpDurationSeconds - 0.001f) return
+
+    val quad = warpQuad(
+        state = state,
+        topRow = topRow,
+        fontWidth = renderer.getFontWidth(),
+        lineHeight = renderer.getFontLineSpacing().toFloat(),
+        progressSeconds = progressSeconds
+    )
+
+    var cursorColor = Color(snapshot.getPaletteColor(TextStyle.COLOR_INDEX_CURSOR))
+    // Boost dark cursor colors so the trail reads on dark backgrounds
+    val luminance = 0.299f * cursorColor.red + 0.587f * cursorColor.green + 0.114f * cursorColor.blue
+    if (luminance < 0.45f) {
+        cursorColor = lerp(cursorColor, Color.White, 0.5f)
+    }
+
+    // Warp quad with an even-odd hole where the current cursor sits, so the
+    // rendered block cursor stays visible on top (mirrors the shader's punch-out)
+    val quadPath = Path().apply {
+        fillType = PathFillType.EvenOdd
+        moveTo(quad.topLeft.x, quad.topLeft.y)
+        lineTo(quad.topRight.x, quad.topRight.y)
+        lineTo(quad.bottomRight.x, quad.bottomRight.y)
+        lineTo(quad.bottomLeft.x, quad.bottomLeft.y)
+        close()
+        addRect(quad.cursorRect)
+    }
+    drawPath(quadPath, cursorColor)
 }

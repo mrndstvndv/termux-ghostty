@@ -77,6 +77,8 @@ fun MainContent(
         sharedPreferences.getString("extra_keys_custom_json", "[]") ?: "[]"
     val savedUnconditionalSoftKeyboardOnTap = sharedPreferences.getBoolean("unconditional_soft_keyboard_on_tap", true)
     val savedFontSize = sharedPreferences.getInt("font_size", 12)
+    val savedTerminalEffect = sharedPreferences.getString("terminal_effect", "none") ?: "none"
+    val savedCursorTrail = sharedPreferences.getBoolean("cursor_trail", false)
 
     var appTheme by remember { mutableStateOf(savedTheme) }
 
@@ -104,6 +106,8 @@ fun MainContent(
             var extraKeysCustomJson by remember { mutableStateOf(savedExtraKeysCustomJson) }
             var fontSize by remember { mutableStateOf(savedFontSize) }
             var unconditionalSoftKeyboardOnTap by remember { mutableStateOf(savedUnconditionalSoftKeyboardOnTap) }
+            var terminalEffect by remember { mutableStateOf(savedTerminalEffect) }
+            var cursorTrail by remember { mutableStateOf(savedCursorTrail) }
 
             val pickFontLauncher = rememberLauncherForActivityResult(
                 contract = ActivityResultContracts.GetContent()
@@ -216,6 +220,18 @@ fun MainContent(
                                     } else {
                                         NativeLogcatLogger.stop()
                                     }
+                                },
+                                terminalEffect = terminalEffect,
+                                onTerminalEffectChange = { effect ->
+                                    terminalEffect = effect
+                                    sharedPreferences.edit()
+                                        .putString("terminal_effect", effect).apply()
+                                },
+                                cursorTrail = cursorTrail,
+                                onCursorTrailChange = { enabled ->
+                                    cursorTrail = enabled
+                                    sharedPreferences.edit()
+                                        .putBoolean("cursor_trail", enabled).apply()
                                 },
                                 onBack = { navigator.goBack() },
                             )

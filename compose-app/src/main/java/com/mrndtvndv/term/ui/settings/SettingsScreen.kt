@@ -23,8 +23,9 @@ import com.mrndtvndv.term.ui.keyboard.PresetSingleRow
 import com.mrndtvndv.term.ui.keyboard.validateExtraKeysJson
 import com.mrndtvndv.term.ui.keyboard.ExtraKeysController
 import com.mrndtvndv.term.ui.keyboard.ExtraKeysToolbar
+import com.mrndtvndv.term.ui.workspace.TerminalEffect
 
-@Suppress("LongParameterList", "LongMethod")
+@Suppress("LongParameterList", "LongMethod", "CyclomaticComplexMethod")
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
@@ -51,6 +52,10 @@ fun SettingsScreen(
     onUnconditionalSoftKeyboardOnTapChange: (Boolean) -> Unit = {},
     nativeLogcatLoggingEnabled: Boolean = false,
     onNativeLogcatLoggingEnabledChange: (Boolean) -> Unit = {},
+    terminalEffect: String = "none",
+    onTerminalEffectChange: (String) -> Unit = {},
+    cursorTrail: Boolean = false,
+    onCursorTrailChange: (Boolean) -> Unit = {},
     onBack: () -> Unit
 ) {
     val scrollState = rememberScrollState()
@@ -402,6 +407,74 @@ fun SettingsScreen(
                                 }
                             }
                         }
+                    }
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Terminal Effect", style = MaterialTheme.typography.bodyLarge)
+                            Text(
+                                text = "Shader overlays on the terminal frame. " +
+                                    "Glitch & Matrix Rain need Android 13+; others fall back " +
+                                    "to lightweight overlays on older devices",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        var effectExpanded by remember { mutableStateOf(false) }
+                        Box {
+                            OutlinedButton(
+                                onClick = { effectExpanded = true },
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                                modifier = Modifier.height(36.dp),
+                                shape = RoundedCornerShape(18.dp)
+                            ) {
+                                Text(
+                                    text = TerminalEffect.fromPref(terminalEffect).label,
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                            }
+                            DropdownMenu(
+                                expanded = effectExpanded,
+                                onDismissRequest = { effectExpanded = false }
+                            ) {
+                                TerminalEffect.entries.forEach { effect ->
+                                    DropdownMenuItem(
+                                        text = { Text(effect.label) },
+                                        onClick = {
+                                            onTerminalEffectChange(effect.key)
+                                            effectExpanded = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Cursor Trail", style = MaterialTheme.typography.bodyLarge)
+                            Text(
+                                text = "Warp smear trail behind the cursor as it moves (ghostty cursor_warp)",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = cursorTrail,
+                            onCheckedChange = onCursorTrailChange
+                        )
                     }
                 }
             }

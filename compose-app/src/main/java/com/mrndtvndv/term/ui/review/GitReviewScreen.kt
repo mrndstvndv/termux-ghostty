@@ -33,6 +33,7 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
+import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -508,7 +509,9 @@ fun GitReviewScreen(
                                         modifier = Modifier.padding(end = 8.dp)
                                     ) {
                                         TooltipBox(
-                                            positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+                                            positionProvider = TooltipDefaults.rememberTooltipPositionProvider(
+                                                positioning = TooltipAnchorPosition.Above
+                                            ),
                                             tooltip = { PlainTooltip { Text("Line Numbers") } },
                                             state = rememberTooltipState()
                                         ) {
@@ -524,7 +527,9 @@ fun GitReviewScreen(
                                             }
                                         }
                                         TooltipBox(
-                                            positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+                                            positionProvider = TooltipDefaults.rememberTooltipPositionProvider(
+                                                positioning = TooltipAnchorPosition.Above
+                                            ),
                                             tooltip = {
                                                 PlainTooltip {
                                                     Text(if (isFullFileMode) "Full File" else "Diff Only")
@@ -604,7 +609,9 @@ fun GitReviewScreen(
                                 },
                                 actions = {
                                     TooltipBox(
-                                        positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+                                        positionProvider = TooltipDefaults.rememberTooltipPositionProvider(
+                                            positioning = TooltipAnchorPosition.Above
+                                        ),
                                         tooltip = { PlainTooltip { Text("Line Numbers") } },
                                         state = rememberTooltipState()
                                     ) {
@@ -1282,13 +1289,24 @@ fun CommitItem(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
-                    Text(
-                        text = commit.author,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = commit.author,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Text(
+                            text = commit.relativeDate,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                        )
+                    }
                 }
             }
             Spacer(modifier = Modifier.height(4.dp))
@@ -1316,7 +1334,7 @@ fun CommitItem(
                 text = { Text("Soft Reset to Here") },
                 leadingIcon = {
                     Icon(
-                        imageVector = Icons.Default.Undo,
+                        imageVector = Icons.AutoMirrored.Filled.Undo,
                         contentDescription = "Soft Reset to Here"
                     )
                 },
@@ -1431,7 +1449,9 @@ fun DiffHeader(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 TooltipBox(
-                    positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+                    positionProvider = TooltipDefaults.rememberTooltipPositionProvider(
+                        positioning = TooltipAnchorPosition.Above
+                    ),
                     tooltip = { PlainTooltip { Text("Line Numbers") } },
                     state = rememberTooltipState()
                 ) {
@@ -1447,7 +1467,9 @@ fun DiffHeader(
                     }
                 }
                 TooltipBox(
-                    positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+                    positionProvider = TooltipDefaults.rememberTooltipPositionProvider(
+                        positioning = TooltipAnchorPosition.Above
+                    ),
                     tooltip = { PlainTooltip { Text(if (isFullFileMode) "Full File" else "Diff Only") } },
                     state = rememberTooltipState()
                 ) {
@@ -1699,7 +1721,7 @@ fun DiffContent(
     modifier: Modifier = Modifier
 ) {
     var fontScale by remember { mutableFloatStateOf(1f) }
-    val transformState = rememberTransformableState { zoomChange, _, _ ->
+    val transformState = rememberTransformableState { _, zoomChange, _, _ ->
         fontScale = (fontScale * zoomChange).coerceIn(0.6f, 3.0f)
     }
 

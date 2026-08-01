@@ -140,7 +140,9 @@ internal class TerminalVisualEffects(
                 shader = postShader,
                 timeSeconds = timeSeconds,
                 width = drawScope.size.width,
-                height = drawScope.size.height
+                height = drawScope.size.height,
+                usesTimeUniform = terminalEffect.usesTimeUniform,
+                usesResolutionUniform = terminalEffect.usesResolutionUniform
             )
         }
     }
@@ -188,6 +190,9 @@ private class BitmapRenderState {
     private var boundShader: RuntimeShader? = null
     private var boundBufferIndex = -1
     private var paintShader: RuntimeShader? = null
+    private var resolutionShader: RuntimeShader? = null
+    private var resolutionWidth = Float.NaN
+    private var resolutionHeight = Float.NaN
     private var buffers: Array<Buffer> = emptyArray()
     private var activeBufferIndex = -1
     private var renderedContentVersion = Int.MIN_VALUE
@@ -228,9 +233,24 @@ private class BitmapRenderState {
         shader: RuntimeShader,
         timeSeconds: Float,
         width: Float,
-        height: Float
+        height: Float,
+        usesTimeUniform: Boolean,
+        usesResolutionUniform: Boolean
     ) {
-        shader.updateUniforms(timeSeconds, width, height)
+        val updateResolutionUniform = usesResolutionUniform &&
+            (resolutionShader !== shader || resolutionWidth != width || resolutionHeight != height)
+        shader.updateUniforms(
+            timeSeconds = timeSeconds,
+            width = width,
+            height = height,
+            updateTimeUniform = usesTimeUniform,
+            updateResolutionUniform = updateResolutionUniform
+        )
+        if (updateResolutionUniform) {
+            resolutionShader = shader
+            resolutionWidth = width
+            resolutionHeight = height
+        }
         if (boundShader !== shader || boundBufferIndex != activeBufferIndex) {
             shader.setInputShader("content", buffers[activeBufferIndex].shader)
             boundShader = shader

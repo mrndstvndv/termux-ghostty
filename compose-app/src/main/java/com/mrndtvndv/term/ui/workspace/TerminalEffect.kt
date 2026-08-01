@@ -14,13 +14,19 @@ private const val TAG = "TerminalEffect"
  * Available on Android 13+ (API 33+), where [RuntimeShader] is supported.
  * Older devices expose no terminal shader effects.
  */
-enum class TerminalEffect(val key: String, val label: String, val animated: Boolean) {
-    NONE("none", "None", false),
-    CRT("crt", "CRT", false),
-    SCANLINES("scanlines", "Scanlines", false),
-    VIGNETTE("vignette", "Vignette", false),
-    GLITCH("glitch", "Glitch", true),
-    MATRIX("matrix", "Matrix", true);
+enum class TerminalEffect(
+    val key: String,
+    val label: String,
+    val animated: Boolean,
+    val usesTimeUniform: Boolean,
+    val usesResolutionUniform: Boolean
+) {
+    NONE("none", "None", false, false, false),
+    CRT("crt", "CRT", false, false, true),
+    SCANLINES("scanlines", "Scanlines", false, false, false),
+    VIGNETTE("vignette", "Vignette", false, false, true),
+    GLITCH("glitch", "Glitch", true, true, true),
+    MATRIX("matrix", "Matrix", true, true, true);
 
     companion object {
         fun fromPref(value: String?): TerminalEffect =
@@ -411,17 +417,18 @@ fun rememberRuntimeShader(effect: TerminalEffect): RuntimeShader? {
     }
 }
 
-/** Pushes per-frame uniforms. Failures are ignored — shaders that stripped a uniform must not crash us. */
-@Suppress("SwallowedException") // uniforms optimized out on this device — nothing to update
-fun RuntimeShader.updateUniforms(timeSeconds: Float, width: Float, height: Float) {
-    try {
+/** Pushes only uniforms declared by the selected shader. */
+fun RuntimeShader.updateUniforms(
+    timeSeconds: Float,
+    width: Float,
+    height: Float,
+    updateTimeUniform: Boolean,
+    updateResolutionUniform: Boolean
+) {
+    if (updateTimeUniform) {
         setFloatUniform("time", timeSeconds)
-    } catch (e: IllegalArgumentException) {
-        // uniform optimized out on this device — nothing to update
     }
-    try {
+    if (updateResolutionUniform) {
         setFloatUniform("resolution", width, height)
-    } catch (e: IllegalArgumentException) {
-        // uniform optimized out on this device — nothing to update
     }
 }

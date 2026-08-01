@@ -51,13 +51,13 @@ internal class RenderSelection(
     var x2: Int = -1
 )
 
-/** Cursor positions for the selected trail and the animation-clock time of the last move. */
+/** Cursor positions for the selected trail and the wall-clock time of the last move. */
 internal class CursorTrailState {
     var prevCol = -1
     var prevRow = -1
     var currCol = -1
     var currRow = -1
-    var changeSeconds = 0f
+    var changeNanos = 0L
 }
 
 internal class TerminalVisualEffects(
@@ -72,6 +72,18 @@ internal class TerminalVisualEffects(
     val isAnimated: Boolean
         get() = (terminalEffect.animated && postShader != null) ||
             cursorTrailEffect != CursorTrailEffect.NONE
+
+    /**
+     * Whether the animation clock must keep ticking (and thus the canvas redrawing).
+     * Animated post shaders need every frame; cursor trails only need frames for the
+     * duration of the trail after a move, so an idle terminal doesn't redraw forever.
+     */
+    fun needsFrame(): Boolean {
+        if (terminalEffect.animated && postShader != null) return true
+        if (cursorTrailEffect == CursorTrailEffect.NONE) return false
+        val elapsed = (System.nanoTime() - cursorTrailState.changeNanos) / 1_000_000_000f
+        return elapsed < MaxTrailDurationSeconds + TrailFrameGraceSeconds
+    }
 
     fun updateAnimationTime(timeSeconds: Float) {
         animationTimeSeconds = timeSeconds
@@ -135,8 +147,7 @@ internal class TerminalVisualEffects(
                 snapshot = snapshot,
                 state = cursorTrailState,
                 renderer = renderer,
-                topRow = topRow,
-                timeSeconds = timeSeconds
+                topRow = topRow
             )
         }
     }
@@ -356,8 +367,7 @@ private fun DrawScope.drawCursorTrail(
     snapshot: ScreenSnapshot,
     state: CursorTrailState,
     renderer: TerminalRenderer,
-    topRow: Int,
-    timeSeconds: Float
+    topRow: Int
 ) {
     if (!snapshot.isCursorVisible) return
 
@@ -368,7 +378,7 @@ private fun DrawScope.drawCursorTrail(
         state.prevRow = state.currRow
         state.currCol = col
         state.currRow = row
-        state.changeSeconds = timeSeconds
+        state.changeNanos = System.nanoTime()
     }
 
     if (state.currCol < 0 || state.prevCol < 0) return
@@ -378,7 +388,7 @@ private fun DrawScope.drawCursorTrail(
     val moveDistance = sqrt(moveCols * moveCols + moveRows * moveRows)
     if (moveDistance < TrailMinDistanceCells) return
 
-    val progressSeconds = timeSeconds - state.changeSeconds
+    val progressSeconds = (System.nanoTime() - state.changeNanos) / 1_000_000_000f
     val fontWidth = renderer.getFontWidth()
     val lineHeight = renderer.getFontLineSpacing().toFloat()
     val cursorStyle = snapshot.getCursorStyle()
@@ -641,3 +651,10 @@ private const val SweepDurationSeconds = 0.2f
 private const val SweepTrailLength = 0.5f
 private const val TailDurationSeconds = 0.09f
 private const val TailMaxTrailLengthCells = 8f
+
+/** Extra time the frame loop keeps redrawing after a trail's last visible frame. */
+private const val TrailFrameGraceSeconds = 0.05f
+
+/** Longest of the three trail durations — the frame loop must tick at least this long. */
+private val MaxTrailDurationSeconds =
+    maxOf(WarpDurationSeconds, SweepDurationSeconds, TailDurationSeconds)

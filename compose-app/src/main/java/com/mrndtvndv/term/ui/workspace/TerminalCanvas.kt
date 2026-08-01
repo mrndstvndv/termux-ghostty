@@ -353,11 +353,15 @@ fun TerminalCanvas(
 
     // Read the clock from the Canvas draw scope so animation invalidates drawing only. Updating
     // frameTrigger here would recompose the entire terminal hierarchy once per display frame.
+    // The clock write is skipped while nothing animates: no write, no draw invalidation, so an
+    // idle terminal (no trail in flight, no animated shader) doesn't redraw every frame.
     LaunchedEffect(visualEffects, isTerminalActive) {
         if (!isTerminalActive || !visualEffects.isAnimated) return@LaunchedEffect
         while (true) {
             withFrameNanos { nanos ->
-                visualEffects.updateAnimationTime(nanos / 1_000_000_000f)
+                if (visualEffects.needsFrame()) {
+                    visualEffects.updateAnimationTime(nanos / 1_000_000_000f)
+                }
             }
         }
     }

@@ -218,7 +218,7 @@ fun TabbedWorkspace(
                                 TerminalFocusWrapper(
                                     session = session,
                                     extraKeysController = extraKeysController,
-                                    isTerminalActive = true,
+                                    isTerminalActive = activeTab == WorkspaceTab.Terminal,
                                     onViewCreated = onViewCreated,
                                     onViewReleased = onViewReleased,
                                     onOpenUrl = onOpenUrl

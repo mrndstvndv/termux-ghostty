@@ -38,6 +38,7 @@ fun TerminalWorkspaceContainer(
     onViewCreated: (TerminalView) -> Unit,
     onViewReleased: (TerminalView) -> Unit,
     onOpenUrl: (String) -> Unit,
+    isTerminalActive: Boolean,
     modifier: Modifier = Modifier
 ) {
     TerminalCanvas(
@@ -46,6 +47,7 @@ fun TerminalWorkspaceContainer(
         onOpenUrl = onOpenUrl,
         onViewCreated = onViewCreated,
         onViewReleased = onViewReleased,
+        isTerminalActive = isTerminalActive,
         modifier = modifier
     )
 }

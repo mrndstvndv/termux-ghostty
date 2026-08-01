@@ -5,22 +5,14 @@ import android.os.Build
 import android.util.Log
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.DrawScope
 
 private const val TAG = "TerminalEffect"
 
 /**
  * Whole-frame post-processing effects for the terminal view.
  *
- * Two tiers:
- * - Android 13+ (API 33+): real AGSL shaders via [RuntimeShader] + RenderEffect,
- *   applied by wrapping the terminal frame render in a saveLayer.
- * - Older devices: lightweight Compose overlays for CRT / scanlines / vignette.
- *   Glitch and Matrix Rain are shader-only and inert below API 33.
+ * Available on Android 13+ (API 33+), where [RuntimeShader] is supported.
+ * Older devices expose no terminal shader effects.
  */
 enum class TerminalEffect(val key: String, val label: String, val animated: Boolean) {
     NONE("none", "None", false),
@@ -375,13 +367,13 @@ private object AgslSources {
             vec3 j = fract(i);
             i -= j;
             vec3 p = vec3(9, int(time * SPEED_MULTIPLIER * (9.0 + 8.0 * sin(i).x)), 0) + i;
-            vec3 col = content.eval(fragCoord).rgb;
+            // Sample the terminal screen texture once; the same sample feeds both the
+            // matrix glyph layer and the final blend.
+            vec4 terminalColor = content.eval(fragCoord);
+            vec3 col = terminalColor.rgb;
             col.g = R(p) / s.z;
             p *= j;
             col *= (R(p) > 0.5 && j.x < 0.6 && j.y < 0.8) ? GREEN_ALPHA : 0.0;
-
-            // Sample the terminal screen texture including alpha channel
-            vec4 terminalColor = content.eval(fragCoord);
 
             float alpha = step(length(terminalColor.rgb), BLACK_BLEND_THRESHOLD);
             vec3 blendedColor = mix(terminalColor.rgb * 1.2, col, alpha);
@@ -431,40 +423,5 @@ fun RuntimeShader.updateUniforms(timeSeconds: Float, width: Float, height: Float
         setFloatUniform("resolution", width, height)
     } catch (e: IllegalArgumentException) {
         // uniform optimized out on this device — nothing to update
-    }
-}
-
-/**
- * Legacy overlay for API < 33 where RuntimeShader is unavailable.
- * CRT = scanlines + vignette; scanlines and vignette render individually too.
- * Glitch and Matrix Rain have no legacy path.
- */
-fun DrawScope.drawLegacyOverlay(effect: TerminalEffect) {
-    when (effect) {
-        TerminalEffect.CRT, TerminalEffect.SCANLINES -> {
-            val scanColor = Color.Black.copy(alpha = 0.22f)
-            var y = 1f
-            while (y < size.height) {
-                drawRect(
-                    color = scanColor,
-                    topLeft = Offset(0f, y),
-                    size = Size(size.width, 1f)
-                )
-                y += 2f
-            }
-        }
-        else -> Unit
-    }
-    when (effect) {
-        TerminalEffect.CRT, TerminalEffect.VIGNETTE -> {
-            drawRect(
-                brush = Brush.radialGradient(
-                    colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.42f)),
-                    center = Offset(size.width / 2f, size.height / 2f),
-                    radius = maxOf(size.width, size.height) * 0.72f
-                )
-            )
-        }
-        else -> Unit
     }
 }

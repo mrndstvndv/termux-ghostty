@@ -96,7 +96,8 @@ fun TerminalFocusWrapper(
             extraKeysController = extraKeysController,
             onViewCreated = onViewCreated,
             onViewReleased = onViewReleased,
-            onOpenUrl = onOpenUrl
+            onOpenUrl = onOpenUrl,
+            isTerminalActive = isTerminalActive
         )
     }
 }

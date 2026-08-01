@@ -32,6 +32,7 @@ import com.mrndtvndv.term.ui.settings.SettingsScreen
 import com.mrndtvndv.term.ui.sftp.SftpFileViewerScreen
 import com.mrndtvndv.term.ui.theme.TerminalThemeSync
 import com.mrndtvndv.term.ui.theme.TermuxGhosttyTheme
+import com.mrndtvndv.term.ui.workspace.CursorTrailEffect
 import com.mrndtvndv.term.ui.workspace.TerminalWorkspaceScreen
 import com.termux.view.TerminalView
 import java.io.File
@@ -78,7 +79,10 @@ fun MainContent(
     val savedUnconditionalSoftKeyboardOnTap = sharedPreferences.getBoolean("unconditional_soft_keyboard_on_tap", true)
     val savedFontSize = sharedPreferences.getInt("font_size", 12)
     val savedTerminalEffect = sharedPreferences.getString("terminal_effect", "none") ?: "none"
-    val savedCursorTrail = sharedPreferences.getBoolean("cursor_trail", false)
+    val savedCursorTrail = CursorTrailEffect.fromPref(
+        sharedPreferences.getString("cursor_trail_effect", null),
+        sharedPreferences.getBoolean("cursor_trail", false)
+    ).key
 
     var appTheme by remember { mutableStateOf(savedTheme) }
 
@@ -228,10 +232,12 @@ fun MainContent(
                                         .putString("terminal_effect", effect).apply()
                                 },
                                 cursorTrail = cursorTrail,
-                                onCursorTrailChange = { enabled ->
-                                    cursorTrail = enabled
+                                onCursorTrailChange = { effect ->
+                                    cursorTrail = effect
                                     sharedPreferences.edit()
-                                        .putBoolean("cursor_trail", enabled).apply()
+                                        .putString("cursor_trail_effect", effect)
+                                        .putBoolean("cursor_trail", effect != CursorTrailEffect.NONE.key)
+                                        .apply()
                                 },
                                 onBack = { navigator.goBack() },
                             )

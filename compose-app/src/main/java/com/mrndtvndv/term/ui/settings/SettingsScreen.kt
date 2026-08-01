@@ -1,5 +1,6 @@
 package com.mrndtvndv.term.ui.settings
 
+import android.os.Build
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -23,6 +24,7 @@ import com.mrndtvndv.term.ui.keyboard.PresetSingleRow
 import com.mrndtvndv.term.ui.keyboard.validateExtraKeysJson
 import com.mrndtvndv.term.ui.keyboard.ExtraKeysController
 import com.mrndtvndv.term.ui.keyboard.ExtraKeysToolbar
+import com.mrndtvndv.term.ui.workspace.CursorTrailEffect
 import com.mrndtvndv.term.ui.workspace.TerminalEffect
 
 @Suppress("LongParameterList", "LongMethod", "CyclomaticComplexMethod")
@@ -54,11 +56,20 @@ fun SettingsScreen(
     onNativeLogcatLoggingEnabledChange: (Boolean) -> Unit = {},
     terminalEffect: String = "none",
     onTerminalEffectChange: (String) -> Unit = {},
-    cursorTrail: Boolean = false,
-    onCursorTrailChange: (Boolean) -> Unit = {},
+    cursorTrail: String = CursorTrailEffect.NONE.key,
+    onCursorTrailChange: (String) -> Unit = {},
     onBack: () -> Unit
 ) {
     val scrollState = rememberScrollState()
+    val shaderEffectsAvailable = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+    val availableTerminalEffects = if (shaderEffectsAvailable) {
+        TerminalEffect.entries
+    } else {
+        listOf(TerminalEffect.NONE)
+    }
+    val selectedTerminalEffect = TerminalEffect.fromPref(terminalEffect)
+        .takeIf { it in availableTerminalEffects }
+        ?: TerminalEffect.NONE
 
     Scaffold(
         topBar = {
@@ -418,9 +429,11 @@ fun SettingsScreen(
                         Column(modifier = Modifier.weight(1f)) {
                             Text("Terminal Effect", style = MaterialTheme.typography.bodyLarge)
                             Text(
-                                text = "Shader overlays on the terminal frame. " +
-                                    "Glitch & Matrix Rain need Android 13+; others fall back " +
-                                    "to lightweight overlays on older devices",
+                                text = if (shaderEffectsAvailable) {
+                                    "GPU shader overlays on the terminal frame"
+                                } else {
+                                    "Terminal shaders require Android 13+"
+                                },
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -429,13 +442,14 @@ fun SettingsScreen(
                         var effectExpanded by remember { mutableStateOf(false) }
                         Box {
                             OutlinedButton(
+                                enabled = shaderEffectsAvailable,
                                 onClick = { effectExpanded = true },
                                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
                                 modifier = Modifier.height(36.dp),
                                 shape = RoundedCornerShape(18.dp)
                             ) {
                                 Text(
-                                    text = TerminalEffect.fromPref(terminalEffect).label,
+                                    text = selectedTerminalEffect.label,
                                     style = MaterialTheme.typography.bodyMedium
                                 )
                             }
@@ -443,7 +457,7 @@ fun SettingsScreen(
                                 expanded = effectExpanded,
                                 onDismissRequest = { effectExpanded = false }
                             ) {
-                                TerminalEffect.entries.forEach { effect ->
+                                availableTerminalEffects.forEach { effect ->
                                     DropdownMenuItem(
                                         text = { Text(effect.label) },
                                         onClick = {
@@ -466,15 +480,39 @@ fun SettingsScreen(
                         Column(modifier = Modifier.weight(1f)) {
                             Text("Cursor Trail", style = MaterialTheme.typography.bodyLarge)
                             Text(
-                                text = "Warp smear trail behind the cursor as it moves (ghostty cursor_warp)",
+                                text = "Warp, Sweep, or Tail animation behind the cursor",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                        Switch(
-                            checked = cursorTrail,
-                            onCheckedChange = onCursorTrailChange
-                        )
+                        var trailExpanded by remember { mutableStateOf(false) }
+                        Box {
+                            OutlinedButton(
+                                onClick = { trailExpanded = true },
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                                modifier = Modifier.height(36.dp),
+                                shape = RoundedCornerShape(18.dp)
+                            ) {
+                                Text(
+                                    text = CursorTrailEffect.fromPref(cursorTrail).label,
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                            }
+                            DropdownMenu(
+                                expanded = trailExpanded,
+                                onDismissRequest = { trailExpanded = false }
+                            ) {
+                                CursorTrailEffect.entries.forEach { effect ->
+                                    DropdownMenuItem(
+                                        text = { Text(effect.label) },
+                                        onClick = {
+                                            onCursorTrailChange(effect.key)
+                                            trailExpanded = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             }

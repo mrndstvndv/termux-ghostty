@@ -507,23 +507,35 @@ fun GitReviewScreen(
                                         verticalAlignment = Alignment.CenterVertically,
                                         modifier = Modifier.padding(end = 8.dp)
                                     ) {
-                                        FilterChip(
-                                            selected = showLineNumbers,
-                                            onClick = { viewModel.toggleLineNumbers() },
-                                            label = { Text("Line Numbers") },
-                                            leadingIcon = {
+                                        TooltipBox(
+                                            positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+                                            tooltip = { PlainTooltip { Text("Line Numbers") } },
+                                            state = rememberTooltipState()
+                                        ) {
+                                            IconToggleButton(
+                                                checked = showLineNumbers,
+                                                onCheckedChange = { viewModel.toggleLineNumbers() }
+                                            ) {
                                                 Icon(
                                                     imageVector = Icons.Default.FormatListNumbered,
                                                     contentDescription = "Toggle line numbers",
                                                     modifier = Modifier.size(16.dp)
                                                 )
                                             }
-                                        )
-                                        FilterChip(
-                                            selected = isFullFileMode,
-                                            onClick = { viewModel.toggleFullFileMode() },
-                                            label = { Text(if (isFullFileMode) "Full File" else "Diff Only") },
-                                            leadingIcon = {
+                                        }
+                                        TooltipBox(
+                                            positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+                                            tooltip = {
+                                                PlainTooltip {
+                                                    Text(if (isFullFileMode) "Full File" else "Diff Only")
+                                                }
+                                            },
+                                            state = rememberTooltipState()
+                                        ) {
+                                            IconToggleButton(
+                                                checked = isFullFileMode,
+                                                onCheckedChange = { viewModel.toggleFullFileMode() }
+                                            ) {
                                                 Icon(
                                                     imageVector = if (isFullFileMode) {
                                                         Icons.Default.Visibility
@@ -534,7 +546,7 @@ fun GitReviewScreen(
                                                     modifier = Modifier.size(16.dp)
                                                 )
                                             }
-                                        )
+                                        }
                                     }
                                 },
                                 colors = TopAppBarDefaults.topAppBarColors(
@@ -591,19 +603,23 @@ fun GitReviewScreen(
                                     }
                                 },
                                 actions = {
-                                    FilterChip(
-                                        selected = showLineNumbers,
-                                        onClick = { viewModel.toggleLineNumbers() },
-                                        label = { Text("Line Numbers") },
-                                        leadingIcon = {
+                                    TooltipBox(
+                                        positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+                                        tooltip = { PlainTooltip { Text("Line Numbers") } },
+                                        state = rememberTooltipState()
+                                    ) {
+                                        IconToggleButton(
+                                            checked = showLineNumbers,
+                                            onCheckedChange = { viewModel.toggleLineNumbers() },
+                                            modifier = Modifier.padding(end = 8.dp)
+                                        ) {
                                             Icon(
                                                 imageVector = Icons.Default.FormatListNumbered,
                                                 contentDescription = "Toggle line numbers",
                                                 modifier = Modifier.size(16.dp)
                                             )
-                                        },
-                                        modifier = Modifier.padding(end = 8.dp)
-                                    )
+                                        }
+                                    }
                                 },
                                 colors = TopAppBarDefaults.topAppBarColors(
                                     containerColor = MaterialTheme.colorScheme.surface

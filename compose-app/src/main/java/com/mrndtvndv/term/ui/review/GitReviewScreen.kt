@@ -1247,13 +1247,6 @@ fun CommitItem(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Icon(
-                    imageVector = Icons.Default.Commit,
-                    contentDescription = "Commit",
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(20.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
                 Surface(
                     shape = RoundedCornerShape(4.dp),
                     color = MaterialTheme.colorScheme.surfaceVariant,
@@ -1276,7 +1269,7 @@ fun CommitItem(
             }
             Spacer(modifier = Modifier.height(2.dp))
             Row(
-                modifier = Modifier.fillMaxWidth().padding(start = 28.dp),
+                modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text(

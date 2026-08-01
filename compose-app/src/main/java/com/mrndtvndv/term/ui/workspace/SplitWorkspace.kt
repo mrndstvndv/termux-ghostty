@@ -1,6 +1,5 @@
 package com.mrndtvndv.term.ui.workspace
 
-import android.webkit.WebView
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -13,16 +12,13 @@ import com.mrndtvndv.term.ui.sftp.SftpViewModel
 import com.mrndtvndv.term.ui.keyboard.ExtraKeysToolbar
 import com.mrndtvndv.term.ui.keyboard.ExtraKeysController
 import com.termux.view.TerminalView
-import com.mrndtvndv.term.ui.browser.InAppBrowser
 import com.mrndtvndv.term.ui.review.ReviewViewModel
 import com.mrndtvndv.term.ui.review.GitReviewScreen
 import java.io.File
 
 @Composable
 fun SplitWorkspace(
-    getWebView: () -> WebView,
     session: TerminalSession,
-    isLocal: Boolean = false,
     sftpViewModel: SftpViewModel?,
     reviewViewModel: ReviewViewModel?,
     foldingFeature: FoldingFeature?,
@@ -36,17 +32,14 @@ fun SplitWorkspace(
     onTabSelected: (WorkspaceTab) -> Unit,
     onOpenFile: (File) -> Unit,
     onOpenFileError: (String) -> Unit,
-    browserUrl: String,
-    onBrowserUrlChanged: (String) -> Unit,
     onOpenUrl: (String) -> Unit,
     onRefreshWorkspace: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
         val totalWidth = maxWidth
-        val hasRightPanel = true // Always has Browser, and optionally SFTP/Review
 
-        val rightTabs = remember(sftpViewModel, reviewViewModel, isLocal) {
+        val rightTabs = remember(sftpViewModel, reviewViewModel) {
             buildList {
                 if (reviewViewModel != null) {
                     add(WorkspaceTab.Review)
@@ -54,17 +47,15 @@ fun SplitWorkspace(
                 if (sftpViewModel != null) {
                     add(WorkspaceTab.Sftp)
                 }
-                if (!isLocal) {
-                    add(WorkspaceTab.Browser)
-                }
             }
         }
+        val hasRightPanel = rightTabs.isNotEmpty()
 
         val rightActiveTab = remember(activeTab, rightTabs) {
             if (rightTabs.contains(activeTab)) {
                 activeTab
             } else {
-                rightTabs.firstOrNull { it == WorkspaceTab.Browser } ?: rightTabs.first()
+                rightTabs.firstOrNull() ?: WorkspaceTab.Terminal
             }
         }
         val rightActiveIndex = rightTabs.indexOf(rightActiveTab).takeIf { it >= 0 } ?: 0
@@ -90,12 +81,7 @@ fun SplitWorkspace(
                         isTerminalActive = true,
                         onViewCreated = onViewCreated,
                         onViewReleased = onViewReleased,
-                        onOpenUrl = { url ->
-                            onOpenUrl(url)
-                            if (rightTabs.contains(WorkspaceTab.Browser)) {
-                                onTabSelected(WorkspaceTab.Browser)
-                            }
-                        }
+                        onOpenUrl = onOpenUrl
                     )
                 }
                 if (extraKeysEnabled) {
@@ -151,15 +137,6 @@ fun SplitWorkspace(
                                         modifier = Modifier.fillMaxSize()
                                     )
                                 }
-                            }
-                            WorkspaceTab.Browser -> {
-                                InAppBrowser(
-                                    getWebView = getWebView,
-                                    initialUrl = browserUrl,
-                                    onUrlChanged = onBrowserUrlChanged,
-                                    isTabActive = rightActiveTab == WorkspaceTab.Browser,
-                                    modifier = Modifier.fillMaxSize()
-                                )
                             }
                             WorkspaceTab.Terminal -> {
                                 // Right pane does not support terminal

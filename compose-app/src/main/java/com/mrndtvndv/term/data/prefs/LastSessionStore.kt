@@ -48,7 +48,6 @@ class LastSessionStore(
     private fun loadActiveTab(): WorkspaceTab = when (prefs.getString(KEY_ACTIVE_TAB, null)) {
         "SFTP" -> WorkspaceTab.Sftp
         "Git" -> WorkspaceTab.Review
-        "Browser" -> WorkspaceTab.Browser
         else -> WorkspaceTab.Terminal
     }
 }

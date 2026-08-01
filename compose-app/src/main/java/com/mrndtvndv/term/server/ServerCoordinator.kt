@@ -74,7 +74,7 @@ class ServerCoordinator(
         reviewViewModels.clear()
     }
 
-    /** Returns new workspace dir + browserUrl if workspace changed, null otherwise. */
+    /** Returns new workspace dir if workspace changed, null otherwise. */
     suspend fun refreshWorkspace(serverId: String): WorkspaceChange? {
         val server = serverManager.get(serverId) ?: return null
         // Local sessions have no workspace tracker — nothing to refresh
@@ -86,7 +86,6 @@ class ServerCoordinator(
             sftpViewModels[serverId]?.navigateTo(result.workspaceDir)
             WorkspaceChange(
                 workspaceDir = result.workspaceDir,
-                browserUrl = result.browserUrl,
             )
         } else null
     }
@@ -98,14 +97,6 @@ class ServerCoordinator(
     fun onDirectoryChanged(serverId: String, path: String) {
         val server = serverManager.get(serverId) ?: return
         (server.workspaceState as? WorkspaceState.Tracked)?.tracker?.onDirectoryChanged(path)
-    }
-
-    /**
-     * Notify the tracker + persistence that the browser URL changed.
-     */
-    fun onBrowserUrlChanged(serverId: String, url: String) {
-        val server = serverManager.get(serverId) ?: return
-        (server.workspaceState as? WorkspaceState.Tracked)?.tracker?.onBrowserUrlChanged(url)
     }
 
     // ── Private helpers ──────────────────────────────────────────────
@@ -146,6 +137,5 @@ class ServerCoordinator(
 
     data class WorkspaceChange(
         val workspaceDir: String,
-        val browserUrl: String,
     )
 }

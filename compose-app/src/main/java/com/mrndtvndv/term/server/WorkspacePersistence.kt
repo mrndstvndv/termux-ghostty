@@ -8,6 +8,4 @@ package com.mrndtvndv.term.server
 interface WorkspacePersistence {
     fun loadLastDir(workspaceKey: String): String?
     fun saveLastDir(workspaceKey: String, path: String)
-    fun loadLastUrl(workspaceKey: String): String?
-    fun saveLastUrl(workspaceKey: String, url: String)
 }

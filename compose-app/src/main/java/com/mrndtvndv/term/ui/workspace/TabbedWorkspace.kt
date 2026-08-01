@@ -1,6 +1,5 @@
 package com.mrndtvndv.term.ui.workspace
 
-import android.webkit.WebView
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
@@ -17,7 +16,6 @@ import com.mrndtvndv.term.ui.sftp.SftpViewModel
 import com.mrndtvndv.term.ui.keyboard.ExtraKeysToolbar
 import com.mrndtvndv.term.ui.keyboard.ExtraKeysController
 import com.termux.view.TerminalView
-import com.mrndtvndv.term.ui.browser.InAppBrowser
 import com.mrndtvndv.term.ui.review.ReviewViewModel
 import com.mrndtvndv.term.ui.review.GitReviewScreen
 import androidx.compose.foundation.gestures.Orientation
@@ -37,9 +35,7 @@ import java.io.File
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun TabbedWorkspace(
-    getWebView: () -> WebView,
     session: TerminalSession,
-    isLocal: Boolean = false,
     sftpViewModel: SftpViewModel?,
     reviewViewModel: ReviewViewModel?,
     extraKeysController: ExtraKeysController,
@@ -52,13 +48,11 @@ fun TabbedWorkspace(
     onTabSelected: (WorkspaceTab) -> Unit,
     onOpenFile: (File) -> Unit,
     onOpenFileError: (String) -> Unit,
-    browserUrl: String,
-    onBrowserUrlChanged: (String) -> Unit,
     onOpenUrl: (String) -> Unit,
     onRefreshWorkspace: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val activeTabs = remember(sftpViewModel, reviewViewModel, isLocal) {
+    val activeTabs = remember(sftpViewModel, reviewViewModel) {
         buildList {
             add(WorkspaceTab.Terminal)
             if (reviewViewModel != null) {
@@ -66,9 +60,6 @@ fun TabbedWorkspace(
             }
             if (sftpViewModel != null) {
                 add(WorkspaceTab.Sftp)
-            }
-            if (!isLocal) {
-                add(WorkspaceTab.Browser)
             }
         }
     }
@@ -230,12 +221,7 @@ fun TabbedWorkspace(
                                     isTerminalActive = true,
                                     onViewCreated = onViewCreated,
                                     onViewReleased = onViewReleased,
-                                    onOpenUrl = { url ->
-                                        onOpenUrl(url)
-                                        if (activeTabs.contains(WorkspaceTab.Browser)) {
-                                            onTabSelected(WorkspaceTab.Browser)
-                                        }
-                                    }
+                                    onOpenUrl = onOpenUrl
                                 )
                             }
                             if (extraKeysEnabled) {
@@ -266,15 +252,6 @@ fun TabbedWorkspace(
                                 modifier = Modifier.fillMaxSize()
                             )
                         }
-                    }
-                    WorkspaceTab.Browser -> {
-                        InAppBrowser(
-                            getWebView = getWebView,
-                            initialUrl = browserUrl,
-                            onUrlChanged = onBrowserUrlChanged,
-                            isTabActive = activeTab == WorkspaceTab.Browser,
-                            modifier = Modifier.fillMaxSize()
-                        )
                     }
                 }
             }

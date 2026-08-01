@@ -11,7 +11,7 @@ sealed interface WorkspaceState {
     /**
      * Herdr is on for this server.
      * WorkspaceTracker handles workspace key resolution,
-     * cwd detection, and persisted SFTP directory + browser URL.
+     * cwd detection, and persisted SFTP directory.
      */
     data class Tracked(val tracker: WorkspaceTracker) : WorkspaceState
 }

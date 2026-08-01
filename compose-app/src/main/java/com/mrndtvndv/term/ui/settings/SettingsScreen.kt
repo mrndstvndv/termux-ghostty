@@ -47,8 +47,6 @@ fun SettingsScreen(
     onClearFont: () -> Unit,
     useCustomFontForWholeUi: Boolean,
     onUseCustomFontForWholeUiChange: (Boolean) -> Unit,
-    useInAppBrowser: Boolean,
-    onUseInAppBrowserChange: (Boolean) -> Unit,
     unconditionalSoftKeyboardOnTap: Boolean = true,
     onUnconditionalSoftKeyboardOnTapChange: (Boolean) -> Unit = {},
     nativeLogcatLoggingEnabled: Boolean = false,
@@ -446,48 +444,6 @@ fun SettingsScreen(
                         Switch(
                             checked = unconditionalSoftKeyboardOnTap,
                             onCheckedChange = onUnconditionalSoftKeyboardOnTapChange
-                        )
-                    }
-                }
-            }
-
-            // Browser Settings
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surface
-                )
-            ) {
-                Column(
-                    modifier = Modifier
-                        .padding(24.dp)
-                        .fillMaxWidth(),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    Text(
-                        text = "BROWSER SETTINGS",
-                        style = MaterialTheme.typography.headlineSmall,
-                        color = MaterialTheme.colorScheme.primary,
-                        textAlign = TextAlign.Center
-                    )
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("Use In-App Browser", style = MaterialTheme.typography.bodyLarge)
-                            Text(
-                                text = "Open URLs clicked in terminal in the in-app browser tab instead of the default phone browser",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        Switch(
-                            checked = useInAppBrowser,
-                            onCheckedChange = onUseInAppBrowserChange
                         )
                     }
                 }

@@ -23,9 +23,6 @@ class WorkspaceTracker(
     private val _workspaceDir = MutableStateFlow("/")
     val workspaceDir: StateFlow<String> = _workspaceDir.asStateFlow()
 
-    private var _browserUrl: String = ""
-    val browserUrl: String get() = _browserUrl
-
     /**
      * Sync workspace state with the herdr daemon.
      * Called when the user taps the SFTP or Review tab.
@@ -46,13 +43,9 @@ class WorkspaceTracker(
             val newDir = savedDir ?: info.cwd
             _workspaceDir.value = newDir
 
-            val savedUrl = persistence.loadLastUrl(currentKey) ?: ""
-            _browserUrl = savedUrl
-
             SyncResult.WorkspaceChanged(
                 newWorkspaceKey = currentKey,
                 workspaceDir = newDir,
-                browserUrl = savedUrl,
             )
         } else {
             // Workspace unchanged — respect user's manual navigation
@@ -65,17 +58,11 @@ class WorkspaceTracker(
         currentWorkspaceKey?.let { persistence.saveLastDir(it, path) }
     }
 
-    fun onBrowserUrlChanged(url: String) {
-        _browserUrl = url
-        currentWorkspaceKey?.let { persistence.saveLastUrl(it, url) }
-    }
-
     sealed interface SyncResult {
         data object NoChange : SyncResult
         data class WorkspaceChanged(
             val newWorkspaceKey: String,
             val workspaceDir: String,
-            val browserUrl: String,
         ) : SyncResult
     }
 }

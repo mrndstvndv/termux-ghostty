@@ -143,11 +143,7 @@ class MainActivity : ComponentActivity(), SessionHost {
                     sessionManager.handleTerminalNotification("SFTP Error", errorMsg)
                 },
                 onOpenUrl = { url ->
-                    if (sharedPreferences.getBoolean("use_in_app_browser", false)) {
-                        viewModel.setBrowserUrl(url)
-                    } else {
-                        ShareUtils.openUrl(this@MainActivity, url)
-                    }
+                    ShareUtils.openUrl(this@MainActivity, url)
                 },
                 onRefreshWorkspace = { serverId ->
                     viewModel.refreshWorkspace(serverId)

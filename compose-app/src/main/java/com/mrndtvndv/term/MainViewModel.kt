@@ -10,7 +10,6 @@ import com.mrndtvndv.term.server.AppSessionManager
 import com.mrndtvndv.term.server.Server
 import com.mrndtvndv.term.server.ServerCoordinator
 import com.mrndtvndv.term.server.ServerRepository
-import com.mrndtvndv.term.server.WorkspaceState
 import com.mrndtvndv.term.ui.notification.NotificationState
 import com.mrndtvndv.term.ui.prefs.UserPrefs
 import com.mrndtvndv.term.ui.review.ReviewViewModel
@@ -23,7 +22,6 @@ data class MainUiState(
     val isLoading: Boolean = false,
     val error: String? = null,
     val activeTab: WorkspaceTab = WorkspaceTab.Terminal,
-    val browserUrl: String = "",
 )
 
 sealed interface ScreenState {
@@ -158,13 +156,8 @@ class MainViewModel(
             result.fold(
                 onSuccess = { server ->
                     _activeIds.value = _activeIds.value + id
-                    val browserUrl = when (val ws = server.workspaceState) {
-                        is WorkspaceState.Tracked -> ws.tracker.browserUrl
-                        is WorkspaceState.Untracked -> ""
-                    }
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
-                        browserUrl = browserUrl,
                         screen = ScreenState.TerminalWorkspace(id),
                     )
                     persistLastSession()
@@ -217,10 +210,7 @@ class MainViewModel(
 
     fun refreshWorkspace(serverId: String) {
         viewModelScope.launch {
-            val change = coordinator.refreshWorkspace(serverId)
-            if (change != null) {
-                _uiState.value = _uiState.value.copy(browserUrl = change.browserUrl)
-            }
+            coordinator.refreshWorkspace(serverId)
         }
     }
 
@@ -228,19 +218,10 @@ class MainViewModel(
         coordinator.onDirectoryChanged(serverId, path)
     }
 
-    fun onBrowserUrlChanged(serverId: String, url: String) {
-        _uiState.value = _uiState.value.copy(browserUrl = url)
-        coordinator.onBrowserUrlChanged(serverId, url)
-    }
-
     // ── Tab & URL ─────────────────────────────────────────────────────
 
     fun setTab(tab: WorkspaceTab) {
         _uiState.value = _uiState.value.copy(activeTab = tab)
         persistLastSession()
-    }
-
-    fun setBrowserUrl(url: String) {
-        _uiState.value = _uiState.value.copy(browserUrl = url)
     }
 }

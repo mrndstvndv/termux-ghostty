@@ -75,7 +75,6 @@ fun MainContent(
         sharedPreferences.getString("extra_keys_preset", "Double Row") ?: "Double Row"
     val savedExtraKeysCustomJson =
         sharedPreferences.getString("extra_keys_custom_json", "[]") ?: "[]"
-    val savedUseInAppBrowser = sharedPreferences.getBoolean("use_in_app_browser", false)
     val savedUnconditionalSoftKeyboardOnTap = sharedPreferences.getBoolean("unconditional_soft_keyboard_on_tap", true)
     val savedFontSize = sharedPreferences.getInt("font_size", 12)
 
@@ -104,7 +103,6 @@ fun MainContent(
             var extraKeysPreset by remember { mutableStateOf(savedExtraKeysPreset) }
             var extraKeysCustomJson by remember { mutableStateOf(savedExtraKeysCustomJson) }
             var fontSize by remember { mutableStateOf(savedFontSize) }
-            var useInAppBrowser by remember { mutableStateOf(savedUseInAppBrowser) }
             var unconditionalSoftKeyboardOnTap by remember { mutableStateOf(savedUnconditionalSoftKeyboardOnTap) }
 
             val pickFontLauncher = rememberLauncherForActivityResult(
@@ -204,12 +202,6 @@ fun MainContent(
                                 onUseCustomFontForWholeUiChange = { enabled ->
                                     viewModel.userPrefs.setUseCustomFontForWholeUi(enabled, sharedPreferences)
                                 },
-                                useInAppBrowser = useInAppBrowser,
-                                onUseInAppBrowserChange = { enabled ->
-                                    useInAppBrowser = enabled
-                                    sharedPreferences.edit()
-                                        .putBoolean("use_in_app_browser", enabled).apply()
-                                },
                                 unconditionalSoftKeyboardOnTap = unconditionalSoftKeyboardOnTap,
                                 onUnconditionalSoftKeyboardOnTapChange = { enabled ->
                                     unconditionalSoftKeyboardOnTap = enabled
@@ -245,7 +237,6 @@ fun MainContent(
 
                                     TerminalWorkspaceScreen(
                                         session = server.terminalSession,
-                                        isLocal = server.config.isLocal,
                                         sftpViewModel = sftpVM,
                                         reviewViewModel = reviewVM,
                                         extraKeysEnabled = extraKeysEnabled,
@@ -256,10 +247,6 @@ fun MainContent(
                                         onOpenFile = onOpenFile,
                                         onOpenFileError = onOpenFileError,
                                         onTabSelected = { tab -> viewModel.setTab(tab) },
-                                        browserUrl = uiState.browserUrl,
-                                        onBrowserUrlChanged = { url ->
-                                            viewModel.onBrowserUrlChanged(serverId, url)
-                                        },
                                         onOpenUrl = onOpenUrl,
                                         onRefreshWorkspace = {
                                             onRefreshWorkspace(serverId)

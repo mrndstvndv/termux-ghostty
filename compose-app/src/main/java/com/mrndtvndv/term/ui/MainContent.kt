@@ -89,8 +89,7 @@ fun MainContent(
     val savedFontSize = sharedPreferences.getInt("font_size", 12)
     val savedTerminalEffects = loadSelectedShaderIds(sharedPreferences)
     val savedCursorTrail = CursorTrailEffect.fromPref(
-        sharedPreferences.getString("cursor_trail_effect", null),
-        sharedPreferences.getBoolean("cursor_trail", false)
+        sharedPreferences.getString("cursor_trail_effect", null)
     ).key
     val savedVisualEffectFrameRate = VisualEffectFrameRate.fromPref(
         sharedPreferences.getString("visual_effect_frame_rate", null)
@@ -282,7 +281,6 @@ fun MainContent(
                                     cursorTrail = effect
                                     sharedPreferences.edit()
                                         .putString("cursor_trail_effect", effect)
-                                        .putBoolean("cursor_trail", effect != CursorTrailEffect.NONE.key)
                                         .apply()
                                 },
                                 visualEffectFrameRate = visualEffectFrameRate,

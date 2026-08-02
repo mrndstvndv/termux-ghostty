@@ -49,6 +49,11 @@ Config files:
 - `.editorconfig` — ktlint rules (shared with EditorConfig)
 - `config/detekt/detekt.yml` — detekt rules
 
+## Code Hygiene
+
+- **No legacy shims or migration code unless explicitly requested.** Do not add backward-compat fallbacks, legacy preference keys, deprecated-API wrappers, or one-off data migrations to support old app versions.
+- If existing legacy code is found (e.g. dual-writes to old preference keys, migration fallbacks), prefer removing it outright. If user data is at stake, do a one-time conversion that deletes the legacy key afterwards — never keep it alive.
+
 ## Core Behaviors to Preserve
 
 ### SFTP & Review Workspace Tracking (Herdr Integration)

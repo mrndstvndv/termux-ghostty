@@ -21,6 +21,8 @@ data class TerminalCanvasConfig(
     val preferredFrameRate: Float? = null,
     val unconditionalKeyboardOnTap: Boolean = true,
     val accessibilityEnabled: Boolean = false,
+    /** Increment to clear the current selection after a consumer action. */
+    val selectionResetKey: Long = 0L,
     val onFontSizeChange: (Int) -> Unit = {},
     val onOpenUrl: (String) -> Unit = {},
     val onSelectionChanged: (TerminalSelectionInfo?) -> Unit = {},

@@ -8,6 +8,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableFloatState
 import androidx.compose.runtime.MutableIntState
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -55,6 +56,7 @@ fun TerminalCanvas(
     backend: TerminalBackend,
     modifierKeys: ModifierKeyReader,
     config: TerminalCanvasConfig,
+    requestFocus: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val graphicsContext = LocalGraphicsContext.current
@@ -73,6 +75,13 @@ fun TerminalCanvas(
     )
     val (translator, imeHost) = rememberInputPipeline(controller, modifierKeys)
     val metrics = rememberCanvasMetrics(fontSizeState, config, viewportSizePx)
+
+    LaunchedEffect(requestFocus) {
+        if (requestFocus) focusRequester.requestFocus()
+    }
+    LaunchedEffect(config.selectionResetKey) {
+        selectionState.clear()
+    }
 
     reportSelectionChanges(config, selectionState, controller, metrics)
     val visibleText = rememberVisibleText(controller, contentVersion, config.accessibilityEnabled)
@@ -101,6 +110,7 @@ fun TerminalCanvas(
         ) {
             controller.draw(
                 drawScope = this,
+                metrics = metrics,
                 selection = selectionState.selection,
                 contentVersion = contentVersion,
                 timeSeconds = frameTimeState.floatValue
@@ -118,9 +128,17 @@ private fun rememberConfiguredController(
     config: TerminalCanvasConfig,
     onInvalidated: () -> Unit
 ): TerminalController {
-    val controller = rememberTerminalController(backend, graphicsContext, frameTimeState, onInvalidated)
-    LaunchedEffect(config, fontSizeState.intValue) {
+    val controller = rememberTerminalController(
+        backend = backend,
+        graphicsContext = graphicsContext,
+        onInvalidated = onInvalidated
+    )
+    SideEffect {
         controller.configure(config.copy(fontSize = fontSizeState.intValue))
+    }
+    LaunchedEffect(controller, config.shaders, config.cursorEffect, fontSizeState.intValue) {
+        controller.configure(config.copy(fontSize = fontSizeState.intValue))
+        runFrameLoop(controller, frameTimeState)
     }
     return controller
 }
@@ -129,7 +147,6 @@ private fun rememberConfiguredController(
 private fun rememberTerminalController(
     backend: TerminalBackend,
     graphicsContext: GraphicsContext,
-    frameTimeState: MutableFloatState,
     onInvalidated: () -> Unit
 ): TerminalController {
     val controller = remember(backend, graphicsContext) { TerminalController(backend, graphicsContext) }
@@ -140,9 +157,6 @@ private fun rememberTerminalController(
     DisposableEffect(controller) {
         controller.onInvalidated = onInvalidated
         onDispose { controller.onInvalidated = null }
-    }
-    LaunchedEffect(controller) {
-        runFrameLoop(controller, frameTimeState)
     }
     return controller
 }
@@ -214,6 +228,7 @@ private suspend fun runFrameLoop(
                 withFrameNanos { nanos ->
                     frameTimeState.floatValue = nanos / 1_000_000_000f
                 }
+                controller.tick(frameTimeState.floatValue)
             } while (controller.needsFrame(frameTimeState.floatValue))
         }
     }

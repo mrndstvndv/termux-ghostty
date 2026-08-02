@@ -1,23 +1,10 @@
 package com.mrndtvndv.term.ui.workspace
 
-import android.graphics.RuntimeShader
-import android.os.Build
-import android.util.Log
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
-
-private const val TAG = "TerminalEffect"
-
-internal data class CompiledShader(
-    val definition: ShaderDefinition,
-    val shader: RuntimeShader
-)
-
 /**
- * Whole-frame post-processing effects for the terminal view.
+ * App-owned metadata and sources for whole-frame post-processing effects.
  *
- * Available on Android 13+ (API 33+), where [RuntimeShader] is supported.
- * Older devices expose no terminal shader effects.
+ * The reusable terminal module validates and compiles these definitions. This
+ * file only owns the app's presets and their AGSL source.
  */
 data class ShaderDefinition(
     val id: String,
@@ -757,58 +744,4 @@ private object AgslSources {
             return half4(blendedColor, terminalColor.a);
         }
     """
-}
-
-/**
- * Creates the AGSL shader for [definition] on API 33+, or null when unavailable.
- * Compile failures degrade to null (the effect simply does not render) instead of crashing.
- */
-@Suppress("SwallowedException") // invalid AGSL for this device — degrade to no effect instead of crashing
-private fun compileRuntimeShader(definition: ShaderDefinition): RuntimeShader? {
-    if (definition.source.isBlank()) return null
-
-    return try {
-        RuntimeShader(definition.source)
-    } catch (e: IllegalArgumentException) {
-        Log.w(TAG, "AGSL compile failed for ${definition.label}", e)
-        null
-    }
-}
-
-@Composable
-internal fun rememberRuntimeShaders(definitions: List<ShaderDefinition>): List<CompiledShader> {
-    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return emptyList()
-
-    val shaderKey = definitions.map { it.id to it.source }
-    return remember(shaderKey) {
-        definitions.mapNotNull { definition ->
-            compileRuntimeShader(definition)?.let { shader ->
-                CompiledShader(definition, shader)
-            }
-        }
-    }
-}
-
-@Composable
-internal fun rememberRuntimeShader(definition: ShaderDefinition): RuntimeShader? =
-    rememberRuntimeShaders(listOf(definition)).firstOrNull()?.shader
-
-@Composable
-internal fun rememberRuntimeShader(effect: TerminalEffect): RuntimeShader? =
-    rememberRuntimeShader(effect.toShaderDefinition())
-
-/** Pushes only uniforms declared by the selected shader. */
-fun RuntimeShader.updateUniforms(
-    timeSeconds: Float,
-    width: Float,
-    height: Float,
-    updateTimeUniform: Boolean,
-    updateResolutionUniform: Boolean
-) {
-    if (updateTimeUniform) {
-        setFloatUniform("time", timeSeconds)
-    }
-    if (updateResolutionUniform) {
-        setFloatUniform("resolution", width, height)
-    }
 }

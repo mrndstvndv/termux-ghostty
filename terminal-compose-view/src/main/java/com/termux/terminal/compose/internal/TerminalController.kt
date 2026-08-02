@@ -11,6 +11,7 @@ import com.termux.terminal.compose.TerminalCommand
 import com.termux.terminal.compose.TerminalCommandResult
 import com.termux.terminal.compose.TerminalDiagnostic
 import com.termux.terminal.compose.TerminalFrame
+import com.termux.terminal.compose.TerminalMetrics
 import com.termux.terminal.compose.TerminalSelection
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.Channel.Factory.CONFLATED
@@ -123,6 +124,18 @@ internal class TerminalController(
     /** Number of frames published since attach (monotonic). */
     fun version(): Int = contentVersion
 
+    /** Resizes before reading the first frame because sizing may create that frame. */
+    internal fun resizeIfNeeded(widthPx: Int, heightPx: Int) {
+        val width = widthPx.coerceAtLeast(1)
+        val height = heightPx.coerceAtLeast(1)
+        if (width == lastResizeWidth && height == lastResizeHeight) return
+
+        lastResizeWidth = width
+        lastResizeHeight = height
+        cursorEffectState.reset()
+        backend.resize(width, height)
+    }
+
     /** Latest backend frame, or null before the first invalidation. */
     fun currentFrame(): TerminalFrame? = backend.currentFrame()
 
@@ -136,19 +149,21 @@ internal class TerminalController(
      * is the composable's snapshot-state invalidation counter: reading it here
      * redraws the canvas when content changes.
      */
-    fun draw(drawScope: DrawScope, selection: TerminalSelection, contentVersion: Int, timeSeconds: Float) {
+    fun draw(
+        drawScope: DrawScope,
+        metrics: TerminalMetrics,
+        selection: TerminalSelection,
+        contentVersion: Int,
+        timeSeconds: Float
+    ) {
         if (released) return
+        resizeIfNeeded(
+            widthPx = drawScope.size.width.toInt(),
+            heightPx = drawScope.size.height.toInt()
+        )
+
         val frame = backend.currentFrame() ?: return
         val cfg = config
-
-        val width = drawScope.size.width.toInt().coerceAtLeast(1)
-        val height = drawScope.size.height.toInt().coerceAtLeast(1)
-        if (width != lastResizeWidth || height != lastResizeHeight) {
-            lastResizeWidth = width
-            lastResizeHeight = height
-            backend.resize(width, height)
-        }
-
         val renderer = ensureRenderer(cfg) ?: return
         renderer.draw(
             drawScope = drawScope,
@@ -157,7 +172,7 @@ internal class TerminalController(
             selection = selection,
             timeSeconds = timeSeconds
         )
-        cfg.cursorEffect?.draw(drawScope, frame, cursorEffectState, timeSeconds)
+        cfg.cursorEffect?.draw(drawScope, frame, metrics, cursorEffectState, timeSeconds)
     }
 
     override fun onFrameInvalidated() {

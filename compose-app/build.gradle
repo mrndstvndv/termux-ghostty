@@ -117,6 +117,7 @@ ktlint {
 }
 
 dependencies {
+    implementation project(':terminal-compose-view')
     implementation project(':terminal-view')
     implementation project(':terminal-emulator')
     implementation project(':termux-shared')

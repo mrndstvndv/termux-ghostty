@@ -430,7 +430,7 @@ internal class TerminalRowRenderer(
                 return asciiMeasures[codeUnit]
             }
         }
-        return textPaint.measureText(line, start, start + length)
+        return textPaint.measureText(line, start, length)
     }
 
     private fun javaCellAt(
@@ -449,7 +449,7 @@ internal class TerminalRowRenderer(
         val measuredCodePointWidth = if (codePoint < asciiMeasures.size) {
             asciiMeasures[codePoint]
         } else {
-            textPaint.measureText(line, charIndex, charIndex + charsForCodePoint)
+            textPaint.measureText(line, charIndex, charsForCodePoint)
         }
         val widthMismatch = abs(measuredCodePointWidth / fontWidthPx - width) > 0.01f
         val style = if (column < rowColumns) row.style(column) else 0L

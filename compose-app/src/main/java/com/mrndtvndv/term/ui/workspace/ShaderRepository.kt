@@ -1,7 +1,6 @@
 package com.mrndtvndv.term.ui.workspace
 
 import android.content.Context
-import android.graphics.RuntimeShader
 import android.os.Build
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -127,9 +126,6 @@ class ShaderRepository(context: Context) {
         }
         require(MainFunctionPattern.containsMatchIn(source)) {
             "Shader must define half4 main(vec2)"
-        }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            RuntimeShader(source)
         }
     }
 

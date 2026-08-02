@@ -17,14 +17,16 @@ interface CursorEffect {
     val maxDurationSeconds: Float
 
     /**
-     * Draws the effect over the terminal frame. [state] reflects the tracked
-     * cursor positions; [timeSeconds] is the canvas animation clock. The
-     * effect must tolerate its first frame, cursor visibility changes, backend
-     * replacement, resize, and stale/empty frames.
+     * Draws the effect over the terminal frame. [metrics] is the same cell
+     * geometry used by the renderer. [state] reflects the tracked cursor
+     * positions; [timeSeconds] is the canvas animation clock. The effect must
+     * tolerate its first frame, cursor visibility changes, backend replacement,
+     * resize, and stale/empty frames.
      */
     fun draw(
         drawScope: DrawScope,
         frame: TerminalFrame,
+        metrics: TerminalMetrics,
         state: CursorEffectState,
         timeSeconds: Float
     )

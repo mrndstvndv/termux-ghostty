@@ -106,6 +106,14 @@ public final class TerminalRenderer {
     public final void renderRow(ScreenSnapshot screenSnapshot, Canvas canvas, int rowIndex,
                                 int selectionStart, int selectionEnd, int cursorX,
                                 int cursorShape, boolean reverseVideo) {
+        renderRow(screenSnapshot, canvas, rowIndex, selectionStart, selectionEnd, cursorX,
+            cursorShape, reverseVideo, null);
+    }
+
+    public final void renderRow(ScreenSnapshot screenSnapshot, Canvas canvas, int rowIndex,
+                                int selectionStart, int selectionEnd, int cursorX,
+                                int cursorShape, boolean reverseVideo,
+                                @Nullable TerminalViewLinkLayout linkLayout) {
         if (screenSnapshot == null) {
             throw new IllegalArgumentException("screenSnapshot must not be null");
         }
@@ -120,6 +128,16 @@ public final class TerminalRenderer {
             screenSnapshot.getColumns(), row, cursorX, selectionStart, selectionEnd);
         renderCachedRow(canvas, screenSnapshot, lineObject, rowRenderCache,
             mFontLineSpacing, cursorShape, reverseVideo);
+
+        if (linkLayout == null || !linkLayout.isCompatibleWith(screenSnapshot)) {
+            return;
+        }
+
+        drawSyntheticRowUnderlines(canvas, screenSnapshot, lineObject,
+            linkLayout.getRowSegments(rowIndex), mFontLineSpacing,
+            selectionStart, selectionEnd,
+            cursorX >= 0 && cursorShape == CURSOR_STYLE_BLOCK,
+            cursorX, reverseVideo);
     }
 
     public final void render(ScreenSnapshot screenSnapshot, Canvas canvas,

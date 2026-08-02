@@ -770,6 +770,7 @@ fun TerminalCanvas(
                 session.isGhosttyCursorBlinkingEnabled,
                 session.ghosttyCursorBlinkState
             ) ?: return@Canvas
+            val linkLayout = inputView.getVisibleLinkLayout()
 
             val startY = selectionStartRow ?: -1
             val endY = selectionEndRow ?: -1
@@ -785,7 +786,8 @@ fun TerminalCanvas(
                 snapshot = currentSnapshot,
                 renderer = renderer,
                 contentVersion = contentVersion,
-                selection = renderSelection
+                selection = renderSelection,
+                linkLayout = linkLayout
             )
         }
 

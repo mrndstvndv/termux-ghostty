@@ -14,6 +14,7 @@ import androidx.compose.ui.unit.IntSize
 import com.termux.terminal.ScreenSnapshot
 import com.termux.terminal.TextStyle
 import com.termux.view.TerminalRenderer
+import com.termux.view.TerminalViewLinkLayout
 
 /**
  * Retained terminal renderer backed by Compose-managed RenderNodes. Each row owns a display list
@@ -35,6 +36,7 @@ internal class TerminalRenderNodeRenderer(
         var cursorStyle = Int.MIN_VALUE
         var reverseVideo = false
         var paletteVersion = Int.MIN_VALUE
+        var linkLayout: TerminalViewLinkLayout? = null
     }
 
     private var parentLayer = graphicsContext.createGraphicsLayer()
@@ -57,6 +59,7 @@ internal class TerminalRenderNodeRenderer(
     private var lastCursorStyle = Int.MIN_VALUE
     private var lastReverseVideo = false
     private var lastFrameSequence = Long.MIN_VALUE
+    private var lastLinkLayout: TerminalViewLinkLayout? = null
     private var paletteVersion = 0
     private var boundShaders: List<CompiledShader> = emptyList()
     private var shaderResolutionWidth = Float.NaN
@@ -68,6 +71,7 @@ internal class TerminalRenderNodeRenderer(
         renderer: TerminalRenderer,
         contentVersion: Int,
         selection: RenderSelection,
+        linkLayout: TerminalViewLinkLayout?,
         timeSeconds: Float
     ) {
         if (hasAnimatedShader) {
@@ -77,6 +81,7 @@ internal class TerminalRenderNodeRenderer(
                 renderer = renderer,
                 contentVersion = contentVersion,
                 selection = selection,
+                linkLayout = linkLayout,
                 timeSeconds = timeSeconds
             )
             return
@@ -85,7 +90,7 @@ internal class TerminalRenderNodeRenderer(
         val targetWidth = drawScope.size.width.toInt().coerceAtLeast(1)
         val targetHeight = drawScope.size.height.toInt().coerceAtLeast(1)
         ensureLayout(snapshot, renderer, targetWidth, targetHeight)
-        updateRowsIfNeeded(drawScope, snapshot, renderer, contentVersion, selection)
+        updateRowsIfNeeded(drawScope, snapshot, renderer, contentVersion, selection, linkLayout)
         updateBackground(snapshot)
 
         if (shaders.isEmpty()) {
@@ -185,7 +190,8 @@ internal class TerminalRenderNodeRenderer(
         snapshot: ScreenSnapshot,
         terminalRenderer: TerminalRenderer,
         contentVersion: Int,
-        selection: RenderSelection
+        selection: RenderSelection,
+        linkLayout: TerminalViewLinkLayout?
     ) {
         val cursorCol = snapshot.cursorCol
         val cursorRow = snapshot.cursorRow
@@ -193,6 +199,7 @@ internal class TerminalRenderNodeRenderer(
         val cursorStyle = snapshot.cursorStyle
         val reverseVideo = snapshot.isReverseVideo
         val frameChanged = snapshot.frameSequence != lastFrameSequence
+        val linkLayoutChanged = linkLayout !== lastLinkLayout
         if (frameChanged && snapshot.hasPaletteUpdate()) paletteVersion++
 
         val overlaysUnchanged =
@@ -205,7 +212,8 @@ internal class TerminalRenderNodeRenderer(
                 cursorVisible == lastCursorVisible &&
                 cursorStyle == lastCursorStyle &&
                 reverseVideo == lastReverseVideo
-        if (contentVersion == lastProcessedContentVersion && overlaysUnchanged && !frameChanged) return
+        if (contentVersion == lastProcessedContentVersion && overlaysUnchanged &&
+            !frameChanged && !linkLayoutChanged) return
 
         for (rowIndex in 0 until visibleRowCount) {
             val rowState = rows[rowIndex]
@@ -225,7 +233,8 @@ internal class TerminalRenderNodeRenderer(
                 rowState.cursorX == rowCursorX &&
                 rowState.cursorStyle == cursorStyle &&
                 rowState.reverseVideo == reverseVideo &&
-                rowState.paletteVersion == paletteVersion
+                rowState.paletteVersion == paletteVersion &&
+                rowState.linkLayout === linkLayout
             ) {
                 continue
             }
@@ -244,7 +253,8 @@ internal class TerminalRenderNodeRenderer(
                         selectionEnd,
                         rowCursorX,
                         cursorStyle,
-                        reverseVideo
+                        reverseVideo,
+                        linkLayout
                     )
                 }
             }
@@ -255,6 +265,7 @@ internal class TerminalRenderNodeRenderer(
             rowState.cursorStyle = cursorStyle
             rowState.reverseVideo = reverseVideo
             rowState.paletteVersion = paletteVersion
+            rowState.linkLayout = linkLayout
             parentDisplayListDirty = true
         }
 
@@ -269,6 +280,7 @@ internal class TerminalRenderNodeRenderer(
         lastCursorStyle = cursorStyle
         lastReverseVideo = reverseVideo
         lastFrameSequence = snapshot.frameSequence
+        lastLinkLayout = linkLayout
     }
 
     private fun updateBackground(snapshot: ScreenSnapshot) {
@@ -349,5 +361,6 @@ internal class TerminalRenderNodeRenderer(
         lastCursorStyle = Int.MIN_VALUE
         lastReverseVideo = false
         lastFrameSequence = Long.MIN_VALUE
+        lastLinkLayout = null
     }
 }

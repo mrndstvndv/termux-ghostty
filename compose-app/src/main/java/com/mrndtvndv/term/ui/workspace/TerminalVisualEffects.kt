@@ -21,6 +21,7 @@ import com.termux.terminal.ScreenSnapshot
 import com.termux.terminal.TerminalConstants
 import com.termux.terminal.TextStyle
 import com.termux.view.TerminalRenderer
+import com.termux.view.TerminalViewLinkLayout
 import kotlin.math.abs
 import kotlin.math.sqrt
 
@@ -114,7 +115,8 @@ internal class TerminalVisualEffects(
         snapshot: ScreenSnapshot,
         renderer: TerminalRenderer,
         contentVersion: Int,
-        selection: RenderSelection
+        selection: RenderSelection,
+        linkLayout: TerminalViewLinkLayout?
     ) {
         val timeSeconds = if (isContinuouslyAnimated) {
             animationTimeSeconds
@@ -127,6 +129,7 @@ internal class TerminalVisualEffects(
             renderer = renderer,
             contentVersion = contentVersion,
             selection = selection,
+            linkLayout = linkLayout,
             timeSeconds = timeSeconds
         )
     }

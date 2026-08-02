@@ -842,7 +842,7 @@ public class TerminalView extends View {
     }
 
     @Nullable
-    public TerminalViewLinkLayout.LinkHit getVisibleLinkHit(MotionEvent event) {
+    public TerminalViewLinkLayout getVisibleLinkLayout() {
         if (!hasActiveTerminalBackend() || mRenderer == null) {
             return null;
         }
@@ -851,8 +851,12 @@ public class TerminalView extends View {
             mTermSession.isGhosttyCursorBlinkingEnabled(),
             mTermSession.getGhosttyCursorBlinkState());
         refreshVisibleLinkLayoutIfNeeded(renderSnapshot);
+        return mVisibleLinkLayout;
+    }
 
-        TerminalViewLinkLayout linkLayout = mVisibleLinkLayout;
+    @Nullable
+    public TerminalViewLinkLayout.LinkHit getVisibleLinkHit(MotionEvent event) {
+        TerminalViewLinkLayout linkLayout = getVisibleLinkLayout();
         if (linkLayout == null) {
             return null;
         }

@@ -11,6 +11,7 @@ import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
 import com.termux.terminal.ScreenSnapshot
 import com.termux.view.TerminalRenderer
+import com.termux.view.TerminalViewLinkLayout
 
 /**
  * Renders animated shader chains through a retained bitmap input.
@@ -41,6 +42,7 @@ internal class AnimatedTerminalBitmapRenderer(
     private var renderedSelectionY2 = Int.MIN_VALUE
     private var renderedSelectionX1 = Int.MIN_VALUE
     private var renderedSelectionX2 = Int.MIN_VALUE
+    private var renderedLinkLayout: TerminalViewLinkLayout? = null
 
     fun draw(
         drawScope: DrawScope,
@@ -48,13 +50,14 @@ internal class AnimatedTerminalBitmapRenderer(
         renderer: TerminalRenderer,
         contentVersion: Int,
         selection: RenderSelection,
+        linkLayout: TerminalViewLinkLayout?,
         timeSeconds: Float
     ) {
         val width = drawScope.size.width.toInt().coerceAtLeast(1)
         val height = drawScope.size.height.toInt().coerceAtLeast(1)
         ensureSize(width, height)
 
-        val bitmapCanvas = beginRenderIfNeeded(contentVersion, selection)
+        val bitmapCanvas = beginRenderIfNeeded(contentVersion, selection, linkLayout)
         if (bitmapCanvas != null) {
             renderer.render(
                 snapshot,
@@ -62,9 +65,10 @@ internal class AnimatedTerminalBitmapRenderer(
                 selection.y1,
                 selection.y2,
                 selection.x1,
-                selection.x2
+                selection.x2,
+                linkLayout
             )
-            finishRender(contentVersion, selection)
+            finishRender(contentVersion, selection, linkLayout)
         }
 
         val activeBuffer = buffers[activeBufferIndex]
@@ -120,9 +124,10 @@ internal class AnimatedTerminalBitmapRenderer(
 
     private fun beginRenderIfNeeded(
         contentVersion: Int,
-        selection: RenderSelection
+        selection: RenderSelection,
+        linkLayout: TerminalViewLinkLayout?
     ): AndroidCanvas? {
-        if (!needsRender(contentVersion, selection)) return null
+        if (!needsRender(contentVersion, selection, linkLayout)) return null
 
         pendingBufferIndex = if (activeBufferIndex == -1) {
             0
@@ -132,7 +137,11 @@ internal class AnimatedTerminalBitmapRenderer(
         return AndroidCanvas(buffers[pendingBufferIndex].bitmap)
     }
 
-    private fun finishRender(contentVersion: Int, selection: RenderSelection) {
+    private fun finishRender(
+        contentVersion: Int,
+        selection: RenderSelection,
+        linkLayout: TerminalViewLinkLayout?
+    ) {
         if (pendingBufferIndex == -1) return
 
         activeBufferIndex = pendingBufferIndex
@@ -142,6 +151,7 @@ internal class AnimatedTerminalBitmapRenderer(
         renderedSelectionY2 = selection.y2
         renderedSelectionX1 = selection.x1
         renderedSelectionX2 = selection.x2
+        renderedLinkLayout = linkLayout
     }
 
     private fun ensureSize(width: Int, height: Int) {
@@ -166,13 +176,19 @@ internal class AnimatedTerminalBitmapRenderer(
         renderedSelectionY2 = Int.MIN_VALUE
         renderedSelectionX1 = Int.MIN_VALUE
         renderedSelectionX2 = Int.MIN_VALUE
+        renderedLinkLayout = null
     }
 
-    private fun needsRender(contentVersion: Int, selection: RenderSelection): Boolean =
+    private fun needsRender(
+        contentVersion: Int,
+        selection: RenderSelection,
+        linkLayout: TerminalViewLinkLayout?
+    ): Boolean =
         activeBufferIndex == -1 ||
             contentVersion != renderedContentVersion ||
             selection.y1 != renderedSelectionY1 ||
             selection.y2 != renderedSelectionY2 ||
             selection.x1 != renderedSelectionX1 ||
-            selection.x2 != renderedSelectionX2
+            selection.x2 != renderedSelectionX2 ||
+            linkLayout !== renderedLinkLayout
 }

@@ -637,8 +637,8 @@ fun SettingsScreen(
                         Column(modifier = Modifier.weight(1f)) {
                             Text("Hide Workspace Tabs", style = MaterialTheme.typography.bodyLarge)
                             Text(
-                                text = "Hide the tab bar in the terminal workspace " +
-                                    "(phone layout). Swipe left/right to switch tabs.",
+                                text = "Hide the tab bar in the terminal workspace. " +
+                                    "Swipe left/right to switch tabs.",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )

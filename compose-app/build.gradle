@@ -131,7 +131,6 @@ dependencies {
     implementation 'androidx.activity:activity-compose:1.13.0'
     implementation 'androidx.lifecycle:lifecycle-viewmodel-compose:2.11.0'
     implementation 'androidx.lifecycle:lifecycle-runtime-compose:2.11.0'
-    implementation 'androidx.window:window:1.5.1'
 
     // Explicitly add modern Bouncy Castle for Android compat
     implementation 'org.bouncycastle:bcprov-jdk18on:1.85'

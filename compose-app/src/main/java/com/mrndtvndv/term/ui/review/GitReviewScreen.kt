@@ -44,7 +44,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -76,8 +75,6 @@ fun GitReviewScreen(
     val isCommitInProgress by viewModel.isCommitInProgress.collectAsState()
     val isBranchOperationInProgress by viewModel.isBranchOperationInProgress.collectAsState()
 
-    val configuration = LocalConfiguration.current
-    val isWideScreen = configuration.screenWidthDp >= 600
 
     val reviewBackStack: NavBackStack<NavKey> = rememberNavBackStack(ReviewNavKey.ChangesList)
 
@@ -369,63 +366,6 @@ fun GitReviewScreen(
         )
     }
 
-    if (isWideScreen) {
-        Row(modifier = modifier.fillMaxSize()) {
-            // Left Panel - File List (40% width)
-            Box(modifier = Modifier.weight(0.4f).fillMaxHeight()) {
-                FileChangesList(
-                    uiState = uiState,
-                    selectedFile = selectedFile,
-                    selectedCommit = selectedCommit,
-                    isStagedExpanded = isStagedExpanded,
-                    isUnstagedExpanded = isUnstagedExpanded,
-                    isCommitsExpanded = isCommitsExpanded,
-                    isRefreshing = isRefreshing,
-                    onToggleStagedExpanded = { viewModel.toggleStagedExpanded() },
-                    onToggleUnstagedExpanded = { viewModel.toggleUnstagedExpanded() },
-                    onToggleCommitsExpanded = { viewModel.toggleCommitsExpanded() },
-                    onFileSelected = { viewModel.selectFile(it) },
-                    onCommitSelected = { viewModel.selectCommit(it) },
-                    onRenameCommitClick = { commit ->
-                        renameCommitTarget = commit
-                        renameCommitSubject = commit.subject
-                    },
-                    onSoftResetClick = { softResetTarget = it },
-                    onHardResetClick = { hardResetTarget = it },
-                    onLoadMoreCommits = { viewModel.loadMoreCommits() },
-                    onStage = { viewModel.stageFile(it) },
-                    onUnstage = { viewModel.unstageFile(it) },
-                    onDiscard = { discardConfirmFile = it },
-                    onStageBatch = { viewModel.stageFiles(it) },
-                    onUnstageBatch = { viewModel.unstageFiles(it) },
-                    onDiscardBatch = { viewModel.discardFiles(it) },
-                    onCommit = { showCommitDialog = true },
-                    isCommitInProgress = isCommitInProgress,
-                    onRefresh = { viewModel.refresh() },
-                    onBranchHeaderClick = { showBranchDialog = true }
-                )
-            }
-
-            VerticalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
-
-            // Right Panel - Diff Viewer (60% width)
-            Box(modifier = Modifier.weight(0.6f).fillMaxHeight()) {
-                DiffViewer(
-                    selectedFile = selectedFile,
-                    selectedCommit = selectedCommit,
-                    diffText = selectedFileDiff,
-                    isLoading = isDiffLoading,
-                    isFullFileMode = isFullFileMode,
-                    onToggleFullFileMode = { viewModel.toggleFullFileMode() },
-                    showLineNumbers = showLineNumbers,
-                    onToggleLineNumbers = { viewModel.toggleLineNumbers() },
-                    isWordDiffEnabled = isWordDiffEnabled,
-                    onToggleWordDiff = { viewModel.toggleWordDiff() },
-                    showHeader = true
-                )
-            }
-        }
-    } else {
         // Mobile layout: use Navigation 3 backStack for list vs diff view
         NavDisplay(
             backStack = reviewBackStack,
@@ -672,7 +612,6 @@ fun GitReviewScreen(
                 }
             }
         )
-    }
 }
 
 @Composable

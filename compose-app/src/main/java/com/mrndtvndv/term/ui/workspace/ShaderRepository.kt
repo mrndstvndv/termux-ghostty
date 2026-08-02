@@ -13,7 +13,6 @@ import java.util.UUID
 private const val ShaderDirectoryName = "shaders"
 private const val CustomShaderIdsPreference = "custom_shader_ids"
 private const val SelectedShadersPreference = "terminal_effects"
-private const val LegacySelectedShaderPreference = "terminal_effect"
 private const val ShaderIdSeparator = "\u001f"
 private const val CustomShaderNamePrefix = "custom_shader_name_"
 private const val MaxShaderBytes = 256 * 1024
@@ -188,7 +187,7 @@ internal fun loadSelectedShaderIds(preferences: android.content.SharedPreference
         .orEmpty()
     if (saved.isNotEmpty()) return saved
 
-    return listOf(preferences.getString(LegacySelectedShaderPreference, "none") ?: "none")
+    return listOf("none")
 }
 
 internal fun saveSelectedShaderIds(
@@ -198,6 +197,5 @@ internal fun saveSelectedShaderIds(
     val selected = shaderIds.ifEmpty { listOf("none") }
     preferences.edit()
         .putString(SelectedShadersPreference, selected.joinToString(ShaderIdSeparator))
-        .putString(LegacySelectedShaderPreference, selected.first())
         .apply()
 }

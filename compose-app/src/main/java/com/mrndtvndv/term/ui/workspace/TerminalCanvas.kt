@@ -319,8 +319,7 @@ fun TerminalCanvas(
             .filter { it.id != "none" }
     }
     val cursorTrailEffect = CursorTrailEffect.fromPref(
-        sharedPreferences.getString("cursor_trail_effect", null),
-        sharedPreferences.getBoolean("cursor_trail", false)
+        sharedPreferences.getString("cursor_trail_effect", null)
     )
     val visualEffectFrameRate = VisualEffectFrameRate.fromPref(
         sharedPreferences.getString("visual_effect_frame_rate", null)

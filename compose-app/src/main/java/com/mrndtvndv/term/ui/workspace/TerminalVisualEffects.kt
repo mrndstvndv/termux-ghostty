@@ -52,9 +52,10 @@ enum class CursorTrailEffect(val key: String, val label: String) {
     TAIL("tail", "Tail");
 
     companion object {
-        fun fromPref(value: String?, legacyEnabled: Boolean = false): CursorTrailEffect {
+        fun fromPref(value: String?): CursorTrailEffect {
             if (value != null) return entries.firstOrNull { it.key == value } ?: NONE
-            return if (legacyEnabled) WARP else NONE
+            // Warp trail on by default for fresh installs.
+            return WARP
         }
     }
 }

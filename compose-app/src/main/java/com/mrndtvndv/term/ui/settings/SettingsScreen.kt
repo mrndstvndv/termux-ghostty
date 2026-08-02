@@ -72,7 +72,7 @@ fun SettingsScreen(
     shaderDefinitions: List<ShaderDefinition> = emptyList(),
     onImportShader: () -> Unit = {},
     onDeleteShader: (String) -> Unit = {},
-    cursorTrail: String = CursorTrailEffect.NONE.key,
+    cursorTrail: String = CursorTrailEffect.WARP.key,
     onCursorTrailChange: (String) -> Unit = {},
     visualEffectFrameRate: String = VisualEffectFrameRate.VSYNC.key,
     onVisualEffectFrameRateChange: (String) -> Unit = {},

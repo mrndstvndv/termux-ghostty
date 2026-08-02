@@ -8,70 +8,88 @@ import com.termux.terminal.compose.TerminalRow
 import com.termux.terminal.compose.TerminalSelection
 
 /**
- * Selection state for one canvas: anchor cell, live range, and word expansion
- * on long-press. The rendered selection is snapshot state so the canvas
+ * Selection state for one canvas: a live range and word expansion on long-press.
+ * The rendered selection is snapshot state so the canvas
  * redraws when it changes; the consumer is notified through
  * [TerminalCanvasConfig.onSelectionChanged].
  */
+internal enum class SelectionHandleEndpoint {
+    START,
+    END
+}
+
 internal class TerminalSelectionState {
     var selection: TerminalSelection by mutableStateOf(TerminalSelection.EMPTY)
         private set
-
-    private var anchorCol = -1
-    private var anchorRow = -1
-    private var isDragging = false
 
     val isSelecting: Boolean
         get() = !selection.isEmpty
 
     fun startWordSelection(frame: TerminalFrame, column: Int, row: Int) {
-        anchorCol = column
-        anchorRow = row
-        isDragging = false
-        val x = column.coerceIn(0, frame.columns - 1)
-        val rowData = frame.row(row - frame.topRow)
+        val normalizedRow = row.coerceIn(minimumSelectableRow(frame), maximumSelectableRow(frame))
+        val rowData = frame.row(normalizedRow - frame.topRow)
+        val x = rowData?.let { baseColumn(it, column, frame.columns) }
+            ?: column.coerceIn(0, frame.columns - 1)
         var x1 = x
         var x2 = x
         if (rowData != null && !isWhitespaceCell(rowData, x1)) {
             while (x1 > 0 && !isWhitespaceCell(rowData, x1 - 1)) x1--
             while (x2 < frame.columns - 1 && !isWhitespaceCell(rowData, x2 + 1)) x2++
         }
-        update(selectionStartCol = x1, selectionStartRow = row, selectionEndCol = x2, selectionEndRow = row)
-    }
-
-    fun startDragSelection(frame: TerminalFrame, column: Int, row: Int) {
-        anchorCol = column.coerceIn(0, frame.columns - 1)
-        anchorRow = row.coerceIn(frame.topRow, frame.topRow + frame.rowsVisible - 1)
-        isDragging = true
         update(
-            selectionStartCol = anchorCol,
-            selectionStartRow = anchorRow,
-            selectionEndCol = anchorCol,
-            selectionEndRow = anchorRow
+            selectionStartCol = x1,
+            selectionStartRow = normalizedRow,
+            selectionEndCol = x2,
+            selectionEndRow = normalizedRow
         )
     }
 
-    /** Extends the selection to [column]/[row] (absolute). No-op when not dragging. */
-    fun updateDrag(frame: TerminalFrame, column: Int, row: Int) {
-        if (!isDragging) return
-        val col = column.coerceIn(0, frame.columns - 1)
-        val normalizedRow = row.coerceIn(frame.topRow, frame.topRow + frame.rowsVisible - 1)
-        val startRow = minOf(anchorRow, normalizedRow)
-        val endRow = maxOf(anchorRow, normalizedRow)
-        val startCol = if (startRow == anchorRow) anchorCol else 0
-        val endCol = if (endRow == normalizedRow) col else frame.columns - 1
+    /** Moves one endpoint without allowing the selection to invert. */
+    fun updateHandle(
+        frame: TerminalFrame,
+        endpoint: SelectionHandleEndpoint,
+        column: Int,
+        row: Int
+    ) {
+        if (selection.isEmpty) return
+
+        val normalizedRow = row.coerceIn(minimumSelectableRow(frame), maximumSelectableRow(frame))
+        val normalizedColumn = validColumn(frame, normalizedRow, column)
+        if (endpoint == SelectionHandleEndpoint.START) {
+            val endRow = selection.endRow
+            val endColumn = selection.endCol
+            val boundedRow = normalizedRow.coerceAtMost(endRow)
+            val boundedColumn = if (boundedRow == endRow) {
+                normalizedColumn.coerceAtMost(endColumn)
+            } else {
+                normalizedColumn
+            }
+            update(
+                selectionStartCol = boundedColumn,
+                selectionStartRow = boundedRow,
+                selectionEndCol = endColumn,
+                selectionEndRow = endRow
+            )
+            return
+        }
+
+        val startRow = selection.startRow
+        val startColumn = selection.startCol
+        val boundedRow = normalizedRow.coerceAtLeast(startRow)
+        val boundedColumn = if (boundedRow == startRow) {
+            normalizedColumn.coerceAtLeast(startColumn)
+        } else {
+            normalizedColumn
+        }
         update(
-            selectionStartCol = startCol,
+            selectionStartCol = startColumn,
             selectionStartRow = startRow,
-            selectionEndCol = endCol,
-            selectionEndRow = endRow
+            selectionEndCol = boundedColumn,
+            selectionEndRow = boundedRow
         )
     }
 
     fun clear() {
-        isDragging = false
-        anchorCol = -1
-        anchorRow = -1
         update(selectionStartCol = -1, selectionStartRow = -1, selectionEndCol = -1, selectionEndRow = -1)
     }
 
@@ -96,5 +114,31 @@ internal class TerminalSelectionState {
             index += Character.charCount(codePoint)
         }
         return true
+    }
+
+    private fun minimumSelectableRow(frame: TerminalFrame): Int =
+        if (frame.alternateBufferActive) 0 else -frame.viewport.transcriptRows
+
+    private fun maximumSelectableRow(frame: TerminalFrame): Int = frame.rowsVisible - 1
+
+    private fun validColumn(frame: TerminalFrame, row: Int, column: Int): Int {
+        val normalizedColumn = column.coerceIn(0, frame.columns - 1)
+        val rowData = frame.row(row - frame.topRow) ?: return normalizedColumn
+        for (cellColumn in 0 until normalizedColumn) {
+            val width = rowData.cellDisplayWidth(cellColumn)
+            if (width > 1 && normalizedColumn < cellColumn + width) {
+                return cellColumn + width
+            }
+        }
+        return normalizedColumn
+    }
+
+    private fun baseColumn(row: TerminalRow, column: Int, columns: Int): Int {
+        val normalizedColumn = column.coerceIn(0, columns - 1)
+        for (cellColumn in 0 until normalizedColumn) {
+            val width = row.cellDisplayWidth(cellColumn)
+            if (width > 1 && normalizedColumn < cellColumn + width) return cellColumn
+        }
+        return normalizedColumn
     }
 }

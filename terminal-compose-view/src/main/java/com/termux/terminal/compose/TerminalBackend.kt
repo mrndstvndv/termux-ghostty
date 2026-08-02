@@ -44,6 +44,14 @@ interface TerminalBackend {
     fun currentFrame(): TerminalFrame?
 
     /**
+     * Extracts the complete selected text, including transcript rows that are
+     * outside the currently visible frame. Backends without transcript access
+     * may use the visible-frame fallback.
+     */
+    fun selectedText(selection: TerminalSelection): String =
+        currentFrame()?.selectionText(selection).orEmpty()
+
+    /**
      * Releases all backend-owned resources. After release, every method
      * returns a no-op or failure result and [currentFrame] returns null.
      * Releasing is idempotent.

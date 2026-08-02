@@ -11,6 +11,7 @@ import com.termux.terminal.compose.TerminalBackendListener
 import com.termux.terminal.compose.TerminalCommand
 import com.termux.terminal.compose.TerminalCommandResult
 import com.termux.terminal.compose.TerminalFrame
+import com.termux.terminal.compose.TerminalSelection
 
 /**
  * App-owned adapter from the existing Ghostty session/view cache to the
@@ -85,6 +86,18 @@ internal class TerminalSessionBackend(
     }
 
     override fun currentFrame(): TerminalFrame? = frame
+
+    override fun selectedText(selection: TerminalSelection): String {
+        if (released || selection.isEmpty) return ""
+        return session.getTerminalContent()
+            ?.getSelectedText(
+                selection.startCol,
+                selection.startRow,
+                selection.endCol,
+                selection.endRow
+            )
+            .orEmpty()
+    }
 
     override fun release() {
         if (released) return

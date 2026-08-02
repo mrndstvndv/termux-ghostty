@@ -20,13 +20,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusTarget
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.GraphicsContext
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalGraphicsContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.preferredFrameRate
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.text
@@ -37,10 +41,14 @@ import com.termux.terminal.compose.internal.ImeEditCommandProcessor
 import com.termux.terminal.compose.internal.ImeHost
 import com.termux.terminal.compose.internal.TerminalController
 import com.termux.terminal.compose.internal.TerminalInputTranslator
+import com.termux.terminal.compose.internal.TerminalSelectionActionMode
+import com.termux.terminal.compose.internal.TerminalSelectionOverlay
 import com.termux.terminal.compose.internal.TerminalSelectionState
 import com.termux.terminal.compose.internal.rememberImeHost
+import com.termux.terminal.compose.internal.rememberSelectionHandleColor
 import com.termux.terminal.compose.internal.terminalGestures
 import com.termux.terminal.compose.internal.terminalTaps
+import com.termux.terminal.compose.internal.updateSelectionHandle
 
 /**
  * Compose terminal canvas.
@@ -60,7 +68,7 @@ fun TerminalCanvas(
     modifier: Modifier = Modifier
 ) {
     val graphicsContext = LocalGraphicsContext.current
-    val selectionState = remember { TerminalSelectionState() }
+    val selectionState = remember(backend) { TerminalSelectionState() }
     val hapticFeedback = LocalHapticFeedback.current
     val focusRequester = remember { FocusRequester() }
 
@@ -68,6 +76,7 @@ fun TerminalCanvas(
     val frameTimeState = remember { mutableFloatStateOf(0f) }
     val fontSizeState = rememberFontSizeState(config)
     var viewportSizePx by remember { mutableStateOf(IntSize.Zero) }
+    var canvasPositionInWindow by remember { mutableStateOf(Offset.Zero) }
 
     val controller = rememberConfiguredController(
         backend, graphicsContext, frameTimeState, fontSizeState, config,
@@ -75,7 +84,6 @@ fun TerminalCanvas(
     )
     val (translator, imeHost) = rememberInputPipeline(controller, modifierKeys)
     val metrics = rememberCanvasMetrics(fontSizeState, config, viewportSizePx)
-
     LaunchedEffect(requestFocus) {
         if (requestFocus) focusRequester.requestFocus()
     }
@@ -86,37 +94,145 @@ fun TerminalCanvas(
     reportSelectionChanges(config, selectionState, controller, metrics)
     val visibleText = rememberVisibleText(controller, contentVersion, config.accessibilityEnabled)
 
+    TerminalCanvasLayout(
+        modifier = modifier,
+        state = TerminalCanvasState(
+            config = config,
+            visibleText = visibleText,
+            controller = controller,
+            metrics = metrics,
+            translator = translator,
+            selectionState = selectionState,
+            fontSizeState = fontSizeState,
+            imeHost = imeHost,
+            focusRequester = focusRequester,
+            hapticFeedback = hapticFeedback,
+            contentVersion = contentVersion,
+            frameTimeSeconds = frameTimeState.floatValue,
+            canvasPositionInWindow = canvasPositionInWindow
+        ),
+        onViewportSizeChanged = { viewportSizePx = it },
+        onCanvasPositionChanged = { canvasPositionInWindow = it }
+    )
+}
+
+private data class TerminalCanvasState(
+    val config: TerminalCanvasConfig,
+    val visibleText: String,
+    val controller: TerminalController,
+    val metrics: TerminalMetrics,
+    val translator: TerminalInputTranslator,
+    val selectionState: TerminalSelectionState,
+    val fontSizeState: MutableIntState,
+    val imeHost: ImeHost,
+    val focusRequester: FocusRequester,
+    val hapticFeedback: androidx.compose.ui.hapticfeedback.HapticFeedback,
+    val contentVersion: Int,
+    val frameTimeSeconds: Float,
+    val canvasPositionInWindow: Offset
+)
+
+@Composable
+private fun TerminalCanvasLayout(
+    modifier: Modifier,
+    state: TerminalCanvasState,
+    onViewportSizeChanged: (IntSize) -> Unit,
+    onCanvasPositionChanged: (Offset) -> Unit
+) {
     Box(
         modifier = modifier
             .fillMaxSize()
-            .preferredFrameRateOrNone(config)
-            .onSizeChanged { viewportSizePx = it }
-            .focusRequester(focusRequester)
+            .preferredFrameRateOrNone(state.config)
+            .onSizeChanged(onViewportSizeChanged)
+            .onGloballyPositioned { onCanvasPositionChanged(it.positionInWindow()) }
+            .focusRequester(state.focusRequester)
             .focusTarget()
-            .terminalKeyHandling(translator)
+            .terminalKeyHandling(state.translator, state.selectionState)
     ) {
         Canvas(
             modifier = Modifier
                 .fillMaxSize()
-                .terminalSemantics(visibleText, config.accessibilityEnabled)
+                .terminalSemantics(state.visibleText, state.config.accessibilityEnabled)
                 .terminalGestures(
-                    controller, metrics, config, selectionState, fontSizeState,
-                    onFontSizeChange = config.onFontSizeChange
+                    state.controller,
+                    state.metrics,
+                    state.config,
+                    state.selectionState,
+                    state.fontSizeState,
+                    onFontSizeChange = state.config.onFontSizeChange
                 )
                 .terminalTaps(
-                    controller, metrics, config, selectionState, imeHost, focusRequester,
-                    hapticFeedback
+                    state.controller,
+                    state.metrics,
+                    state.config,
+                    state.selectionState,
+                    state.imeHost,
+                    state.focusRequester,
+                    state.hapticFeedback
                 )
         ) {
-            controller.draw(
+            state.controller.draw(
                 drawScope = this,
-                metrics = metrics,
-                selection = selectionState.selection,
-                contentVersion = contentVersion,
-                timeSeconds = frameTimeState.floatValue
+                metrics = state.metrics,
+                selection = state.selectionState.selection,
+                contentVersion = state.contentVersion,
+                timeSeconds = state.frameTimeSeconds
             )
         }
+        TerminalSelectionUi(state)
     }
+}
+
+@Composable
+private fun TerminalSelectionUi(state: TerminalCanvasState) {
+    val hostView = LocalView.current
+    val selection = state.selectionState.selection
+    val currentFrame = remember(state.controller, state.contentVersion, selection) {
+        state.controller.currentFrame()
+    }
+    val selectionActionMode = remember(hostView) { TerminalSelectionActionMode(hostView) }
+    val selectionHandleColor = rememberSelectionHandleColor(state.config.selectionHandleColor)
+    DisposableEffect(selectionActionMode) {
+        onDispose { selectionActionMode.dispose() }
+    }
+    LaunchedEffect(
+        selection,
+        state.contentVersion,
+        currentFrame,
+        state.metrics,
+        state.canvasPositionInWindow,
+        state.config.onCopyRequest,
+        state.config.onPasteRequest,
+        state.config.onMoreSelectionRequest
+    ) {
+        selectionActionMode.update(
+            selection = selection,
+            frame = currentFrame,
+            selectedTextProvider = { state.controller.selectedText(selection) },
+            metrics = state.metrics,
+            canvasPositionInWindow = state.canvasPositionInWindow,
+            config = state.config,
+            clearSelection = state.selectionState::clear
+        )
+    }
+    TerminalSelectionOverlay(
+        selection = selection,
+        frame = currentFrame,
+        metrics = state.metrics,
+        configuredColor = selectionHandleColor,
+        onHandleDragStart = { selectionActionMode.hideForHandleDrag() },
+        onHandleDragEnd = { selectionActionMode.showAfterHandleDrag() },
+        onHandleDrag = { endpoint, x, y ->
+            updateSelectionHandle(
+                endpoint = endpoint,
+                x = x,
+                y = y,
+                controller = state.controller,
+                metrics = state.metrics,
+                selectionState = state.selectionState
+            )
+        }
+    )
 }
 
 @Composable
@@ -287,14 +403,19 @@ private fun Modifier.preferredFrameRateOrNone(config: TerminalCanvasConfig): Mod
         this
     }
 
-private fun Modifier.terminalKeyHandling(translator: TerminalInputTranslator): Modifier =
-    onPreviewKeyEvent { keyEvent ->
-        if (keyEvent.type == KeyEventType.KeyDown) {
-            translator.handleKeyEvent(keyEvent.nativeKeyEvent)
-        } else {
-            false
-        }
+private fun Modifier.terminalKeyHandling(
+    translator: TerminalInputTranslator,
+    selectionState: TerminalSelectionState
+): Modifier = onPreviewKeyEvent { keyEvent ->
+    if (keyEvent.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+    if (keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_BACK) {
+        if (!selectionState.isSelecting) return@onPreviewKeyEvent false
+        selectionState.clear()
+        return@onPreviewKeyEvent true
     }
+    if (selectionState.isSelecting) selectionState.clear()
+    translator.handleKeyEvent(keyEvent.nativeKeyEvent)
+}
 
 private fun Modifier.terminalSemantics(visibleText: String, enabled: Boolean): Modifier =
     semantics {

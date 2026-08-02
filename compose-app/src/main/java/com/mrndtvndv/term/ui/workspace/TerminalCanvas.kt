@@ -10,20 +10,12 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Surface
-import androidx.compose.material3.TextButton
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.unit.dp
 import com.mrndtvndv.term.ui.keyboard.ExtraKeysController
 import com.termux.shared.termux.settings.preferences.TermuxAppSharedPreferences
 import com.termux.terminal.TerminalSession
@@ -31,7 +23,6 @@ import com.termux.terminal.compose.ModifierKeyReader
 import com.termux.terminal.compose.ShaderDefinition as ComposeShaderDefinition
 import com.termux.terminal.compose.TerminalCanvas as ComposeTerminalCanvas
 import com.termux.terminal.compose.TerminalCanvasConfig
-import com.termux.terminal.compose.TerminalSelectionInfo
 
 /**
  * App integration for the reusable compose terminal library.
@@ -100,7 +91,6 @@ fun TerminalCanvas(
         modifierKeys = modifierKeys,
         config = config,
         requestFocus = isTerminalActive,
-        session = session,
         modifier = modifier
     )
 }
@@ -111,54 +101,15 @@ private fun TerminalCanvasSurface(
     modifierKeys: ModifierKeyReader,
     config: TerminalCanvasConfig,
     requestFocus: Boolean,
-    session: TerminalSession,
     modifier: Modifier
 ) {
-    var selectionInfo by remember(session) { mutableStateOf<TerminalSelectionInfo?>(null) }
-    var selectionResetKey by remember(session) { mutableLongStateOf(0L) }
-    val configured = config.copy(
-        selectionResetKey = selectionResetKey,
-        onSelectionChanged = { selectionInfo = it }
+    ComposeTerminalCanvas(
+        backend = backend,
+        modifierKeys = modifierKeys,
+        config = config,
+        requestFocus = requestFocus,
+        modifier = modifier.fillMaxSize()
     )
-    Box(modifier = modifier) {
-        ComposeTerminalCanvas(
-            backend = backend,
-            modifierKeys = modifierKeys,
-            config = configured,
-            requestFocus = requestFocus,
-            modifier = Modifier.fillMaxSize()
-        )
-        selectionInfo?.let { info ->
-            TerminalSelectionToolbar(
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .padding(8.dp),
-                onCopy = {
-                    val selectedText = backend.currentFrame()?.selectionText(info.selection).orEmpty()
-                    config.onCopyRequest(selectedText)
-                    selectionResetKey++
-                },
-                onPaste = {
-                    config.onPasteRequest()
-                    selectionResetKey++
-                }
-            )
-        }
-    }
-}
-
-@Composable
-private fun TerminalSelectionToolbar(
-    modifier: Modifier = Modifier,
-    onCopy: () -> Unit,
-    onPaste: () -> Unit
-) {
-    Surface(modifier = modifier, tonalElevation = 8.dp, shadowElevation = 8.dp) {
-        Row {
-            TextButton(onClick = onCopy) { androidx.compose.material3.Text("Copy") }
-            TextButton(onClick = onPaste) { androidx.compose.material3.Text("Paste") }
-        }
-    }
 }
 
 @Composable

@@ -1,13 +1,15 @@
 package com.termux.terminal.compose
 
 import android.graphics.Typeface
+import androidx.compose.ui.graphics.Color
 
 /**
  * Consumer-controlled rendering and input policy for [TerminalCanvas].
  *
  * The canvas never reads preferences, storage, or settings here; the consumer
  * owns persistence and policy. [onFontSizeChange], [onOpenUrl],
- * [onCopyRequest], [onPasteRequest], and [onDiagnostics] are callbacks so
+ * [onCopyRequest], [onPasteRequest], [onMoreSelectionRequest], and
+ * [onDiagnostics] are callbacks so
  * clipboard, URL handling, and diagnostics policy stay app-owned.
  */
 data class TerminalCanvasConfig(
@@ -21,6 +23,8 @@ data class TerminalCanvasConfig(
     val preferredFrameRate: Float? = null,
     val unconditionalKeyboardOnTap: Boolean = true,
     val accessibilityEnabled: Boolean = false,
+    /** Color for the selection handles; unspecified uses the host theme accent. */
+    val selectionHandleColor: Color = Color.Unspecified,
     /** Increment to clear the current selection after a consumer action. */
     val selectionResetKey: Long = 0L,
     val onFontSizeChange: (Int) -> Unit = {},
@@ -28,6 +32,8 @@ data class TerminalCanvasConfig(
     val onSelectionChanged: (TerminalSelectionInfo?) -> Unit = {},
     val onCopyRequest: (String) -> Unit = {},
     val onPasteRequest: () -> Unit = {},
+    /** Adds the platform's optional More action to the floating toolbar. */
+    val onMoreSelectionRequest: ((String) -> Unit)? = null,
     val onDiagnostics: (TerminalDiagnostic) -> Unit = {}
 ) {
     init {

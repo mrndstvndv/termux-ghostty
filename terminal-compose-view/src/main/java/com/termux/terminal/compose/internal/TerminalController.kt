@@ -139,6 +139,9 @@ internal class TerminalController(
     /** Latest backend frame, or null before the first invalidation. */
     fun currentFrame(): TerminalFrame? = backend.currentFrame()
 
+    /** Extracts selection text through the backend's full-content seam. */
+    fun selectedText(selection: TerminalSelection): String = backend.selectedText(selection)
+
     /** Submits an input or navigation command to the backend. */
     fun submit(command: TerminalCommand): TerminalCommandResult = backend.submit(command)
 

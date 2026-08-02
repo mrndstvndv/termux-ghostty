@@ -14,7 +14,6 @@ import androidx.compose.ui.hapticfeedback.HapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.AwaitPointerEventScope
 import androidx.compose.ui.input.pointer.PointerEvent
-import androidx.compose.ui.input.pointer.PointerInputChange
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChanged
 import com.termux.terminal.compose.TerminalCanvasConfig
@@ -82,11 +81,8 @@ private suspend fun AwaitPointerEventScope.handleTerminalGesture(
     val touchSlop = viewConfiguration.touchSlop
     val scrollState = ScrollGestureState()
 
-    val down = awaitFirstDown(requireUnconsumed = false)
-    if (selectionState.isSelecting) {
-        extendSelectionWhileDragging(context.controller, selectionState, context.metrics, down)
-        return
-    }
+    awaitFirstDown(requireUnconsumed = false)
+    if (selectionState.isSelecting) return
 
     do {
         val event = awaitPointerEvent()
@@ -171,35 +167,6 @@ private fun handleScrollGesture(
     }
 }
 
-/** Drags the anchor and extends the active selection. */
-private suspend fun AwaitPointerEventScope.extendSelectionWhileDragging(
-    controller: TerminalController,
-    selectionState: TerminalSelectionState,
-    metrics: TerminalMetrics,
-    down: PointerInputChange
-) {
-    val frame = controller.currentFrame() ?: return
-    selectionState.startDragSelection(
-        frame,
-        metrics.xToColumn(down.position.x),
-        metrics.yToRow(down.position.y, frame.topRow)
-    )
-    while (true) {
-        val event = awaitPointerEvent()
-        val change = event.changes.firstOrNull { it.id == down.id }
-        if (change == null || !change.pressed) break
-        change.consume()
-        val currentFrame = controller.currentFrame()
-        if (currentFrame != null) {
-            selectionState.updateDrag(
-                currentFrame,
-                metrics.xToColumn(change.position.x),
-                metrics.yToRow(change.position.y, currentFrame.topRow)
-            )
-        }
-    }
-}
-
 /** Attaches tap and long-press handling to the terminal canvas. */
 internal fun Modifier.terminalTaps(
     controller: TerminalController,
@@ -254,6 +221,7 @@ private fun handleLongPress(
     selectionState: TerminalSelectionState,
     hapticFeedback: HapticFeedback
 ) {
+    if (selectionState.isSelecting) return
     hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
     val frame = controller.currentFrame() ?: return
     val column = metrics.xToColumn(offset.x)

@@ -3,6 +3,8 @@
 package com.mrndtvndv.term.ui.review
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.expandHorizontally
 import androidx.navigation3.runtime.NavBackStack
 import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.entryProvider
@@ -13,6 +15,9 @@ import com.mrndtvndv.term.ui.highlightCode
 import com.mrndtvndv.term.ui.theme.codeFontFamily
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.BorderStroke
@@ -741,7 +746,11 @@ fun FileChangesList(
         modifier = modifier.fillMaxSize(),
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         floatingActionButton = {
-            if (stagedFiles.isNotEmpty() && !inSelectionMode) {
+            AnimatedVisibility(
+                visible = stagedFiles.isNotEmpty() && !inSelectionMode,
+                enter = scaleIn(initialScale = 0.6f) + fadeIn(),
+                exit = scaleOut(targetScale = 0.6f) + fadeOut()
+            ) {
                 FloatingActionButton(
                     onClick = { if (!isCommitInProgress) onCommit() },
                 ) {
@@ -1124,11 +1133,14 @@ fun FileItem(
     onAction: () -> Unit,
     onDiscard: () -> Unit
 ) {
-    val bg = when {
-        isChecked -> MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)
-        isSelected -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
-        else -> Color.Transparent
-    }
+    val bg by animateColorAsState(
+        targetValue = when {
+            isChecked -> MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)
+            isSelected -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
+            else -> Color.Transparent
+        },
+        label = "fileItemBackground"
+    )
     val normalizedPath = file.path.trimEnd('/')
     val fileName = normalizedPath.substringAfterLast('/').ifEmpty { file.path }
     val parentDir = if (normalizedPath.contains('/')) normalizedPath.substringBeforeLast('/') else null
@@ -1147,7 +1159,11 @@ fun FileItem(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.fillMaxWidth()
         ) {
-            if (inSelectionMode) {
+            AnimatedVisibility(
+                visible = inSelectionMode,
+                enter = expandHorizontally(expandFrom = Alignment.Start) + fadeIn(),
+                exit = shrinkHorizontally(shrinkTowards = Alignment.Start) + fadeOut()
+            ) {
                 Checkbox(
                     checked = isChecked,
                     onCheckedChange = onCheckedChange,
@@ -1173,28 +1189,34 @@ fun FileItem(
                     )
                 }
             }
-            if (!inSelectionMode) {
-                IconButton(onClick = onAction) {
-                    Icon(
-                        imageVector = if (file.isStaged) {
-                            Icons.Default.RemoveCircleOutline
-                        } else {
-                            Icons.Default.AddCircleOutline
-                        },
-                        contentDescription = if (file.isStaged) "Unstage" else "Stage",
-                        tint = if (file.isStaged) {
-                            MaterialTheme.colorScheme.error
-                        } else {
-                            MaterialTheme.colorScheme.primary
-                        }
-                    )
-                }
-                IconButton(onClick = onDiscard) {
-                    Icon(
-                        imageVector = Icons.Default.Restore,
-                        contentDescription = "Discard Changes",
-                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                    )
+            AnimatedVisibility(
+                visible = !inSelectionMode,
+                enter = expandHorizontally(expandFrom = Alignment.End) + fadeIn(),
+                exit = shrinkHorizontally(shrinkTowards = Alignment.End) + fadeOut()
+            ) {
+                Row {
+                    IconButton(onClick = onAction) {
+                        Icon(
+                            imageVector = if (file.isStaged) {
+                                Icons.Default.RemoveCircleOutline
+                            } else {
+                                Icons.Default.AddCircleOutline
+                            },
+                            contentDescription = if (file.isStaged) "Unstage" else "Stage",
+                            tint = if (file.isStaged) {
+                                MaterialTheme.colorScheme.error
+                            } else {
+                                MaterialTheme.colorScheme.primary
+                            }
+                        )
+                    }
+                    IconButton(onClick = onDiscard) {
+                        Icon(
+                            imageVector = Icons.Default.Restore,
+                            contentDescription = "Discard Changes",
+                            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                        )
+                    }
                 }
             }
         }

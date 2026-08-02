@@ -181,6 +181,7 @@ fun MainContent(
                                 servers = savedServers,
                                 activeIds = viewModel.activeIds.value,
                                 disconnectingId = viewModel.disconnectingId.value,
+                                connectingId = viewModel.connectingId.value,
                                 onTap = { serverId -> viewModel.connect(serverId) },
                                 onDelete = { serverId -> viewModel.deleteServer(serverId) },
                                 onDisconnect = { serverId -> viewModel.disconnect(serverId) },

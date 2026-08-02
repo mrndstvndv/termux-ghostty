@@ -33,6 +33,7 @@ fun ServerListScreen(
     onDelete: (String) -> Unit,
     onDisconnect: (String) -> Unit,
     disconnectingId: String? = null,
+    connectingId: String? = null,
     onAdd: () -> Unit,
     onSettingsClick: () -> Unit,
     onStartLocal: () -> Unit,
@@ -104,6 +105,7 @@ fun ServerListScreen(
                         config = config,
                         isActive = config.id in activeIds,
                         isDisconnecting = config.id == disconnectingId,
+                        isConnecting = config.id == connectingId,
                         onClick = { onTap(config.id) },
                         onDisconnect = { onDisconnect(config.id) },
                         onDelete = { onDelete(config.id) },
@@ -221,6 +223,7 @@ private fun ServerCard(
     config: ServerConfig,
     isActive: Boolean,
     isDisconnecting: Boolean = false,
+    isConnecting: Boolean = false,
     onClick: () -> Unit,
     onDisconnect: () -> Unit,
     onDelete: () -> Unit,
@@ -263,6 +266,13 @@ private fun ServerCard(
                     }
                 }
             }
+            if (isConnecting) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(24.dp),
+                    strokeWidth = 2.dp,
+                )
+                Spacer(Modifier.width(4.dp))
+            }
             if (isActive) {
                 if (isDisconnecting) {
                     CircularProgressIndicator(
@@ -274,13 +284,13 @@ private fun ServerCard(
                         Icon(Icons.Default.Close, "Disconnect", tint = MaterialTheme.colorScheme.error)
                     }
                 }
-                IconButton(onClick = onDelete) {
-                    Icon(
-                        Icons.Default.Delete,
-                        contentDescription = "Delete server",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+            }
+            IconButton(onClick = onDelete) {
+                Icon(
+                    Icons.Default.Delete,
+                    contentDescription = "Delete server",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
     }

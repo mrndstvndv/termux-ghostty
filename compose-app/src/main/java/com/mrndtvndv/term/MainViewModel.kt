@@ -53,6 +53,9 @@ class MainViewModel(
     private val _disconnectingId = mutableStateOf<String?>(null)
     val disconnectingId: State<String?> = _disconnectingId
 
+    private val _connectingId = mutableStateOf<String?>(null)
+    val connectingId: State<String?> = _connectingId
+
     private val _uiState = mutableStateOf(MainUiState())
     val uiState: State<MainUiState> = _uiState
 
@@ -149,10 +152,12 @@ class MainViewModel(
 
     fun connect(id: String) {
         val config = serverRepository.get(id) ?: return
+        _connectingId.value = id
         _uiState.value = _uiState.value.copy(isLoading = true, error = null)
 
         viewModelScope.launch {
             val result = sessionManager.connect(id)
+            _connectingId.value = null
             result.fold(
                 onSuccess = { server ->
                     _activeIds.value = _activeIds.value + id

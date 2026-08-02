@@ -5,7 +5,7 @@ import android.os.Handler
 import android.os.Looper
 import com.termux.view.TerminalView
 
-private const val ResizeDebounceMillis = 100L
+private const val ResizeDebounceMillis = 10L
 
 class ComposeInputTerminalView(context: Context) : TerminalView(context, null) {
     var onInvalidateCallback: (() -> Unit)? = null

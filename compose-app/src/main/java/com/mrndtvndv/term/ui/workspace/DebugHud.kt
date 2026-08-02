@@ -20,6 +20,7 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import java.util.Locale
 import kotlin.math.roundToInt
+import kotlinx.coroutines.delay
 
 private const val DefaultRefreshRate = 60f
 private const val SampleWindowNanos = 1_000_000_000L
@@ -43,8 +44,20 @@ fun DebugHud(modifier: Modifier = Modifier) {
                 accumulator.record(frameTimeNanos)
             }
             if (sample != null) {
-                metrics = sample.copy(ramMegabytes = readProcessRamMegabytes())
+                metrics = metrics.copy(
+                    framesPerSecond = sample.framesPerSecond,
+                    missedFrames = sample.missedFrames
+                )
             }
+        }
+    }
+
+    // RAM sampling stays off the frame path: Debug.getMemoryInfo is not free
+    // and would perturb the very FPS this HUD measures.
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(1_000)
+            metrics = metrics.copy(ramMegabytes = readProcessRamMegabytes())
         }
     }
 

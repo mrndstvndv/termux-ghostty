@@ -7,6 +7,17 @@ import com.termux.view.TerminalView
 
 private const val ResizeDebounceMillis = 10L
 
+/**
+ * TEMPORARY migration adapter (plan stage 5) — DO NOT extend.
+ *
+ * Bridges the Ghostty session's existing [TerminalView] frame cache to
+ * [TerminalSessionBackend] until the session-native backend supplies frames,
+ * metrics, links, resize, scroll, mouse, and input itself.
+ *
+ * REMOVAL TICKET (plan stage 8): delete this class and [TerminalSessionBackend]
+ * once no core or compose-app extraction path references `TerminalView`,
+ * `TerminalRenderer`, `TerminalViewLinkLayout`, or `TermuxTerminalViewClientBase`.
+ */
 class ComposeInputTerminalView(context: Context) : TerminalView(context, null) {
     var onInvalidateCallback: (() -> Unit)? = null
 

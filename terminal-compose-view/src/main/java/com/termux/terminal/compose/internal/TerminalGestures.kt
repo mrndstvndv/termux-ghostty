@@ -163,9 +163,20 @@ private fun handleScrollGesture(
     val deltaRows = (scrollState.dragAccumulator / context.metrics.cellHeightPx).toInt()
     if (deltaRows != 0) {
         scrollState.dragAccumulator -= deltaRows * context.metrics.cellHeightPx
-        context.controller.submit(TerminalCommand.Scroll(-deltaRows))
+        context.controller.submit(scrollCommandForGesture(deltaRows, centroid))
     }
 }
+
+/** Builds the backend command for one drag threshold crossing. */
+internal fun scrollCommandForGesture(
+    deltaRows: Int,
+    touchPosition: Offset
+): TerminalCommand.Scroll =
+    TerminalCommand.Scroll(
+        rowsDown = -deltaRows,
+        xPx = touchPosition.x,
+        yPx = touchPosition.y
+    )
 
 /** Attaches tap and long-press handling to the terminal canvas. */
 internal fun Modifier.terminalTaps(

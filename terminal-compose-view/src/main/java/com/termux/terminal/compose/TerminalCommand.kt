@@ -39,8 +39,15 @@ sealed interface TerminalCommand {
     /**
      * Scrolls the terminal viewport by a number of rows; negative values scroll
      * up (toward the transcript), positive values scroll down.
+     *
+     * The position is the touch location in viewport pixels. Backends that
+     * forward scrolls to a mouse-tracking terminal use it to select the pane.
      */
-    data class Scroll(val rowsDown: Int) : TerminalCommand
+    data class Scroll(
+        val rowsDown: Int,
+        val xPx: Float,
+        val yPx: Float
+    ) : TerminalCommand
 
     /** Jumps the viewport to the given absolute top row. */
     data class SetViewportTopRow(val topRow: Int) : TerminalCommand

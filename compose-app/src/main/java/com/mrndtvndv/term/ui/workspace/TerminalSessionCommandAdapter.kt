@@ -1,6 +1,7 @@
 package com.mrndtvndv.term.ui.workspace
 
 import android.view.KeyEvent
+import android.view.MotionEvent
 import com.termux.terminal.GhosttyMouseEvent
 import com.termux.terminal.KeyHandler
 import com.termux.terminal.TerminalSession
@@ -18,7 +19,7 @@ internal class TerminalSessionCommandAdapter(
         is TerminalCommand.Text -> writeText(command.text)
         is TerminalCommand.Key -> submitKey(command)
         is TerminalCommand.Mouse -> submitMouse(command.event)
-        is TerminalCommand.Scroll -> submitScroll(command.rowsDown)
+        is TerminalCommand.Scroll -> submitScroll(command)
         is TerminalCommand.SetViewportTopRow -> setViewportTopRow(command.topRow)
     }
 
@@ -80,8 +81,23 @@ internal class TerminalSessionCommandAdapter(
         return TerminalCommandResult.Success
     }
 
-    private fun submitScroll(rowsDown: Int): TerminalCommandResult {
-        if (rowsDown != 0) view.doScroll(null, rowsDown)
+    private fun submitScroll(command: TerminalCommand.Scroll): TerminalCommandResult {
+        if (command.rowsDown == 0) return TerminalCommandResult.Success
+
+        val time = android.os.SystemClock.uptimeMillis()
+        val event = MotionEvent.obtain(
+            time,
+            time,
+            MotionEvent.ACTION_MOVE,
+            command.xPx,
+            command.yPx,
+            0
+        )
+        try {
+            view.doScroll(event, command.rowsDown)
+        } finally {
+            event.recycle()
+        }
         return TerminalCommandResult.Success
     }
 

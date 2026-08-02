@@ -1,5 +1,3 @@
-@file:Suppress("DEPRECATION") // LocalTextInputService/TextInputSession remain the supported IME bridge
-
 package com.termux.terminal.compose.internal
 
 import android.view.KeyEvent

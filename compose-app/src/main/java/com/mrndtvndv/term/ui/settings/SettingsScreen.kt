@@ -67,6 +67,8 @@ fun SettingsScreen(
     onUnconditionalSoftKeyboardOnTapChange: (Boolean) -> Unit = {},
     nativeLogcatLoggingEnabled: Boolean = false,
     onNativeLogcatLoggingEnabledChange: (Boolean) -> Unit = {},
+    debugHudEnabled: Boolean = false,
+    onDebugHudEnabledChange: (Boolean) -> Unit = {},
     terminalEffects: List<String> = listOf("none"),
     onTerminalEffectsChange: (List<String>) -> Unit = {},
     shaderDefinitions: List<ShaderDefinition> = emptyList(),
@@ -718,6 +720,27 @@ fun SettingsScreen(
                         color = MaterialTheme.colorScheme.primary,
                         textAlign = TextAlign.Center
                     )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Debug Performance HUD", style = MaterialTheme.typography.bodyLarge)
+                            Text(
+                                text = "Show live FPS, app RAM, and missed frames over the terminal workspace",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = debugHudEnabled,
+                            onCheckedChange = onDebugHudEnabledChange
+                        )
+                    }
+
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),

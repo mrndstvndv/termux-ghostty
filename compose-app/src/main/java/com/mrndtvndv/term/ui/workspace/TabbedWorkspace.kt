@@ -43,6 +43,7 @@ fun TabbedWorkspace(
     getActiveTerminalView: () -> TerminalView?,
     extraKeysEnabled: Boolean,
     extraKeysJson: String,
+    hideTabs: Boolean = false,
     onViewCreated: (TerminalView) -> Unit,
     onViewReleased: (TerminalView) -> Unit,
     activeTab: WorkspaceTab,
@@ -151,7 +152,7 @@ fun TabbedWorkspace(
         modifier = modifier.fillMaxSize(),
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
-            if (activeTabs.size > 1) {
+            if (activeTabs.size > 1 && !hideTabs) {
                 SecondaryTabRow(
                     modifier = Modifier.statusBarsPadding(),
                     selectedTabIndex = pagerState.currentPage,
@@ -194,7 +195,7 @@ fun TabbedWorkspace(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .then(if (activeTabs.size <= 1) Modifier.statusBarsPadding() else Modifier)
+                .then(if (activeTabs.size <= 1 || hideTabs) Modifier.statusBarsPadding() else Modifier)
                 .navigationBarsPadding()
                 .imePadding()
                 .clipToBounds()

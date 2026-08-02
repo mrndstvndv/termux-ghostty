@@ -76,6 +76,8 @@ fun SettingsScreen(
     onCursorTrailChange: (String) -> Unit = {},
     visualEffectFrameRate: String = VisualEffectFrameRate.VSYNC.key,
     onVisualEffectFrameRateChange: (String) -> Unit = {},
+    hideWorkspaceTabs: Boolean = false,
+    onHideWorkspaceTabsChange: (Boolean) -> Unit = {},
     onBack: () -> Unit
 ) {
     val scrollState = rememberScrollState()
@@ -602,6 +604,49 @@ fun SettingsScreen(
                                 }
                             }
                         }
+                    }
+                }
+            }
+
+            // Workspace Settings
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                )
+            ) {
+                Column(
+                    modifier = Modifier
+                        .padding(24.dp)
+                        .fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Text(
+                        text = "WORKSPACE SETTINGS",
+                        style = MaterialTheme.typography.headlineSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        textAlign = TextAlign.Center
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Hide Workspace Tabs", style = MaterialTheme.typography.bodyLarge)
+                            Text(
+                                text = "Hide the tab bar in the terminal workspace " +
+                                    "(phone layout). Swipe left/right to switch tabs.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = hideWorkspaceTabs,
+                            onCheckedChange = onHideWorkspaceTabsChange
+                        )
                     }
                 }
             }

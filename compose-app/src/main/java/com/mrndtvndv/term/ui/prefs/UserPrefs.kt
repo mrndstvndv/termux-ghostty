@@ -15,10 +15,14 @@ class UserPrefs {
     private val _nativeLogcatLoggingEnabled = MutableStateFlow(false)
     val nativeLogcatLoggingEnabled: StateFlow<Boolean> = _nativeLogcatLoggingEnabled.asStateFlow()
 
+    private val _hideWorkspaceTabs = MutableStateFlow(false)
+    val hideWorkspaceTabs: StateFlow<Boolean> = _hideWorkspaceTabs.asStateFlow()
+
     fun init(prefs: SharedPreferences) {
         _customFontName.value = prefs.getString("custom_font_name", null)
         _useCustomFontForWholeUi.value = prefs.getBoolean("use_custom_font_for_whole_ui", false)
         _nativeLogcatLoggingEnabled.value = prefs.getBoolean("native_logcat_logging_enabled", false)
+        _hideWorkspaceTabs.value = prefs.getBoolean("hide_workspace_tabs", false)
     }
 
     fun setCustomFontName(name: String?, prefs: SharedPreferences) {
@@ -34,5 +38,10 @@ class UserPrefs {
     fun setNativeLogcatLoggingEnabled(enabled: Boolean, prefs: SharedPreferences) {
         _nativeLogcatLoggingEnabled.value = enabled
         prefs.edit().putBoolean("native_logcat_logging_enabled", enabled).apply()
+    }
+
+    fun setHideWorkspaceTabs(enabled: Boolean, prefs: SharedPreferences) {
+        _hideWorkspaceTabs.value = enabled
+        prefs.edit().putBoolean("hide_workspace_tabs", enabled).apply()
     }
 }

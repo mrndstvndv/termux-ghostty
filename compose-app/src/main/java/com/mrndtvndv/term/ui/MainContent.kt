@@ -66,6 +66,7 @@ fun MainContent(
     val customFontName by viewModel.userPrefs.customFontName.collectAsState()
     val useCustomFontForWholeUi by viewModel.userPrefs.useCustomFontForWholeUi.collectAsState()
     val nativeLogcatLoggingEnabled by viewModel.userPrefs.nativeLogcatLoggingEnabled.collectAsState()
+    val hideWorkspaceTabs by viewModel.userPrefs.hideWorkspaceTabs.collectAsState()
     val context = LocalContext.current
     val shaderRepository = remember(context) { ShaderRepository(context) }
     var shaderDefinitions by remember(shaderRepository) {
@@ -290,6 +291,10 @@ fun MainContent(
                                         .putString("visual_effect_frame_rate", frameRate)
                                         .apply()
                                 },
+                                hideWorkspaceTabs = hideWorkspaceTabs,
+                                onHideWorkspaceTabsChange = { enabled ->
+                                    viewModel.userPrefs.setHideWorkspaceTabs(enabled, sharedPreferences)
+                                },
                                 onBack = { navigator.goBack() },
                             )
                         }
@@ -314,6 +319,7 @@ fun MainContent(
                                         reviewViewModel = reviewVM,
                                         extraKeysEnabled = extraKeysEnabled,
                                         extraKeysJson = resolvedJson,
+                                        hideWorkspaceTabs = hideWorkspaceTabs,
                                         onViewCreated = onViewCreated,
                                         onViewReleased = onViewReleased,
                                         activeTab = uiState.activeTab,

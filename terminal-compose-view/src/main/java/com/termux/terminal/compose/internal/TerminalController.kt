@@ -46,6 +46,7 @@ internal class TerminalController(
     private var lastResizeHeight = -1
 
     private val cursorEffectState = CursorEffectState()
+    private var cursorFramePending = false
 
     private var renderKey = RenderKey(0, null, emptyList())
 
@@ -86,6 +87,7 @@ internal class TerminalController(
     /** Resets cursor-effect tracking (backend or effect instance change). */
     fun resetCursorTracking() {
         cursorEffectState.reset()
+        cursorFramePending = false
     }
 
     /** Suspends until the backend invalidates the frame; returns the new content version. */
@@ -94,27 +96,18 @@ internal class TerminalController(
         return contentVersion
     }
 
-    /** Advances cursor-effect tracking for the current frame. */
-    fun tick(timeSeconds: Float) {
-        val frame = backend.currentFrame() ?: return
-        cursorEffectState.observe(frame.cursor.column, frame.cursor.row, timeSeconds)
-    }
-
     /**
      * Whether the frame loop must keep ticking: a continuous shader runs
      * forever; a transient cursor effect runs for its declared duration plus
      * a small grace so its final frame settles.
      */
     fun needsFrame(timeSeconds: Float): Boolean {
-        val effect = config.cursorEffect
-        return if (hasContinuousShader) {
-            true
-        } else if (effect != null && cursorEffectState.hasPreviousPosition) {
+        if (hasContinuousShader) return true
+        val effect = config.cursorEffect ?: return false
+        val cursorAnimationActive = cursorEffectState.hasPreviousPosition &&
             timeSeconds - cursorEffectState.changeSeconds <
-                effect.maxDurationSeconds + CURSOR_EFFECT_GRACE_SECONDS
-        } else {
-            false
-        }
+            effect.maxDurationSeconds + CURSOR_EFFECT_GRACE_SECONDS
+        return cursorFramePending || cursorAnimationActive
     }
 
     /** True when the compiled shader chain animates continuously. */
@@ -133,6 +126,7 @@ internal class TerminalController(
         lastResizeWidth = width
         lastResizeHeight = height
         cursorEffectState.reset()
+        cursorFramePending = false
         backend.resize(width, height)
     }
 
@@ -148,13 +142,11 @@ internal class TerminalController(
     /**
      * Draws the current frame. Resizes the backend when the draw size
      * changed, re-creates the retained renderer on font/typeface/shader
-     * changes, and renders the cursor effect overlay last. [contentVersion]
-     * is the composable's snapshot-state invalidation counter: reading it here
-     * redraws the canvas when content changes.
+     * changes. [contentVersion] is the composable's snapshot-state invalidation
+     * counter: reading it here redraws the canvas when content changes.
      */
     fun draw(
         drawScope: DrawScope,
-        metrics: TerminalMetrics,
         selection: TerminalSelection,
         contentVersion: Int,
         timeSeconds: Float
@@ -175,12 +167,26 @@ internal class TerminalController(
             selection = selection,
             timeSeconds = timeSeconds
         )
-        cfg.cursorEffect?.draw(drawScope, frame, metrics, cursorEffectState, timeSeconds)
+    }
+
+    /** Draws cursor effects in a separate overlay using the frame it observes. */
+    fun drawCursorEffect(
+        drawScope: DrawScope,
+        metrics: TerminalMetrics,
+        timeSeconds: Float
+    ) {
+        if (released) return
+        val effect = config.cursorEffect ?: return
+        val frame = backend.currentFrame() ?: return
+        cursorEffectState.observe(frame.cursor, timeSeconds)
+        cursorFramePending = false
+        effect.draw(drawScope, frame, metrics, cursorEffectState, timeSeconds)
     }
 
     override fun onFrameInvalidated() {
         if (released) return
         contentVersion++
+        cursorFramePending = true
         invalidations.trySend(Unit)
         onInvalidated?.invoke()
     }

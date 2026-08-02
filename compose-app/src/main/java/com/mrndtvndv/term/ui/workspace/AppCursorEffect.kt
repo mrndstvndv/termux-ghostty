@@ -92,6 +92,7 @@ internal class AppCursorEffect(
 
 private fun canDraw(frame: TerminalFrame, state: CursorEffectState): Boolean =
     frame.cursor.visible && state.hasPreviousPosition &&
+        state.currentColumn >= 0 && state.currentRow >= 0 &&
         state.previousColumn >= 0 && state.previousRow >= 0
 
 private data class WarpQuad(

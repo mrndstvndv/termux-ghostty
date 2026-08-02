@@ -108,7 +108,7 @@ fun TerminalCanvas(
             focusRequester = focusRequester,
             hapticFeedback = hapticFeedback,
             contentVersion = contentVersion,
-            frameTimeSeconds = frameTimeState.floatValue,
+            frameTimeState = frameTimeState,
             canvasPositionInWindow = canvasPositionInWindow
         ),
         onViewportSizeChanged = { viewportSizePx = it },
@@ -128,7 +128,7 @@ private data class TerminalCanvasState(
     val focusRequester: FocusRequester,
     val hapticFeedback: androidx.compose.ui.hapticfeedback.HapticFeedback,
     val contentVersion: Int,
-    val frameTimeSeconds: Float,
+    val frameTimeState: MutableFloatState,
     val canvasPositionInWindow: Offset
 )
 
@@ -173,11 +173,23 @@ private fun TerminalCanvasLayout(
         ) {
             state.controller.draw(
                 drawScope = this,
-                metrics = state.metrics,
                 selection = state.selectionState.selection,
                 contentVersion = state.contentVersion,
-                timeSeconds = state.frameTimeSeconds
+                timeSeconds = if (state.controller.isContinuouslyAnimated) {
+                    state.frameTimeState.floatValue
+                } else {
+                    0f
+                }
             )
+        }
+        if (state.config.cursorEffect != null) {
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                state.controller.drawCursorEffect(
+                    drawScope = this,
+                    metrics = state.metrics,
+                    timeSeconds = state.frameTimeState.floatValue
+                )
+            }
         }
         TerminalSelectionUi(state)
     }
@@ -335,7 +347,6 @@ private suspend fun runFrameLoop(
             withFrameNanos { nanos ->
                 frameTimeState.floatValue = nanos / 1_000_000_000f
             }
-            controller.tick(frameTimeState.floatValue)
         }
     } else {
         while (true) {
@@ -344,7 +355,6 @@ private suspend fun runFrameLoop(
                 withFrameNanos { nanos ->
                     frameTimeState.floatValue = nanos / 1_000_000_000f
                 }
-                controller.tick(frameTimeState.floatValue)
             } while (controller.needsFrame(frameTimeState.floatValue))
         }
     }

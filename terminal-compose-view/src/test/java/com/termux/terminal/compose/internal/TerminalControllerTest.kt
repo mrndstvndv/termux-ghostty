@@ -2,15 +2,47 @@ package com.termux.terminal.compose.internal
 
 import androidx.compose.ui.graphics.GraphicsContext
 import androidx.compose.ui.graphics.layer.GraphicsLayer
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import com.termux.terminal.compose.CursorEffect
+import com.termux.terminal.compose.CursorEffectState
 import com.termux.terminal.compose.TerminalBackend
 import com.termux.terminal.compose.TerminalBackendListener
+import com.termux.terminal.compose.TerminalCanvasConfig
+import com.termux.terminal.compose.TerminalCursor
+import com.termux.terminal.compose.TerminalMetrics
 import com.termux.terminal.compose.TerminalCommand
 import com.termux.terminal.compose.TerminalCommandResult
 import com.termux.terminal.compose.TerminalFrame
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class TerminalControllerTest {
+    @Test
+    fun frameInvalidationSchedulesCursorAnimationBeforeFirstRenderedFrame() {
+        val controller = TerminalController(RecordingBackend(), UnusedGraphicsContext)
+        controller.configure(TerminalCanvasConfig(cursorEffect = TestCursorEffect))
+
+        controller.onFrameInvalidated()
+
+        assertTrue(controller.needsFrame(0f))
+    }
+
+    @Test
+    fun invisibleCursorDoesNotBecomePreviousTrailPosition() {
+        val state = CursorEffectState()
+
+        state.observe(TerminalCursor(1, 1, true, TerminalCursor.STYLE_BLOCK), 0.1f)
+        state.observe(TerminalCursor(20, 20, false, TerminalCursor.STYLE_BLOCK), 0.2f)
+        state.observe(TerminalCursor(2, 1, true, TerminalCursor.STYLE_BLOCK), 0.3f)
+
+        assertEquals(1, state.previousColumn)
+        assertEquals(1, state.previousRow)
+        assertEquals(2, state.currentColumn)
+        assertEquals(1, state.currentRow)
+        assertEquals(0.3f, state.changeSeconds, 0f)
+    }
+
     @Test
     fun resizesBackendBeforeFirstFrameIsAvailable() {
         val backend = RecordingBackend()
@@ -19,6 +51,18 @@ class TerminalControllerTest {
 
         assertEquals(listOf(640 to 480), backend.resizes)
     }
+}
+
+private object TestCursorEffect : CursorEffect {
+    override val maxDurationSeconds: Float = 0.2f
+
+    override fun draw(
+        drawScope: DrawScope,
+        frame: TerminalFrame,
+        metrics: TerminalMetrics,
+        state: CursorEffectState,
+        timeSeconds: Float
+    ) = Unit
 }
 
 private object UnusedGraphicsContext : GraphicsContext {

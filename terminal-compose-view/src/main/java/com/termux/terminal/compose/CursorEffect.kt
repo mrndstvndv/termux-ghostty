@@ -50,14 +50,15 @@ class CursorEffectState {
     var changeSeconds: Float = 0f
         internal set
 
-    internal fun observe(column: Int, row: Int, timeSeconds: Float) {
-        if (column == currentColumn && row == currentRow) return
+    internal fun observe(cursor: TerminalCursor, timeSeconds: Float) {
+        if (!cursor.visible) return
+        if (cursor.column == currentColumn && cursor.row == currentRow) return
         if (hasPreviousPosition) {
             previousColumn = currentColumn
             previousRow = currentRow
         }
-        currentColumn = column
-        currentRow = row
+        currentColumn = cursor.column
+        currentRow = cursor.row
         changeSeconds = timeSeconds
         hasPreviousPosition = true
     }

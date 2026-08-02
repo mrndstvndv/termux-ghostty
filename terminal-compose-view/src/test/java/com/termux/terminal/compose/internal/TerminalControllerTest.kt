@@ -51,6 +51,57 @@ class TerminalControllerTest {
 
         assertEquals(listOf(640 to 480), backend.resizes)
     }
+
+    @Test
+    fun attachReplacesThePreviousListenerAndDetachStopsInvalidations() {
+        val backend = RecordingBackend()
+        val first = TerminalController(backend, UnusedGraphicsContext)
+        val second = TerminalController(backend, UnusedGraphicsContext)
+
+        first.attach()
+        second.attach()
+        second.detach()
+
+        assertEquals(listOf("attach", "attach", "detach"), backend.lifecycle)
+        assertTrue(backend.attachedListener == null)
+    }
+
+    @Test
+    fun releaseIsIdempotentAndReleasesBackendOnce() {
+        val backend = RecordingBackend()
+        val controller = TerminalController(backend, UnusedGraphicsContext)
+        controller.attach()
+
+        controller.release()
+        controller.release()
+
+        assertEquals(listOf("attach", "detach", "release"), backend.lifecycle)
+    }
+
+    @Test
+    fun invalidationIsIgnoredAfterRelease() {
+        val backend = RecordingBackend()
+        val controller = TerminalController(backend, UnusedGraphicsContext)
+        controller.attach()
+        controller.release()
+
+        controller.onFrameInvalidated()
+
+        assertEquals(0, controller.version())
+        assertEquals(listOf("attach", "detach", "release"), backend.lifecycle)
+    }
+
+    @Test
+    fun repeatedResizeCallsCoalesceToOneBackendResize() {
+        val backend = RecordingBackend()
+        val controller = TerminalController(backend, UnusedGraphicsContext)
+
+        controller.resizeIfNeeded(widthPx = 640, heightPx = 480)
+        controller.resizeIfNeeded(widthPx = 640, heightPx = 480)
+        controller.resizeIfNeeded(widthPx = 320, heightPx = 240)
+
+        assertEquals(listOf(640 to 480, 320 to 240), backend.resizes)
+    }
 }
 
 private object TestCursorEffect : CursorEffect {
@@ -73,10 +124,18 @@ private object UnusedGraphicsContext : GraphicsContext {
 
 private class RecordingBackend : TerminalBackend {
     val resizes = mutableListOf<Pair<Int, Int>>()
+    val lifecycle = mutableListOf<String>()
+    var attachedListener: TerminalBackendListener? = null
 
-    override fun attach(listener: TerminalBackendListener) = Unit
+    override fun attach(listener: TerminalBackendListener) {
+        lifecycle += "attach"
+        attachedListener = listener
+    }
 
-    override fun detach() = Unit
+    override fun detach() {
+        lifecycle += "detach"
+        attachedListener = null
+    }
 
     override fun resize(widthPx: Int, heightPx: Int) {
         resizes += widthPx to heightPx
@@ -87,5 +146,7 @@ private class RecordingBackend : TerminalBackend {
 
     override fun currentFrame(): TerminalFrame? = null
 
-    override fun release() = Unit
+    override fun release() {
+        lifecycle += "release"
+    }
 }

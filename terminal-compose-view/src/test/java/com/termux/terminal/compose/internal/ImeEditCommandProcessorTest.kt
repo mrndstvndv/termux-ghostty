@@ -4,6 +4,7 @@ import androidx.compose.ui.text.input.BackspaceCommand
 import androidx.compose.ui.text.input.CommitTextCommand
 import androidx.compose.ui.text.input.DeleteAllCommand
 import androidx.compose.ui.text.input.DeleteSurroundingTextCommand
+import androidx.compose.ui.text.input.FinishComposingTextCommand
 import androidx.compose.ui.text.input.MoveCursorCommand
 import androidx.compose.ui.text.input.SetComposingRegionCommand
 import androidx.compose.ui.text.input.SetComposingTextCommand
@@ -162,6 +163,110 @@ class ImeEditCommandProcessorTest {
         processor.process(listOf(SetComposingRegionCommand(0, 2)))
 
         assertEquals(emptyList<String>(), terminal.events)
+    }
+
+    // Gboard re-sends the whole region ("foo.b") as a commit after the period commit;
+    // only the suffix must reach the terminal.
+    @Test
+    fun commitAfterFinishComposingAcrossPunctuationRecomposesOnlyTheSuffix() {
+        processor.process(listOf(SetComposingTextCommand("foo", 1)))
+        processor.process(listOf(FinishComposingTextCommand()))
+        processor.process(listOf(CommitTextCommand("foo.", 4)))
+        processor.process(listOf(CommitTextCommand("foo.b", 5)))
+
+        assertEquals(listOf("cp:102", "cp:111", "cp:111", "cp:46", "cp:98"), terminal.events)
+    }
+
+    // The IME commits the word and the period as separate commits; the period continues
+    // the tracked word so the cross-punctuation re-composition still diffs to "b".
+    @Test
+    fun separatePeriodCommitStillRecomposesOnlyTheSuffix() {
+        processor.process(listOf(SetComposingTextCommand("foo", 1)))
+        processor.process(listOf(CommitTextCommand("foo", 3)))
+        processor.process(listOf(CommitTextCommand(".", 1)))
+        processor.process(listOf(SetComposingTextCommand("foo.b", 5)))
+
+        assertEquals(listOf("cp:102", "cp:111", "cp:111", "cp:46", "cp:98"), terminal.events)
+    }
+
+    // After the period commit the IME syncs the selection to the end of the committed
+    // text; the sync must not move the terminal cursor nor clear the tracked word.
+    @Test
+    fun selectionSyncAfterPeriodCommitDoesNotBreakRecomposition() {
+        processor.process(listOf(SetComposingTextCommand("foo", 1)))
+        processor.process(listOf(CommitTextCommand("foo.", 4)))
+        processor.process(listOf(SetSelectionCommand(4, 4)))
+        processor.process(listOf(SetComposingTextCommand("foo.b", 5)))
+
+        assertEquals(listOf("cp:102", "cp:111", "cp:111", "cp:46", "cp:98"), terminal.events)
+    }
+
+    // Full Gboard reproduction: word commit, selection sync, separate period commit,
+    // selection sync, then the next character re-composes the region.
+    @Test
+    fun separatePeriodCommitWithSelectionSyncsRecomposesOnlyTheSuffix() {
+        processor.process(listOf(SetComposingTextCommand("foo", 1)))
+        processor.process(listOf(CommitTextCommand("foo", 3)))
+        processor.process(listOf(SetSelectionCommand(3, 3)))
+        processor.process(listOf(CommitTextCommand(".", 1)))
+        processor.process(listOf(SetSelectionCommand(4, 4)))
+        processor.process(listOf(SetComposingTextCommand("foo.b", 5)))
+
+        assertEquals(listOf("cp:102", "cp:111", "cp:111", "cp:46", "cp:98"), terminal.events)
+    }
+
+    // Spacebar swipe during composition re-sends the same text; nothing reaches the
+    // terminal twice.
+    @Test
+    fun spacebarSwipeDuringCompositionIsNoopForSameText() {
+        processor.process(listOf(SetComposingTextCommand("foo", 1)))
+        processor.process(listOf(SetSelectionCommand(0, 0)))
+        processor.process(listOf(SetComposingTextCommand("foo", 1)))
+
+        assertEquals(listOf("cp:102", "cp:111", "cp:111", "move:-3"), terminal.events)
+    }
+
+    // Spacebar swipe after commit: the sync to the word end is a no-op, then the swipe
+    // moves the cursor back over the word.
+    @Test
+    fun spacebarSwipeAfterCommitMovesCursorBackOverWord() {
+        processor.process(listOf(SetComposingTextCommand("foo", 1)))
+        processor.process(listOf(CommitTextCommand("foo", 3)))
+        processor.process(listOf(SetSelectionCommand(3, 3)))
+        processor.process(listOf(SetSelectionCommand(0, 0)))
+
+        assertEquals(listOf("cp:102", "cp:111", "cp:111", "move:-3"), terminal.events)
+    }
+
+    // A real backspace during composition removes exactly one code point.
+    @Test
+    fun backspaceDuringCompositionDeletesSingleCodePoint() {
+        processor.process(listOf(SetComposingTextCommand("foo", 1)))
+        processor.process(listOf(SetComposingTextCommand("fo", 2)))
+
+        assertEquals(listOf("cp:102", "cp:111", "cp:111", "del"), terminal.events)
+    }
+
+    // The first Enter after a committed word must not become the tracked word, or the
+    // second Enter would be swallowed as a re-commit of "\n" with an empty delta.
+    @Test
+    fun enterAfterCommittedWordWorksEveryTime() {
+        processor.process(listOf(SetComposingTextCommand("foo", 1)))
+        processor.process(listOf(CommitTextCommand("foo.", 4)))
+        processor.process(listOf(CommitTextCommand("\n", 1)))
+        processor.process(listOf(CommitTextCommand("\n", 1)))
+
+        assertEquals(listOf("cp:102", "cp:111", "cp:111", "cp:46", "cp:13", "cp:13"), terminal.events)
+    }
+
+    // Consecutive Enters with nothing else typed are all delivered.
+    @Test
+    fun consecutiveEntersAllReachTerminal() {
+        processor.process(listOf(CommitTextCommand("\n", 1)))
+        processor.process(listOf(CommitTextCommand("\n", 1)))
+        processor.process(listOf(CommitTextCommand("\n", 1)))
+
+        assertEquals(listOf("cp:13", "cp:13", "cp:13"), terminal.events)
     }
 
     private fun commit(text: String) {

@@ -652,7 +652,6 @@ fun TerminalCanvas(
                                                             val targetTopRow = -(transcriptRows * ratio).toInt()
                                                                 .coerceIn(-transcriptRows, 0)
                                                             inputView.setTopRow(targetTopRow)
-                                                            session.setGhosttyTopRow(targetTopRow)
                                                             inputView.invalidate()
                                                         }
                                                     }

@@ -1715,8 +1715,11 @@ public class TerminalView extends View {
         return mTopRow;
     }
 
-    public void setTopRow(int mTopRow) {
-        this.mTopRow = mTopRow;
+    public void setTopRow(int topRow) {
+        mTopRow = topRow;
+        if (hasActiveTerminalBackend()) {
+            mTermSession.setGhosttyTopRow(topRow);
+        }
     }
 
 

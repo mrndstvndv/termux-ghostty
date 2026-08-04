@@ -7,7 +7,10 @@ const c = @cImport({
     @cInclude("unistd.h");
     @cInclude("poll.h");
     @cInclude("fcntl.h");
+    @cInclude("netinet/in.h");
+    @cInclude("netinet/tcp.h");
     @cInclude("pthread.h");
+    @cInclude("sys/socket.h");
 });
 
 pub const SshNativeSession = struct {
@@ -15,6 +18,8 @@ pub const SshNativeSession = struct {
     // Scudo's strict chunk-header validation is incompatible with the reallocation
     // patterns from Zig ArrayLists combined with libssh2's own malloc usage.
     const queue_allocator = std.heap.page_allocator;
+    const socket_poll_timeout_ms: c_int = 1000;
+    const keepalive_interval_seconds: c_uint = 10;
 
     allocator: std.mem.Allocator,
     session: *c.LIBSSH2_SESSION,
@@ -107,6 +112,35 @@ pub const SshNativeSession = struct {
         result: isize = -1,
     };
 
+    fn setSocketOption(socket_fd: c_int, level: c_int, option: c_int, value: c_int) void {
+        var option_value = value;
+        _ = c.setsockopt(
+            socket_fd,
+            level,
+            option,
+            &option_value,
+            @intCast(@sizeOf(c_int)),
+        );
+    }
+
+    fn configureSocketLiveness(socket_fd: c_int) void {
+        setSocketOption(socket_fd, c.SOL_SOCKET, c.SO_KEEPALIVE, 1);
+
+        if (@hasDecl(c, "TCP_KEEPIDLE")) {
+            setSocketOption(socket_fd, c.IPPROTO_TCP, c.TCP_KEEPIDLE, 15);
+        }
+        if (@hasDecl(c, "TCP_KEEPINTVL")) {
+            setSocketOption(socket_fd, c.IPPROTO_TCP, c.TCP_KEEPINTVL, 5);
+        }
+        if (@hasDecl(c, "TCP_KEEPCNT")) {
+            setSocketOption(socket_fd, c.IPPROTO_TCP, c.TCP_KEEPCNT, 3);
+        }
+        if (@hasDecl(c, "TCP_USER_TIMEOUT")) {
+            // Bound unacknowledged SSH keepalives on platforms that expose it.
+            setSocketOption(socket_fd, c.IPPROTO_TCP, c.TCP_USER_TIMEOUT, 20_000);
+        }
+    }
+
     pub fn init(
         allocator: std.mem.Allocator,
         socket_fd: c_int,
@@ -129,6 +163,7 @@ pub const SshNativeSession = struct {
 
         const flags = c.fcntl(socket_fd, c.F_GETFL, @as(c_int, 0));
         _ = c.fcntl(socket_fd, c.F_SETFL, flags | c.O_NONBLOCK);
+        configureSocketLiveness(socket_fd);
 
         while (true) {
             const rc = c.libssh2_session_handshake(session, socket_fd);
@@ -234,6 +269,9 @@ pub const SshNativeSession = struct {
             }
             return error.ShellStartFailed;
         }
+
+        // Keep idle sessions from surviving a dead Wi-Fi link indefinitely.
+        c.libssh2_keepalive_config(session, 1, keepalive_interval_seconds);
 
         var wake_p: [2]c_int = undefined;
         if (c.pipe(&wake_p) != 0) return error.PipeFailed;
@@ -415,7 +453,17 @@ pub const SshNativeSession = struct {
         const directions = c.libssh2_session_block_directions(session);
         if ((directions & c.LIBSSH2_SESSION_BLOCK_INBOUND) != 0) fds[0].events |= c.POLLIN;
         if ((directions & c.LIBSSH2_SESSION_BLOCK_OUTBOUND) != 0) fds[0].events |= c.POLLOUT;
-        _ = c.poll(&fds, 1, 50);
+
+        const poll_result = c.poll(&fds, 1, socket_poll_timeout_ms);
+        if (poll_result < 0) return error.SocketPollFailed;
+        if ((fds[0].revents & (c.POLLERR | c.POLLHUP | c.POLLNVAL)) != 0) {
+            return error.SocketClosed;
+        }
+
+        var seconds_to_next: c_int = 0;
+        if (c.libssh2_keepalive_send(session, &seconds_to_next) != 0) {
+            return error.SocketClosed;
+        }
     }
 
     fn runLoop(self: *SshNativeSession) void {
@@ -445,12 +493,22 @@ pub const SshNativeSession = struct {
         };
 
         while (self.running.load(.acquire)) {
+            var seconds_to_next: c_int = 0;
+            if (c.libssh2_keepalive_send(self.session, &seconds_to_next) != 0) {
+                self.running.store(false, .release);
+                break;
+            }
+
             fds[0].events = c.POLLIN;
             const directions = c.libssh2_session_block_directions(self.session);
             if ((directions & c.LIBSSH2_SESSION_BLOCK_OUTBOUND) != 0) fds[0].events |= c.POLLOUT;
 
-            const poll_result = c.poll(&fds, 2, -1);
-            if (poll_result < 0) continue;
+            const poll_result = c.poll(&fds, 2, socket_poll_timeout_ms);
+            if (poll_result < 0) {
+                self.running.store(false, .release);
+                break;
+            }
+            if (poll_result == 0) continue;
 
             if ((fds[1].revents & c.POLLIN) != 0) {
                 var dummy: [128]u8 = undefined;
@@ -458,9 +516,13 @@ pub const SshNativeSession = struct {
                 self.processCommands();
             }
 
-            if ((fds[0].revents & (c.POLLIN | c.POLLOUT | c.POLLERR | c.POLLHUP)) != 0) {
+            const socket_events = fds[0].revents;
+            if ((socket_events & (c.POLLIN | c.POLLOUT | c.POLLERR | c.POLLHUP | c.POLLNVAL)) != 0) {
                 self.processRead(jni_env);
                 self.processCommands();
+                if ((socket_events & (c.POLLERR | c.POLLHUP | c.POLLNVAL)) != 0) {
+                    self.running.store(false, .release);
+                }
             }
         }
 

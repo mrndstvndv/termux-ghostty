@@ -14,9 +14,6 @@ import com.mrndtvndv.term.service.SshSessionService
 import com.termux.shared.termux.TermuxConstants
 import com.termux.shared.termux.terminal.TermuxTerminalSessionClientBase
 import com.termux.terminal.TerminalSession
-import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.SharedFlow
-import kotlinx.coroutines.flow.asSharedFlow
 import java.lang.ref.WeakReference
 
 /**
@@ -48,9 +45,9 @@ class AppSessionManager private constructor(context: Context) {
     private val serverManager by lazy { ServerManager(serverFactory) }
     val coordinator by lazy { ServerCoordinator(serverManager, serverRepository) }
 
-    private val _sessionFinished = MutableSharedFlow<String>()
+    private val finishedSessions = SessionFinishedEvents()
     /** Emits a server id whenever one of its sessions finished on its own. */
-    val sessionFinished: SharedFlow<String> = _sessionFinished.asSharedFlow()
+    val sessionFinished = finishedSessions.flow
 
     private var hostRef: WeakReference<SessionHost>? = null
 
@@ -71,7 +68,7 @@ class AppSessionManager private constructor(context: Context) {
 
     private fun onServerSessionFinished(serverId: String) {
         coordinator.disconnect(serverId)
-        _sessionFinished.tryEmit(serverId)
+        finishedSessions.emit(serverId)
     }
 
     // ── Terminal protocol notifications ──────────────────────────────

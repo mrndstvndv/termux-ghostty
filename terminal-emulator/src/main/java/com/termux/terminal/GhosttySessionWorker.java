@@ -109,17 +109,30 @@ final class GhosttySessionWorker extends Thread {
 
     void setSshSession(long sshSessionHandle) {
         mSshSessionHandle = sshSessionHandle;
-        if (sshSessionHandle != 0L && mWorkerHandler != null) {
-            GhosttyNative.nativeSshSetOutputCallback(sshSessionHandle, this);
-        }
-    }
-
-    private void registerSshOutputCallback() {
-        if (mSshSessionHandle == 0L) {
+        if (sshSessionHandle == 0L || mWorkerHandler == null) {
             return;
         }
 
-        GhosttyNative.nativeSshSetOutputCallback(mSshSessionHandle, this);
+        GhosttyNative.nativeSshSetOutputCallback(sshSessionHandle, this);
+        finishIfSshStopped(sshSessionHandle);
+    }
+
+    private void registerSshOutputCallback() {
+        long sshSessionHandle = mSshSessionHandle;
+        if (sshSessionHandle == 0L) {
+            return;
+        }
+
+        GhosttyNative.nativeSshSetOutputCallback(sshSessionHandle, this);
+        finishIfSshStopped(sshSessionHandle);
+    }
+
+    private void finishIfSshStopped(long sshSessionHandle) {
+        if (GhosttyNative.nativeSshIsRunning(sshSessionHandle)) {
+            return;
+        }
+
+        mMainThreadHandler.post(mSession::finishIfRunning);
     }
  
     @Override
@@ -180,7 +193,17 @@ final class GhosttySessionWorker extends Thread {
 
     void shutdown() {
         mSshSessionHandle = 0L;
-        getWorkerHandler().sendEmptyMessage(MSG_SHUTDOWN);
+        Handler workerHandler = getWorkerHandler();
+        workerHandler.sendMessageAtFrontOfQueue(workerHandler.obtainMessage(MSG_SHUTDOWN));
+        if (Thread.currentThread() == this) {
+            return;
+        }
+
+        try {
+            join();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     void appendDirect(byte[] data) {

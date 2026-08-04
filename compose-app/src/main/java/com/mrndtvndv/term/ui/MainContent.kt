@@ -101,6 +101,7 @@ fun MainContent(
     LaunchedEffect(uiState.screen) {
         when (uiState.screen) {
             is ScreenState.ServerList -> {
+                onCloseFile()
                 if (navigator.backStack.lastOrNull() !is AppNavKey.ServerList) {
                     navigator.goBackToRoot()
                 }
@@ -332,7 +333,8 @@ fun MainContent(
                                         modifier = Modifier.fillMaxSize(),
                                     )
                                 } else {
-                                    // Connection not ready yet
+                                    // A dead session can be removed before the finish event is collected.
+                                    SideEffect { viewModel.navigateBack() }
                                     Box(modifier = Modifier.fillMaxSize()) {
                                         androidx.compose.material3.CircularProgressIndicator(
                                             modifier = Modifier.align(Alignment.Center)

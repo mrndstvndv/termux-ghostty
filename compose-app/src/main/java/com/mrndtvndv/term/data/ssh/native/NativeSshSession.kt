@@ -20,6 +20,7 @@ class NativeSshSession : SshSession {
     private var config: SshConfig? = null
     private var auth: SshAuth? = null
     private var socket: Socket? = null
+    @Volatile
     var nativeSessionHandle: Long = 0L
         private set
 
@@ -115,14 +116,32 @@ class NativeSshSession : SshSession {
         }
     }
 
+    internal fun writeToShell(data: ByteArray, offset: Int, length: Int) {
+        synchronized(lock) {
+            val handle = nativeSessionHandle
+            if (handle != 0L) {
+                GhosttyNative.nativeSshWrite(handle, data, offset, length)
+            }
+        }
+    }
+
+    internal fun resizeShell(cols: Int, rows: Int) {
+        synchronized(lock) {
+            val handle = nativeSessionHandle
+            if (handle != 0L) {
+                GhosttyNative.nativeSshResize(handle, cols, rows)
+            }
+        }
+    }
+
     override fun disconnect() {
         synchronized(lock) {
             activeSftpClient?.close()
             activeSftpClient = null
             val handle = nativeSessionHandle
+            nativeSessionHandle = 0L
             if (handle != 0L) {
                 GhosttyNative.nativeSshDeinit(handle)
-                nativeSessionHandle = 0L
             }
         }
         try {
@@ -145,18 +164,12 @@ class NativeSshShellChannel(private val session: NativeSshSession) : SshShellCha
         }
 
         override fun write(b: ByteArray, off: Int, len: Int) {
-            val handle = session.nativeSessionHandle
-            if (handle != 0L) {
-                GhosttyNative.nativeSshWrite(handle, b, off, len)
-            }
+            session.writeToShell(b, off, len)
         }
     }
 
     override fun resizeWindow(cols: Int, rows: Int, widthPx: Int, heightPx: Int) {
-        val handle = session.nativeSessionHandle
-        if (handle != 0L) {
-            GhosttyNative.nativeSshResize(handle, cols, rows)
-        }
+        session.resizeShell(cols, rows)
     }
 
     override fun close() {

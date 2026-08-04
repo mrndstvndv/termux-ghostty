@@ -75,6 +75,7 @@ class MainViewModel(
     private fun observeSessionFinishes() {
         viewModelScope.launch {
             sessionManager.sessionFinished.collect { serverId ->
+                if (coordinator.getServer(serverId) != null) return@collect
                 _activeIds.value = _activeIds.value - serverId
                 val screen = _uiState.value.screen
                 if (screen is ScreenState.TerminalWorkspace && screen.serverId == serverId) {

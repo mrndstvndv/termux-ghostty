@@ -119,6 +119,9 @@ public final class TerminalSession extends TerminalOutput {
     @Nullable
     private String mTitle;
 
+    /** True after an explicit finish request has started. Access under this object's monitor. */
+    private boolean mFinishRequested;
+
     private static final String LOG_TAG = "TerminalSession";
 
     public TerminalSession(String shellPath, String cwd, String[] args, String[] env, Integer transcriptRows, TerminalSessionClient client) {
@@ -273,6 +276,9 @@ public final class TerminalSession extends TerminalOutput {
             mGhosttyCursorCol = mGhosttyTerminalContent.getCursorCol();
             mGhosttyCursorStyle = mGhosttyTerminalContent.getCursorStyle();
             mGhosttySessionWorker = new GhosttySessionWorker(this, mGhosttyTerminalContent, mProcessToTerminalIOQueue, mMainThreadHandler, cellWidthPixels, cellHeightPixels);
+            if (mIsCustomIO) {
+                mShellPid = 1; // Dummy positive PID to pass isRunning() check
+            }
             if (mSshSessionHandle != 0L) {
                 mGhosttySessionWorker.setSshSession(mSshSessionHandle);
             }
@@ -295,7 +301,6 @@ public final class TerminalSession extends TerminalOutput {
         }
 
         if (mIsCustomIO) {
-            mShellPid = 1; // Dummy positive PID to pass isRunning() check
             if (mIoHandler != null) {
                 mIoHandler.onResize(columns, rows, cellWidthPixels, cellHeightPixels);
             }
@@ -585,7 +590,12 @@ public final class TerminalSession extends TerminalOutput {
 
     /** Finish this terminal session by sending SIGKILL to the shell. */
     public void finishIfRunning() {
-        if (isRunning()) {
+        synchronized (this) {
+            if (mShellPid == -1 || mFinishRequested) {
+                return;
+            }
+            mFinishRequested = true;
+
             if (mIsCustomIO) {
                 cleanupResources(0);
                 mMainThreadHandler.post(new Runnable() {

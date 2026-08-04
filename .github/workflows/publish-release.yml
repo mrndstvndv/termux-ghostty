@@ -138,11 +138,12 @@ jobs:
           fi
 
           if [ "${{ needs.changelog.outputs.build_compose }}" == "true" ]; then
-            echo "Building compose-app APK"
-            if ! nix develop --command ./gradlew :compose-app:assembleRelease --no-daemon; then
+            echo "Building compose-app APKs (universal + arm64-v8a)"
+            if ! nix develop --command ./gradlew :compose-app:assembleUniversalRelease :compose-app:assembleArm64Release --no-daemon; then
               exit_on_error "Build failed for compose-app '${{ matrix.package_variant }}' release."
             fi
-            cp ./compose-app/build/outputs/apk/release/*.apk output_apks/ 2>/dev/null || true
+            cp ./compose-app/build/outputs/apk/universal/release/*.apk output_apks/ 2>/dev/null || true
+            cp ./compose-app/build/outputs/apk/arm64/release/*.apk output_apks/ 2>/dev/null || true
           fi
 
       - name: Upload APKs

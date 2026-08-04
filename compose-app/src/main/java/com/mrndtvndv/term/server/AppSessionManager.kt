@@ -76,12 +76,12 @@ class AppSessionManager private constructor(context: Context) {
 
     // ── Terminal protocol notifications ──────────────────────────────
 
-    fun handleTerminalNotification(title: String?, body: String?) {
+    fun handleTerminalNotification(title: String?, body: String?, serverId: String? = null) {
         val host = hostRef?.get()
         if (host != null && host.isAtLeast(Lifecycle.State.RESUMED)) {
-            host.showInAppNotification(title, body)
+            host.showInAppNotification(title, body, serverId)
         } else {
-            showSystemNotification(title, body)
+            showSystemNotification(title, body, serverId)
         }
     }
 
@@ -95,7 +95,7 @@ class AppSessionManager private constructor(context: Context) {
         return id
     }
 
-    private fun showSystemNotification(title: String?, body: String?) {
+    private fun showSystemNotification(title: String?, body: String?, serverId: String?) {
         val notificationManager =
             com.termux.shared.notification.NotificationUtils.getNotificationManager(appContext) ?: return
 
@@ -113,6 +113,10 @@ class AppSessionManager private constructor(context: Context) {
 
         val intent = Intent(appContext, com.mrndtvndv.term.MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            putExtra(EXTRA_NOTIFICATION_BODY, normalizedBody)
+            if (serverId != null) {
+                putExtra(EXTRA_NOTIFICATION_SERVER_ID, serverId)
+            }
         }
         val contentIntent = PendingIntent.getActivity(
             appContext,
@@ -214,7 +218,8 @@ class AppSessionManager private constructor(context: Context) {
                 title: String?,
                 body: String?,
             ) {
-                handleTerminalNotification(title, body)
+                val serverId = serverManager.serverIdForSession(session)
+                handleTerminalNotification(title, body, serverId)
             }
 
             override fun onSessionFinished(finishedSession: TerminalSession) {
@@ -224,6 +229,11 @@ class AppSessionManager private constructor(context: Context) {
     }
 
     companion object {
+        /** Intent extra: originating server id for a tapped terminal notification. */
+        const val EXTRA_NOTIFICATION_SERVER_ID = "termux.terminal.notification.server_id"
+        /** Intent extra: notification body, so the tap handler can re-parse the focus target. */
+        const val EXTRA_NOTIFICATION_BODY = "termux.terminal.notification.body"
+
         @Volatile
         private var instance: AppSessionManager? = null
 

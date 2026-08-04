@@ -18,5 +18,5 @@ interface SessionHost {
 
     fun isAtLeast(state: Lifecycle.State): Boolean
 
-    fun showInAppNotification(title: String?, body: String?)
+    fun showInAppNotification(title: String?, body: String?, serverId: String? = null)
 }

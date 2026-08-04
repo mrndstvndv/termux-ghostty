@@ -71,8 +71,8 @@ class MainActivity : ComponentActivity(), SessionHost {
     override fun isAtLeast(state: Lifecycle.State): Boolean =
         lifecycle.currentState.isAtLeast(state)
 
-    override fun showInAppNotification(title: String?, body: String?) {
-        notificationState.post(title, body)
+    override fun showInAppNotification(title: String?, body: String?, serverId: String?) {
+        notificationState.post(title, body, serverId)
     }
 
     // ── Activity lifecycle ───────────────────────────────────────────
@@ -173,11 +173,26 @@ class MainActivity : ComponentActivity(), SessionHost {
                 fontFileExists = { File(filesDir, "font.ttf").exists() },
             )
         }
+
+        handleNotificationTap(intent)
     }
 
     override fun onDestroy() {
         sessionManager.setHost(null)
         super.onDestroy()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleNotificationTap(intent)
+    }
+
+    private fun handleNotificationTap(intent: Intent?) {
+        val serverId = intent?.getStringExtra(AppSessionManager.EXTRA_NOTIFICATION_SERVER_ID) ?: return
+        intent.removeExtra(AppSessionManager.EXTRA_NOTIFICATION_SERVER_ID)
+        val body = intent.getStringExtra(AppSessionManager.EXTRA_NOTIFICATION_BODY)
+        viewModel.focusHerdrNotification(serverId, body)
     }
 
     override fun onCreateContextMenu(

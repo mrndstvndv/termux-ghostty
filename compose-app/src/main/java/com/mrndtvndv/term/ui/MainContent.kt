@@ -365,6 +365,12 @@ fun MainContent(
                 InAppNotificationBanner(
                     activeNotification = notification,
                     onDismiss = { viewModel.notificationState.dismiss() },
+                    onClick = {
+                        notification?.let {
+                            viewModel.focusHerdrNotification(it.serverId, it.body)
+                        }
+                        viewModel.notificationState.dismiss()
+                    },
                     modifier = Modifier.align(Alignment.TopCenter),
                 )
             }

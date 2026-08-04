@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.mrndtvndv.term.data.prefs.LastSessionStore
 import com.mrndtvndv.term.domain.ServerConfig
 import com.mrndtvndv.term.server.AppSessionManager
+import com.mrndtvndv.term.server.HerdrWorkspaceResolver
 import com.mrndtvndv.term.server.Server
 import com.mrndtvndv.term.server.ServerCoordinator
 import com.mrndtvndv.term.server.ServerRepository
@@ -123,6 +124,21 @@ class MainViewModel(
     }
 
     fun getServer(serverId: String): Server? = coordinator.getServer(serverId)
+
+    /**
+     * Handle a tapped terminal notification: focus the herdr workspace (and tab,
+     * when identifiable) that produced it, using the notification body as the
+     * target. No-op when the server is gone or the body isn't a herdr context.
+     */
+    fun focusHerdrNotification(serverId: String?, body: String?) {
+        val server = serverId?.let { coordinator.getServer(it) } ?: return
+        val sshSession = server.sshSession ?: return
+        viewModelScope.launch {
+            val resolver = HerdrWorkspaceResolver { cmd -> sshSession.execCommand(cmd) }
+            resolver.focusFromBody(body)
+        }
+    }
+
     fun getSftpViewModel(serverId: String): SftpViewModel? = coordinator.getSftpViewModel(serverId)
     fun getReviewViewModel(serverId: String): ReviewViewModel? = coordinator.getReviewViewModel(serverId)
 

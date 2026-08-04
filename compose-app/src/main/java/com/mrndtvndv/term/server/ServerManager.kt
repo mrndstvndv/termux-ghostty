@@ -1,6 +1,7 @@
 package com.mrndtvndv.term.server
 
 import com.mrndtvndv.term.domain.ServerConfig
+import com.termux.terminal.TerminalSession
 
 /**
  * Owns all active (connected) Server instances.
@@ -17,6 +18,10 @@ class ServerManager(
     fun get(id: String): Server? = activeServers[id]
 
     fun isConnected(id: String): Boolean = activeServers.containsKey(id)
+
+    /** Find the id of the server whose terminal session matches [session]. */
+    fun serverIdForSession(session: TerminalSession): String? =
+        activeServers.entries.firstOrNull { it.value.terminalSession === session }?.key
 
     /**
      * Connect to a server. If already connected, returns existing instance.

@@ -24,11 +24,8 @@ import com.mrndtvndv.term.ui.prefs.UserPrefs
 import com.mrndtvndv.term.ui.MainContent
 import com.termux.shared.interact.ShareUtils
 import com.termux.view.TerminalView
-import org.bouncycastle.jce.provider.BouncyCastleProvider
-import org.conscrypt.Conscrypt
 import androidx.core.content.FileProvider
 import java.io.File
-import java.security.Security
 
 class MainActivity : ComponentActivity(), SessionHost {
 
@@ -98,10 +95,6 @@ class MainActivity : ComponentActivity(), SessionHost {
         }
 
         userPrefs.init(sharedPreferences)
-
-        Security.removeProvider("BC")
-        Security.insertProviderAt(BouncyCastleProvider(), 1)
-        Security.insertProviderAt(Conscrypt.newProvider(), 2)
 
         setContent {
             val uiState by viewModel.uiState

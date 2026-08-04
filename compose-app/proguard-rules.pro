@@ -9,14 +9,6 @@
     public void onNativeSshClosed();
 }
 
-# Bouncy Castle cryptography keep rules
--keep class org.bouncycastle.** { *; }
--dontwarn org.bouncycastle.**
-
-
-
 # Prevent warnings for optional security/crypto providers
--dontwarn org.conscrypt.**
 -dontwarn org.openjsse.**
--dontwarn org.bouncycastle.jsse.**
 -dontwarn sun.security.x509.X509Key

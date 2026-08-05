@@ -76,5 +76,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ecto_${{ steps.variant_tag.outputs.value }}_debug
-          path: compose-app/build/outputs/apk/debug/*.apk
+          path: compose-app/build/outputs/apk/*/debug/*.apk
           retention-days: 14

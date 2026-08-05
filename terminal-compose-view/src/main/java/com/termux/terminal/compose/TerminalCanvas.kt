@@ -47,7 +47,9 @@ import com.termux.terminal.compose.internal.TerminalSelectionState
 import com.termux.terminal.compose.internal.rememberImeHost
 import com.termux.terminal.compose.internal.rememberSelectionHandleColor
 import com.termux.terminal.compose.internal.terminalGestures
+import com.termux.terminal.compose.internal.selectionMagnifierSource
 import com.termux.terminal.compose.internal.terminalImeHost
+import com.termux.terminal.compose.internal.terminalSelectionMagnifier
 import com.termux.terminal.compose.internal.terminalTaps
 import com.termux.terminal.compose.internal.updateSelectionHandle
 
@@ -140,6 +142,8 @@ private fun TerminalCanvasLayout(
     onViewportSizeChanged: (IntSize) -> Unit,
     onCanvasPositionChanged: (Offset) -> Unit
 ) {
+    var magnifierSource by remember { mutableStateOf(Offset.Unspecified) }
+
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -150,6 +154,7 @@ private fun TerminalCanvasLayout(
             .focusRequester(state.focusRequester)
             .focusTarget()
             .terminalKeyHandling(state.translator, state.selectionState)
+            .terminalSelectionMagnifier { magnifierSource }
     ) {
         Canvas(
             modifier = Modifier
@@ -193,12 +198,15 @@ private fun TerminalCanvasLayout(
                 )
             }
         }
-        TerminalSelectionUi(state)
+        TerminalSelectionUi(state) { magnifierSource = it }
     }
 }
 
 @Composable
-private fun TerminalSelectionUi(state: TerminalCanvasState) {
+private fun TerminalSelectionUi(
+    state: TerminalCanvasState,
+    onMagnifierSourceChanged: (Offset) -> Unit
+) {
     val hostView = LocalView.current
     val selection = state.selectionState.selection
     val currentFrame = remember(state.controller, state.contentVersion, selection) {
@@ -234,9 +242,16 @@ private fun TerminalSelectionUi(state: TerminalCanvasState) {
         frame = currentFrame,
         metrics = state.metrics,
         configuredColor = selectionHandleColor,
-        onHandleDragStart = { selectionActionMode.hideForHandleDrag() },
-        onHandleDragEnd = { selectionActionMode.showAfterHandleDrag() },
+        onHandleDragStart = {
+            onMagnifierSourceChanged(Offset.Unspecified)
+            selectionActionMode.hideForHandleDrag()
+        },
+        onHandleDragEnd = {
+            onMagnifierSourceChanged(Offset.Unspecified)
+            selectionActionMode.showAfterHandleDrag()
+        },
         onHandleDrag = { endpoint, x, y ->
+            onMagnifierSourceChanged(selectionMagnifierSource(endpoint, Offset(x, y), state.metrics))
             updateSelectionHandle(
                 endpoint = endpoint,
                 x = x,

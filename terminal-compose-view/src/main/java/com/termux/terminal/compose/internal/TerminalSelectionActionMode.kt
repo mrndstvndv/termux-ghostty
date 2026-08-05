@@ -32,12 +32,17 @@ internal class TerminalSelectionActionMode(
     private var config = TerminalCanvasConfig()
     private var clearSelection: (() -> Unit)? = null
     private var disposed = false
+    private var isHandleDragging = false
 
     private val handler = Handler(Looper.getMainLooper())
-    private val showToolbar = Runnable { actionMode?.hide(0) }
+    private val showToolbar = Runnable {
+        if (!isHandleDragging) actionMode?.hide(0)
+    }
+    private val keepToolbarHidden = Runnable { maintainToolbarHidden() }
 
     private val callback = object : ActionMode.Callback2() {
         override fun onCreateActionMode(mode: ActionMode, menu: Menu): Boolean {
+            if (isHandleDragging) return false
             val showAsAction = MenuItem.SHOW_AS_ACTION_IF_ROOM or
                 MenuItem.SHOW_AS_ACTION_WITH_TEXT
             menu.add(Menu.NONE, ACTION_COPY, Menu.NONE, android.R.string.copy)
@@ -127,6 +132,10 @@ internal class TerminalSelectionActionMode(
             finishActionMode()
             return
         }
+        if (isHandleDragging) {
+            hideToolbarForHandleDrag()
+            return
+        }
 
         if (actionMode == null) {
             actionMode = try {
@@ -140,11 +149,14 @@ internal class TerminalSelectionActionMode(
     }
 
     fun hideForHandleDrag() {
+        isHandleDragging = true
         handler.removeCallbacks(showToolbar)
-        actionMode?.hide(-1)
+        hideToolbarForHandleDrag()
     }
 
     fun showAfterHandleDrag() {
+        isHandleDragging = false
+        handler.removeCallbacks(keepToolbarHidden)
         if (actionMode == null) return
         handler.removeCallbacks(showToolbar)
         handler.postDelayed(showToolbar, ViewConfiguration.getDoubleTapTimeout().toLong())
@@ -153,7 +165,9 @@ internal class TerminalSelectionActionMode(
     fun dispose() {
         if (disposed) return
         disposed = true
+        isHandleDragging = false
         handler.removeCallbacks(showToolbar)
+        handler.removeCallbacks(keepToolbarHidden)
         finishActionMode()
         clearSelection = null
         frame = null
@@ -166,7 +180,20 @@ internal class TerminalSelectionActionMode(
         clearSelection?.invoke()
     }
 
+    private fun hideToolbarForHandleDrag() {
+        val mode = actionMode ?: return
+        mode.hide(HANDLE_DRAG_HIDE_DURATION_MILLIS)
+        handler.removeCallbacks(keepToolbarHidden)
+        handler.postDelayed(keepToolbarHidden, HANDLE_DRAG_HIDE_REFRESH_MILLIS)
+    }
+
+    private fun maintainToolbarHidden() {
+        if (!isHandleDragging) return
+        hideToolbarForHandleDrag()
+    }
+
     private fun finishActionMode() {
+        handler.removeCallbacks(keepToolbarHidden)
         val mode = actionMode ?: return
         actionMode = null
         mode.finish()
@@ -186,6 +213,8 @@ internal class TerminalSelectionActionMode(
         const val ACTION_COPY = 1
         const val ACTION_PASTE = 2
         const val ACTION_MORE = 3
+        const val HANDLE_DRAG_HIDE_DURATION_MILLIS = 3_000L
+        const val HANDLE_DRAG_HIDE_REFRESH_MILLIS = 250L
     }
 }
 

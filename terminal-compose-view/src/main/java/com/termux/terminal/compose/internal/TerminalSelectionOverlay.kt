@@ -233,7 +233,7 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawSelectionHandle
     )
 }
 
-private data class SelectionHandlePosition(
+internal data class SelectionHandlePosition(
     val anchorX: Float,
     val anchorY: Float,
     val touchLeft: Float,
@@ -245,7 +245,7 @@ private data class SelectionHandlePosition(
 private fun SelectionHandlePosition.handleOffset(): Offset =
     Offset(touchLeft.roundToInt().toFloat(), anchorY.roundToInt().toFloat())
 
-private fun selectionHandlePosition(
+internal fun selectionHandlePosition(
     selection: TerminalSelection,
     frame: TerminalFrame,
     metrics: TerminalMetrics,
@@ -260,7 +260,9 @@ private fun selectionHandlePosition(
     }
     val row = if (endpoint == SelectionHandleEndpoint.START) selection.startRow else selection.endRow
     val anchorX = metrics.columnToX(column)
-    val anchorY = metrics.rowToY(row + 1, frame.topRow)
+    val rawAnchorY = metrics.rowToY(row + 1, frame.topRow)
+    val maxAnchorY = (metrics.viewportHeightPx - touchTargetSizePx).coerceAtLeast(0f)
+    val anchorY = rawAnchorY.coerceIn(0f, maxAnchorY)
     val pointsLeft = if (endpoint == SelectionHandleEndpoint.START) {
         anchorX - visualSizePx >= 0f
     } else {
@@ -272,8 +274,7 @@ private fun selectionHandlePosition(
     } else {
         visualLeft
     }
-    val isVisible = row in frame.topRow until (frame.topRow + frame.rowsVisible) &&
-        metrics.viewportWidthPx > 0 && metrics.viewportHeightPx > 0
+    val isVisible = metrics.viewportWidthPx > 0 && metrics.viewportHeightPx > 0
     return SelectionHandlePosition(
         anchorX = anchorX,
         anchorY = anchorY,

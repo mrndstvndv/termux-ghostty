@@ -3,6 +3,7 @@ package com.termux.terminal.compose.internal
 import com.termux.terminal.compose.TerminalCellLayout
 import com.termux.terminal.compose.TerminalCursor
 import com.termux.terminal.compose.TerminalFrame
+import com.termux.terminal.compose.TerminalMetrics
 import com.termux.terminal.compose.TerminalModes
 import com.termux.terminal.compose.TerminalPalette
 import com.termux.terminal.compose.TerminalRow
@@ -42,6 +43,29 @@ class TerminalSelectionStateTest {
 
         assertEquals(Offset(100f, 110f), first)
         assertEquals(Offset(100f, 110f), second)
+    }
+
+    @Test
+    fun offscreenHandleRemainsPinnedToViewportEdge() {
+        val metrics = TerminalMetrics.of(
+            cellWidthPx = 10f,
+            cellHeightPx = 20f,
+            ascentPx = -15f,
+            lineSpacingAndAscentPx = 0f,
+            viewportWidthPx = 100,
+            viewportHeightPx = 100
+        )
+        val position = selectionHandlePosition(
+            selection = TerminalSelection(1, -1, 2, -1),
+            frame = frame(row("word", columns = 10)),
+            metrics = metrics,
+            endpoint = SelectionHandleEndpoint.START,
+            visualSizePx = 20f,
+            touchTargetSizePx = 48f
+        )
+
+        assertEquals(0f, position.anchorY, 0.001f)
+        assertEquals(true, position.isVisible)
     }
 
     @Test

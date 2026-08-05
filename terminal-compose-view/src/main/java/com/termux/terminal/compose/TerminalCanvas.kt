@@ -47,6 +47,7 @@ import com.termux.terminal.compose.internal.TerminalSelectionState
 import com.termux.terminal.compose.internal.rememberImeHost
 import com.termux.terminal.compose.internal.rememberSelectionHandleColor
 import com.termux.terminal.compose.internal.terminalGestures
+import com.termux.terminal.compose.internal.terminalImeHost
 import com.termux.terminal.compose.internal.terminalTaps
 import com.termux.terminal.compose.internal.updateSelectionHandle
 
@@ -145,6 +146,7 @@ private fun TerminalCanvasLayout(
             .preferredFrameRateOrNone(state.config)
             .onSizeChanged(onViewportSizeChanged)
             .onGloballyPositioned { onCanvasPositionChanged(it.positionInWindow()) }
+            .terminalImeHost(state.imeHost)
             .focusRequester(state.focusRequester)
             .focusTarget()
             .terminalKeyHandling(state.translator, state.selectionState)

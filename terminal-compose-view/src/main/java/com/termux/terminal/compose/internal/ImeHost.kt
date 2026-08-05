@@ -1,74 +1,211 @@
 package com.termux.terminal.compose.internal
 
+import android.text.InputType
 import android.view.KeyEvent
+import android.view.View
+import android.view.inputmethod.BaseInputConnection
+import android.view.inputmethod.EditorInfo
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
-import androidx.compose.ui.platform.LocalTextInputService
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.node.ModifierNodeElement
+import androidx.compose.ui.platform.InspectorInfo
+import androidx.compose.ui.platform.PlatformTextInputMethodRequest
+import androidx.compose.ui.platform.PlatformTextInputModifierNode
+import androidx.compose.ui.platform.establishTextInputSession
+import androidx.compose.ui.text.input.BackspaceCommand
+import androidx.compose.ui.text.input.CommitTextCommand
+import androidx.compose.ui.text.input.DeleteSurroundingTextCommand
+import androidx.compose.ui.text.input.DeleteSurroundingTextInCodePointsCommand
 import androidx.compose.ui.text.input.EditCommand
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.ImeOptions
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.TextFieldValue
-import androidx.compose.ui.text.input.TextInputService
-import androidx.compose.ui.text.input.TextInputSession
+import androidx.compose.ui.text.input.FinishComposingTextCommand
+import androidx.compose.ui.text.input.SetComposingRegionCommand
+import androidx.compose.ui.text.input.SetComposingTextCommand
+import androidx.compose.ui.text.input.SetSelectionCommand
 import com.termux.terminal.compose.TerminalCommand
 import com.termux.terminal.compose.TerminalCommandResult
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 import kotlin.math.abs
 
-/**
- * Creates the IME host for the current composition, reading the platform
- * text-input service. Deprecated platform API usage stays inside this file.
- */
 @Composable
 internal fun rememberImeHost(
     onEditCommands: (List<EditCommand>) -> Unit
 ): ImeHost {
-    val textInputService = LocalTextInputService.current
-    return remember(textInputService, onEditCommands) { ImeHost(textInputService, onEditCommands) }
+    val currentOnEditCommands = rememberUpdatedState(onEditCommands)
+    return remember { ImeHost { currentOnEditCommands.value(it) } }
 }
 
-/**
- * Hosts the soft-keyboard text-input session for the canvas.
- *
- * All deprecated platform text-input compatibility lives in this file: the
- * session starts with an empty invisible buffer, edit commands are translated
- * in order by [ImeEditCommandProcessor], and the session is closed on detach,
- * focus loss, and disposal.
- */
+/** Owns the terminal's platform text-input session. */
 internal class ImeHost(
-    private val textInputService: TextInputService?,
-    private val onEditCommands: (List<EditCommand>) -> Unit
+    internal val onEditCommands: (List<EditCommand>) -> Unit
 ) {
-    private var session: TextInputSession? = null
+    private var node: ImeHostNode? = null
 
-    val isOpen: Boolean
-        get() = session?.isOpen == true
-
-    /** Opens a fresh session (restarting any existing one) and shows the keyboard. */
     fun open() {
-        session?.dispose()
-        session = textInputService?.startInput(
-            value = TextFieldValue(""),
-            imeOptions = ImeOptions(
-                keyboardType = KeyboardType.Ascii,
-                imeAction = ImeAction.None,
-                autoCorrect = false
-            ),
-            onEditCommand = onEditCommands,
-            onImeActionPerformed = { }
-        )
-        session?.showSoftwareKeyboard()
+        node?.open()
     }
 
-    /** Shows the keyboard for the existing session, if any. */
-    fun showKeyboard() {
-        session?.showSoftwareKeyboard()
-    }
-
-    /** Closes the session; idempotent. */
     fun close() {
-        session?.dispose()
-        session = null
+        node?.close()
+    }
+
+    internal fun attach(node: ImeHostNode) {
+        this.node = node
+    }
+
+    internal fun detach(node: ImeHostNode) {
+        if (this.node === node) this.node = null
+    }
+}
+
+internal fun Modifier.terminalImeHost(imeHost: ImeHost): Modifier = then(ImeHostElement(imeHost))
+
+private data class ImeHostElement(
+    val imeHost: ImeHost
+) : ModifierNodeElement<ImeHostNode>() {
+    override fun create(): ImeHostNode = ImeHostNode(imeHost)
+
+    override fun update(node: ImeHostNode) {
+        node.updateHost(imeHost)
+    }
+
+    override fun InspectorInfo.inspectableProperties() {
+        name = "terminalImeHost"
+    }
+}
+
+internal class ImeHostNode(
+    private var imeHost: ImeHost
+) : Modifier.Node(), PlatformTextInputModifierNode {
+    private var sessionJob: Job? = null
+
+    override fun onAttach() {
+        imeHost.attach(this)
+    }
+
+    override fun onDetach() {
+        close()
+        imeHost.detach(this)
+    }
+
+    fun updateHost(nextImeHost: ImeHost) {
+        if (imeHost === nextImeHost) return
+        close()
+        if (isAttached) imeHost.detach(this)
+        imeHost = nextImeHost
+        if (isAttached) imeHost.attach(this)
+    }
+
+    fun open() {
+        sessionJob?.cancel()
+        sessionJob = coroutineScope.launch {
+            establishTextInputSession {
+                val hostView = view
+                startInputMethod(
+                    PlatformTextInputMethodRequest { editorInfo ->
+                        editorInfo.configureForTerminal()
+                        TerminalInputConnection(hostView, imeHost.onEditCommands)
+                    }
+                )
+            }
+        }
+    }
+
+    fun close() {
+        sessionJob?.cancel()
+        sessionJob = null
+    }
+}
+
+/** Input connection with the same empty, invisible buffer contract as the legacy Compose API. */
+internal class TerminalInputConnection(
+    view: View,
+    private val onEditCommands: (List<EditCommand>) -> Unit
+) : BaseInputConnection(view, true) {
+    private val pendingCommands = mutableListOf<EditCommand>()
+    private var batchDepth = 0
+    private var active = true
+
+    override fun beginBatchEdit(): Boolean {
+        if (!active) return false
+        batchDepth++
+        return true
+    }
+
+    override fun endBatchEdit(): Boolean {
+        if (!active) return false
+        if (batchDepth > 0) batchDepth--
+        flushCommands()
+        return batchDepth > 0
+    }
+
+    override fun commitText(text: CharSequence?, newCursorPosition: Int): Boolean =
+        enqueue(CommitTextCommand(text.toString(), newCursorPosition))
+
+    override fun setComposingRegion(start: Int, end: Int): Boolean =
+        enqueue(SetComposingRegionCommand(start, end))
+
+    override fun setComposingText(text: CharSequence?, newCursorPosition: Int): Boolean =
+        enqueue(SetComposingTextCommand(text.toString(), newCursorPosition))
+
+    override fun deleteSurroundingText(beforeLength: Int, afterLength: Int): Boolean =
+        enqueue(DeleteSurroundingTextCommand(beforeLength, afterLength))
+
+    override fun deleteSurroundingTextInCodePoints(beforeLength: Int, afterLength: Int): Boolean =
+        enqueue(DeleteSurroundingTextInCodePointsCommand(beforeLength, afterLength))
+
+    override fun setSelection(start: Int, end: Int): Boolean = enqueue(SetSelectionCommand(start, end))
+
+    override fun finishComposingText(): Boolean = enqueue(FinishComposingTextCommand())
+
+    override fun sendKeyEvent(event: KeyEvent): Boolean {
+        if (!active) return false
+        if (event.action != KeyEvent.ACTION_DOWN) return true
+        return enqueueKeyEvent(event)
+    }
+
+    override fun closeConnection() {
+        active = false
+        pendingCommands.clear()
+        batchDepth = 0
+        super.closeConnection()
+    }
+
+    private fun enqueueKeyEvent(event: KeyEvent): Boolean {
+        val command = event.toEditCommand() ?: return super.sendKeyEvent(event)
+        return enqueue(command)
+    }
+
+    private fun enqueue(command: EditCommand): Boolean {
+        if (!active) return false
+        pendingCommands += command
+        flushCommands()
+        return true
+    }
+
+    private fun flushCommands() {
+        if (batchDepth > 0 || pendingCommands.isEmpty()) return
+        onEditCommands(pendingCommands.toList())
+        pendingCommands.clear()
+    }
+}
+
+private fun EditorInfo.configureForTerminal() {
+    inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
+    imeOptions = EditorInfo.IME_ACTION_NONE or
+        EditorInfo.IME_FLAG_FORCE_ASCII or
+        EditorInfo.IME_FLAG_NO_FULLSCREEN
+    initialSelStart = 0
+    initialSelEnd = 0
+}
+
+private fun KeyEvent.toEditCommand(): EditCommand? = when (keyCode) {
+    KeyEvent.KEYCODE_DEL -> BackspaceCommand()
+    KeyEvent.KEYCODE_ENTER -> CommitTextCommand("\n", 1)
+    else -> unicodeChar.takeIf { it != 0 }?.let {
+        CommitTextCommand(String(Character.toChars(it)), 1)
     }
 }
 

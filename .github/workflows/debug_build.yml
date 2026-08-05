@@ -59,16 +59,22 @@ jobs:
             exit_on_error "Build failed for compose-app release."
           fi
 
+      - name: Sanitize variant tag for artifact names
+        id: variant_tag
+        env:
+          PACKAGE_VARIANT: ${{ matrix.package_variant }}
+        run: echo "value=${PACKAGE_VARIANT#apt-}" >> "$GITHUB_OUTPUT"
+
       - name: Upload Legacy App APKs
         uses: actions/upload-artifact@v4
         with:
-          name: termux_${{ replace(matrix.package_variant, 'apt-', '') }}_debug
+          name: termux_${{ steps.variant_tag.outputs.value }}_debug
           path: app/build/outputs/apk/debug/*.apk
           retention-days: 14
 
       - name: Upload Compose App APKs
         uses: actions/upload-artifact@v4
         with:
-          name: ecto_${{ matrix.package_variant }}_debug
+          name: ecto_${{ steps.variant_tag.outputs.value }}_debug
           path: compose-app/build/outputs/apk/debug/*.apk
           retention-days: 14

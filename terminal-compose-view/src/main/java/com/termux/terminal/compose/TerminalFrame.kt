@@ -126,10 +126,13 @@ data class TerminalCursor(
  * background reserved indexes). [version] increments whenever the colors
  * change so renderers can invalidate cached rows.
  */
-class TerminalPalette internal constructor(
-    private val colors: IntArray,
-    val version: Int
+class TerminalPalette private constructor(
+    colors: IntArray,
+    val version: Int,
+    takeOwnership: Boolean
 ) {
+    private val colors = if (takeOwnership) colors else colors.copyOf()
+
     fun color(index: Int): Int = colors.getOrElse(index) { colors.getOrElse(0) { 0xFF000000.toInt() } }
 
     internal fun copyInto(): IntArray = colors.copyOf()
@@ -144,7 +147,11 @@ class TerminalPalette internal constructor(
 
         /** Creates a palette with an explicit version for cache invalidation. */
         fun of(colors: IntArray, version: Int): TerminalPalette =
-            TerminalPalette(colors.copyOf(), version)
+            TerminalPalette(colors, version, takeOwnership = false)
+
+        /** Uses a newly allocated array without copying it again. The caller must relinquish ownership. */
+        fun takeOwnership(colors: IntArray, version: Int): TerminalPalette =
+            TerminalPalette(colors, version, takeOwnership = true)
     }
 }
 
@@ -158,17 +165,38 @@ class TerminalPalette internal constructor(
  * display width; otherwise the layout is derived from [text] using character
  * width tables.
  */
-class TerminalRow(
+private class TerminalRowArrays(
+    val text: CharArray,
+    val styles: LongArray
+)
+
+class TerminalRow private constructor(
     val columns: Int,
-    text: CharArray,
+    arrays: TerminalRowArrays,
     val charsUsed: Int,
-    styles: LongArray,
     val contentHash: Long,
     val cellLayout: TerminalCellLayout?,
     val isLineWrap: Boolean
 ) {
-    private val text = text.copyOf()
-    private val styles = styles.copyOf()
+    private val text = arrays.text
+    private val styles = arrays.styles
+
+    constructor(
+        columns: Int,
+        text: CharArray,
+        charsUsed: Int,
+        styles: LongArray,
+        contentHash: Long,
+        cellLayout: TerminalCellLayout?,
+        isLineWrap: Boolean
+    ) : this(
+        columns,
+        TerminalRowArrays(text.copyOf(), styles.copyOf()),
+        charsUsed,
+        contentHash,
+        cellLayout,
+        isLineWrap
+    )
 
     fun text(): CharArray = text
 
@@ -265,6 +293,26 @@ class TerminalRow(
         }
         return index
     }
+
+    companion object {
+        /** Uses newly allocated arrays without copying them again. The caller must relinquish ownership. */
+        fun takeOwnership(
+            columns: Int,
+            text: CharArray,
+            charsUsed: Int,
+            styles: LongArray,
+            contentHash: Long,
+            cellLayout: TerminalCellLayout?,
+            isLineWrap: Boolean
+        ): TerminalRow = TerminalRow(
+            columns,
+            TerminalRowArrays(text, styles),
+            charsUsed,
+            contentHash,
+            cellLayout,
+            isLineWrap
+        )
+    }
 }
 
 /**
@@ -272,20 +320,36 @@ class TerminalRow(
  * This mirrors the emulator's native backing store so the renderer can batch
  * glyph runs without re-deriving widths.
  */
-class TerminalCellLayout(
+class TerminalCellLayout private constructor(
     start: IntArray,
     length: IntArray,
-    displayWidth: IntArray
+    displayWidth: IntArray,
+    takeOwnership: Boolean
 ) {
-    private val start = start.copyOf()
-    private val length = length.copyOf()
-    private val displayWidth = displayWidth.copyOf()
+    private val start = if (takeOwnership) start else start.copyOf()
+    private val length = if (takeOwnership) length else length.copyOf()
+    private val displayWidth = if (takeOwnership) displayWidth else displayWidth.copyOf()
+
+    constructor(
+        start: IntArray,
+        length: IntArray,
+        displayWidth: IntArray
+    ) : this(start, length, displayWidth, takeOwnership = false)
 
     fun cellTextStart(column: Int): Int = start.getOrElse(column) { -1 }
 
     fun cellTextLength(column: Int): Int = length.getOrElse(column) { -1 }
 
     fun cellDisplayWidth(column: Int): Int = displayWidth.getOrElse(column) { 0 }
+
+    companion object {
+        /** Uses newly allocated arrays without copying them again. The caller must relinquish ownership. */
+        fun takeOwnership(
+            start: IntArray,
+            length: IntArray,
+            displayWidth: IntArray
+        ): TerminalCellLayout = TerminalCellLayout(start, length, displayWidth, takeOwnership = true)
+    }
 }
 
 /** A hyperlink span in the terminal, in absolute row coordinates. */

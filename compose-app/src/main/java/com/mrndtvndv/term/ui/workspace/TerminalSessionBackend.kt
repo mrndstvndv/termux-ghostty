@@ -38,9 +38,9 @@ internal class TerminalSessionBackend(
     }
 
     private val frameAdapter = TerminalSessionFrameAdapter(session, view)
+    private val frameCache = LazyTerminalFrameCache(frameAdapter::build)
     private val commandAdapter = TerminalSessionCommandAdapter(session, view)
     private var listener: TerminalBackendListener? = null
-    private var frame: TerminalFrame? = null
     private var released = false
 
     init {
@@ -57,7 +57,7 @@ internal class TerminalSessionBackend(
     override fun attach(listener: TerminalBackendListener) {
         if (released) return
         this.listener = listener
-        publishFrame()
+        if (currentFrame() != null) listener.onFrameInvalidated()
     }
 
     override fun detach() {
@@ -85,7 +85,19 @@ internal class TerminalSessionBackend(
         }
     }
 
-    override fun currentFrame(): TerminalFrame? = frame
+    override fun currentFrame(): TerminalFrame? {
+        if (released) return null
+
+        return try {
+            frameCache.currentFrame()
+        } catch (error: IllegalArgumentException) {
+            reportError(TerminalBackendError.CODE_UNKNOWN, error.message ?: "Could not read terminal frame")
+            frameCache.cachedFrame()
+        } catch (error: IllegalStateException) {
+            reportError(TerminalBackendError.CODE_UNKNOWN, error.message ?: "Could not read terminal frame")
+            frameCache.cachedFrame()
+        }
+    }
 
     override fun selectedText(selection: TerminalSelection): String {
         if (released || selection.isEmpty) return ""
@@ -106,7 +118,7 @@ internal class TerminalSessionBackend(
         view.onInvalidateCallback = null
         view.cancelPendingResize()
         view.attachSession(null)
-        frame = null
+        frameCache.clear()
     }
 
     private fun createViewClient(): TermuxTerminalViewClientBase =
@@ -124,22 +136,7 @@ internal class TerminalSessionBackend(
 
     private fun onViewInvalidated() {
         if (released) return
-        publishFrame()
-    }
-
-    private fun publishFrame() {
-        val nextFrame = try {
-            frameAdapter.build()
-        } catch (error: IllegalArgumentException) {
-            reportError(TerminalBackendError.CODE_UNKNOWN, error.message ?: "Could not read terminal frame")
-            return
-        } catch (error: IllegalStateException) {
-            reportError(TerminalBackendError.CODE_UNKNOWN, error.message ?: "Could not read terminal frame")
-            return
-        }
-        if (nextFrame == null) return
-
-        frame = nextFrame
+        frameCache.invalidate()
         listener?.onFrameInvalidated()
     }
 

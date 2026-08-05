@@ -22,6 +22,7 @@ internal class TerminalSessionFrameAdapter(
 ) {
     private var paletteColors: IntArray? = null
     private var paletteVersion = 0
+    private var previousFrame: TerminalFrame? = null
 
     fun build(): TerminalFrame? {
         val renderCache: RenderFrameCache = view.getRenderFrameCache()
@@ -36,7 +37,8 @@ internal class TerminalSessionFrameAdapter(
             paletteVersion++
         }
 
-        return TerminalFrame(
+        val previousRows = previousFrame?.rows.orEmpty()
+        val nextFrame = TerminalFrame(
             sequence = snapshot.frameSequence,
             viewport = TerminalViewport(
                 topRow = snapshot.topRow,
@@ -57,12 +59,33 @@ internal class TerminalSessionFrameAdapter(
                 mouseTrackingActive = session.isMouseTrackingActive,
                 alternateBufferActive = session.isAlternateBufferActive
             ),
-            palette = TerminalPalette.of(colors, paletteVersion),
-            rows = List(snapshot.rows) { rowIndex -> snapshot.toTerminalRow(rowIndex) },
+            palette = TerminalPalette.takeOwnership(colors, paletteVersion),
+            rows = List(snapshot.rows) { rowIndex ->
+                snapshot.reusableTerminalRow(rowIndex, previousRows) ?: snapshot.toTerminalRow(rowIndex)
+            },
             linkLayout = snapshot.toTerminalLinkLayout(view.getVisibleLinkLayout())
         )
+        previousFrame = nextFrame
+        return nextFrame
     }
 }
+
+private fun ScreenSnapshot.reusableTerminalRow(
+    rowIndex: Int,
+    previousRows: List<TerminalRow>
+): TerminalRow? {
+    val source = getRow(rowIndex)
+    val samePosition = previousRows.getOrNull(rowIndex)
+    if (samePosition?.matches(source, columns) == true) return samePosition
+    return previousRows.firstOrNull { it.matches(source, columns) }
+}
+
+private fun TerminalRow.matches(source: ScreenSnapshot.RowSnapshot, columns: Int): Boolean =
+    this.columns == columns &&
+        charsUsed == source.charsUsed &&
+        contentHash == source.contentHash &&
+        isLineWrap == source.isLineWrap &&
+        (cellLayout != null) == source.hasCellLayout()
 
 private fun ScreenSnapshot.toTerminalRow(rowIndex: Int): TerminalRow {
     val source = getRow(rowIndex)
@@ -70,7 +93,7 @@ private fun ScreenSnapshot.toTerminalRow(rowIndex: Int): TerminalRow {
     val text = source.text.copyOf()
     val styles = LongArray(columns) { column -> source.getStyle(column) }
     val cellLayout = if (source.hasCellLayout()) {
-        TerminalCellLayout(
+        TerminalCellLayout.takeOwnership(
             start = IntArray(columns) { column -> source.getCellTextStart(column) },
             length = IntArray(columns) { column -> source.getCellTextLength(column) },
             displayWidth = IntArray(columns) { column -> source.getCellDisplayWidth(column) }
@@ -78,7 +101,7 @@ private fun ScreenSnapshot.toTerminalRow(rowIndex: Int): TerminalRow {
     } else {
         null
     }
-    return TerminalRow(
+    return TerminalRow.takeOwnership(
         columns = columns,
         text = text,
         charsUsed = source.charsUsed,

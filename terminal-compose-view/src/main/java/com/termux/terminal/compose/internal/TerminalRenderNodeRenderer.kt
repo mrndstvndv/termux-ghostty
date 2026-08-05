@@ -165,8 +165,8 @@ internal class TerminalRenderNodeRenderer(
         val cursor = frame.cursor
         val reverseVideo = frame.reverseVideo
         val frameChanged = frame.sequence != lastFrameSequence
-        val linkLayoutChanged = frame.linkLayout?.frameSequence != lastLinkFrameSequence
         val linkFrameSequence = frame.linkLayout?.frameSequence ?: Long.MIN_VALUE
+        val linkLayoutChanged = linkFrameSequence != lastLinkFrameSequence
         if (frameChanged && frame.palette.version != lastPaletteVersion) paletteVersion++
 
         val overlaysUnchanged = selection == lastSelection &&

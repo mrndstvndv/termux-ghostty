@@ -179,6 +179,8 @@ private fun rememberModifierKeys(controller: ExtraKeysController): ModifierKeyRe
             override fun readShift(): Boolean = controller.readShift()
 
             override fun readFn(): Boolean = controller.readFn()
+
+            override fun clearConsumedModifiers() = controller.clearConsumedModifiers()
         }
     }
 

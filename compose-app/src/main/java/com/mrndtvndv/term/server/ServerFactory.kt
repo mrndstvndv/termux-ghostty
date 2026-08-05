@@ -4,11 +4,9 @@ import android.content.Context
 import android.os.Build
 import com.mrndtvndv.term.data.ssh.native.NativeSshSession
 import com.mrndtvndv.term.domain.ServerConfig
-import com.mrndtvndv.term.domain.SshShellChannel
 import com.mrndtvndv.term.domain.toDomainAuth
 import com.termux.shared.termux.terminal.TermuxTerminalSessionClientBase
 import com.termux.terminal.TerminalSession
-import com.termux.terminal.TerminalSessionIO
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -360,29 +358,3 @@ private fun ServerConfig.toSshConfig() =
         port = port,
         username = username,
     )
-
-/**
- * Bridges TerminalSessionIO to the native shell channel.
- * Extracted from the anonymous object in MainViewModel.connectSsh().
- */
-private class TerminalSessionIOBridge(
-    private val channel: SshShellChannel,
-) : TerminalSessionIO {
-    override fun write(data: ByteArray?, offset: Int, count: Int) {
-        if (data != null && count > 0) {
-            try {
-                channel.outputStream.write(data, offset, count)
-            } catch (_: Exception) { }
-        }
-    }
-
-    override fun onResize(columns: Int, rows: Int, cellWidth: Int, cellHeight: Int) {
-        try {
-            channel.resizeWindow(columns, rows, columns * cellWidth, rows * cellHeight)
-        } catch (_: Exception) { }
-    }
-
-    override fun onClose() {
-        // Connection cleanup is handled by Server.disconnect()
-    }
-}

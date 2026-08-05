@@ -55,88 +55,98 @@ enum class ModifierState {
 
 class ExtraKeysController {
     var ctrlState by mutableStateOf(ModifierState.INACTIVE)
+        private set
     var altState by mutableStateOf(ModifierState.INACTIVE)
+        private set
     var shiftState by mutableStateOf(ModifierState.INACTIVE)
+        private set
     var fnState by mutableStateOf(ModifierState.INACTIVE)
+        private set
+
+    @Volatile private var ctrlConsumed = false
+    @Volatile private var altConsumed = false
+    @Volatile private var shiftConsumed = false
+    @Volatile private var fnConsumed = false
 
     fun toggleControl() {
-        ctrlState = when (ctrlState) {
-            ModifierState.INACTIVE -> ModifierState.ACTIVE
-            ModifierState.ACTIVE, ModifierState.LOCKED -> ModifierState.INACTIVE
-        }
+        ctrlConsumed = false
+        ctrlState = nextToggleState(ctrlState)
     }
 
     fun lockControl() {
+        ctrlConsumed = false
         ctrlState = ModifierState.LOCKED
     }
 
     fun toggleAlt() {
-        altState = when (altState) {
-            ModifierState.INACTIVE -> ModifierState.ACTIVE
-            ModifierState.ACTIVE, ModifierState.LOCKED -> ModifierState.INACTIVE
-        }
+        altConsumed = false
+        altState = nextToggleState(altState)
     }
 
     fun lockAlt() {
+        altConsumed = false
         altState = ModifierState.LOCKED
     }
 
     fun toggleShift() {
-        shiftState = when (shiftState) {
-            ModifierState.INACTIVE -> ModifierState.ACTIVE
-            ModifierState.ACTIVE, ModifierState.LOCKED -> ModifierState.INACTIVE
-        }
+        shiftConsumed = false
+        shiftState = nextToggleState(shiftState)
     }
 
     fun lockShift() {
+        shiftConsumed = false
         shiftState = ModifierState.LOCKED
     }
 
     fun toggleFn() {
-        fnState = when (fnState) {
-            ModifierState.INACTIVE -> ModifierState.ACTIVE
-            ModifierState.ACTIVE, ModifierState.LOCKED -> ModifierState.INACTIVE
-        }
+        fnConsumed = false
+        fnState = nextToggleState(fnState)
     }
 
     fun lockFn() {
+        fnConsumed = false
         fnState = ModifierState.LOCKED
     }
 
     /**
-     * Read Ctrl state and consume it if ACTIVE (one-shot). Writing to mutableStateOf here is safe
-     * — we're on the main thread, outside a composition, so Compose just schedules a recompose
-     * for the next frame via Choreographer; it does not recompose synchronously mid-dispatch.
+     * Reads the dispatch state without mutating Compose state in the input hot path.
+     * The visual state is cleared by [clearConsumedModifiers] after dispatch.
      */
-    fun readControl(): Boolean {
-        val state = ctrlState
-        if (state == ModifierState.ACTIVE) {
-            ctrlState = ModifierState.INACTIVE
+    fun readControl(): Boolean = readModifier(ctrlState) { ctrlConsumed = true }
+
+    fun readAlt(): Boolean = readModifier(altState) { altConsumed = true }
+
+    fun readShift(): Boolean = readModifier(shiftState) { shiftConsumed = true }
+
+    fun readFn(): Boolean = readModifier(fnState) { fnConsumed = true }
+
+    /** Applies one-shot modifier changes after terminal input dispatch has returned. */
+    fun clearConsumedModifiers() {
+        if (ctrlConsumed) {
+            ctrlConsumed = false
+            if (ctrlState == ModifierState.ACTIVE) ctrlState = ModifierState.INACTIVE
         }
+        if (altConsumed) {
+            altConsumed = false
+            if (altState == ModifierState.ACTIVE) altState = ModifierState.INACTIVE
+        }
+        if (shiftConsumed) {
+            shiftConsumed = false
+            if (shiftState == ModifierState.ACTIVE) shiftState = ModifierState.INACTIVE
+        }
+        if (fnConsumed) {
+            fnConsumed = false
+            if (fnState == ModifierState.ACTIVE) fnState = ModifierState.INACTIVE
+        }
+    }
+
+    private fun readModifier(state: ModifierState, markConsumed: () -> Unit): Boolean {
+        if (state == ModifierState.ACTIVE) markConsumed()
         return state != ModifierState.INACTIVE
     }
 
-    fun readAlt(): Boolean {
-        val state = altState
-        if (state == ModifierState.ACTIVE) {
-            altState = ModifierState.INACTIVE
-        }
-        return state != ModifierState.INACTIVE
-    }
-
-    fun readShift(): Boolean {
-        val state = shiftState
-        if (state == ModifierState.ACTIVE) {
-            shiftState = ModifierState.INACTIVE
-        }
-        return state != ModifierState.INACTIVE
-    }
-
-    fun readFn(): Boolean {
-        val state = fnState
-        if (state == ModifierState.ACTIVE) {
-            fnState = ModifierState.INACTIVE
-        }
-        return state != ModifierState.INACTIVE
+    private fun nextToggleState(state: ModifierState): ModifierState = when (state) {
+        ModifierState.INACTIVE -> ModifierState.ACTIVE
+        ModifierState.ACTIVE, ModifierState.LOCKED -> ModifierState.INACTIVE
     }
 }

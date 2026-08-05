@@ -47,6 +47,16 @@ internal class ImeEditCommandProcessor(
     /** Semantic operations the IME needs from a terminal backend. */
     interface TerminalInput {
         fun inputCodePoint(codePoint: Int)
+
+        fun inputText(text: String) {
+            var index = 0
+            while (index < text.length) {
+                val codePoint = text.codePointAt(index)
+                inputCodePoint(if (codePoint == '\n'.code) 13 else codePoint)
+                index += Character.charCount(codePoint)
+            }
+        }
+
         fun delete()
         /** Negative delta moves left, positive moves right. */
         fun moveCursor(delta: Int)
@@ -268,9 +278,6 @@ internal class ImeEditCommandProcessor(
     private fun String.isWordLike(): Boolean = any { it.isLetterOrDigit() }
 
     private fun sendCodePoints(text: String) {
-        for (char in text) {
-            val cp = if (char == '\n') 13 else char.code
-            terminal.inputCodePoint(cp)
-        }
+        if (text.isNotEmpty()) terminal.inputText(text)
     }
 }

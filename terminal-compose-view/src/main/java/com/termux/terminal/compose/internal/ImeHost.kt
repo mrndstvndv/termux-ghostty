@@ -222,6 +222,10 @@ internal class CommandTerminalInput(
         translator.sendCodePoint(if (codePoint == '\n'.code) 13 else codePoint, alt = false)
     }
 
+    override fun inputText(text: String) {
+        translator.sendText(text.replace('\n', '\r'))
+    }
+
     override fun delete() {
         val result = translator.submit(
             TerminalCommand.Key(keyCode = KeyEvent.KEYCODE_DEL, metaState = 0, down = true)

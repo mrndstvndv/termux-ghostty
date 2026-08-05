@@ -58,6 +58,9 @@ interface ModifierKeyReader {
     fun readShift(): Boolean
     fun readFn(): Boolean
 
+    /** Completes one-shot modifier consumption after an input dispatch. */
+    fun clearConsumedModifiers() = Unit
+
     companion object {
         val NONE = object : ModifierKeyReader {
             override fun readControl() = false

@@ -43,22 +43,66 @@ internal class TerminalInputTranslator(
         if (fn) metaState = metaState or KeyEvent.META_FUNCTION_ON
         if (numLock) metaState = metaState or KeyEvent.META_NUM_LOCK_ON
 
-        val result = submit(TerminalCommand.Key(keyCode = keyCode, metaState = metaState, down = true))
-        if (result is TerminalCommandResult.Success) return true
+        try {
+            val result = submit(TerminalCommand.Key(keyCode = keyCode, metaState = metaState, down = true))
+            if (result is TerminalCommandResult.Success) return true
 
-        return submitUnicodeChar(nativeEvent, metaState, ctrl, alt, fn)
+            return submitUnicodeChar(nativeEvent, metaState, ctrl, alt, fn)
+        } finally {
+            modifierKeys.clearConsumedModifiers()
+        }
     }
 
     /** Sends one code point (IME or resolved key) through the backend. */
     fun sendCodePoint(codePoint: Int, alt: Boolean, controlHeld: Boolean = modifierKeys.readControl()) {
-        submit(
-            TerminalCommand.Key(
-                keyCode = 0,
-                metaState = if (alt) KeyEvent.META_ALT_ON else 0,
-                down = true,
-                codePoint = applyControlMapping(codePoint, controlHeld)
+        try {
+            submit(
+                TerminalCommand.Key(
+                    keyCode = 0,
+                    metaState = if (alt) KeyEvent.META_ALT_ON else 0,
+                    down = true,
+                    codePoint = applyControlMapping(codePoint, controlHeld)
+                )
             )
-        )
+        } finally {
+            modifierKeys.clearConsumedModifiers()
+        }
+    }
+
+    fun sendText(text: String, controlHeld: Boolean? = null) {
+        if (text.isEmpty()) return
+        val effectiveControlHeld = controlHeld ?: modifierKeys.readControl()
+        if (!effectiveControlHeld) {
+            val firstCodePoint = text.codePointAt(0)
+            if (Character.charCount(firstCodePoint) == text.length) {
+                sendCodePoint(firstCodePoint, alt = false, controlHeld = false)
+                return
+            }
+            try {
+                submit(TerminalCommand.Text(text))
+            } finally {
+                modifierKeys.clearConsumedModifiers()
+            }
+            return
+        }
+
+        try {
+            var index = 0
+            while (index < text.length) {
+                val codePoint = text.codePointAt(index)
+                submit(
+                    TerminalCommand.Key(
+                        keyCode = 0,
+                        metaState = 0,
+                        down = true,
+                        codePoint = applyControlMapping(codePoint, controlHeld = true)
+                    )
+                )
+                index += Character.charCount(codePoint)
+            }
+        } finally {
+            modifierKeys.clearConsumedModifiers()
+        }
     }
 
     private fun submitUnicodeChar(

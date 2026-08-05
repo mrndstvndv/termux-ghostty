@@ -319,7 +319,11 @@ fun dispatchExtraKey(
         val alt = extraKeysController.readAlt()
         val shift = extraKeysController.readShift()
         val fn = extraKeysController.readFn()
-        sendSingleKey(key, ctrl, alt, shift, fn, activeTerminalView, session)
+        try {
+            sendSingleKey(key, ctrl, alt, shift, fn, activeTerminalView, session)
+        } finally {
+            extraKeysController.clearConsumedModifiers()
+        }
     }
 }
 

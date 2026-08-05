@@ -24,12 +24,9 @@ internal class TerminalSessionCommandAdapter(
     }
 
     private fun writeText(text: String): TerminalCommandResult {
-        var index = 0
-        while (index < text.length) {
-            val codePoint = text.codePointAt(index)
-            writeCodePoint(codePoint, alt = false)
-            index += Character.charCount(codePoint)
-        }
+        if (text.isEmpty()) return TerminalCommandResult.Success
+        session.setCursorBlinkState(true)
+        session.write(text.replace('\n', '\r'))
         return TerminalCommandResult.Success
     }
 

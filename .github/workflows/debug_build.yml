@@ -49,7 +49,7 @@ jobs:
           export TERMUX_PACKAGE_VARIANT="${{ env.PACKAGE_VARIANT }}"
 
           echo "Building legacy app APKs"
-          export TERMUX_APK_VERSION_TAG="$RELEASE_VERSION_NAME-${{ env.PACKAGE_VARIANT }}-github-debug"
+          export TERMUX_APK_VERSION_TAG="$RELEASE_VERSION_NAME-${TERMUX_PACKAGE_VARIANT#apt-}"
           if ! nix develop --command ./gradlew :app:assembleDebug --no-daemon; then
             exit_on_error "Build failed for legacy app '$TERMUX_APK_VERSION_TAG'."
           fi
@@ -62,7 +62,7 @@ jobs:
       - name: Upload Legacy App APKs
         uses: actions/upload-artifact@v4
         with:
-          name: termux-app_${{ matrix.package_variant }}_debug
+          name: termux_${{ replace(matrix.package_variant, 'apt-', '') }}_debug
           path: app/build/outputs/apk/debug/*.apk
           retention-days: 14
 

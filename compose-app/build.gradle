@@ -15,8 +15,9 @@ androidComponents {
             def nameTag = buildTypeName == "debug" ? "debug" : "release"
             def apkVersionTag = System.getenv("TERMUX_APK_VERSION_TAG") ?: ""
             def packageVariant = System.getenv("TERMUX_PACKAGE_VARIANT") ?: "apt-android-7"
-            def abiSuffix = variant.name.toLowerCase().startsWith("arm64") ? "-arm64-v8a" : ""
-            def filename = "ecto_" + (apkVersionTag ? apkVersionTag : packageVariant + "-" + nameTag) + abiSuffix + ".apk"
+            def variantTag = packageVariant.replaceFirst("apt-", "")
+            def abiSuffix = variant.flavorName == "arm64" ? "-arm64-v8a" : "-universal"
+            def filename = "ecto_" + (apkVersionTag ? apkVersionTag : variantTag + "-" + nameTag) + abiSuffix + ".apk"
             output.outputFileName.set(filename)
         }
     }

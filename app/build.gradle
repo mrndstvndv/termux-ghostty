@@ -143,7 +143,8 @@ androidComponents {
             def abi = output.filters.find { it.filterType.name() == "ABI" }?.identifier
             def buildTypeName = variant.buildType
             def nameTag = buildTypeName == "debug" ? "debug" : "release"
-            def filename = "termux-app_" + (project.ext.apkVersionTag ? project.ext.apkVersionTag : project.ext.packageVariant + "-" + nameTag) + "_" + (abi ? abi : "universal") + ".apk"
+            def variantTag = project.ext.packageVariant.replaceFirst("apt-", "")
+            def filename = "termux_" + (project.ext.apkVersionTag ? project.ext.apkVersionTag : variantTag + "-" + nameTag) + "_" + (abi ? abi : "universal") + ".apk"
             output.outputFileName.set(filename)
         }
     }

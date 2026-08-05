@@ -125,7 +125,7 @@ jobs:
 
           TERMUX_APP_VERSION_NAME="${TERMUX_APP_VERSION_NAME#v}"
           export TERMUX_APP_VERSION_NAME
-          export TERMUX_APK_VERSION_TAG="${TERMUX_APP_VERSION_NAME}-${{ matrix.package_variant }}-github-release"
+          export TERMUX_APK_VERSION_TAG="${TERMUX_APP_VERSION_NAME}-${TERMUX_PACKAGE_VARIANT#apt-}"
 
           mkdir -p output_apks
 

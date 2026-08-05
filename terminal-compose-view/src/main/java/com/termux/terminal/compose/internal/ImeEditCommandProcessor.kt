@@ -1,4 +1,4 @@
-package com.mrndtvndv.term.input
+package com.termux.terminal.compose.internal
 
 import androidx.compose.ui.text.input.BackspaceCommand
 import androidx.compose.ui.text.input.CommitTextCommand
@@ -40,7 +40,7 @@ import androidx.compose.ui.text.input.SetSelectionCommand
  * state, only that input reaches a [TerminalInput]. This keeps the state machine unit
  * testable and reusable if the terminal backend is replaced.
  */
-class ImeEditCommandProcessor(
+internal class ImeEditCommandProcessor(
     private val terminal: TerminalInput
 ) {
 

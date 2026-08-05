@@ -33,6 +33,7 @@ import com.mrndtvndv.term.ui.sftp.SftpFileViewerScreen
 import com.mrndtvndv.term.ui.theme.TerminalThemeSync
 import com.mrndtvndv.term.ui.theme.TermuxGhosttyTheme
 import com.mrndtvndv.term.ui.workspace.CursorTrailEffect
+import com.mrndtvndv.term.ui.workspace.DebugHud
 import com.mrndtvndv.term.ui.workspace.ShaderRepository
 import com.mrndtvndv.term.ui.workspace.TerminalWorkspaceScreen
 import com.mrndtvndv.term.ui.workspace.loadSelectedShaderIds
@@ -66,6 +67,7 @@ fun MainContent(
     val customFontName by viewModel.userPrefs.customFontName.collectAsState()
     val useCustomFontForWholeUi by viewModel.userPrefs.useCustomFontForWholeUi.collectAsState()
     val nativeLogcatLoggingEnabled by viewModel.userPrefs.nativeLogcatLoggingEnabled.collectAsState()
+    val debugHudEnabled by viewModel.userPrefs.debugHudEnabled.collectAsState()
     val hideWorkspaceTabs by viewModel.userPrefs.hideWorkspaceTabs.collectAsState()
     val context = LocalContext.current
     val shaderRepository = remember(context) { ShaderRepository(context) }
@@ -258,6 +260,10 @@ fun MainContent(
                                         NativeLogcatLogger.stop()
                                     }
                                 },
+                                debugHudEnabled = debugHudEnabled,
+                                onDebugHudEnabledChange = { enabled ->
+                                    viewModel.userPrefs.setDebugHudEnabled(enabled, sharedPreferences)
+                                },
                                 terminalEffects = terminalEffects,
                                 onTerminalEffectsChange = { effects ->
                                     terminalEffects = effects
@@ -356,6 +362,10 @@ fun MainContent(
                         }
                     },
                 )
+
+                if (debugHudEnabled && uiState.screen is ScreenState.TerminalWorkspace) {
+                    DebugHud(modifier = Modifier.align(Alignment.TopEnd))
+                }
 
                 viewingFile?.let { file ->
                     SftpFileViewerScreen(

@@ -79,8 +79,7 @@ class MainViewModel(
                 _activeIds.value = _activeIds.value - serverId
                 val screen = _uiState.value.screen
                 if (screen is ScreenState.TerminalWorkspace && screen.serverId == serverId) {
-                    _uiState.value = _uiState.value.copy(screen = ScreenState.ServerList)
-                    persistLastSession()
+                    leaveWorkspace()
                 }
             }
         }
@@ -215,8 +214,7 @@ class MainViewModel(
     }
 
     fun navigateBack() {
-        _uiState.value = _uiState.value.copy(screen = ScreenState.ServerList)
-        persistLastSession()
+        leaveWorkspace()
     }
 
     fun disconnect(id: String) {
@@ -224,7 +222,15 @@ class MainViewModel(
         coordinator.disconnect(id)
         _activeIds.value = _activeIds.value - id
         _disconnectingId.value = null
-        _uiState.value = _uiState.value.copy(screen = ScreenState.ServerList)
+        leaveWorkspace()
+    }
+
+    /** Returns to the server list and resets the workspace tab. */
+    private fun leaveWorkspace() {
+        _uiState.value = _uiState.value.copy(
+            screen = ScreenState.ServerList,
+            activeTab = WorkspaceTab.Terminal,
+        )
         persistLastSession()
     }
 

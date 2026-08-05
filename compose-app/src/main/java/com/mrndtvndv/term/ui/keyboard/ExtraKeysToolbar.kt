@@ -24,6 +24,7 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Popup
+import com.termux.terminal.KeyHandler
 import com.termux.terminal.TerminalSession
 import com.termux.view.TerminalView
 import com.termux.shared.termux.extrakeys.ExtraKeysInfo
@@ -302,24 +303,14 @@ fun dispatchExtraKey(
         (key.contains(" ") && !ExtraKeysConstants.PRIMARY_KEY_CODES_FOR_STRINGS.containsKey(key))
 
     if (isMacro) {
-        // Macro: split by space, accumulate modifiers, fire on non-modifier tokens.
-        // This matches the legacy TerminalExtraKeys.java behavior exactly.
-        val parts = key.split(" ")
-        var ctrl = false
-        var alt = false
-        var shift = false
-        var fn = false
-        for (part in parts) {
-            when (part.uppercase()) {
-                "CTRL", "CONTROL" -> ctrl = true
-                "ALT" -> alt = true
-                "SHIFT", "SHFT" -> shift = true
-                "FN", "FUNCTION" -> fn = true
-                else -> {
-                    sendSingleKey(part, ctrl, alt, shift, fn, activeTerminalView, session)
-                    ctrl = false; alt = false; shift = false; fn = false
-                }
-            }
+        val sequence = encodeExtraKeyMacro(
+            macro = key,
+            cursorKeysApplicationMode = session.isCursorKeysApplicationMode,
+            keypadApplicationMode = session.isKeypadApplicationMode
+        )
+        if (sequence.isNotEmpty()) {
+            session.setCursorBlinkState(true)
+            session.write(sequence)
         }
     } else {
         // Single key: read modifier state from the extra keys controller toggle buttons,
@@ -330,6 +321,102 @@ fun dispatchExtraKey(
         val fn = extraKeysController.readFn()
         sendSingleKey(key, ctrl, alt, shift, fn, activeTerminalView, session)
     }
+}
+
+internal fun encodeExtraKeyMacro(
+    macro: String,
+    cursorKeysApplicationMode: Boolean,
+    keypadApplicationMode: Boolean
+): String {
+    val sequence = StringBuilder()
+    var ctrl = false
+    var alt = false
+    var shift = false
+    var fn = false
+    for (part in macro.split(" ")) {
+        when (part.uppercase()) {
+            "CTRL", "CONTROL" -> ctrl = true
+            "ALT" -> alt = true
+            "SHIFT", "SHFT" -> shift = true
+            "FN", "FUNCTION" -> fn = true
+            else -> {
+                sequence.append(
+                    encodeExtraKeyPart(
+                        part,
+                        ctrl,
+                        alt,
+                        shift,
+                        fn,
+                        cursorKeysApplicationMode,
+                        keypadApplicationMode
+                    )
+                )
+                ctrl = false
+                alt = false
+                shift = false
+                fn = false
+            }
+        }
+    }
+    return sequence.toString()
+}
+
+private fun encodeExtraKeyPart(
+    key: String,
+    ctrl: Boolean,
+    alt: Boolean,
+    shift: Boolean,
+    fn: Boolean,
+    cursorKeysApplicationMode: Boolean,
+    keypadApplicationMode: Boolean
+): String {
+    val keyCode = ExtraKeysConstants.PRIMARY_KEY_CODES_FOR_STRINGS[key]
+    val keyCodeSequence = if (keyCode != null && !fn) {
+        var keyModifiers = 0
+        if (ctrl) keyModifiers = keyModifiers or KeyHandler.KEYMOD_CTRL
+        if (alt) keyModifiers = keyModifiers or KeyHandler.KEYMOD_ALT
+        if (shift) keyModifiers = keyModifiers or KeyHandler.KEYMOD_SHIFT
+        KeyHandler.getCode(
+            keyCode,
+            keyModifiers,
+            cursorKeysApplicationMode,
+            keypadApplicationMode
+        ).orEmpty()
+    } else {
+        null
+    }
+    if (keyCodeSequence != null) return keyCodeSequence
+    if (key.length != 1) return key
+    var codePoint = key.codePointAt(0)
+    var isUpperCase = codePoint in 'A'.code..'Z'.code
+    if (shift && codePoint in 'a'.code..'z'.code) {
+        codePoint -= 'a'.code - 'A'.code
+        isUpperCase = true
+    }
+    val textSequence = if (ctrl && isUpperCase && shift) {
+        val modifier = if (alt) 14 else 6
+        "\u001b[${codePoint};${modifier}u"
+    } else {
+        val mappedCodePoint = if (ctrl) controlCodePoint(codePoint) else codePoint
+        buildString {
+            if (alt) append('\u001b')
+            append(String(Character.toChars(mappedCodePoint)))
+        }
+    }
+    return textSequence
+}
+
+private fun controlCodePoint(codePoint: Int): Int = when (codePoint) {
+    in 'a'.code..'z'.code -> codePoint - 'a'.code + 1
+    in 'A'.code..'Z'.code -> codePoint - 'A'.code + 1
+    ' '.code, '2'.code -> 0
+    '['.code, '3'.code -> 27
+    '\\'.code, '4'.code -> 28
+    ']'.code, '5'.code -> 29
+    '^'.code, '6'.code -> 30
+    '_'.code, '7'.code, '/'.code -> 31
+    '8'.code -> 127
+    else -> codePoint
 }
 
 private fun sendSingleKey(

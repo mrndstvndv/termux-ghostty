@@ -1,4 +1,4 @@
-package com.mrndtvndv.term.ui.workspace
+package com.termux.terminal.compose.internal
 
 import android.graphics.Bitmap
 import android.graphics.BitmapShader
@@ -9,9 +9,8 @@ import android.graphics.Shader
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
-import com.termux.terminal.ScreenSnapshot
-import com.termux.view.TerminalRenderer
-import com.termux.view.TerminalViewLinkLayout
+import com.termux.terminal.compose.TerminalFrame
+import com.termux.terminal.compose.TerminalSelection
 
 /**
  * Renders animated shader chains through a retained bitmap input.
@@ -22,7 +21,8 @@ import com.termux.view.TerminalViewLinkLayout
  * the GPU when terminal content changes.
  */
 internal class AnimatedTerminalBitmapRenderer(
-    private val shaders: List<CompiledShader>
+    private val shaders: List<CompiledShader>,
+    private val rowRenderer: TerminalRowRenderer
 ) {
     private data class Buffer(
         val bitmap: Bitmap,
@@ -42,46 +42,42 @@ internal class AnimatedTerminalBitmapRenderer(
     private var renderedSelectionY2 = Int.MIN_VALUE
     private var renderedSelectionX1 = Int.MIN_VALUE
     private var renderedSelectionX2 = Int.MIN_VALUE
-    private var renderedLinkLayout: TerminalViewLinkLayout? = null
+    private var renderedLinkFrameSequence = Long.MIN_VALUE
 
     fun draw(
         drawScope: DrawScope,
-        snapshot: ScreenSnapshot,
-        renderer: TerminalRenderer,
+        frame: TerminalFrame,
         contentVersion: Int,
-        selection: RenderSelection,
-        linkLayout: TerminalViewLinkLayout?,
+        selection: TerminalSelection,
         timeSeconds: Float
     ) {
         val width = drawScope.size.width.toInt().coerceAtLeast(1)
         val height = drawScope.size.height.toInt().coerceAtLeast(1)
         ensureSize(width, height)
 
-        val bitmapCanvas = beginRenderIfNeeded(contentVersion, selection, linkLayout)
+        val bitmapCanvas = beginRenderIfNeeded(contentVersion, selection, frame)
         if (bitmapCanvas != null) {
-            renderer.render(
-                snapshot,
-                bitmapCanvas,
-                selection.y1,
-                selection.y2,
-                selection.x1,
-                selection.x2,
-                linkLayout
+            rowRenderer.renderAll(
+                canvas = bitmapCanvas,
+                frame = frame,
+                selectionStartRow = selection.startRow,
+                selectionEndRow = selection.endRow,
+                selectionStartCol = selection.startCol,
+                selectionEndCol = selection.endCol,
+                reverseVideo = frame.reverseVideo
             )
-            finishRender(contentVersion, selection, linkLayout)
+            finishRender(contentVersion, selection, frame)
         }
 
         val activeBuffer = buffers[activeBufferIndex]
         val resolutionChanged =
             resolutionWidth != width.toFloat() || resolutionHeight != height.toFloat()
         shaders.forEach { compiledShader ->
-            compiledShader.shader.updateUniforms(
+            compiledShader.updateUniforms(
                 timeSeconds = timeSeconds,
                 width = width.toFloat(),
                 height = height.toFloat(),
-                updateTimeUniform = compiledShader.definition.usesTimeUniform,
-                updateResolutionUniform = resolutionChanged &&
-                    compiledShader.definition.usesResolutionUniform
+                updateResolution = resolutionChanged
             )
         }
         if (resolutionChanged) {
@@ -124,10 +120,10 @@ internal class AnimatedTerminalBitmapRenderer(
 
     private fun beginRenderIfNeeded(
         contentVersion: Int,
-        selection: RenderSelection,
-        linkLayout: TerminalViewLinkLayout?
+        selection: TerminalSelection,
+        frame: TerminalFrame
     ): AndroidCanvas? {
-        if (!needsRender(contentVersion, selection, linkLayout)) return null
+        if (!needsRender(contentVersion, selection, frame)) return null
 
         pendingBufferIndex = if (activeBufferIndex == -1) {
             0
@@ -137,21 +133,17 @@ internal class AnimatedTerminalBitmapRenderer(
         return AndroidCanvas(buffers[pendingBufferIndex].bitmap)
     }
 
-    private fun finishRender(
-        contentVersion: Int,
-        selection: RenderSelection,
-        linkLayout: TerminalViewLinkLayout?
-    ) {
+    private fun finishRender(contentVersion: Int, selection: TerminalSelection, frame: TerminalFrame) {
         if (pendingBufferIndex == -1) return
 
         activeBufferIndex = pendingBufferIndex
         pendingBufferIndex = -1
         renderedContentVersion = contentVersion
-        renderedSelectionY1 = selection.y1
-        renderedSelectionY2 = selection.y2
-        renderedSelectionX1 = selection.x1
-        renderedSelectionX2 = selection.x2
-        renderedLinkLayout = linkLayout
+        renderedSelectionY1 = selection.startRow
+        renderedSelectionY2 = selection.endRow
+        renderedSelectionX1 = selection.startCol
+        renderedSelectionX2 = selection.endCol
+        renderedLinkFrameSequence = frame.linkLayout?.frameSequence ?: Long.MIN_VALUE
     }
 
     private fun ensureSize(width: Int, height: Int) {
@@ -176,19 +168,17 @@ internal class AnimatedTerminalBitmapRenderer(
         renderedSelectionY2 = Int.MIN_VALUE
         renderedSelectionX1 = Int.MIN_VALUE
         renderedSelectionX2 = Int.MIN_VALUE
-        renderedLinkLayout = null
+        renderedLinkFrameSequence = Long.MIN_VALUE
     }
 
-    private fun needsRender(
-        contentVersion: Int,
-        selection: RenderSelection,
-        linkLayout: TerminalViewLinkLayout?
-    ): Boolean =
-        activeBufferIndex == -1 ||
+    private fun needsRender(contentVersion: Int, selection: TerminalSelection, frame: TerminalFrame): Boolean {
+        val linkFrameSequence = frame.linkLayout?.frameSequence ?: Long.MIN_VALUE
+        return activeBufferIndex == -1 ||
             contentVersion != renderedContentVersion ||
-            selection.y1 != renderedSelectionY1 ||
-            selection.y2 != renderedSelectionY2 ||
-            selection.x1 != renderedSelectionX1 ||
-            selection.x2 != renderedSelectionX2 ||
-            linkLayout !== renderedLinkLayout
+            selection.startRow != renderedSelectionY1 ||
+            selection.endRow != renderedSelectionY2 ||
+            selection.startCol != renderedSelectionX1 ||
+            selection.endCol != renderedSelectionX2 ||
+            linkFrameSequence != renderedLinkFrameSequence
+    }
 }

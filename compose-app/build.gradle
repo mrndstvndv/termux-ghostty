@@ -14,10 +14,8 @@ androidComponents {
             def buildTypeName = variant.buildType
             def nameTag = buildTypeName == "debug" ? "debug" : "release"
             def apkVersionTag = System.getenv("TERMUX_APK_VERSION_TAG") ?: ""
-            def packageVariant = System.getenv("TERMUX_PACKAGE_VARIANT") ?: "apt-android-7"
-            def variantTag = packageVariant.replaceFirst("apt-", "")
             def abiSuffix = variant.flavorName == "arm64" ? "-arm64-v8a" : "-universal"
-            def filename = "ecto_" + (apkVersionTag ? apkVersionTag : variantTag + "-" + nameTag) + abiSuffix + ".apk"
+            def filename = "ecto_" + (apkVersionTag ? apkVersionTag : nameTag) + abiSuffix + ".apk"
             output.outputFileName.set(filename)
         }
     }

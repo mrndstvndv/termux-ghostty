@@ -64,14 +64,10 @@ jobs:
           echo "$CHANGELOG"
 
   build:
-    name: Build Signed Release APK (${{ matrix.package_variant }})
+    name: Build Signed Release APK
     needs: changelog
     if: needs.changelog.outputs.skip_release != 'true'
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        package_variant: [ apt-android-7, apt-android-5 ]
 
     permissions:
       id-token: write
@@ -114,7 +110,6 @@ jobs:
       - name: Build Signed Release APK
         env:
           TERMUX_APP_VERSION_NAME: ${{ needs.changelog.outputs.new_version }} # v prefix stripped below
-          TERMUX_PACKAGE_VARIANT: ${{ matrix.package_variant }}
           TERMUX_SPLIT_APKS_FOR_RELEASE_BUILDS: "1"
           KEYSTORE_FILE: release.keystore
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
@@ -125,14 +120,14 @@ jobs:
 
           TERMUX_APP_VERSION_NAME="${TERMUX_APP_VERSION_NAME#v}"
           export TERMUX_APP_VERSION_NAME
-          export TERMUX_APK_VERSION_TAG="${TERMUX_APP_VERSION_NAME}-${TERMUX_PACKAGE_VARIANT#apt-}"
+          export TERMUX_APK_VERSION_TAG="${TERMUX_APP_VERSION_NAME}"
 
           mkdir -p output_apks
 
           if [ "${{ needs.changelog.outputs.build_app }}" == "true" ]; then
             echo "Building legacy app APK"
             if ! nix develop --command ./gradlew :app:assembleRelease --no-daemon; then
-              exit_on_error "Build failed for legacy app '${{ matrix.package_variant }}' release."
+              exit_on_error "Build failed for legacy app release."
             fi
             cp ./app/build/outputs/apk/release/*.apk output_apks/ 2>/dev/null || true
           fi
@@ -140,7 +135,7 @@ jobs:
           if [ "${{ needs.changelog.outputs.build_compose }}" == "true" ]; then
             echo "Building compose-app APKs (universal + arm64-v8a)"
             if ! nix develop --command ./gradlew :compose-app:assembleUniversalRelease :compose-app:assembleArm64Release --no-daemon; then
-              exit_on_error "Build failed for compose-app '${{ matrix.package_variant }}' release."
+              exit_on_error "Build failed for compose-app release."
             fi
             cp ./compose-app/build/outputs/apk/universal/release/*.apk output_apks/ 2>/dev/null || true
             cp ./compose-app/build/outputs/apk/arm64/release/*.apk output_apks/ 2>/dev/null || true
@@ -149,7 +144,7 @@ jobs:
       - name: Upload APKs
         uses: actions/upload-artifact@v4
         with:
-          name: release-apks-${{ matrix.package_variant }}
+          name: release-apks
           path: output_apks/*.apk
           retention-days: 1
 

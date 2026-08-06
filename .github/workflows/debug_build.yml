@@ -12,10 +12,6 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        package_variant: [ apt-android-7, apt-android-5 ]
 
     steps:
       - name: Clone repository
@@ -26,8 +22,6 @@ jobs:
 
       - name: Build APKs
         shell: bash {0}
-        env:
-          PACKAGE_VARIANT: ${{ matrix.package_variant }}
         run: |
           exit_on_error() { echo "$1"; exit 1; }
 
@@ -46,10 +40,9 @@ jobs:
           fi
 
           export TERMUX_APP_VERSION_NAME="${RELEASE_VERSION_NAME/v/}" # Used by app/build.gradle
-          export TERMUX_PACKAGE_VARIANT="${{ env.PACKAGE_VARIANT }}"
 
           echo "Building legacy app APKs"
-          export TERMUX_APK_VERSION_TAG="$RELEASE_VERSION_NAME-${TERMUX_PACKAGE_VARIANT#apt-}"
+          export TERMUX_APK_VERSION_TAG="$RELEASE_VERSION_NAME"
           if ! nix develop --command ./gradlew :app:assembleDebug --no-daemon; then
             exit_on_error "Build failed for legacy app '$TERMUX_APK_VERSION_TAG'."
           fi
@@ -59,22 +52,16 @@ jobs:
             exit_on_error "Build failed for compose-app release."
           fi
 
-      - name: Sanitize variant tag for artifact names
-        id: variant_tag
-        env:
-          PACKAGE_VARIANT: ${{ matrix.package_variant }}
-        run: echo "value=${PACKAGE_VARIANT#apt-}" >> "$GITHUB_OUTPUT"
-
       - name: Upload Legacy App APKs
         uses: actions/upload-artifact@v4
         with:
-          name: termux_${{ steps.variant_tag.outputs.value }}_debug
+          name: termux_debug
           path: app/build/outputs/apk/debug/*.apk
           retention-days: 14
 
       - name: Upload Compose App APKs
         uses: actions/upload-artifact@v4
         with:
-          name: ecto_${{ steps.variant_tag.outputs.value }}_debug
+          name: ecto_debug
           path: compose-app/build/outputs/apk/*/debug/*.apk
           retention-days: 14

@@ -1,15 +1,13 @@
 const std = @import("std");
-const c = @cImport({
-    @cInclude("jni.h");
-    @cInclude("libssh2.h");
-    @cInclude("libssh2_sftp.h");
-});
 const ghostty_log = @import("android_log.zig");
 const core = @import("termux_ghostty.zig");
 const ssh = @import("ssh_native_session.zig");
+// Shared cImport: zig 0.16 gives each @cImport call its own type namespace, so
+// JNIEnv/JavaVM/etc. passed to ssh would otherwise be distinct types.
+const c = ssh.c;
 
 // Android Scudo rejects the 8-byte pointers returned by c_allocator's posix_memalign path.
-const native_allocator = std.heap.raw_c_allocator;
+const native_allocator = std.heap.c_allocator;
 
 const jint = c.jint;
 const jlong = c.jlong;

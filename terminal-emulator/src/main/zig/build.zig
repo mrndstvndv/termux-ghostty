@@ -37,6 +37,9 @@ pub fn build(b: *std.Build) !void {
             try addAndroidNdkPaths(b, lib_dep);
         }
         mbedtls_lib = lib_dep;
+        // zig 0.16 defaulted static-lib modules to PIC off; they're linked
+        // into a shared lib so they must be position-independent.
+        lib_dep.root_module.pic = true;
         root_module.linkLibrary(lib_dep);
     }
 
@@ -48,6 +51,7 @@ pub fn build(b: *std.Build) !void {
         if (z_lib.rootModuleTarget().abi.isAndroid()) {
             try addAndroidNdkPaths(b, z_lib);
         }
+        z_lib.root_module.pic = true;
     }
 
     if (b.lazyDependency("libssh2", .{
@@ -62,8 +66,9 @@ pub fn build(b: *std.Build) !void {
             try addAndroidNdkPaths(b, lib_dep);
         }
         if (mbedtls_lib) |m| {
-            lib_dep.linkLibrary(m);
+            lib_dep.root_module.linkLibrary(m);
         }
+        lib_dep.root_module.pic = true;
         root_module.linkLibrary(lib_dep);
     }
 
@@ -73,11 +78,10 @@ pub fn build(b: *std.Build) !void {
         .root_module = root_module,
         .version = .{ .major = 0, .minor = 0, .patch = 0 },
     });
-    lib.linkLibC();
 
     if (lib.rootModuleTarget().abi.isAndroid()) {
         lib.link_z_max_page_size = 16384;
-        lib.linkSystemLibrary("log");
+        lib.root_module.linkSystemLibrary("log", .{});
         try addAndroidNdkPaths(b, lib);
     }
 
@@ -156,18 +160,18 @@ fn addAndroidNdkPaths(b: *std.Build, step: *std.Build.Step.Compile) !void {
 }
 
 fn findAndroidNdkPath(b: *std.Build) ?[]const u8 {
-    if (std.process.getEnvVarOwned(b.allocator, "ANDROID_NDK_HOME") catch null) |value| {
+    if (b.graph.environ_map.get("ANDROID_NDK_HOME")) |value| {
         if (value.len == 0) {
             return null;
         }
 
-        var dir = std.fs.openDirAbsolute(value, .{}) catch return null;
-        defer dir.close();
+        var dir = std.Io.Dir.openDirAbsolute(b.graph.io, value, .{}) catch return null;
+        defer dir.close(b.graph.io);
         return value;
     }
 
     for ([_][]const u8{ "ANDROID_HOME", "ANDROID_SDK_ROOT" }) |env| {
-        if (std.process.getEnvVarOwned(b.allocator, env) catch null) |sdk| {
+        if (b.graph.environ_map.get(env)) |sdk| {
             if (sdk.len == 0) {
                 continue;
             }
@@ -178,10 +182,9 @@ fn findAndroidNdkPath(b: *std.Build) ?[]const u8 {
         }
     }
 
-    const home = std.process.getEnvVarOwned(
-        b.allocator,
+    const home = b.graph.environ_map.get(
         if (builtin.os.tag == .windows) "LOCALAPPDATA" else "HOME",
-    ) catch return null;
+    ) orelse return null;
 
     const default_sdk_path = b.pathJoin(&.{
         home,
@@ -198,16 +201,15 @@ fn findAndroidNdkPath(b: *std.Build) ?[]const u8 {
 
 fn findLatestAndroidNdk(b: *std.Build, sdk_path: []const u8) ?[]const u8 {
     const ndk_dir = b.pathJoin(&.{ sdk_path, "ndk" });
-    var dir = std.fs.openDirAbsolute(ndk_dir, .{ .iterate = true }) catch return null;
-    defer dir.close();
-
+    var dir = std.Io.Dir.cwd().openDir(b.graph.io, ndk_dir, .{ .iterate = true }) catch return null;
+    defer dir.close(b.graph.io);
     var latest: ?struct {
         name: []const u8,
         version: std.SemanticVersion,
     } = null;
     var iterator = dir.iterate();
 
-    while (iterator.next() catch null) |file| {
+    while (iterator.next(b.graph.io) catch null) |file| {
         if (file.kind != .directory) {
             continue;
         }

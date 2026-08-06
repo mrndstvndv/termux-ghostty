@@ -44,6 +44,7 @@ Thumbs.db
 # Zig build output
 terminal-emulator/src/main/zig/zig-out/
 terminal-emulator/src/main/zig/.zig-cache/
+terminal-emulator/src/main/zig/zig-pkg/
 
 # Local emulator runtime state and tools
 .android/

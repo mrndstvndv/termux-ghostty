@@ -4,7 +4,7 @@ const ghostty = @import("ghostty-vt");
 const ghostty_log = @import("android_log.zig");
 
 // Android Scudo rejects the 8-byte pointers returned by c_allocator's posix_memalign path.
-const native_allocator = std.heap.raw_c_allocator;
+const native_allocator = std.heap.c_allocator;
 
 pub const append_result_screen_changed: u32 = 1 << 0;
 pub const append_result_cursor_changed: u32 = 1 << 1;
@@ -328,11 +328,11 @@ pub const Session = struct {
             };
         }
 
-        const scroll_start_ns = std.time.nanoTimestamp();
+        const scroll_start_ns = nanoTimestamp();
         self.syncViewportToExternalTopRow(self.viewport_top_row);
         const scroll_sync_ns = elapsedNanos(scroll_start_ns);
 
-        const render_update_start_ns = std.time.nanoTimestamp();
+        const render_update_start_ns = nanoTimestamp();
         try self.render_state.update(self.alloc, &self.terminal);
         self.render_state_needs_update = false;
         return .{
@@ -1007,8 +1007,15 @@ pub const Session = struct {
     }
 };
 
+fn nanoTimestamp() i128 {
+    var ts: std.posix.timespec = undefined;
+    const rc = std.posix.system.clock_gettime(.REALTIME, &ts);
+    if (rc != 0) return 0;
+    return @as(i128, ts.sec) * std.time.ns_per_s + ts.nsec;
+}
+
 fn elapsedNanos(start_ns: i128) u64 {
-    return std.math.cast(u64, std.time.nanoTimestamp() - start_ns) orelse 0;
+    return std.math.cast(u64, nanoTimestamp() - start_ns) orelse 0;
 }
 
 const Handler = struct {
@@ -1271,6 +1278,7 @@ const Handler = struct {
                 try self.session.appendPendingOutput(response);
             },
             .color_scheme => {},
+            .visibility => {},
         }
     }
 
@@ -1358,9 +1366,8 @@ const Handler = struct {
     ) !void {
         _ = op;
 
-        var response: std.ArrayListUnmanaged(u8) = .empty;
-        defer response.deinit(self.session.alloc);
-        const writer = response.writer(self.session.alloc);
+        var writer: std.Io.Writer.Allocating = .init(self.session.alloc);
+        defer writer.deinit();
 
         var it = requests.constIterator(0);
         while (it.next()) |req| {
@@ -1425,11 +1432,11 @@ const Handler = struct {
                     };
 
                     switch (kind) {
-                        .palette => |index| try writer.print(
+                        .palette => |index| try writer.writer.print(
                             "\x1B]4;{d};rgb:{x:0>2}/{x:0>2}/{x:0>2}{s}",
                             .{ index, color.r, color.g, color.b, terminator.string() },
                         ),
-                        .dynamic => |dynamic| try writer.print(
+                        .dynamic => |dynamic| try writer.writer.print(
                             "\x1B]{d};rgb:{x:0>2}/{x:0>2}/{x:0>2}{s}",
                             .{ @intFromEnum(dynamic), color.r, color.g, color.b, terminator.string() },
                         ),
@@ -1439,8 +1446,9 @@ const Handler = struct {
             }
         }
 
-        if (response.items.len > 0) {
-            try self.session.appendPendingOutput(response.items);
+        const response = writer.written();
+        if (response.len > 0) {
+            try self.session.appendPendingOutput(response);
         }
     }
 };
@@ -1483,10 +1491,10 @@ pub export fn termux_ghostty_session_create(
     const colors = defaultTerminalColors();
     session.* = undefined;
     session.alloc = native_allocator;
-    session.terminal = ghostty.Terminal.init(session.alloc, .{
+    session.terminal = ghostty.Terminal.init(std.Io.Threaded.global_single_threaded.io(), session.alloc, .{
         .cols = parsed_columns,
         .rows = parsed_rows,
-        .max_scrollback = scrollback_bytes,
+        .max_scrollback_bytes = scrollback_bytes,
         .colors = colors,
     }) catch |err| {
         ghostty_log.err("core create terminal init failed err={any}", .{ err });
@@ -1512,7 +1520,7 @@ pub export fn termux_ghostty_session_create(
     }
 
     session.handler = .{ .session = session };
-    session.stream = ghostty.Stream(*Handler).initAlloc(session.alloc, &session.handler);
+    session.stream = ghostty.Stream(*Handler).init(.{ .handler = &session.handler, .allocator = session.alloc });
     session.render_state = .empty;
     session.pending_output = .empty;
     session.pending_title = .empty;
@@ -1623,12 +1631,17 @@ pub export fn termux_ghostty_session_resize(
         return -1;
     };
 
-    handle.terminal.resize(handle.alloc, parsed_columns, parsed_rows) catch |err| {
+    handle.terminal.resize(handle.alloc, .{
+        .cols = parsed_columns,
+        .rows = parsed_rows,
+        .cell_size_px = .{
+            .width = parsed_cell_width_pixels,
+            .height = parsed_cell_height_pixels,
+        },
+    }) catch |err| {
         ghostty_log.err("core resize failed session=0x{x} cols={} rows={} err={any}", .{ @intFromPtr(handle), columns, rows, err });
         return -1;
     };
-    handle.terminal.width_px = @as(u32, parsed_columns) * parsed_cell_width_pixels;
-    handle.terminal.height_px = @as(u32, parsed_rows) * parsed_cell_height_pixels;
     handle.viewport_top_row = handle.clampExternalTopRow(handle.viewport_top_row);
     handle.markRenderStateDirty();
     ghostty_log.debug("core resize session=0x{x} cols={} rows={} cellWidth={} cellHeight={}", .{ @intFromPtr(handle), columns, rows, cell_width_pixels, cell_height_pixels });
@@ -1907,7 +1920,7 @@ fn fillSnapshotCurrentViewport(handle: *Session, out: []u8) i32 {
         .full => snapshot_flag_full_rebuild,
         else => 0,
     };
-    const snapshot_serialize_start_ns = std.time.nanoTimestamp();
+    const snapshot_serialize_start_ns = nanoTimestamp();
     var writer = BufferWriter.init(out);
     writer.writeU32(snapshot_magic) catch return -1;
     writer.writeI32(top_row) catch return -1;
@@ -2379,7 +2392,7 @@ fn encodeTermuxStyle(cell: ghostty.Cell, style: ghostty.Style) u64 {
 
 fn encodeBackgroundColor(cell: ghostty.Cell, style: ghostty.Style) u32 {
     return switch (cell.content_tag) {
-        .bg_color_palette => cell.content.color_palette,
+        .bg_color_palette => cell.content.color_palette.data,
         .bg_color_rgb => rgbToArgb(.{
             .r = cell.content.color_rgb.r,
             .g = cell.content.color_rgb.g,

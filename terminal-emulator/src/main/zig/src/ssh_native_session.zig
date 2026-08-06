@@ -1,6 +1,13 @@
 const std = @import("std");
 
-const c = @cImport({
+pub const c = @cImport({
+    // NDK 29 bionic headers use clang nullability keywords in array
+    // parameter position and an overloadable ioctl; zig 0.16's translate-c
+    // (clang 21) rejects both. Neutralize for translation.
+    @cDefine("_Nullable", "");
+    @cDefine("_Nonnull", "");
+    @cDefine("_Null_unspecified", "");
+    @cDefine("BIONIC_IOCTL_NO_SIGNEDNESS_OVERLOAD", "");
     @cInclude("jni.h");
     @cInclude("libssh2.h");
     @cInclude("libssh2_sftp.h");
@@ -10,10 +17,54 @@ const c = @cImport({
     @cInclude("netinet/in.h");
     @cInclude("netinet/tcp.h");
     @cInclude("pthread.h");
+    @cInclude("semaphore.h");
     @cInclude("sys/socket.h");
 });
 
 pub const SshNativeSession = struct {
+    // zig 0.16 removed std.Thread.Mutex in favor of std.Io.Mutex, which
+    // requires an Io handle for every lock/unlock. The session threads don't
+    // have one, so wrap the pthread mutex we already link instead.
+    const Mutex = struct {
+        inner: c.pthread_mutex_t = std.mem.zeroes(c.pthread_mutex_t),
+
+        pub fn lock(self: *Mutex) void {
+            _ = c.pthread_mutex_lock(&self.inner);
+        }
+
+        pub fn unlock(self: *Mutex) void {
+            _ = c.pthread_mutex_unlock(&self.inner);
+        }
+    };
+
+    // Same rationale as Mutex: std.Thread.Semaphore moved to std.Io.Semaphore
+    // (needs an Io) in zig 0.16, so wrap a pthread semaphore instead.
+    const Semaphore = struct {
+        inner: c.sem_t = std.mem.zeroes(c.sem_t),
+        initialized: bool = false,
+
+        pub fn init(self: *Semaphore) void {
+            _ = c.sem_init(&self.inner, 0, 0);
+            self.initialized = true;
+        }
+
+        pub fn deinit(self: *Semaphore) void {
+            if (self.initialized) _ = c.sem_destroy(&self.inner);
+            self.initialized = false;
+        }
+
+        pub fn wait(self: *Semaphore) void {
+            while (true) {
+                if (c.sem_wait(&self.inner) == 0) return;
+                if (std.c.errno(-1) != .INTR) return;
+            }
+        }
+
+        pub fn post(self: *Semaphore) void {
+            _ = c.sem_post(&self.inner);
+        }
+    };
+
     // Use page_allocator for ArrayList buffers to bypass Android Scudo entirely.
     // Scudo's strict chunk-header validation is incompatible with the reallocation
     // patterns from Zig ArrayLists combined with libssh2's own malloc usage.
@@ -26,11 +77,11 @@ pub const SshNativeSession = struct {
     channel: *c.LIBSSH2_CHANNEL,
     socket_fd: c_int,
     wake_pipe: [2]c_int,
-    output_lock: std.Thread.Mutex,
+    output_lock: Mutex,
     output_queue: std.ArrayList(u8),
-    command_lock: std.Thread.Mutex,
+    command_lock: Mutex,
     command_queue: std.ArrayList(*Command),
-    callback_lock: std.Thread.Mutex,
+    callback_lock: Mutex,
     java_vm: ?*c.JavaVM,
     output_callback: ?c.jobject,
     output_callback_method: ?c.jmethodID,
@@ -50,7 +101,7 @@ pub const SshNativeSession = struct {
         rows: c_int = 0,
         callback: ?*const fn (*SshNativeSession, *Command) void = null,
         context: ?*anyopaque = null,
-        completion: ?*std.Thread.Semaphore = null,
+        completion: ?*Semaphore = null,
         owned: bool = false,
     };
 
@@ -610,7 +661,9 @@ pub const SshNativeSession = struct {
     }
 
     fn dispatchSync(self: *SshNativeSession, callback: *const fn (*SshNativeSession, *Command) void, context: *anyopaque) bool {
-        var completion: std.Thread.Semaphore = .{};
+        var completion: Semaphore = .{};
+        completion.init();
+        defer completion.deinit();
         var command = Command{ .kind = .callback, .callback = callback, .context = context, .completion = &completion };
         if (!self.enqueue(&command)) return false;
         completion.wait();
@@ -779,19 +832,20 @@ pub const SshNativeSession = struct {
     }
 
     fn appendJsonEscaped(output: *std.ArrayList(u8), allocator: std.mem.Allocator, str: []const u8) !void {
-        const writer = output.writer(allocator);
         for (str) |ch| {
             switch (ch) {
-                '"' => try writer.writeAll("\\\""),
-                '\\' => try writer.writeAll("\\\\"),
-                '\n' => try writer.writeAll("\\n"),
-                '\r' => try writer.writeAll("\\r"),
-                '\t' => try writer.writeAll("\\t"),
+                '"' => try output.appendSlice(allocator, "\\\""),
+                '\\' => try output.appendSlice(allocator, "\\\\"),
+                '\n' => try output.appendSlice(allocator, "\\n"),
+                '\r' => try output.appendSlice(allocator, "\\r"),
+                '\t' => try output.appendSlice(allocator, "\\t"),
                 else => {
                     if (ch < 0x20) {
-                        try writer.print("\\u00{x:0>2}", .{ch});
+                        var buf: [6]u8 = undefined;
+                        const s = try std.fmt.bufPrint(&buf, "\\u00{x:0>2}", .{ch});
+                        try output.appendSlice(allocator, s);
                     } else {
-                        try writer.writeByte(ch);
+                        try output.append(allocator, ch);
                     }
                 },
             }
@@ -823,21 +877,22 @@ pub const SshNativeSession = struct {
                 if (!first) context.output.appendSlice(self.allocator, ",") catch return;
                 first = false;
 
-                const writer = context.output.writer(self.allocator);
-                writer.writeAll("{\"name\":\"") catch return;
+                context.output.appendSlice(self.allocator, "{\"name\":\"") catch return;
                 appendJsonEscaped(context.output, self.allocator, name) catch return;
-                writer.writeAll("\",\"path\":\"") catch return;
+                context.output.appendSlice(self.allocator, "\",\"path\":\"") catch return;
                 appendJsonEscaped(context.output, self.allocator, context.path) catch return;
                 if (!std.mem.endsWith(u8, context.path, "/")) {
-                    writer.writeAll("/") catch return;
+                    context.output.appendSlice(self.allocator, "/") catch return;
                 }
                 appendJsonEscaped(context.output, self.allocator, name) catch return;
-                writer.print("\",\"isDir\":{s},\"size\":{},\"permissions\":{},\"mtime\":{}}}", .{
+                const entry_suffix = std.fmt.allocPrint(self.allocator, "\",\"isDir\":{s},\"size\":{},\"permissions\":{},\"mtime\":{}}}", .{
                     if (is_dir) "true" else "false",
                     if (is_dir or (attributes.flags & c.LIBSSH2_SFTP_ATTR_SIZE) == 0) 0 else attributes.filesize,
                     if ((attributes.flags & c.LIBSSH2_SFTP_ATTR_PERMISSIONS) == 0) 0 else attributes.permissions,
                     if ((attributes.flags & c.LIBSSH2_SFTP_ATTR_ACMODTIME) == 0) 0 else attributes.mtime * 1000,
                 }) catch return;
+                defer self.allocator.free(entry_suffix);
+                context.output.appendSlice(self.allocator, entry_suffix) catch return;
             } else if (result == c.LIBSSH2_ERROR_EAGAIN) {
                 waitSocket(self.socket_fd, self.session) catch return;
             } else if (result == 0) {

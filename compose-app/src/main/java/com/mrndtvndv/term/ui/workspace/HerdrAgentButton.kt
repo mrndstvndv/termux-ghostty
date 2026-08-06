@@ -4,7 +4,6 @@ import android.view.View
 import android.view.Window
 import android.view.WindowManager
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -15,7 +14,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountTree
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material3.CircularProgressIndicator
@@ -322,24 +320,11 @@ private fun AgentListItem(
             )
         },
         trailingContent = {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Text(
-                    text = status,
-                    color = statusColor,
-                    style = MaterialTheme.typography.labelMedium,
-                )
-                if (isFocused) {
-                    Icon(
-                        imageVector = Icons.Default.Check,
-                        contentDescription = "Focused agent",
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(18.dp),
-                    )
-                }
-            }
+            Text(
+                text = status,
+                color = statusColor,
+                style = MaterialTheme.typography.labelMedium,
+            )
         },
     )
 }

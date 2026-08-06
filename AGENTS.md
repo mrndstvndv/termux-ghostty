@@ -58,6 +58,10 @@ Config files:
 - **No legacy shims or migration code unless explicitly requested.** Do not add backward-compat fallbacks, legacy preference keys, deprecated-API wrappers, or one-off data migrations to support old app versions.
 - If existing legacy code is found (e.g. dual-writes to old preference keys, migration fallbacks), prefer removing it outright. If user data is at stake, do a one-time conversion that deletes the legacy key afterwards — never keep it alive.
 
+## UI Hygiene
+
+- Before adding a UI element, indicator, icon, label, or status affordance, check the surrounding UI for an existing equivalent. Avoid redundant elements and duplicate labels or indicators; prefer one clear source of feedback.
+
 ## Core Behaviors to Preserve
 
 ### SFTP & Review Workspace Tracking (Herdr Integration)

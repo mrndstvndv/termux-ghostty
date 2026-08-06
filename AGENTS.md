@@ -31,6 +31,10 @@ All fork-specific docs go under `docs/fork/`. Do not add `.md` files to the repo
 
 **Note on plans:** Do NOT commit plan files (`.md` files outlining implementation steps/checklists) or updates to plans to the Git repository. Keep plan documents untracked or locally edited only. Do not stage them for commits.
 
+## Testing workflow
+
+- Unless the user explicitly asks otherwise, the user runs tests and manual validation. Ask the user to test the change and report the results instead of running tests or device checks proactively.
+
 ## Linting & Static Analysis
 
 Two Kotlin linters are configured in `compose-app/build.gradle` (the only Kotlin module):

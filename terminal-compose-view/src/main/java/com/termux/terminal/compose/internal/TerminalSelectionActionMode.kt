@@ -95,7 +95,6 @@ internal class TerminalSelectionActionMode(
             if (selection.isEmpty) return outRect.set(0, 0, 1, 1)
 
             val firstRow = min(selection.startRow, selection.endRow)
-            val lastRow = max(selection.startRow, selection.endRow)
             val firstColumn = min(selection.startCol, selection.endCol)
             val lastColumn = max(selection.startCol, selection.endCol)
             val viewLocation = IntArray(2)
@@ -104,8 +103,12 @@ internal class TerminalSelectionActionMode(
             val originY = canvasPositionInWindow.y.roundToInt() - viewLocation[1]
             val left = currentMetrics.columnToX(firstColumn).roundToInt() + originX
             val right = currentMetrics.columnToX(lastColumn + 1).roundToInt() + originX
+
+            // Android positions a floating toolbar relative to this rect. A rect spanning
+            // every selected row can make the toolbar fall inside a tall multi-line selection.
+            // Use the first selected row as the anchor so the toolbar is placed above the range.
             val top = currentMetrics.rowToY(firstRow, currentFrame.topRow).roundToInt() + originY
-            val bottom = currentMetrics.rowToY(lastRow + 1, currentFrame.topRow).roundToInt() + originY
+            val bottom = currentMetrics.rowToY(firstRow + 1, currentFrame.topRow).roundToInt() + originY
             setClampedRect(outRect, left, top, right, bottom, view.width, view.height)
         }
     }
@@ -145,6 +148,7 @@ internal class TerminalSelectionActionMode(
             }
         } else {
             actionMode?.invalidate()
+            actionMode?.invalidateContentRect()
         }
     }
 

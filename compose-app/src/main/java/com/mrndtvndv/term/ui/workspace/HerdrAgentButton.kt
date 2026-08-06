@@ -1,5 +1,8 @@
 package com.mrndtvndv.term.ui.workspace
 
+import android.view.View
+import android.view.Window
+import android.view.WindowManager
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -27,6 +30,7 @@ import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -36,9 +40,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.DialogWindowProvider
 import com.mrndtvndv.term.R
 import com.mrndtvndv.term.server.HerdrWorkspaceResolver
 import java.util.Locale
@@ -88,6 +94,7 @@ fun HerdrAgentButton(
             onDismissRequest = { showAgents = false },
             sheetState = sheetState,
         ) {
+            PlaceSheetAboveIme()
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -154,6 +161,33 @@ fun HerdrAgentButton(
             }
         }
     }
+}
+
+/**
+ * Material3 hosts ModalBottomSheet in a platform Dialog, even in a Compose-only UI.
+ * We need the dialog Window here because IME z-order is controlled by WindowManager, not by
+ * Compose modifiers or ModalBottomSheetProperties.
+ */
+@Composable
+private fun PlaceSheetAboveIme() {
+    val view = LocalView.current
+    DisposableEffect(view) {
+        val window = view.findDialogWindow()
+        window?.addFlags(WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM)
+        onDispose {
+            window?.clearFlags(WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM)
+        }
+    }
+}
+
+private fun View.findDialogWindow(): Window? {
+    // LocalView is the inner AndroidComposeView; DialogWindowProvider is on the dialog root.
+    var current: View? = this
+    while (current != null) {
+        if (current is DialogWindowProvider) return current.window
+        current = current.parent as? View
+    }
+    return null
 }
 
 private fun agentWorkspaceTitle(

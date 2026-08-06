@@ -141,6 +141,10 @@ final class GhosttySessionWorker extends Thread {
         Looper.prepare();
         synchronized (this) {
             mWorkerHandler = new WorkerHandler(Looper.myLooper());
+            // Publish the initial terminal state even when the PTY is idle. Without this, an
+            // idle shell has no output-driven frame and the first snapshot is delayed until a
+            // resize, focus, or another terminal event occurs.
+            mWorkerHandler.sendEmptyMessage(MSG_REQUEST_FULL_SNAPSHOT_REFRESH);
             if (mSshSessionHandle != 0L) {
                 registerSshOutputCallback();
             }

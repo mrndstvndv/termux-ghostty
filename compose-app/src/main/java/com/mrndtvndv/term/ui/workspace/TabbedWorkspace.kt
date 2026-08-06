@@ -17,6 +17,7 @@ import com.mrndtvndv.term.ui.sftp.SftpViewModel
 import com.mrndtvndv.term.ui.keyboard.ExtraKeysToolbar
 import com.mrndtvndv.term.ui.keyboard.ExtraKeysController
 import com.termux.view.TerminalView
+import com.mrndtvndv.term.server.HerdrWorkspaceResolver
 import com.mrndtvndv.term.ui.review.ReviewViewModel
 import com.mrndtvndv.term.ui.review.GitReviewScreen
 import androidx.compose.foundation.gestures.Orientation
@@ -34,6 +35,7 @@ import kotlinx.coroutines.launch
 import java.io.File
 
 @OptIn(ExperimentalFoundationApi::class)
+@Suppress("LongParameterList", "LongMethod", "CyclomaticComplexMethod")
 @Composable
 fun TabbedWorkspace(
     session: TerminalSession,
@@ -44,6 +46,13 @@ fun TabbedWorkspace(
     extraKeysEnabled: Boolean,
     extraKeysJson: String,
     hideTabs: Boolean = false,
+    herdrEnabled: Boolean = false,
+    herdrAgents: List<HerdrWorkspaceResolver.HerdrAgentInfo> = emptyList(),
+    herdrAgentsLoading: Boolean = false,
+    herdrAgentsError: String? = null,
+    onLoadHerdrAgents: () -> Unit = {},
+    onFocusHerdrAgent: (HerdrWorkspaceResolver.HerdrAgentInfo) -> Unit = {},
+    herdrAgentFabOpacity: Float = 0.7f,
     onViewCreated: (TerminalView) -> Unit,
     onViewReleased: (TerminalView) -> Unit,
     activeTab: WorkspaceTab,
@@ -239,13 +248,26 @@ fun TabbedWorkspace(
                                     onViewReleased = onViewReleased,
                                     onOpenUrl = onOpenUrl
                                 )
+                                if (herdrEnabled) {
+                                    HerdrAgentButton(
+                                        agents = herdrAgents,
+                                        isLoading = herdrAgentsLoading,
+                                        error = herdrAgentsError,
+                                        onRefresh = onLoadHerdrAgents,
+                                        onFocusAgent = onFocusHerdrAgent,
+                                        fabOpacity = herdrAgentFabOpacity,
+                                        modifier = Modifier
+                                            .align(androidx.compose.ui.Alignment.BottomEnd)
+                                            .padding(end = 12.dp, bottom = 8.dp),
+                                    )
+                                }
                             }
                             if (extraKeysEnabled) {
                                 ExtraKeysToolbar(
                                     extraKeysController = extraKeysController,
                                     getActiveTerminalView = getActiveTerminalView,
                                     session = session,
-                                    extraKeysJson = extraKeysJson
+                                    extraKeysJson = extraKeysJson,
                                 )
                             }
                         }

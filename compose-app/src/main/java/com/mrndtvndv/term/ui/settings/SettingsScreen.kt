@@ -80,6 +80,8 @@ fun SettingsScreen(
     onVisualEffectFrameRateChange: (String) -> Unit = {},
     hideWorkspaceTabs: Boolean = false,
     onHideWorkspaceTabsChange: (Boolean) -> Unit = {},
+    herdrAgentFabOpacity: Float = 0.7f,
+    onHerdrAgentFabOpacityChange: (Float) -> Unit = {},
     onBack: () -> Unit
 ) {
     val scrollState = rememberScrollState()
@@ -648,6 +650,35 @@ fun SettingsScreen(
                         Switch(
                             checked = hideWorkspaceTabs,
                             onCheckedChange = onHideWorkspaceTabsChange
+                        )
+                    }
+
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Herdr Agent FAB Opacity", style = MaterialTheme.typography.bodyLarge)
+                                Text(
+                                    text = "Lower the opacity so terminal content remains visible underneath",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            Text(
+                                text = "${(herdrAgentFabOpacity * 100).toInt()}%",
+                                style = MaterialTheme.typography.bodyLarge,
+                            )
+                        }
+                        Slider(
+                            value = herdrAgentFabOpacity.coerceIn(0.25f, 1f),
+                            onValueChange = onHerdrAgentFabOpacityChange,
+                            valueRange = 0.25f..1f,
+                            steps = 14,
                         )
                     }
                 }

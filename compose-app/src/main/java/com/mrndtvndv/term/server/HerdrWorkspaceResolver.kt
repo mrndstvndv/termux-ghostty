@@ -10,7 +10,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 /**
- * Parses the output of `herdr workspace list; herdr pane list`.
+ * Parses Herdr workspace, pane, and agent command output.
  * Pure logic — no Android dependencies, testable with sample JSON.
  */
 class HerdrWorkspaceResolver(
@@ -66,6 +66,20 @@ class HerdrWorkspaceResolver(
         val tabLabel: String? = null,
     )
 
+    data class HerdrAgentInfo(
+        val agent: String?,
+        val name: String?,
+        val agentStatus: String,
+        val cwd: String?,
+        val workspaceId: String,
+        val tabId: String,
+        val paneId: String,
+        val terminalId: String,
+        val focused: Boolean,
+        val terminalTitle: String?,
+        val workspaceLabel: String? = null,
+    )
+
     /**
      * Parse a herdr notification body into a focus target.
      * Returns null when the body is not a herdr workspace context string.
@@ -91,6 +105,25 @@ class HerdrWorkspaceResolver(
         val prefix = "export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; "
         execCommand(prefix + buildFocusCommand(target, prefix))
         return true
+    }
+
+    suspend fun listAgents(): List<HerdrAgentInfo> {
+        val prefix = "export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; "
+        return parseAgentList(execCommand(prefix + "herdr agent list; herdr workspace list"))
+    }
+
+    suspend fun focusAgent(agent: HerdrAgentInfo): Boolean {
+        val paneId = agent.paneId.takeIf { it.isNotBlank() } ?: return false
+        val prefix = "export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; "
+        val output = execCommand(prefix + "herdr agent focus ${shellQuote(paneId)}")
+        return output.lineSequence().mapNotNull { parseHerdrLine(it) }.any { (id, result) ->
+            if (id != "cli:agent:focus") return@any false
+            if (result["type"]?.jsonPrimitive?.contentOrNull != "agent_info") return@any false
+            val focusedPaneId = runCatching {
+                result["agent"]?.jsonObject?.get("pane_id")?.jsonPrimitive?.contentOrNull
+            }.getOrNull()
+            focusedPaneId == paneId
+        }
     }
 
     private suspend fun buildFocusCommand(target: HerdrFocusTarget, prefix: String): String {
@@ -125,6 +158,53 @@ class HerdrWorkspaceResolver(
         }
         return null
     }
+
+    internal fun parseAgentList(output: String): List<HerdrAgentInfo> {
+        val workspaceLabels = parseWorkspaceLabels(output)
+        for (line in output.lineSequence()) {
+            val parsed = parseHerdrLine(line) ?: continue
+            if (parsed.first == "cli:agent:list" &&
+                parsed.second["type"]?.jsonPrimitive?.contentOrNull == "agent_list"
+            ) {
+                return parseAgents(parsed.second).map { agent ->
+                    agent.copy(workspaceLabel = workspaceLabels[agent.workspaceId])
+                }
+            }
+        }
+        return emptyList()
+    }
+
+    private fun parseAgents(result: JsonObject): List<HerdrAgentInfo> =
+        runCatching { result["agents"]?.jsonArray }.getOrNull().orEmpty().mapNotNull { element ->
+            val agent = runCatching { element.jsonObject }.getOrNull() ?: return@mapNotNull null
+            val paneId = agent["pane_id"]?.jsonPrimitive?.contentOrNull
+                ?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            val agentStatus = agent["agent_status"]?.jsonPrimitive?.contentOrNull
+                ?: return@mapNotNull null
+            val workspaceId = agent["workspace_id"]?.jsonPrimitive?.contentOrNull
+                ?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            val tabId = agent["tab_id"]?.jsonPrimitive?.contentOrNull
+                ?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            val terminalId = agent["terminal_id"]?.jsonPrimitive?.contentOrNull
+                ?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            val focused = agent["focused"]?.jsonPrimitive?.booleanOrNull ?: return@mapNotNull null
+            HerdrAgentInfo(
+                agent = agent["agent"]?.jsonPrimitive?.contentOrNull,
+                name = agent["name"]?.jsonPrimitive?.contentOrNull,
+                agentStatus = agentStatus,
+                cwd = agent["cwd"]?.jsonPrimitive?.contentOrNull,
+                workspaceId = workspaceId,
+                tabId = tabId,
+                paneId = paneId,
+                terminalId = terminalId,
+                focused = focused,
+                terminalTitle = agent["terminal_title_stripped"]?.jsonPrimitive?.contentOrNull
+                    ?: agent["terminal_title"]?.jsonPrimitive?.contentOrNull,
+            )
+        }
+
+    private fun shellQuote(value: String): String =
+        "'" + value.replace("'", "'\\''") + "'"
 
     private data class WorkspaceLines(
         val focusedWsId: String?,
@@ -166,7 +246,27 @@ class HerdrWorkspaceResolver(
             null
         } catch (_: IllegalArgumentException) {
             null
+        } catch (_: IllegalStateException) {
+            null
         }
+    }
+
+    private fun parseWorkspaceLabels(output: String): Map<String, String> = buildMap {
+        output.lineSequence()
+            .mapNotNull(::parseHerdrLine)
+            .filter { (id, _) -> id == "cli:workspace:list" }
+            .flatMap { (_, result) ->
+                result["workspaces"]?.jsonArray?.asSequence() ?: emptySequence()
+            }
+            .mapNotNull { workspace ->
+                val workspaceObject = workspace.jsonObject
+                val workspaceId = workspaceObject["workspace_id"]?.jsonPrimitive?.contentOrNull
+                    ?.takeIf { it.isNotBlank() }
+                val label = workspaceObject["label"]?.jsonPrimitive?.contentOrNull
+                    ?.takeIf { it.isNotBlank() }
+                if (workspaceId != null && label != null) workspaceId to label else null
+            }
+            .forEach { (workspaceId, label) -> put(workspaceId, label) }
     }
 
     private fun parseWorkspaceList(

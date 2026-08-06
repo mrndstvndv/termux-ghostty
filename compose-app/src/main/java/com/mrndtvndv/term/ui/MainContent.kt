@@ -69,6 +69,7 @@ fun MainContent(
     val nativeLogcatLoggingEnabled by viewModel.userPrefs.nativeLogcatLoggingEnabled.collectAsState()
     val debugHudEnabled by viewModel.userPrefs.debugHudEnabled.collectAsState()
     val hideWorkspaceTabs by viewModel.userPrefs.hideWorkspaceTabs.collectAsState()
+    val herdrAgentFabOpacity by viewModel.userPrefs.herdrAgentFabOpacity.collectAsState()
     val context = LocalContext.current
     val shaderRepository = remember(context) { ShaderRepository(context) }
     var shaderDefinitions by remember(shaderRepository) {
@@ -301,6 +302,10 @@ fun MainContent(
                                 onHideWorkspaceTabsChange = { enabled ->
                                     viewModel.userPrefs.setHideWorkspaceTabs(enabled, sharedPreferences)
                                 },
+                                herdrAgentFabOpacity = herdrAgentFabOpacity,
+                                onHerdrAgentFabOpacityChange = { opacity ->
+                                    viewModel.userPrefs.setHerdrAgentFabOpacity(opacity, sharedPreferences)
+                                },
                                 onBack = { navigator.goBack() },
                             )
                         }
@@ -326,6 +331,15 @@ fun MainContent(
                                         extraKeysEnabled = extraKeysEnabled,
                                         extraKeysJson = resolvedJson,
                                         hideWorkspaceTabs = hideWorkspaceTabs,
+                                        herdrEnabled = server.config.herdrEnabled,
+                                        herdrAgents = viewModel.herdrAgents.value,
+                                        herdrAgentsLoading = viewModel.herdrAgentsLoading.value,
+                                        herdrAgentsError = viewModel.herdrAgentsError.value,
+                                        onLoadHerdrAgents = { viewModel.loadHerdrAgents(serverId) },
+                                        herdrAgentFabOpacity = herdrAgentFabOpacity,
+                                        onFocusHerdrAgent = { agent ->
+                                            viewModel.focusHerdrAgent(serverId, agent)
+                                        },
                                         onViewCreated = onViewCreated,
                                         onViewReleased = onViewReleased,
                                         activeTab = uiState.activeTab,

@@ -54,6 +54,15 @@ class MainViewModel(
     private val _disconnectingId = mutableStateOf<String?>(null)
     val disconnectingId: State<String?> = _disconnectingId
 
+    private val _herdrAgents = mutableStateOf<List<HerdrWorkspaceResolver.HerdrAgentInfo>>(emptyList())
+    val herdrAgents: State<List<HerdrWorkspaceResolver.HerdrAgentInfo>> = _herdrAgents
+
+    private val _herdrAgentsLoading = mutableStateOf(false)
+    val herdrAgentsLoading: State<Boolean> = _herdrAgentsLoading
+
+    private val _herdrAgentsError = mutableStateOf<String?>(null)
+    val herdrAgentsError: State<String?> = _herdrAgentsError
+
     private val _connectingId = mutableStateOf<String?>(null)
     val connectingId: State<String?> = _connectingId
 
@@ -125,18 +134,54 @@ class MainViewModel(
 
     fun getServer(serverId: String): Server? = coordinator.getServer(serverId)
 
+    fun loadHerdrAgents(serverId: String) {
+        val resolver = herdrResolver(serverId)
+        if (resolver == null) {
+            _herdrAgents.value = emptyList()
+            _herdrAgentsLoading.value = false
+            _herdrAgentsError.value = "Herdr is unavailable for this session"
+            return
+        }
+
+        _herdrAgentsLoading.value = true
+        _herdrAgentsError.value = null
+        viewModelScope.launch {
+            runCatching { resolver.listAgents() }.fold(
+                onSuccess = { agents ->
+                    _herdrAgents.value = agents
+                    _herdrAgentsLoading.value = false
+                },
+                onFailure = { error ->
+                    _herdrAgents.value = emptyList()
+                    _herdrAgentsError.value = error.message ?: "Unable to query Herdr agents"
+                    _herdrAgentsLoading.value = false
+                },
+            )
+        }
+    }
+
+    fun focusHerdrAgent(serverId: String, agent: HerdrWorkspaceResolver.HerdrAgentInfo) {
+        val resolver = herdrResolver(serverId) ?: return
+        viewModelScope.launch {
+            resolver.focusAgent(agent)
+        }
+    }
+
     /**
      * Handle a tapped terminal notification: focus the herdr workspace (and tab,
      * when identifiable) that produced it, using the notification body as the
      * target. No-op when the server is gone or the body isn't a herdr context.
      */
     fun focusHerdrNotification(serverId: String?, body: String?) {
-        val server = serverId?.let { coordinator.getServer(it) } ?: return
-        val sshSession = server.sshSession ?: return
+        val resolver = serverId?.let { herdrResolver(it) } ?: return
         viewModelScope.launch {
-            val resolver = HerdrWorkspaceResolver { cmd -> sshSession.execCommand(cmd) }
             resolver.focusFromBody(body)
         }
+    }
+
+    private fun herdrResolver(serverId: String): HerdrWorkspaceResolver? {
+        val sshSession = coordinator.getServer(serverId)?.sshSession ?: return null
+        return HerdrWorkspaceResolver { cmd -> sshSession.execCommand(cmd) }
     }
 
     fun getSftpViewModel(serverId: String): SftpViewModel? = coordinator.getSftpViewModel(serverId)

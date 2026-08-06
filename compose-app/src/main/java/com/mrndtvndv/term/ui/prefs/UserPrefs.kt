@@ -5,6 +5,10 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
+private const val HerdrAgentFabOpacityKey = "herdr_agent_fab_opacity"
+private const val DefaultHerdrAgentFabOpacity = 0.7f
+private const val MinHerdrAgentFabOpacity = 0.25f
+
 class UserPrefs {
     private val _customFontName = MutableStateFlow<String?>(null)
     val customFontName: StateFlow<String?> = _customFontName.asStateFlow()
@@ -21,12 +25,19 @@ class UserPrefs {
     private val _hideWorkspaceTabs = MutableStateFlow(false)
     val hideWorkspaceTabs: StateFlow<Boolean> = _hideWorkspaceTabs.asStateFlow()
 
+    private val _herdrAgentFabOpacity = MutableStateFlow(DefaultHerdrAgentFabOpacity)
+    val herdrAgentFabOpacity: StateFlow<Float> = _herdrAgentFabOpacity.asStateFlow()
+
     fun init(prefs: SharedPreferences) {
         _customFontName.value = prefs.getString("custom_font_name", null)
         _useCustomFontForWholeUi.value = prefs.getBoolean("use_custom_font_for_whole_ui", false)
         _nativeLogcatLoggingEnabled.value = prefs.getBoolean("native_logcat_logging_enabled", false)
         _debugHudEnabled.value = prefs.getBoolean("debug_hud_enabled", false)
         _hideWorkspaceTabs.value = prefs.getBoolean("hide_workspace_tabs", false)
+        _herdrAgentFabOpacity.value = prefs.getFloat(
+            HerdrAgentFabOpacityKey,
+            DefaultHerdrAgentFabOpacity,
+        ).coerceIn(MinHerdrAgentFabOpacity, 1f)
     }
 
     fun setCustomFontName(name: String?, prefs: SharedPreferences) {
@@ -52,5 +63,11 @@ class UserPrefs {
     fun setHideWorkspaceTabs(enabled: Boolean, prefs: SharedPreferences) {
         _hideWorkspaceTabs.value = enabled
         prefs.edit().putBoolean("hide_workspace_tabs", enabled).apply()
+    }
+
+    fun setHerdrAgentFabOpacity(opacity: Float, prefs: SharedPreferences) {
+        val normalizedOpacity = opacity.coerceIn(MinHerdrAgentFabOpacity, 1f)
+        _herdrAgentFabOpacity.value = normalizedOpacity
+        prefs.edit().putFloat(HerdrAgentFabOpacityKey, normalizedOpacity).apply()
     }
 }

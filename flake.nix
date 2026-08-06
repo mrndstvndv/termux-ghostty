@@ -22,6 +22,9 @@
     ...
   }:
     let
+      localAndroidSdkRoot = builtins.getEnv "TERMUX_LOCAL_ANDROID_SDK";
+      useLocalAndroidSdk = localAndroidSdkRoot != "";
+
       allSystems = [
         "x86_64-linux"
         "x86_64-darwin"
@@ -30,13 +33,12 @@
 
       forAllSystems = f:
         nixpkgs.lib.genAttrs allSystems (system:
-          f {
+          let
             pkgs = import nixpkgs {
               inherit system;
               config.allowUnfree = true;
               overlays = [ zig-overlay.overlays.default ];
             };
-
             androidSdk = android-nixpkgs.sdk.${system} (sdkPkgs: with sdkPkgs; [
               cmdline-tools-latest
               platform-tools
@@ -51,22 +53,46 @@
               emulator
               system-images-android-34-google-apis-arm64-v8a
             ]);
-          });
+          in
+            f {
+              inherit pkgs androidSdk;
+              androidSdkRoot =
+                if useLocalAndroidSdk
+                then localAndroidSdkRoot
+                else "${androidSdk}/share/android-sdk";
+            });
     in {
-      devShells = forAllSystems ({ pkgs, androidSdk }: {
-        default = pkgs.mkShell {
-          packages = with pkgs; [
+      devShells = forAllSystems ({ pkgs, androidSdk, androidSdkRoot }: {
+        default = (if useLocalAndroidSdk then pkgs.mkShellNoCC else pkgs.mkShell) {
+          packages = pkgs.lib.optionals (!useLocalAndroidSdk) (with pkgs; [
             jdk17
             androidSdk
             zigpkgs."0.15.2"
-          ];
+          ]);
 
-          JAVA_HOME = pkgs.jdk17.home;
+          JAVA_HOME = if useLocalAndroidSdk then "" else pkgs.jdk17.home;
 
           shellHook = ''
             unset ANDROID_PREFS_ROOT
 
-            export NIX_ANDROID_SDK_ROOT="${androidSdk}/share/android-sdk"
+            if [ "$(uname -s)" = "Darwin" ] && [ -z "''${DEVELOPER_DIR+x}" ]; then
+              active_developer_dir="$(xcode-select -p 2>/dev/null || true)"
+              if [ "$active_developer_dir" = "/Library/Developer/CommandLineTools" ]; then
+                if [ -n "''${ZIG_0_15_2_DEVELOPER_DIR:-}" ]; then
+                  export DEVELOPER_DIR="$ZIG_0_15_2_DEVELOPER_DIR"
+                else
+                  # Zig 0.15.2 cannot link its arm64 host tools against macOS 26's CLT SDK.
+                  export DEVELOPER_DIR=/nonexistent
+                fi
+              fi
+            fi
+
+            profileJava="$(readlink -f "$HOME/.nix-profile/bin/java" 2>/dev/null || true)"
+            if [ -n "$profileJava" ]; then
+              export JAVA_HOME="$(printf '%s' "$profileJava" | sed 's#/bin/java$##')"
+            fi
+
+            export NIX_ANDROID_SDK_ROOT="${androidSdkRoot}"
             export TERMUX_ANDROID_SDK_ROOT="$PWD/.android-sdk"
             export TERMUX_ANDROID_SDK_ROOT_FILE="$PWD/.android-sdk-root"
 
@@ -89,6 +115,11 @@
             export ANDROID_SDK_ROOT="$ANDROID_HOME"
             export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/29.0.14206865"
             export ANDROID_USER_HOME="$PWD/.android"
+
+            if [ -x "$HOME/.nix-profile/bin/zig" ] && [ "$("$HOME/.nix-profile/bin/zig" version 2>/dev/null || true)" = "0.15.2" ]; then
+              export ZIG_EXECUTABLE="$HOME/.nix-profile/bin/zig"
+              export ZIG_0_15_2_EXECUTABLE="$ZIG_EXECUTABLE"
+            fi
 
             mkdir -p "$ANDROID_USER_HOME"
 

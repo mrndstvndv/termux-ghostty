@@ -1,8 +1,11 @@
 package com.termux.terminal.compose.internal
 
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import com.termux.terminal.compose.TerminalMetrics
+import com.termux.terminal.compose.TerminalSelection
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertSame
 import org.junit.Test
 
 class TerminalSelectionMagnifierTest {
@@ -14,6 +17,16 @@ class TerminalSelectionMagnifierTest {
         viewportWidthPx = 100,
         viewportHeightPx = 100
     )
+
+    @Test
+    fun hiddenMagnifierRemovesItsModifier() {
+        val modifier = Modifier
+
+        assertSame(
+            modifier,
+            modifier.terminalSelectionMagnifier(visible = false) { error("not evaluated") }
+        )
+    }
 
     @Test
     fun sourceCentersTheCharacterAtTheStartHandle() {
@@ -34,6 +47,35 @@ class TerminalSelectionMagnifierTest {
             selectionMagnifierSource(
                 endpoint = SelectionHandleEndpoint.END,
                 handlePosition = Offset(90f, 100f),
+                metrics = metrics
+            )
+        )
+    }
+
+    @Test
+    fun sourceUsesTheSelectedHandleCharacterInsteadOfTheDragPosition() {
+        val selection = TerminalSelection(
+            startCol = 2,
+            startRow = 3,
+            endCol = 7,
+            endRow = 3
+        )
+
+        assertEquals(
+            Offset(25f, 70f),
+            selectionMagnifierSourceForSelection(
+                endpoint = SelectionHandleEndpoint.START,
+                selection = selection,
+                topRow = 0,
+                metrics = metrics
+            )
+        )
+        assertEquals(
+            Offset(75f, 70f),
+            selectionMagnifierSourceForSelection(
+                endpoint = SelectionHandleEndpoint.END,
+                selection = selection,
+                topRow = 0,
                 metrics = metrics
             )
         )

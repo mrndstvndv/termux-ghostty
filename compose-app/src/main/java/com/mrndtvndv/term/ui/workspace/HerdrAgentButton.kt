@@ -1,6 +1,7 @@
 package com.mrndtvndv.term.ui.workspace
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -11,6 +12,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountTree
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material3.CircularProgressIndicator
@@ -225,6 +227,7 @@ private fun AgentIcon(
 }
 
 @Composable
+@Suppress("LongMethod")
 private fun AgentListItem(
     agent: HerdrWorkspaceResolver.HerdrAgentInfo,
     title: String,
@@ -241,10 +244,28 @@ private fun AgentListItem(
         "done" -> MaterialTheme.colorScheme.tertiary
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
+    val isFocused = agent.focused
+    val containerColor = if (isFocused) {
+        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
+    } else {
+        MaterialTheme.colorScheme.surfaceContainerLow
+    }
 
     ListItem(
         modifier = Modifier.clickable(onClick = onClick),
-        colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+        colors = ListItemDefaults.colors(
+            containerColor = containerColor,
+            headlineColor = if (isFocused) {
+                MaterialTheme.colorScheme.onPrimaryContainer
+            } else {
+                MaterialTheme.colorScheme.onSurface
+            },
+            supportingColor = if (isFocused) {
+                MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            },
+        ),
         leadingContent = {
             AgentIcon(
                 agent = agent.agent,
@@ -267,11 +288,24 @@ private fun AgentListItem(
             )
         },
         trailingContent = {
-            Text(
-                text = status,
-                color = statusColor,
-                style = MaterialTheme.typography.labelMedium,
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(
+                    text = status,
+                    color = statusColor,
+                    style = MaterialTheme.typography.labelMedium,
+                )
+                if (isFocused) {
+                    Icon(
+                        imageVector = Icons.Default.Check,
+                        contentDescription = "Focused agent",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
+            }
         },
     )
 }

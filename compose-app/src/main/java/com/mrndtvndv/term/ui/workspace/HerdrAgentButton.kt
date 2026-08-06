@@ -213,11 +213,13 @@ private fun agentWorkspaceTitle(
  * The Pi mark is sourced from https://pi.dev/logo-on-dark.svg.
  * The Prime Agent mark is sourced from:
  * https://github.com/PrimeIntellect-ai/prime-agent/blob/main/assets/brand/prime-butterfly.svg
+ * The Cline mark is sourced from https://uxwing.com/cline-ai-icon/.
  */
 private fun agentIconResource(agent: String?): Int? = when (agent?.lowercase(Locale.ROOT)) {
     "amp" -> R.drawable.agent_amp
     "agy", "antigravity" -> R.drawable.agent_antigravity
     "claude" -> R.drawable.agent_claude
+    "cline" -> R.drawable.agent_cline
     "codex" -> R.drawable.agent_codex
     "copilot", "github-copilot" -> R.drawable.agent_copilot
     "cursor" -> R.drawable.agent_cursor
@@ -287,10 +289,10 @@ private fun AgentListItem(
         modifier = Modifier.clickable(onClick = onClick),
         colors = ListItemDefaults.colors(
             containerColor = containerColor,
-            headlineColor = if (isFocused) {
-                MaterialTheme.colorScheme.onPrimaryContainer
-            } else {
-                MaterialTheme.colorScheme.onSurface
+            headlineColor = when {
+                status == "working" -> statusColor
+                isFocused -> MaterialTheme.colorScheme.onPrimaryContainer
+                else -> MaterialTheme.colorScheme.onSurface
             },
             supportingColor = if (isFocused) {
                 MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)

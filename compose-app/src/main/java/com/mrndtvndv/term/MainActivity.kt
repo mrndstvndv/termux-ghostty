@@ -74,6 +74,14 @@ class MainActivity : ComponentActivity(), SessionHost {
 
     // ── Activity lifecycle ───────────────────────────────────────────
 
+    override fun onStart() {
+        super.onStart()
+        // Frame callbacks are intentionally dropped while the activity is stopped. Re-apply the
+        // latest published delta now so RenderFrameCache can detect a gap and request a full
+        // snapshot instead of waiting for terminal input to cause another redraw.
+        activeTerminalView?.onScreenUpdated()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -126,6 +134,10 @@ class MainActivity : ComponentActivity(), SessionHost {
                 onViewCreated = { view ->
                     activeTerminalView = view
                     registerForContextMenu(view)
+                    // The session may have published its first frame before this Compose view
+                    // was registered with the activity. Replay the latest delta so the initial
+                    // screen does not depend on a focus or input event to become visible.
+                    view.onScreenUpdated()
                 },
                 onViewReleased = { view ->
                     activeTerminalView?.let { unregisterForContextMenu(it) }

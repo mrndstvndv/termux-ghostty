@@ -30,6 +30,13 @@ data class SftpDownloadState(
     val isDownloading: Boolean = false
 )
 
+data class SftpUploadState(
+    val fileName: String,
+    val bytesUploaded: Long,
+    val totalBytes: Long,
+    val isUploading: Boolean = false
+)
+
 class SftpViewModel(
     private val client: SftpClient,
     private val savedStateHandle: SavedStateHandle,
@@ -42,10 +49,14 @@ class SftpViewModel(
     private val _downloadState = MutableStateFlow<SftpDownloadState?>(null)
     val downloadState = _downloadState.asStateFlow()
 
+    private val _uploadState = MutableStateFlow<SftpUploadState?>(null)
+    val uploadState = _uploadState.asStateFlow()
+
     private val _isRefreshing = MutableStateFlow(false)
     val isRefreshing = _isRefreshing.asStateFlow()
 
     private var downloadJob: Job? = null
+    private var uploadJob: Job? = null
 
     var onPathChanged: ((String) -> Unit)? = null
 
@@ -151,6 +162,44 @@ class SftpViewModel(
         _downloadState.value = null
     }
 
+    @Suppress("SwallowedException")
+    fun uploadFile(
+        source: File,
+        onSuccess: () -> Unit = {},
+        onError: (String) -> Unit = {}
+    ) {
+        val fileName = source.name
+        val dir = currentDirectory.trimEnd('/')
+        val remotePath = if (dir == "/") "/$fileName" else "$dir/$fileName"
+        uploadJob?.cancel()
+        uploadJob = viewModelScope.launch {
+            _uploadState.value = SftpUploadState(fileName, 0L, source.length(), true)
+            try {
+                client.uploadFile(source, remotePath) { progress ->
+                    if (isActive) {
+                        _uploadState.value = SftpUploadState(fileName, progress, source.length(), true)
+                    }
+                }
+                if (isActive) {
+                    _uploadState.value = null
+                    onSuccess()
+                    refresh()
+                }
+            } catch (e: CancellationException) {
+                _uploadState.value = null
+            } catch (e: Exception) {
+                _uploadState.value = null
+                onError(e.localizedMessage ?: "Failed to upload file")
+            }
+        }
+    }
+
+    fun cancelUpload() {
+        uploadJob?.cancel()
+        uploadJob = null
+        _uploadState.value = null
+    }
+
     fun refresh() {
         navigateTo(currentPath)
     }
@@ -162,4 +211,10 @@ class SftpViewModel(
         val parent = normalized.substringBeforeLast('/').ifEmpty { "/" }
         navigateTo(parent)
     }
+
+    private val currentDirectory: String
+        get() {
+            val path = currentPath
+            return if (path.isBlank()) "/" else path
+        }
 }

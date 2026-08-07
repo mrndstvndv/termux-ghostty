@@ -2,6 +2,8 @@
 
 package com.mrndtvndv.term.ui.sftp
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -9,6 +11,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
@@ -22,6 +25,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.graphics.Color
 import androidx.navigation3.runtime.NavBackStack
 import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.entryProvider
@@ -35,6 +40,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.mrndtvndv.term.domain.SftpFile
 import com.mrndtvndv.term.ui.SftpNavKey
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import android.content.Context
+import android.net.Uri
+import android.provider.OpenableColumns
 import java.io.File
 
 data class PathSegment(val name: String, val fullPath: String)
@@ -134,44 +145,48 @@ fun SftpFileBrowser(
     val isRefreshing by viewModel.isRefreshing.collectAsState()
     val trailPath by viewModel.trailPath.collectAsState()
     val downloadState by viewModel.downloadState.collectAsState()
+    val uploadState by viewModel.uploadState.collectAsState()
     val context = LocalContext.current
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+
+    val uploadPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri ->
+        uri ?: return@rememberLauncherForActivityResult
+        scope.launch {
+            val staged = withContext(Dispatchers.IO) { stagePickedFile(context, uri) }
+            if (staged == null) {
+                snackbarHostState.showSnackbar("Failed to read selected file")
+            } else {
+                viewModel.uploadFile(
+                    source = staged,
+                    onSuccess = { scope.launch { snackbarHostState.showSnackbar("Uploaded ${staged.name}") } },
+                    onError = { message -> scope.launch { snackbarHostState.showSnackbar(message) } }
+                )
+            }
+        }
+    }
 
     // Show progress dialog when downloading to open
     downloadState?.let { state ->
-        AlertDialog(
-            onDismissRequest = { viewModel.cancelDownload() },
-            confirmButton = {},
-            dismissButton = {
-                TextButton(onClick = { viewModel.cancelDownload() }) {
-                    Text("Cancel")
-                }
-            },
-            title = { Text("Downloading File") },
-            text = {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Text(state.fileName, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    
-                    val progress = if (state.totalBytes > 0) state.bytesDownloaded.toFloat() / state.totalBytes else 0f
-                    LinearProgressIndicator(
-                        progress = { progress },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    
-                    val bytesText = if (state.totalBytes > 0) {
-                        "${formatBytes(state.bytesDownloaded)} / ${formatBytes(state.totalBytes)}"
-                    } else {
-                        formatBytes(state.bytesDownloaded)
-                    }
-                    Text(
-                        text = bytesText,
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.align(Alignment.End)
-                    )
-                }
-            }
+        SftpTransferDialog(
+            title = "Downloading File",
+            fileName = state.fileName,
+            bytesTransferred = state.bytesDownloaded,
+            totalBytes = state.totalBytes,
+            onCancel = { viewModel.cancelDownload() }
+        )
+    }
+
+    // Show progress dialog when uploading
+    uploadState?.let { state ->
+        SftpTransferDialog(
+            title = "Uploading File",
+            fileName = state.fileName,
+            bytesTransferred = state.bytesUploaded,
+            totalBytes = state.totalBytes,
+            onCancel = { viewModel.cancelUpload() }
         )
     }
 
@@ -191,7 +206,25 @@ fun SftpFileBrowser(
         },
         entryProvider = entryProvider<NavKey> {
             entry<SftpNavKey.Folder> {
-                Column(modifier = modifier.fillMaxSize()) {
+                Scaffold(
+                    modifier = modifier.fillMaxSize(),
+                    containerColor = Color.Transparent,
+                    contentWindowInsets = WindowInsets(0.dp),
+                    snackbarHost = { SnackbarHost(snackbarHostState) },
+                    floatingActionButton = {
+                        FloatingActionButton(onClick = { uploadPicker.launch("*/*") }) {
+                            Icon(
+                                imageVector = Icons.Default.FileUpload,
+                                contentDescription = "Upload file"
+                            )
+                        }
+                    }
+                ) { innerPadding ->
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(innerPadding)
+                    ) {
                     SftpBreadcrumbs(
                         currentPath = viewModel.currentPath,
                         trailPath = trailPath,
@@ -360,10 +393,86 @@ fun SftpFileBrowser(
                             }
                         }
                     }
+                    }
                 }
             }
         }
     )
+}
+
+@Composable
+private fun SftpTransferDialog(
+    title: String,
+    fileName: String,
+    bytesTransferred: Long,
+    totalBytes: Long,
+    onCancel: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onCancel,
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onCancel) {
+                Text("Cancel")
+            }
+        },
+        title = { Text(title) },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = fileName,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+
+                val progress = if (totalBytes > 0) bytesTransferred.toFloat() / totalBytes else 0f
+                LinearProgressIndicator(
+                    progress = { progress },
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                val bytesText = if (totalBytes > 0) {
+                    "${formatBytes(bytesTransferred)} / ${formatBytes(totalBytes)}"
+                } else {
+                    formatBytes(bytesTransferred)
+                }
+                Text(
+                    text = bytesText,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.align(Alignment.End)
+                )
+            }
+        }
+    )
+}
+
+@Suppress("TooGenericExceptionCaught", "SwallowedException")
+private fun stagePickedFile(context: Context, uri: Uri): File? {
+    val resolver = context.contentResolver
+    val displayName = resolver.query(
+        uri,
+        arrayOf(OpenableColumns.DISPLAY_NAME),
+        null,
+        null,
+        null
+    )?.use { cursor ->
+        val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+        if (index >= 0 && cursor.moveToFirst()) cursor.getString(index) else null
+    } ?: uri.lastPathSegment?.substringAfterLast('/')
+        ?: "upload_${System.currentTimeMillis()}"
+    val stageDir = File(context.cacheDir, "upload_stage").apply { mkdirs() }
+    val target = File(stageDir, displayName)
+    return try {
+        val input = resolver.openInputStream(uri) ?: return null
+        input.use { ins -> target.outputStream().use { out -> ins.copyTo(out) } }
+        target
+    } catch (e: Exception) {
+        null
+    }
 }
 
 private fun formatBytes(bytes: Long): String {

@@ -13,7 +13,6 @@ internal class RowRun(
     val widthColumns: Int,
     val startCharIndex: Int,
     val widthChars: Int,
-    val measuredWidth: Float,
     val style: Long,
     val flags: Int
 ) {
@@ -57,12 +56,11 @@ internal class RowRunCache {
         widthColumns: Int,
         startCharIndex: Int,
         widthChars: Int,
-        measuredWidth: Float,
         style: Long,
         flags: Int
     ) {
         val existing = runs
-        val run = RowRun(startColumn, widthColumns, startCharIndex, widthChars, measuredWidth, style, flags)
+        val run = RowRun(startColumn, widthColumns, startCharIndex, widthChars, style, flags)
         runs = if (existing == null) arrayOf(run) else existing + run
     }
 }

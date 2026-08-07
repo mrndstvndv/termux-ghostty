@@ -16,6 +16,15 @@ import com.termux.terminal.compose.TerminalSelection
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.Channel.Factory.CONFLATED
 
+private const val MinGridDimension = 4
+
+/**
+ * Converts a viewport width to columns using the raw measured cell width.
+ * Visual geometry intentionally uses the rounded cell width instead.
+ */
+internal fun terminalColumnsForMeasuredCellWidth(widthPx: Int, measuredCellWidthPx: Float): Int =
+    (widthPx / measuredCellWidthPx).toInt().coerceAtLeast(MinGridDimension)
+
 /**
  * Owns the backend lifecycle, the retained renderer, shader compilation, and
  * frame scheduling decisions for one [TerminalCanvas].
@@ -122,9 +131,9 @@ internal class TerminalController(
     /**
      * Resizes the backend when the display grid (columns x rows) changes.
      *
-     * The grid is derived from the row renderer's font metrics using the same
-     * formula as the backing [TerminalView.updateSize], so pixel drift during
-     * a drag-resize that does not cross a cell boundary is coalesced away. This
+     * The grid is derived from the row renderer's measured cell width using
+     * the same raw-width formula as the backing [TerminalView.updateSize], so
+     * pixel drift during a drag-resize that does not cross a cell boundary is coalesced away. This
      * avoids churning every intermediate size through reflow -> SIGWINCH ->
      * full tmux redraw. Once the grid changes, the actual pixel size is still
      * forwarded so the emulator tracks the true viewport.
@@ -144,9 +153,12 @@ internal class TerminalController(
             backend.resize(width, height)
             return
         }
-        val columns = (width / renderer.fontWidthPx).toInt().coerceAtLeast(MIN_GRID_DIMENSION)
+        // Keep terminal column sizing on the raw measured width. The hidden
+        // migration adapter uses this same policy; rounded cellWidthPx is for
+        // visual placement and session cell-width metadata only.
+        val columns = terminalColumnsForMeasuredCellWidth(width, renderer.measuredCellWidthPx)
         val rows = ((height - renderer.lineSpacingAndAscentPx) / renderer.lineSpacingPx)
-            .coerceAtLeast(MIN_GRID_DIMENSION)
+            .coerceAtLeast(MinGridDimension)
         if (columns == lastResizeColumns && rows == lastResizeRows) return
         lastResizeColumns = columns
         lastResizeRows = rows
@@ -280,8 +292,5 @@ internal class TerminalController(
     private companion object {
         /** Small settle window after a cursor effect's declared duration. */
         const val CURSOR_EFFECT_GRACE_SECONDS = 0.05f
-
-        /** Matches the backing view's minimum grid dimension. */
-        const val MIN_GRID_DIMENSION = 4
     }
 }

@@ -1,7 +1,6 @@
 package com.termux.terminal.compose
 
 import android.graphics.Rect
-import android.graphics.Paint
 import android.graphics.Typeface
 
 /**
@@ -12,9 +11,15 @@ import android.graphics.Typeface
  * [columnToX] returns the left edge of a cell column, [rowToY] returns the top
  * edge of an absolute row relative to the viewport top.
  */
+@Suppress("LongParameterList")
 class TerminalMetrics private constructor(
     val fontSizePx: Float,
+    /** Raw, unscaled width of the base monospace cell. */
+    val measuredCellWidthPx: Float,
+    /** Rounded width used for visual cell placement and hit testing. */
     val cellWidthPx: Float,
+    /** Paint scale that maps [measuredCellWidthPx] to [cellWidthPx]. */
+    val textScaleX: Float,
     val cellHeightPx: Float,
     val fontAscentPx: Float,
     val lineSpacingAndAscentPx: Float,
@@ -63,7 +68,8 @@ class TerminalMetrics private constructor(
          * Builds metrics from a text size and viewport size. [typeface] is the
          * consumer's font choice; null uses the platform monospace font. Cell
          * geometry follows the emulator's convention: line spacing is the
-         * rounded font spacing, and the cell width is measured from 'X'.
+         * rounded font spacing, and the visual cell width is the rounded
+         * measurement of 'X'.
          */
         fun from(
             fontSizePx: Float,
@@ -71,20 +77,15 @@ class TerminalMetrics private constructor(
             viewportWidthPx: Int,
             viewportHeightPx: Int
         ): TerminalMetrics {
-            val paint = Paint()
-            paint.isAntiAlias = true
-            paint.typeface = typeface ?: Typeface.MONOSPACE
-            paint.textSize = fontSizePx
-            val lineSpacing = kotlin.math.ceil(paint.fontSpacing.toDouble()).toInt()
-            val ascent = kotlin.math.ceil(paint.ascent().toDouble()).toInt()
-            val lineSpacingAndAscent = lineSpacing + ascent
-            val cellWidth = maxOf(1f, paint.measureText("X"))
+            val fontMetrics = TerminalFontMetrics.from(typeface, fontSizePx)
             return TerminalMetrics(
                 fontSizePx = fontSizePx,
-                cellWidthPx = cellWidth,
-                cellHeightPx = lineSpacing.toFloat(),
-                fontAscentPx = ascent.toFloat(),
-                lineSpacingAndAscentPx = lineSpacingAndAscent.toFloat(),
+                measuredCellWidthPx = fontMetrics.measuredCellWidthPx,
+                cellWidthPx = fontMetrics.cellWidthPx,
+                textScaleX = fontMetrics.textScaleX,
+                cellHeightPx = fontMetrics.lineSpacingPx.toFloat(),
+                fontAscentPx = fontMetrics.ascentPx.toFloat(),
+                lineSpacingAndAscentPx = fontMetrics.lineSpacingAndAscentPx.toFloat(),
                 viewportWidthPx = viewportWidthPx,
                 viewportHeightPx = viewportHeightPx
             )
@@ -101,7 +102,9 @@ class TerminalMetrics private constructor(
             fontSizePx: Float = 14f
         ): TerminalMetrics = TerminalMetrics(
             fontSizePx = fontSizePx,
+            measuredCellWidthPx = cellWidthPx,
             cellWidthPx = cellWidthPx,
+            textScaleX = 1f,
             cellHeightPx = cellHeightPx,
             fontAscentPx = ascentPx,
             lineSpacingAndAscentPx = lineSpacingAndAscentPx,

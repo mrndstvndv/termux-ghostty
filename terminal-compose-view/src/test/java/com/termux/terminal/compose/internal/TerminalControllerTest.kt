@@ -102,6 +102,15 @@ class TerminalControllerTest {
 
         assertEquals(listOf(640 to 480, 320 to 240), backend.resizes)
     }
+
+    @Test
+    fun columnSizingUsesRawWidthInsteadOfRoundedVisualWidth() {
+        val measuredCellWidthPx = 7.5f
+
+        assertEquals(4, terminalColumnsForMeasuredCellWidth(37, measuredCellWidthPx))
+        assertEquals(5, terminalColumnsForMeasuredCellWidth(38, measuredCellWidthPx))
+        assertEquals(5, terminalColumnsForMeasuredCellWidth(39, measuredCellWidthPx))
+    }
 }
 
 private object TestCursorEffect : CursorEffect {

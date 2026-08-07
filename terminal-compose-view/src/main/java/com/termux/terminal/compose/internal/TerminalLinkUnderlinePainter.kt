@@ -16,7 +16,7 @@ import com.termux.terminal.compose.TerminalRow
 internal class TerminalLinkUnderlinePainter(
     private val paint: Paint,
     private val fontSizePx: Float,
-    private val fontWidthPx: Float
+    private val cellWidthPx: Float
 ) {
     fun drawUnderlines(
         canvas: Canvas,
@@ -109,9 +109,9 @@ internal class TerminalLinkUnderlinePainter(
         val underlineTop = underlineBottom - thickness
         paint.color = color
         canvas.drawRect(
-            startColumn * fontWidthPx,
+            startColumn * cellWidthPx,
             underlineTop,
-            endColumnExclusive * fontWidthPx,
+            endColumnExclusive * cellWidthPx,
             underlineBottom,
             paint
         )

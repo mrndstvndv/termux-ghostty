@@ -3,22 +3,32 @@ package com.mrndtvndv.term.ui.workspace
 import android.view.View
 import android.view.Window
 import android.view.WindowManager
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountTree
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.SmartToy
+import androidx.compose.material.icons.filled.Terminal
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
@@ -27,6 +37,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -39,17 +50,26 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogWindowProvider
+import androidx.compose.ui.window.PopupProperties
 import com.mrndtvndv.term.R
 import com.mrndtvndv.term.server.HerdrWorkspaceResolver.HerdrPaneNode
 import com.mrndtvndv.term.server.HerdrWorkspaceResolver.HerdrTabNode
 import com.mrndtvndv.term.server.HerdrWorkspaceResolver.HerdrWorkspaceNode
 import java.util.Locale
+import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -62,13 +82,15 @@ fun HerdrAgentButton(
     onRefresh: () -> Unit,
     onFocusTab: (HerdrTabNode) -> Unit,
     onFocusPane: (HerdrPaneNode) -> Unit,
+    onClosePane: (HerdrPaneNode) -> Unit = {},
     fabOpacity: Float = 0.7f,
     modifier: Modifier = Modifier,
 ) {
     var showAgents by remember { mutableStateOf(false) }
     val expandedWorkspaceIds = remember { mutableStateMapOf<String, Boolean>() }
-    val sheetState = rememberModalBottomSheetState()
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val coroutineScope = rememberCoroutineScope()
+    var pendingClosePane by remember { mutableStateOf<HerdrPaneNode?>(null) }
 
     fun dismissAgents(afterDismiss: () -> Unit = {}) {
         coroutineScope.launch {
@@ -169,10 +191,11 @@ fun HerdrAgentButton(
                                                 (!hasAgentPane || pane.agent != null)
                                         }
                                         item(key = "tab:${workspace.workspaceId}:${tab.tabId}") {
-                                            AgentTabListItem(
+                                            TabGroupItem(
                                                 tab = tab,
-                                                pane = displayPane,
-                                                onClick = {
+                                                displayPane = displayPane,
+                                                additionalPanes = additionalPanes,
+                                                onOpen = {
                                                     dismissAgents {
                                                         if (displayPane != null) {
                                                             onFocusPane(displayPane)
@@ -181,19 +204,11 @@ fun HerdrAgentButton(
                                                         }
                                                     }
                                                 },
+                                                onSelectPane = { pane ->
+                                                    dismissAgents { onFocusPane(pane) }
+                                                },
+                                                onClosePane = { pane -> pendingClosePane = pane },
                                             )
-                                        }
-                                        additionalPanes.forEach { pane ->
-                                            item(
-                                                key = "pane:${workspace.workspaceId}:${tab.tabId}:${pane.paneId}",
-                                            ) {
-                                                PaneListItem(
-                                                    pane = pane,
-                                                    onClick = {
-                                                        dismissAgents { onFocusPane(pane) }
-                                                    },
-                                                )
-                                            }
                                         }
                                     }
                                 }
@@ -202,6 +217,34 @@ fun HerdrAgentButton(
                     }
                 }
             }
+        }
+
+        pendingClosePane?.let { pane ->
+            AlertDialog(
+                onDismissRequest = { pendingClosePane = null },
+                title = { Text("Close pane?") },
+                text = {
+                    PlaceSheetAboveIme()
+                    Text(
+                        "This closes ${pane.title.ifBlank { "this pane" }} and terminates whatever is running in it.",
+                    )
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            pendingClosePane = null
+                            onClosePane(pane)
+                        },
+                    ) {
+                        Text("Close", color = MaterialTheme.colorScheme.error)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { pendingClosePane = null }) {
+                        Text("Cancel")
+                    }
+                },
+            )
         }
     }
 }
@@ -243,6 +286,7 @@ private fun WorkspaceListItem(
     ListItem(
         modifier = Modifier
             .fillMaxWidth()
+            .heightIn(min = 25.dp)
             .clickable(onClick = onClick),
         colors = ListItemDefaults.colors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
@@ -286,6 +330,7 @@ private fun WorkspaceListItem(
  * The Prime Agent mark is sourced from:
  * https://github.com/PrimeIntellect-ai/prime-agent/blob/main/assets/brand/prime-butterfly.svg
  * The Cline mark is sourced from https://uxwing.com/cline-ai-icon/.
+ * The Neovim mark is sourced from https://neovim.io/logos/neovim-mark.svg.
  */
 private fun agentIconResource(agent: String?): Int? = when (agent?.lowercase(Locale.ROOT)) {
     "amp" -> R.drawable.agent_amp
@@ -308,16 +353,48 @@ private fun agentIconResource(agent: String?): Int? = when (agent?.lowercase(Loc
     else -> null
 }
 
+/** True when a non-agent pane is running nvim: title is `NVIM` or `<path> - NVIM`. */
+private fun isNvimTitle(title: String, agent: String?): Boolean {
+    if (!agent.isNullOrBlank()) return false
+    val lower = title.lowercase(Locale.ROOT)
+    return lower == "nvim" || lower.startsWith("nvim ") || lower.endsWith("- nvim")
+}
+
+/** Width of the long-press pane context menu; used to keep the menu inside the row. */
+private val ContextMenuWidth = 168.dp
+
+private fun isNvimProcess(processName: String?): Boolean =
+    processName?.equals("nvim", ignoreCase = true) == true
+
+/** Authoritative process name when herdr reports it; falls back to the title heuristic. */
+private fun isNvimPane(pane: HerdrPaneNode): Boolean {
+    if (pane.agent != null) return false
+    val processName = pane.processName
+    if (processName != null) return isNvimProcess(processName)
+    return isNvimTitle(pane.title, pane.agent)
+}
+
+/** Nvim icon for a non-agent pane in a tab; falls back to the tab's own title. */
+private fun showsNvimMark(pane: HerdrPaneNode?, tab: HerdrTabNode): Boolean {
+    if (pane != null) return isNvimPane(pane)
+    return tab.agent.isNullOrBlank() && isNvimTitle(tab.title, tab.agent)
+}
+
 @Composable
 private fun AgentIcon(
     agent: String?,
+    isNvim: Boolean,
     tint: Color,
     modifier: Modifier,
 ) {
-    val iconResource = agentIconResource(agent)
+    val iconResource = if (isNvim) R.drawable.agent_nvim else agentIconResource(agent)
     if (iconResource == null) {
         Icon(
-            imageVector = Icons.Default.AccountTree,
+            imageVector = if (agent.isNullOrBlank()) {
+                Icons.Default.Terminal
+            } else {
+                Icons.Default.AccountTree
+            },
             contentDescription = null,
             tint = tint,
             modifier = modifier,
@@ -332,16 +409,82 @@ private fun AgentIcon(
     }
 }
 
+/**
+ * One tab's rows: the display pane row plus any additional pane rows.
+ * When the tab is focused with multiple panes, rows are grouped in a bordered
+ * box and the currently focused pane is highlighted.
+ */
+@Composable
+private fun TabGroupItem(
+    tab: HerdrTabNode,
+    displayPane: HerdrPaneNode?,
+    additionalPanes: List<HerdrPaneNode>,
+    onOpen: () -> Unit,
+    onSelectPane: (HerdrPaneNode) -> Unit,
+    onClosePane: (HerdrPaneNode) -> Unit,
+) {
+    if (!tab.focused || additionalPanes.isEmpty()) {
+        AgentTabListItem(
+            tab = tab,
+            pane = displayPane,
+            highlighted = displayPane?.focused == true,
+            onClick = onOpen,
+            onClosePane = onClosePane,
+        )
+        additionalPanes.forEach { pane ->
+            PaneListItem(
+                pane = pane,
+                highlighted = pane.focused,
+                onClick = { onSelectPane(pane) },
+                onClosePane = onClosePane,
+            )
+        }
+        return
+    }
+
+    val shape = RoundedCornerShape(12.dp)
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp)
+            .clip(shape)
+            .border(
+                width = 1.dp,
+                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
+                shape = shape,
+            ),
+    ) {
+        AgentTabListItem(
+            tab = tab,
+            pane = displayPane,
+            highlighted = displayPane?.focused == true,
+            onClick = onOpen,
+            onClosePane = onClosePane,
+        )
+        additionalPanes.forEach { pane ->
+            PaneListItem(
+                pane = pane,
+                highlighted = pane.focused,
+                onClick = { onSelectPane(pane) },
+                onClosePane = onClosePane,
+            )
+        }
+    }
+}
+
 @Composable
 @Suppress("LongMethod")
+@OptIn(ExperimentalFoundationApi::class)
 private fun AgentTabListItem(
     tab: HerdrTabNode,
     pane: HerdrPaneNode?,
+    highlighted: Boolean,
     onClick: () -> Unit,
+    onClosePane: (HerdrPaneNode) -> Unit,
 ) {
     val displayAgent = pane?.agent ?: tab.agent
+    val isNvim = showsNvimMark(pane, tab)
     val displayStatus = pane?.agentStatus ?: tab.agentStatus
-    val displayFocused = pane?.focused ?: tab.focused
     val displayTitle = pane?.title ?: tab.title
     val status = displayStatus.lowercase(Locale.ROOT).ifBlank { "unknown" }
     val statusColor = when (status) {
@@ -350,30 +493,60 @@ private fun AgentTabListItem(
         "done" -> MaterialTheme.colorScheme.tertiary
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
-    val containerColor = if (displayFocused) {
+    val containerColor = if (highlighted) {
         MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
     } else {
         MaterialTheme.colorScheme.surfaceContainerLow
     }
+    val density = LocalDensity.current
+    val hapticFeedback = LocalHapticFeedback.current
+    var showMenu by remember { mutableStateOf(false) }
+    var menuOffset by remember { mutableStateOf(DpOffset.Zero) }
+    var rowWidthPx by remember { mutableStateOf(0) }
 
-    ListItem(
-        modifier = Modifier.clickable(onClick = onClick),
-        colors = ListItemDefaults.colors(
-            containerColor = containerColor,
-            headlineColor = when {
-                status == "working" -> statusColor
-                displayFocused -> MaterialTheme.colorScheme.onPrimaryContainer
-                else -> MaterialTheme.colorScheme.onSurface
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .onGloballyPositioned { coords -> rowWidthPx = coords.size.width }
+            .pointerInput(pane?.paneId) {
+                detectTapGestures(
+                    onTap = { onClick() },
+                    onLongPress = { position ->
+                        val menuWidthPx = with(density) { ContextMenuWidth.roundToPx() }
+                        val clampedX = (position.x + menuWidthPx)
+                            .coerceAtMost(rowWidthPx.toFloat())
+                            .minus(menuWidthPx.toFloat())
+                            .coerceAtLeast(0f)
+                            .roundToInt()
+                        menuOffset = DpOffset(
+                            x = with(density) { clampedX.toDp() },
+                            y = with(density) { position.y.roundToInt().toDp() },
+                        )
+                        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                        showMenu = true
+                    },
+                )
             },
-            supportingColor = if (displayFocused) {
-                MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
-            } else {
-                MaterialTheme.colorScheme.onSurfaceVariant
-            },
-        ),
+    ) {
+        ListItem(
+            modifier = Modifier,
+            colors = ListItemDefaults.colors(
+                containerColor = containerColor,
+                headlineColor = when {
+                    status == "working" -> statusColor
+                    highlighted -> MaterialTheme.colorScheme.onPrimaryContainer
+                    else -> MaterialTheme.colorScheme.onSurface
+                },
+                supportingColor = if (highlighted) {
+                    MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+            ),
         leadingContent = {
             AgentIcon(
                 agent = displayAgent,
+                isNvim = isNvim,
                 tint = statusColor,
                 modifier = Modifier.size(24.dp),
             )
@@ -404,13 +577,34 @@ private fun AgentTabListItem(
             }
         },
     )
+        DropdownMenu(
+            expanded = showMenu,
+            onDismissRequest = { showMenu = false },
+            modifier = Modifier.width(ContextMenuWidth),
+            offset = menuOffset,
+            properties = PopupProperties(focusable = false, dismissOnClickOutside = true),
+        ) {
+            pane?.let { targetPane ->
+                DropdownMenuItem(
+                    text = { Text("Close pane") },
+                    onClick = {
+                        showMenu = false
+                        onClosePane(targetPane)
+                    },
+                )
+            }
+        }
+    }
 }
 
 @Composable
 @Suppress("LongMethod")
+@OptIn(ExperimentalFoundationApi::class)
 private fun PaneListItem(
     pane: HerdrPaneNode,
+    highlighted: Boolean,
     onClick: () -> Unit,
+    onClosePane: (HerdrPaneNode) -> Unit,
 ) {
     val status = pane.agentStatus.lowercase(Locale.ROOT).ifBlank { "unknown" }
     val statusColor = when (status) {
@@ -419,30 +613,60 @@ private fun PaneListItem(
         "done" -> MaterialTheme.colorScheme.tertiary
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
-    val containerColor = if (pane.focused) {
+    val containerColor = if (highlighted) {
         MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
     } else {
         MaterialTheme.colorScheme.surfaceContainerLow
     }
+    val density = LocalDensity.current
+    val hapticFeedback = LocalHapticFeedback.current
+    var showMenu by remember { mutableStateOf(false) }
+    var menuOffset by remember { mutableStateOf(DpOffset.Zero) }
+    var rowWidthPx by remember { mutableStateOf(0) }
 
-    ListItem(
-        modifier = Modifier.clickable(onClick = onClick),
-        colors = ListItemDefaults.colors(
-            containerColor = containerColor,
-            headlineColor = when {
-                status == "working" -> statusColor
-                pane.focused -> MaterialTheme.colorScheme.onPrimaryContainer
-                else -> MaterialTheme.colorScheme.onSurface
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .onGloballyPositioned { coords -> rowWidthPx = coords.size.width }
+            .pointerInput(pane.paneId) {
+                detectTapGestures(
+                    onTap = { onClick() },
+                    onLongPress = { position ->
+                        val menuWidthPx = with(density) { ContextMenuWidth.roundToPx() }
+                        val clampedX = (position.x + menuWidthPx)
+                            .coerceAtMost(rowWidthPx.toFloat())
+                            .minus(menuWidthPx.toFloat())
+                            .coerceAtLeast(0f)
+                            .roundToInt()
+                        menuOffset = DpOffset(
+                            x = with(density) { clampedX.toDp() },
+                            y = with(density) { position.y.roundToInt().toDp() },
+                        )
+                        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                        showMenu = true
+                    },
+                )
             },
-            supportingColor = if (pane.focused) {
-                MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
-            } else {
-                MaterialTheme.colorScheme.onSurfaceVariant
-            },
-        ),
+    ) {
+        ListItem(
+            modifier = Modifier,
+            colors = ListItemDefaults.colors(
+                containerColor = containerColor,
+                headlineColor = when {
+                    status == "working" -> statusColor
+                    highlighted -> MaterialTheme.colorScheme.onPrimaryContainer
+                    else -> MaterialTheme.colorScheme.onSurface
+                },
+                supportingColor = if (highlighted) {
+                    MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+            ),
         leadingContent = {
             AgentIcon(
                 agent = pane.agent,
+                isNvim = isNvimPane(pane),
                 tint = statusColor,
                 modifier = Modifier.size(24.dp),
             )
@@ -473,4 +697,20 @@ private fun PaneListItem(
             }
         },
     )
+        DropdownMenu(
+            expanded = showMenu,
+            onDismissRequest = { showMenu = false },
+            modifier = Modifier.width(ContextMenuWidth),
+            offset = menuOffset,
+            properties = PopupProperties(focusable = false, dismissOnClickOutside = true),
+        ) {
+            DropdownMenuItem(
+                text = { Text("Close pane") },
+                onClick = {
+                    showMenu = false
+                    onClosePane(pane)
+                },
+            )
+        }
+    }
 }

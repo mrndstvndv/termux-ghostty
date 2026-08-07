@@ -11,7 +11,7 @@ data class ServerConfig(
     val port: Int = 22,
     val username: String = "",
     val auth: AuthType? = null,
-    val herdrEnabled: Boolean = false,
+    val herdrEnabled: Boolean = true,
     val isLocal: Boolean = false,
     val startupCommand: String? = null,
 ) {

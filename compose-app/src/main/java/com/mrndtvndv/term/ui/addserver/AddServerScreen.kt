@@ -29,7 +29,7 @@ fun AddServerScreen(
     var portString by remember { mutableStateOf("22") }
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
-    var herdrEnabled by remember { mutableStateOf(false) }
+    var herdrEnabled by remember { mutableStateOf(true) }
 
     Scaffold(
         topBar = {

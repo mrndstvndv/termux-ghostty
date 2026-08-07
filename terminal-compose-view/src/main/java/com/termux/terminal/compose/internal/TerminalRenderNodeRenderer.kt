@@ -100,12 +100,21 @@ internal class TerminalRenderNodeRenderer(
 
     private fun ensureLayout(frame: TerminalFrame, targetWidth: Int, targetHeight: Int) {
         val nextLineHeight = rowRenderer.lineSpacingPx
-        val rowGeometryChanged = width != targetWidth || lineHeight != nextLineHeight
         val visibleRowsChanged = visibleRowCount != frame.rowsVisible
         val parentSizeChanged = height != targetHeight
-        if (!rowGeometryChanged && !visibleRowsChanged && !parentSizeChanged) return
+        val geometryChanged = nextLineHeight != lineHeight || width != targetWidth
+        if (!geometryChanged && !visibleRowsChanged && !parentSizeChanged) {
+            return
+        }
 
-        if (rowGeometryChanged) {
+        // Row layers' vertical offsets depend on the line height, so a font
+        // metric change still rebuilds every layer. Any other size change keeps
+        // and reuses the retained layers: reflowed content changes the row
+        // data, and updateRowsIfNeeded re-records only the layers whose content
+        // or overlays really changed. This avoids the release/recreate churn
+        // (and the resulting one-frame layer blanking) on every intermediate
+        // width during a drag-resize.
+        if (nextLineHeight != lineHeight) {
             parentLayer.renderEffect = null
             releaseRows()
             graphicsContext.releaseGraphicsLayer(parentLayer)
@@ -123,6 +132,10 @@ internal class TerminalRenderNodeRenderer(
             return
         }
 
+        if (width != targetWidth) {
+            width = targetWidth
+            parentDisplayListDirty = true
+        }
         if (visibleRowsChanged) {
             ensureRowCapacity(frame.rowsVisible)
             visibleRowCount = frame.rowsVisible

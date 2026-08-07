@@ -24,6 +24,12 @@ import com.termux.terminal.compose.ShaderDefinition as ComposeShaderDefinition
 import com.termux.terminal.compose.TerminalCanvas as ComposeTerminalCanvas
 import com.termux.terminal.compose.TerminalCanvasConfig
 
+/** Default soft-keyboard resize debounce in milliseconds (0 = immediate). */
+const val DefaultKeyboardResizeDebounceMillis = 0
+
+/** Upper bound for the soft-keyboard resize debounce in milliseconds. */
+const val MaxKeyboardResizeDebounceMillis = 100
+
 /**
  * App integration for the reusable compose terminal library.
  *
@@ -52,12 +58,18 @@ fun TerminalCanvas(
                 .coerceIn(minimumFontSize, maximumFontSize)
         )
     }
+    val resizeDebounceMillis = remember(session) {
+        preferences.getInt("keyboard_resize_debounce_ms", DefaultKeyboardResizeDebounceMillis)
+            .coerceIn(0, MaxKeyboardResizeDebounceMillis)
+            .toLong()
+    }
     val typeface = remember(context) { loadTerminalTypeface(context) }
     val backend = rememberTerminalBackend(
         context = context,
         session = session,
         extraKeysController = extraKeysController,
         fontSize = fontSize.intValue,
+        resizeDebounceMillis = resizeDebounceMillis,
         typeface = typeface,
         onViewCreated = onViewCreated,
         onViewReleased = onViewReleased
@@ -112,12 +124,14 @@ private fun TerminalCanvasSurface(
     )
 }
 
+@Suppress("LongParameterList")
 @Composable
 private fun rememberTerminalBackend(
     context: Context,
     session: TerminalSession,
     extraKeysController: ExtraKeysController,
     fontSize: Int,
+    resizeDebounceMillis: Long,
     typeface: Typeface,
     onViewCreated: (com.termux.view.TerminalView) -> Unit,
     onViewReleased: (com.termux.view.TerminalView) -> Unit
@@ -128,7 +142,8 @@ private fun rememberTerminalBackend(
             session = session,
             extraKeysController = extraKeysController,
             fontSize = fontSize,
-            terminalTypeface = typeface
+            terminalTypeface = typeface,
+            resizeDebounceMillis = resizeDebounceMillis
         )
     }
     DisposableEffect(backend) {
@@ -137,6 +152,9 @@ private fun rememberTerminalBackend(
     }
     LaunchedEffect(backend, fontSize) {
         backend.setFontSize(fontSize)
+    }
+    LaunchedEffect(backend, resizeDebounceMillis) {
+        backend.setResizeDebounceMillis(resizeDebounceMillis)
     }
     return backend
 }

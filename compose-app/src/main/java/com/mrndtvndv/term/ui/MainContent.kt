@@ -34,6 +34,8 @@ import com.mrndtvndv.term.ui.theme.TerminalThemeSync
 import com.mrndtvndv.term.ui.theme.TermuxGhosttyTheme
 import com.mrndtvndv.term.ui.workspace.CursorTrailEffect
 import com.mrndtvndv.term.ui.workspace.DebugHud
+import com.mrndtvndv.term.ui.workspace.DefaultKeyboardResizeDebounceMillis
+import com.mrndtvndv.term.ui.workspace.MaxKeyboardResizeDebounceMillis
 import com.mrndtvndv.term.ui.workspace.ShaderRepository
 import com.mrndtvndv.term.ui.workspace.TerminalWorkspaceScreen
 import com.mrndtvndv.term.ui.workspace.loadSelectedShaderIds
@@ -90,6 +92,10 @@ fun MainContent(
         sharedPreferences.getString("extra_keys_custom_json", "[]") ?: "[]"
     val savedUnconditionalSoftKeyboardOnTap = sharedPreferences.getBoolean("unconditional_soft_keyboard_on_tap", true)
     val savedFontSize = sharedPreferences.getInt("font_size", 12)
+    val savedKeyboardResizeDebounceMs = sharedPreferences.getInt(
+        "keyboard_resize_debounce_ms",
+        DefaultKeyboardResizeDebounceMillis
+    )
     val savedTerminalEffects = loadSelectedShaderIds(sharedPreferences)
     val savedCursorTrail = CursorTrailEffect.fromPref(
         sharedPreferences.getString("cursor_trail_effect", null)
@@ -124,6 +130,7 @@ fun MainContent(
             var extraKeysPreset by remember { mutableStateOf(savedExtraKeysPreset) }
             var extraKeysCustomJson by remember { mutableStateOf(savedExtraKeysCustomJson) }
             var fontSize by remember { mutableStateOf(savedFontSize) }
+            var keyboardResizeDebounceMs by remember { mutableStateOf(savedKeyboardResizeDebounceMs) }
             var unconditionalSoftKeyboardOnTap by remember { mutableStateOf(savedUnconditionalSoftKeyboardOnTap) }
             var terminalEffects by remember { mutableStateOf(savedTerminalEffects) }
             var cursorTrail by remember { mutableStateOf(savedCursorTrail) }
@@ -231,6 +238,15 @@ fun MainContent(
                                     fontSize = newSize
                                     sharedPreferences.edit()
                                         .putInt("font_size", newSize).apply()
+                                },
+                                keyboardResizeDebounceMs = keyboardResizeDebounceMs,
+                                onKeyboardResizeDebounceMsChange = { newDebounceMs ->
+                                    keyboardResizeDebounceMs = newDebounceMs
+                                    sharedPreferences.edit()
+                                        .putInt(
+                                            "keyboard_resize_debounce_ms",
+                                            newDebounceMs.coerceIn(0, MaxKeyboardResizeDebounceMillis)
+                                        ).apply()
                                 },
                                 appTheme = appTheme,
                                 onThemeChange = { newTheme ->

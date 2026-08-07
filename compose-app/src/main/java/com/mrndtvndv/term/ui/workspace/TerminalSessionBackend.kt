@@ -13,6 +13,9 @@ import com.termux.terminal.compose.TerminalCommandResult
 import com.termux.terminal.compose.TerminalFrame
 import com.termux.terminal.compose.TerminalSelection
 
+/** Default IME resize debounce in milliseconds (0 = resize immediately). */
+private const val DefaultResizeDebounceMillis = 0L
+
 /**
  * App-owned adapter from the existing Ghostty session/view cache to the
  * backend-neutral compose terminal API.
@@ -26,7 +29,8 @@ internal class TerminalSessionBackend(
     private val session: TerminalSession,
     private val extraKeysController: ExtraKeysController,
     fontSize: Int,
-    private val terminalTypeface: Typeface
+    private val terminalTypeface: Typeface,
+    resizeDebounceMillis: Long = DefaultResizeDebounceMillis
 ) : TerminalBackend {
 
     val view: ComposeInputTerminalView = ComposeInputTerminalView(context).apply {
@@ -34,6 +38,7 @@ internal class TerminalSessionBackend(
         isFocusableInTouchMode = true
         setTextSize(fontSize)
         setTypeface(terminalTypeface)
+        this.resizeDebounceMillis = resizeDebounceMillis
         setTerminalViewClient(createViewClient())
     }
 
@@ -52,6 +57,11 @@ internal class TerminalSessionBackend(
         if (released || view.mRenderer?.mTextSize == fontSize) return
         view.setTextSize(fontSize)
         view.invalidate()
+    }
+
+    fun setResizeDebounceMillis(millis: Long) {
+        if (released) return
+        view.resizeDebounceMillis = millis
     }
 
     override fun attach(listener: TerminalBackendListener) {

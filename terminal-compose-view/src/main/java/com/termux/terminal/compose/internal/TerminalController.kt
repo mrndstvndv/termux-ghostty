@@ -44,6 +44,8 @@ internal class TerminalController(
 
     private var lastResizeWidth = -1
     private var lastResizeHeight = -1
+    private var lastResizeColumns = -1
+    private var lastResizeRows = -1
 
     private val cursorEffectState = CursorEffectState()
     private var cursorFramePending = false
@@ -117,14 +119,37 @@ internal class TerminalController(
     /** Number of frames published since attach (monotonic). */
     fun version(): Int = contentVersion
 
-    /** Resizes before reading the first frame because sizing may create that frame. */
+    /**
+     * Resizes the backend when the display grid (columns x rows) changes.
+     *
+     * The grid is derived from the row renderer's font metrics using the same
+     * formula as the backing [TerminalView.updateSize], so pixel drift during
+     * a drag-resize that does not cross a cell boundary is coalesced away. This
+     * avoids churning every intermediate size through reflow -> SIGWINCH ->
+     * full tmux redraw. Once the grid changes, the actual pixel size is still
+     * forwarded so the emulator tracks the true viewport.
+     */
     internal fun resizeIfNeeded(widthPx: Int, heightPx: Int) {
         val width = widthPx.coerceAtLeast(1)
         val height = heightPx.coerceAtLeast(1)
         if (width == lastResizeWidth && height == lastResizeHeight) return
-
         lastResizeWidth = width
         lastResizeHeight = height
+
+        val renderer = this.rowRenderer ?: run {
+            // No renderer yet (before the first draw): fall back to pixel-based
+            // coalescing so the initial size is applied before the first frame.
+            cursorEffectState.reset()
+            cursorFramePending = false
+            backend.resize(width, height)
+            return
+        }
+        val columns = (width / renderer.fontWidthPx).toInt().coerceAtLeast(MIN_GRID_DIMENSION)
+        val rows = ((height - renderer.lineSpacingAndAscentPx) / renderer.lineSpacingPx)
+            .coerceAtLeast(MIN_GRID_DIMENSION)
+        if (columns == lastResizeColumns && rows == lastResizeRows) return
+        lastResizeColumns = columns
+        lastResizeRows = rows
         cursorEffectState.reset()
         cursorFramePending = false
         backend.resize(width, height)
@@ -152,14 +177,14 @@ internal class TerminalController(
         timeSeconds: Float
     ) {
         if (released) return
+        val cfg = config
+        val renderer = ensureRenderer(cfg) ?: return
         resizeIfNeeded(
             widthPx = drawScope.size.width.toInt(),
             heightPx = drawScope.size.height.toInt()
         )
 
         val frame = backend.currentFrame() ?: return
-        val cfg = config
-        val renderer = ensureRenderer(cfg) ?: return
         renderer.draw(
             drawScope = drawScope,
             frame = frame,
@@ -255,5 +280,8 @@ internal class TerminalController(
     private companion object {
         /** Small settle window after a cursor effect's declared duration. */
         const val CURSOR_EFFECT_GRACE_SECONDS = 0.05f
+
+        /** Matches the backing view's minimum grid dimension. */
+        const val MIN_GRID_DIMENSION = 4
     }
 }

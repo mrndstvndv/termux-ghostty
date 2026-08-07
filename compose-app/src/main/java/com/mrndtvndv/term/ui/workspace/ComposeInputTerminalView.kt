@@ -5,8 +5,6 @@ import android.os.Handler
 import android.os.Looper
 import com.termux.view.TerminalView
 
-private const val ResizeDebounceMillis = 10L
-
 /**
  * TEMPORARY migration adapter (plan stage 5) — DO NOT extend.
  *
@@ -21,6 +19,17 @@ private const val ResizeDebounceMillis = 10L
 class ComposeInputTerminalView(context: Context) : TerminalView(context, null) {
     var onInvalidateCallback: (() -> Unit)? = null
 
+    /**
+     * Debounce for IME-inset-driven resize, in milliseconds. The soft-keyboard
+     * opening animation produces a stream of intermediate heights; this
+     * coalesces them so Ghostty/tmux is reflowed once at the settled height.
+     * 0 applies the newest size immediately. Defaults to 0 (applied immediately).
+     */
+    var resizeDebounceMillis: Long = 0L
+        set(value) {
+            field = value.coerceAtLeast(0L)
+        }
+
     private val resizeHandler = Handler(Looper.getMainLooper())
     private val resizeRunnable = Runnable { updateSize() }
 
@@ -33,7 +42,7 @@ class ComposeInputTerminalView(context: Context) : TerminalView(context, null) {
         // Debounce IME insets animation so every intermediate height does not resize Ghostty.
         resizeHandler.removeCallbacks(resizeRunnable)
         if (w > 0 && h > 0) {
-            resizeHandler.postDelayed(resizeRunnable, ResizeDebounceMillis)
+            resizeHandler.postDelayed(resizeRunnable, resizeDebounceMillis)
         }
     }
 

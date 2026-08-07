@@ -52,6 +52,8 @@ fun SettingsScreen(
     onExtraKeysCustomJsonChange: (String) -> Unit,
     fontSize: Int,
     onFontSizeChange: (Int) -> Unit,
+    keyboardResizeDebounceMs: Int,
+    onKeyboardResizeDebounceMsChange: (Int) -> Unit,
     appTheme: String,
     onThemeChange: (String) -> Unit,
     @Suppress("UNUSED_PARAMETER") // kept for future API compatibility when herdr integration is wired
@@ -316,6 +318,64 @@ fun SettingsScreen(
                                     }
                                 },
                                 enabled = fontSize < maxFontSize
+                            ) {
+                                Text("+", style = MaterialTheme.typography.titleLarge)
+                            }
+                        }
+                    }
+
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                "Keyboard Resize Debounce (ms)",
+                                style = MaterialTheme.typography.bodyLarge
+                            )
+                            Text(
+                                text = if (keyboardResizeDebounceMs == 0) {
+                                    "0 = resize immediately (no debounce)"
+                                } else {
+                                    "Coalesce soft-keyboard resize by N ms before reflow"
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            IconButton(
+                                onClick = {
+                                    if (keyboardResizeDebounceMs > 0) {
+                                        onKeyboardResizeDebounceMsChange(keyboardResizeDebounceMs - 5)
+                                    }
+                                },
+                                enabled = keyboardResizeDebounceMs > 0
+                            ) {
+                                Text("-", style = MaterialTheme.typography.titleLarge)
+                            }
+
+                            Text(
+                                text = "$keyboardResizeDebounceMs",
+                                style = MaterialTheme.typography.bodyLarge,
+                                modifier = Modifier.width(40.dp),
+                                textAlign = TextAlign.Center
+                            )
+
+                            IconButton(
+                                onClick = {
+                                    if (keyboardResizeDebounceMs < 100) {
+                                        onKeyboardResizeDebounceMsChange(keyboardResizeDebounceMs + 5)
+                                    }
+                                },
+                                enabled = keyboardResizeDebounceMs < 100
                             ) {
                                 Text("+", style = MaterialTheme.typography.titleLarge)
                             }

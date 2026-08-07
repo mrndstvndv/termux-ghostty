@@ -13,9 +13,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountTree
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -30,6 +31,7 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -44,23 +46,27 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogWindowProvider
 import com.mrndtvndv.term.R
-import com.mrndtvndv.term.server.HerdrWorkspaceResolver
+import com.mrndtvndv.term.server.HerdrWorkspaceResolver.HerdrPaneNode
+import com.mrndtvndv.term.server.HerdrWorkspaceResolver.HerdrTabNode
+import com.mrndtvndv.term.server.HerdrWorkspaceResolver.HerdrWorkspaceNode
 import java.util.Locale
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
-@Suppress("LongMethod")
+@Suppress("LongMethod", "LongParameterList")
 @Composable
 fun HerdrAgentButton(
-    agents: List<HerdrWorkspaceResolver.HerdrAgentInfo>,
+    workspaces: List<HerdrWorkspaceNode>,
     isLoading: Boolean,
     error: String?,
     onRefresh: () -> Unit,
-    onFocusAgent: (HerdrWorkspaceResolver.HerdrAgentInfo) -> Unit,
+    onFocusTab: (HerdrTabNode) -> Unit,
+    onFocusPane: (HerdrPaneNode) -> Unit,
     fabOpacity: Float = 0.7f,
     modifier: Modifier = Modifier,
 ) {
     var showAgents by remember { mutableStateOf(false) }
+    val expandedWorkspaceIds = remember { mutableStateMapOf<String, Boolean>() }
     val sheetState = rememberModalBottomSheetState()
     val coroutineScope = rememberCoroutineScope()
 
@@ -91,6 +97,7 @@ fun HerdrAgentButton(
         ModalBottomSheet(
             onDismissRequest = { showAgents = false },
             sheetState = sheetState,
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
         ) {
             PlaceSheetAboveIme()
             Column(
@@ -131,23 +138,65 @@ fun HerdrAgentButton(
                             modifier = Modifier.padding(16.dp),
                         )
                     }
-                    agents.isEmpty() -> {
+                    workspaces.isEmpty() -> {
                         Text(
-                            text = "No recognized agents",
+                            text = "No herdr workspaces or agents",
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(16.dp),
                         )
                     }
                     else -> {
                         LazyColumn(modifier = Modifier.fillMaxWidth()) {
-                            items(agents, key = { it.paneId }) { agent ->
-                                AgentListItem(
-                                    agent = agent,
-                                    title = agentWorkspaceTitle(agent, agents),
-                                    onClick = {
-                                        dismissAgents { onFocusAgent(agent) }
-                                    },
-                                )
+                            workspaces.forEach { workspace ->
+                                val isExpanded = expandedWorkspaceIds[workspace.workspaceId] ?: true
+                                item(key = "workspace:${workspace.workspaceId}") {
+                                    WorkspaceListItem(
+                                        workspace = workspace,
+                                        isExpanded = isExpanded,
+                                        onClick = {
+                                            expandedWorkspaceIds[workspace.workspaceId] = !isExpanded
+                                        },
+                                    )
+                                }
+                                if (isExpanded) {
+                                    workspace.tabs.forEach { tab ->
+                                        val hasAgentPane = tab.panes.any { pane -> pane.agent != null }
+                                        val displayPane = tab.panes.firstOrNull { pane ->
+                                            pane.agent != null
+                                        } ?: tab.panes.firstOrNull()
+                                        val additionalPanes = tab.panes.filter { pane ->
+                                            pane.paneId != displayPane?.paneId &&
+                                                (!hasAgentPane || pane.agent != null)
+                                        }
+                                        item(key = "tab:${workspace.workspaceId}:${tab.tabId}") {
+                                            AgentTabListItem(
+                                                tab = tab,
+                                                pane = displayPane,
+                                                onClick = {
+                                                    dismissAgents {
+                                                        if (displayPane != null) {
+                                                            onFocusPane(displayPane)
+                                                        } else {
+                                                            onFocusTab(tab)
+                                                        }
+                                                    }
+                                                },
+                                            )
+                                        }
+                                        additionalPanes.forEach { pane ->
+                                            item(
+                                                key = "pane:${workspace.workspaceId}:${tab.tabId}:${pane.paneId}",
+                                            ) {
+                                                PaneListItem(
+                                                    pane = pane,
+                                                    onClick = {
+                                                        dismissAgents { onFocusPane(pane) }
+                                                    },
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -184,23 +233,50 @@ private fun View.findDialogWindow(): Window? {
     return null
 }
 
-private fun agentWorkspaceTitle(
-    agent: HerdrWorkspaceResolver.HerdrAgentInfo,
-    agents: List<HerdrWorkspaceResolver.HerdrAgentInfo>,
-): String {
-    agent.workspaceLabel?.trim()?.takeIf { it.isNotEmpty() }?.let { return it }
-
-    val cwd = agent.cwd?.trim()?.trimEnd('/')?.takeIf { it.isNotEmpty() }
-    val directory = cwd?.substringAfterLast('/')?.takeIf { it.isNotEmpty() }
-    if (directory != null) {
-        val duplicateDirectory = agents.any { other ->
-            other.workspaceId != agent.workspaceId &&
-                other.cwd?.trim()?.trimEnd('/')?.substringAfterLast('/') == directory
-        }
-        return if (duplicateDirectory) cwd else directory
-    }
-
-    return agent.workspaceId
+@Composable
+private fun WorkspaceListItem(
+    workspace: HerdrWorkspaceNode,
+    isExpanded: Boolean,
+    onClick: () -> Unit,
+) {
+    val tabCount = workspace.tabs.size
+    ListItem(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        colors = ListItemDefaults.colors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+        ),
+        headlineContent = {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = workspace.label,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    text = if (tabCount == 1) "1 tab" else "$tabCount tabs",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.labelMedium,
+                    modifier = Modifier.padding(start = 8.dp),
+                )
+            }
+        },
+        trailingContent = {
+            Icon(
+                imageVector = if (isExpanded) {
+                    Icons.Default.ExpandMore
+                } else {
+                    Icons.Default.ChevronRight
+                },
+                contentDescription = if (isExpanded) "Collapse workspace" else "Expand workspace",
+            )
+        },
+    )
 }
 
 /*
@@ -258,24 +334,23 @@ private fun AgentIcon(
 
 @Composable
 @Suppress("LongMethod")
-private fun AgentListItem(
-    agent: HerdrWorkspaceResolver.HerdrAgentInfo,
-    title: String,
+private fun AgentTabListItem(
+    tab: HerdrTabNode,
+    pane: HerdrPaneNode?,
     onClick: () -> Unit,
 ) {
-    val status = agent.agentStatus.lowercase(Locale.ROOT)
-    val supporting = listOfNotNull(
-        agent.cwd,
-        agent.paneId,
-    ).joinToString(" · ")
+    val displayAgent = pane?.agent ?: tab.agent
+    val displayStatus = pane?.agentStatus ?: tab.agentStatus
+    val displayFocused = pane?.focused ?: tab.focused
+    val displayTitle = pane?.title ?: tab.title
+    val status = displayStatus.lowercase(Locale.ROOT).ifBlank { "unknown" }
     val statusColor = when (status) {
         "working" -> MaterialTheme.colorScheme.primary
         "blocked" -> MaterialTheme.colorScheme.error
         "done" -> MaterialTheme.colorScheme.tertiary
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
-    val isFocused = agent.focused
-    val containerColor = if (isFocused) {
+    val containerColor = if (displayFocused) {
         MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
     } else {
         MaterialTheme.colorScheme.surfaceContainerLow
@@ -287,10 +362,10 @@ private fun AgentListItem(
             containerColor = containerColor,
             headlineColor = when {
                 status == "working" -> statusColor
-                isFocused -> MaterialTheme.colorScheme.onPrimaryContainer
+                displayFocused -> MaterialTheme.colorScheme.onPrimaryContainer
                 else -> MaterialTheme.colorScheme.onSurface
             },
-            supportingColor = if (isFocused) {
+            supportingColor = if (displayFocused) {
                 MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
             } else {
                 MaterialTheme.colorScheme.onSurfaceVariant
@@ -298,31 +373,104 @@ private fun AgentListItem(
         ),
         leadingContent = {
             AgentIcon(
-                agent = agent.agent,
+                agent = displayAgent,
                 tint = statusColor,
                 modifier = Modifier.size(24.dp),
             )
         },
         headlineContent = {
             Text(
-                text = title,
+                text = displayTitle.ifBlank { "Terminal" },
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
         },
         supportingContent = {
+            displayAgent?.takeIf { it.isNotBlank() }?.let { agentName ->
+                Text(
+                    text = agentName,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        },
+        trailingContent = {
+            if (displayAgent != null) {
+                Text(
+                    text = status,
+                    color = statusColor,
+                    style = MaterialTheme.typography.labelMedium,
+                )
+            }
+        },
+    )
+}
+
+@Composable
+@Suppress("LongMethod")
+private fun PaneListItem(
+    pane: HerdrPaneNode,
+    onClick: () -> Unit,
+) {
+    val status = pane.agentStatus.lowercase(Locale.ROOT).ifBlank { "unknown" }
+    val statusColor = when (status) {
+        "working" -> MaterialTheme.colorScheme.primary
+        "blocked" -> MaterialTheme.colorScheme.error
+        "done" -> MaterialTheme.colorScheme.tertiary
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    val containerColor = if (pane.focused) {
+        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
+    } else {
+        MaterialTheme.colorScheme.surfaceContainerLow
+    }
+
+    ListItem(
+        modifier = Modifier.clickable(onClick = onClick),
+        colors = ListItemDefaults.colors(
+            containerColor = containerColor,
+            headlineColor = when {
+                status == "working" -> statusColor
+                pane.focused -> MaterialTheme.colorScheme.onPrimaryContainer
+                else -> MaterialTheme.colorScheme.onSurface
+            },
+            supportingColor = if (pane.focused) {
+                MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            },
+        ),
+        leadingContent = {
+            AgentIcon(
+                agent = pane.agent,
+                tint = statusColor,
+                modifier = Modifier.size(24.dp),
+            )
+        },
+        headlineContent = {
             Text(
-                text = supporting,
+                text = pane.title,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
         },
+        supportingContent = {
+            pane.agent?.takeIf { it.isNotBlank() }?.let { agentName ->
+                Text(
+                    text = agentName,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        },
         trailingContent = {
-            Text(
-                text = status,
-                color = statusColor,
-                style = MaterialTheme.typography.labelMedium,
-            )
+            if (pane.agent != null) {
+                Text(
+                    text = status,
+                    color = statusColor,
+                    style = MaterialTheme.typography.labelMedium,
+                )
+            }
         },
     )
 }

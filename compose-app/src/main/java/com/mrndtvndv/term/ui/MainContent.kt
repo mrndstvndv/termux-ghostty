@@ -348,13 +348,16 @@ fun MainContent(
                                         extraKeysJson = resolvedJson,
                                         hideWorkspaceTabs = hideWorkspaceTabs,
                                         herdrEnabled = server.config.herdrEnabled,
-                                        herdrAgents = viewModel.herdrAgents.value,
-                                        herdrAgentsLoading = viewModel.herdrAgentsLoading.value,
-                                        herdrAgentsError = viewModel.herdrAgentsError.value,
+                                        herdrWorkspaces = viewModel.herdrWorkspaces.value,
+                                        herdrWorkspacesLoading = viewModel.herdrWorkspacesLoading.value,
+                                        herdrWorkspacesError = viewModel.herdrWorkspacesError.value,
                                         onLoadHerdrAgents = { viewModel.loadHerdrAgents(serverId) },
                                         herdrAgentFabOpacity = herdrAgentFabOpacity,
-                                        onFocusHerdrAgent = { agent ->
-                                            viewModel.focusHerdrAgent(serverId, agent)
+                                        onFocusHerdrTab = { tab ->
+                                            viewModel.focusHerdrTab(serverId, tab)
+                                        },
+                                        onFocusHerdrPane = { pane ->
+                                            viewModel.focusHerdrPane(serverId, pane)
                                         },
                                         onViewCreated = onViewCreated,
                                         onViewReleased = onViewReleased,

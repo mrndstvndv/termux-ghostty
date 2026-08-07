@@ -13,6 +13,7 @@ import kotlinx.serialization.json.jsonPrimitive
  * Parses Herdr workspace, pane, and agent command output.
  * Pure logic — no Android dependencies, testable with sample JSON.
  */
+@Suppress("TooManyFunctions")
 class HerdrWorkspaceResolver(
     private val execCommand: suspend (String) -> String,
 ) {
@@ -80,6 +81,33 @@ class HerdrWorkspaceResolver(
         val workspaceLabel: String? = null,
     )
 
+    data class HerdrPaneNode(
+        val paneId: String,
+        val tabId: String,
+        val workspaceId: String,
+        val title: String,
+        val agent: String?,
+        val agentStatus: String,
+        val focused: Boolean,
+    )
+
+    data class HerdrTabNode(
+        val tabId: String,
+        val title: String,
+        val agent: String?,
+        val agentStatus: String,
+        val focused: Boolean,
+        val workspaceId: String,
+        val paneId: String,
+        val panes: List<HerdrPaneNode> = emptyList(),
+    )
+
+    data class HerdrWorkspaceNode(
+        val workspaceId: String,
+        val label: String,
+        val tabs: List<HerdrTabNode>,
+    )
+
     /**
      * Parse a herdr notification body into a focus target.
      * Returns null when the body is not a herdr workspace context string.
@@ -112,17 +140,37 @@ class HerdrWorkspaceResolver(
         return parseAgentList(execCommand(prefix + "herdr agent list; herdr workspace list"))
     }
 
-    suspend fun focusAgent(agent: HerdrAgentInfo): Boolean {
-        val paneId = agent.paneId.takeIf { it.isNotBlank() } ?: return false
+    suspend fun listWorkspaceTabs(): List<HerdrWorkspaceNode> {
         val prefix = "export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; "
-        val output = execCommand(prefix + "herdr agent focus ${shellQuote(paneId)}")
+        return parseWorkspaceTabs(execCommand(prefix + "herdr workspace list; herdr pane list"))
+    }
+
+    suspend fun focusAgent(agent: HerdrAgentInfo): Boolean = focusAgentPane(agent.paneId)
+
+    suspend fun focusTab(tab: HerdrTabNode): Boolean =
+        if (tab.agent != null) focusAgentPane(tab.paneId) else focusTabId(tab.tabId)
+
+    suspend fun focusPane(pane: HerdrPaneNode): Boolean =
+        if (pane.agent != null) focusAgentPane(pane.paneId) else focusTabId(pane.tabId)
+
+    private suspend fun focusTabId(tabId: String): Boolean {
+        val validTabId = tabId.takeIf { it.isNotBlank() } ?: return false
+        val prefix = "export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; "
+        execCommand(prefix + "herdr tab focus $validTabId")
+        return true
+    }
+
+    private suspend fun focusAgentPane(paneId: String): Boolean {
+        val validPaneId = paneId.takeIf { it.isNotBlank() } ?: return false
+        val prefix = "export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; "
+        val output = execCommand(prefix + "herdr agent focus ${shellQuote(validPaneId)}")
         return output.lineSequence().mapNotNull { parseHerdrLine(it) }.any { (id, result) ->
             if (id != "cli:agent:focus") return@any false
             if (result["type"]?.jsonPrimitive?.contentOrNull != "agent_info") return@any false
             val focusedPaneId = runCatching {
                 result["agent"]?.jsonObject?.get("pane_id")?.jsonPrimitive?.contentOrNull
             }.getOrNull()
-            focusedPaneId == paneId
+            focusedPaneId == validPaneId
         }
     }
 
@@ -202,6 +250,170 @@ class HerdrWorkspaceResolver(
                     ?: agent["terminal_title"]?.jsonPrimitive?.contentOrNull,
             )
         }
+
+    internal fun parseWorkspaceTabs(output: String): List<HerdrWorkspaceNode> {
+        val workspaceLabels = parseWorkspaceLabels(output)
+        val workspaces = parseWorkspaceEntries(output)
+        if (workspaces.isEmpty()) return emptyList()
+
+        val panes = parsePaneLines(output)
+        return workspaces
+            .sortedWith(
+                compareBy<WorkspaceEntry> { it.number ?: Int.MAX_VALUE }
+                    .thenBy { it.order },
+            )
+            .map { workspace ->
+                HerdrWorkspaceNode(
+                    workspaceId = workspace.workspaceId,
+                    label = workspaceLabels[workspace.workspaceId] ?: workspace.workspaceId,
+                    tabs = parseTabs(workspace.workspaceId, panes),
+                )
+            }
+    }
+
+    private fun parseWorkspaceEntries(output: String): List<WorkspaceEntry> =
+        output.lineSequence()
+            .mapNotNull(::parseHerdrLine)
+            .filter { (id, _) -> id == "cli:workspace:list" }
+            .flatMap { (_, result) ->
+                val workspaceArray = runCatching {
+                    result["workspaces"]?.jsonArray
+                }.getOrNull()
+                workspaceArray?.asSequence()?.mapNotNull { workspace ->
+                    runCatching { workspace.jsonObject }.getOrNull()?.let { workspaceObject ->
+                        jsonContent(workspaceObject, "workspace_id")
+                            ?.takeIf { it.isNotBlank() }
+                            ?.let { workspaceId ->
+                                WorkspaceEntry(
+                                    workspaceId = workspaceId,
+                                    number = jsonContent(workspaceObject, "number")?.toIntOrNull(),
+                                    order = 0,
+                                )
+                            }
+                    }
+                } ?: emptySequence()
+            }
+            .mapIndexed { index, workspace -> workspace.copy(order = index) }
+            .toList()
+
+    private fun parsePaneLines(output: String): List<JsonObject> {
+        val panes = mutableListOf<JsonObject>()
+        for (line in output.lineSequence()) {
+            val parsed = parseHerdrLine(line) ?: continue
+            if (parsed.first == "cli:pane:list") {
+                parsePaneList(parsed.second, panes)
+            }
+        }
+        return panes
+    }
+
+    private fun parseTabs(
+        workspaceId: String,
+        panes: List<JsonObject>,
+    ): List<HerdrTabNode> {
+        val panesByTab = panes
+            .asSequence()
+            .filter { jsonContent(it, "workspace_id") == workspaceId }
+            .mapNotNull { pane ->
+                val tabId = jsonContent(pane, "tab_id")?.takeIf { it.isNotBlank() }
+                    ?: return@mapNotNull null
+                tabId to pane
+            }
+            .groupBy({ it.first }, { it.second })
+
+        return panesByTab.values.mapNotNull(::parseTab)
+    }
+
+    @Suppress("ReturnCount")
+    private fun parseTab(panes: List<JsonObject>): HerdrTabNode? {
+        val firstPane = panes.firstOrNull() ?: return null
+        val workspaceId = jsonContent(firstPane, "workspace_id")
+            ?.takeIf { it.isNotBlank() } ?: return null
+        val tabId = jsonContent(firstPane, "tab_id")
+            ?.takeIf { it.isNotBlank() } ?: return null
+        val agentPane = panes.firstOrNull { it.containsKey("agent") }
+        val agent = agentPane?.let { pane ->
+            jsonContent(pane, "agent")?.takeIf { it.isNotBlank() }
+        }
+        val paneId = agentPane
+            ?.let { pane -> jsonContent(pane, "pane_id") }
+            ?.takeIf { it.isNotBlank() }
+            ?: panes.asSequence()
+                .mapNotNull { pane -> jsonContent(pane, "pane_id") }
+                .firstOrNull { it.isNotBlank() }
+            ?: return null
+        val agentStatus = panes
+            .firstOrNull { it.containsKey("agent_status") }
+            ?.let { pane -> jsonContent(pane, "agent_status") }
+            ?.takeIf { it.isNotBlank() }
+            ?: "unknown"
+        val paneNodes = panes.mapNotNull { pane -> parsePaneNode(pane, tabId) }
+
+        return HerdrTabNode(
+            tabId = tabId,
+            title = tabTitle(firstPane, agent),
+            agent = agent,
+            agentStatus = agentStatus,
+            focused = panes.any { pane -> jsonBoolean(pane, "focused") == true },
+            workspaceId = workspaceId,
+            paneId = paneId,
+            panes = paneNodes,
+        )
+    }
+
+    private fun parsePaneNode(
+        pane: JsonObject,
+        tabId: String,
+    ): HerdrPaneNode? {
+        val paneId = jsonContent(pane, "pane_id")?.takeIf { it.isNotBlank() } ?: return null
+        val workspaceId = jsonContent(pane, "workspace_id")
+            ?.takeIf { it.isNotBlank() } ?: return null
+        val agent = pane.takeIf { it.containsKey("agent") }?.let {
+            jsonContent(it, "agent")?.takeIf { value -> value.isNotBlank() }
+        }
+        val agentStatus = pane.takeIf { it.containsKey("agent_status") }
+            ?.let { jsonContent(it, "agent_status") }
+            ?.takeIf { it.isNotBlank() }
+            ?: "unknown"
+        return HerdrPaneNode(
+            paneId = paneId,
+            tabId = tabId,
+            workspaceId = workspaceId,
+            title = tabTitle(pane, agent),
+            agent = agent,
+            agentStatus = agentStatus,
+            focused = jsonBoolean(pane, "focused") == true,
+        )
+    }
+
+    private fun tabTitle(
+        firstPane: JsonObject,
+        agent: String?,
+    ): String {
+        val cwdBasename = jsonContent(firstPane, "cwd")
+            ?.trim()
+            ?.trimEnd('/')
+            ?.substringAfterLast('/')
+            ?.takeIf { it.isNotBlank() }
+        return listOf(
+            jsonContent(firstPane, "terminal_title"),
+            jsonContent(firstPane, "terminal_title_stripped"),
+            agent,
+            cwdBasename,
+        ).firstOrNull { !it.isNullOrBlank() } ?: "Terminal"
+    }
+
+    private fun jsonContent(element: JsonObject, key: String): String? =
+        runCatching { element[key]?.jsonPrimitive?.contentOrNull }.getOrNull()
+
+    private fun jsonBoolean(element: JsonObject, key: String): Boolean? =
+        runCatching { element[key]?.jsonPrimitive?.booleanOrNull }.getOrNull()
+
+    private data class WorkspaceEntry(
+        val workspaceId: String,
+        val number: Int?,
+        val order: Int,
+    )
 
     private fun shellQuote(value: String): String =
         "'" + value.replace("'", "'\\''") + "'"

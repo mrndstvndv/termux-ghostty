@@ -54,14 +54,15 @@ class MainViewModel(
     private val _disconnectingId = mutableStateOf<String?>(null)
     val disconnectingId: State<String?> = _disconnectingId
 
-    private val _herdrAgents = mutableStateOf<List<HerdrWorkspaceResolver.HerdrAgentInfo>>(emptyList())
-    val herdrAgents: State<List<HerdrWorkspaceResolver.HerdrAgentInfo>> = _herdrAgents
+    private val _herdrWorkspaces =
+        mutableStateOf<List<HerdrWorkspaceResolver.HerdrWorkspaceNode>>(emptyList())
+    val herdrWorkspaces: State<List<HerdrWorkspaceResolver.HerdrWorkspaceNode>> = _herdrWorkspaces
 
-    private val _herdrAgentsLoading = mutableStateOf(false)
-    val herdrAgentsLoading: State<Boolean> = _herdrAgentsLoading
+    private val _herdrWorkspacesLoading = mutableStateOf(false)
+    val herdrWorkspacesLoading: State<Boolean> = _herdrWorkspacesLoading
 
-    private val _herdrAgentsError = mutableStateOf<String?>(null)
-    val herdrAgentsError: State<String?> = _herdrAgentsError
+    private val _herdrWorkspacesError = mutableStateOf<String?>(null)
+    val herdrWorkspacesError: State<String?> = _herdrWorkspacesError
 
     private val _connectingId = mutableStateOf<String?>(null)
     val connectingId: State<String?> = _connectingId
@@ -137,33 +138,40 @@ class MainViewModel(
     fun loadHerdrAgents(serverId: String) {
         val resolver = herdrResolver(serverId)
         if (resolver == null) {
-            _herdrAgents.value = emptyList()
-            _herdrAgentsLoading.value = false
-            _herdrAgentsError.value = "Herdr is unavailable for this session"
+            _herdrWorkspaces.value = emptyList()
+            _herdrWorkspacesLoading.value = false
+            _herdrWorkspacesError.value = "Herdr is unavailable for this session"
             return
         }
 
-        _herdrAgentsLoading.value = true
-        _herdrAgentsError.value = null
+        _herdrWorkspacesLoading.value = true
+        _herdrWorkspacesError.value = null
         viewModelScope.launch {
-            runCatching { resolver.listAgents() }.fold(
-                onSuccess = { agents ->
-                    _herdrAgents.value = agents
-                    _herdrAgentsLoading.value = false
+            runCatching { resolver.listWorkspaceTabs() }.fold(
+                onSuccess = { workspaces ->
+                    _herdrWorkspaces.value = workspaces
+                    _herdrWorkspacesLoading.value = false
                 },
                 onFailure = { error ->
-                    _herdrAgents.value = emptyList()
-                    _herdrAgentsError.value = error.message ?: "Unable to query Herdr agents"
-                    _herdrAgentsLoading.value = false
+                    _herdrWorkspaces.value = emptyList()
+                    _herdrWorkspacesError.value = error.message ?: "Unable to query Herdr workspaces"
+                    _herdrWorkspacesLoading.value = false
                 },
             )
         }
     }
 
-    fun focusHerdrAgent(serverId: String, agent: HerdrWorkspaceResolver.HerdrAgentInfo) {
+    fun focusHerdrTab(serverId: String, tab: HerdrWorkspaceResolver.HerdrTabNode) {
         val resolver = herdrResolver(serverId) ?: return
         viewModelScope.launch {
-            resolver.focusAgent(agent)
+            resolver.focusTab(tab)
+        }
+    }
+
+    fun focusHerdrPane(serverId: String, pane: HerdrWorkspaceResolver.HerdrPaneNode) {
+        val resolver = herdrResolver(serverId) ?: return
+        viewModelScope.launch {
+            resolver.focusPane(pane)
         }
     }
 

@@ -47,11 +47,12 @@ fun TabbedWorkspace(
     extraKeysJson: String,
     hideTabs: Boolean = false,
     herdrEnabled: Boolean = false,
-    herdrAgents: List<HerdrWorkspaceResolver.HerdrAgentInfo> = emptyList(),
-    herdrAgentsLoading: Boolean = false,
-    herdrAgentsError: String? = null,
+    herdrWorkspaces: List<HerdrWorkspaceResolver.HerdrWorkspaceNode> = emptyList(),
+    herdrWorkspacesLoading: Boolean = false,
+    herdrWorkspacesError: String? = null,
     onLoadHerdrAgents: () -> Unit = {},
-    onFocusHerdrAgent: (HerdrWorkspaceResolver.HerdrAgentInfo) -> Unit = {},
+    onFocusHerdrTab: (HerdrWorkspaceResolver.HerdrTabNode) -> Unit = {},
+    onFocusHerdrPane: (HerdrWorkspaceResolver.HerdrPaneNode) -> Unit = {},
     herdrAgentFabOpacity: Float = 0.7f,
     onViewCreated: (TerminalView) -> Unit,
     onViewReleased: (TerminalView) -> Unit,
@@ -250,11 +251,12 @@ fun TabbedWorkspace(
                                 )
                                 if (herdrEnabled) {
                                     HerdrAgentButton(
-                                        agents = herdrAgents,
-                                        isLoading = herdrAgentsLoading,
-                                        error = herdrAgentsError,
+                                        workspaces = herdrWorkspaces,
+                                        isLoading = herdrWorkspacesLoading,
+                                        error = herdrWorkspacesError,
                                         onRefresh = onLoadHerdrAgents,
-                                        onFocusAgent = onFocusHerdrAgent,
+                                        onFocusTab = onFocusHerdrTab,
+                                        onFocusPane = onFocusHerdrPane,
                                         fabOpacity = herdrAgentFabOpacity,
                                         modifier = Modifier
                                             .align(androidx.compose.ui.Alignment.BottomEnd)

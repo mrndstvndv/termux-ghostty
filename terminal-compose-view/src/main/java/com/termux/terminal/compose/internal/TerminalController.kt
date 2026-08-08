@@ -65,6 +65,9 @@ internal class TerminalController(
     private var lastResizeHeight = -1
     private var lastResizeColumns = -1
     private var lastResizeRows = -1
+    private var lastResizeCellWidth = -1
+    private var lastResizeCellHeight = -1
+    private var lastResizeContentTop = -1
 
     private val cursorEffectState = CursorEffectState()
     private var cursorFramePending = false
@@ -98,7 +101,10 @@ internal class TerminalController(
     /** Applies a new configuration; cheap when nothing relevant changed. */
     fun configure(newConfig: TerminalCanvasConfig) {
         if (newConfig == config) return
+        val fontGeometryChanged = newConfig.fontSize != config.fontSize ||
+            newConfig.typeface != config.typeface
         config = newConfig
+        if (fontGeometryChanged) invalidateViewportMeasurement()
         if (newConfig.shaders != renderKey.shaders) {
             shaderCompiler = TerminalShaderCompiler(newConfig.onDiagnostics)
             compiledShaders = shaderCompiler!!.compile(newConfig.shaders)
@@ -161,9 +167,20 @@ internal class TerminalController(
         val columns = terminalColumnsForMeasuredCellWidth(width, metrics.measuredCellWidthPx)
         val rows = ((height - metrics.lineSpacingAndAscentPx) / metrics.cellHeightPx).toInt()
             .coerceAtLeast(MinGridDimension)
-        if (columns == lastResizeColumns && rows == lastResizeRows) return
+        val cellWidth = metrics.cellWidthPx.toInt().coerceAtLeast(1)
+        val cellHeight = metrics.cellHeightPx.toInt().coerceAtLeast(1)
+        val contentTop = metrics.lineSpacingAndAscentPx.toInt().coerceAtLeast(0)
+        val geometryUnchanged = columns == lastResizeColumns &&
+            rows == lastResizeRows &&
+            cellWidth == lastResizeCellWidth &&
+            cellHeight == lastResizeCellHeight &&
+            contentTop == lastResizeContentTop
+        if (geometryUnchanged) return
         lastResizeColumns = columns
         lastResizeRows = rows
+        lastResizeCellWidth = cellWidth
+        lastResizeCellHeight = cellHeight
+        lastResizeContentTop = contentTop
         cursorEffectState.reset()
         cursorFramePending = false
         backend.resize(
@@ -172,11 +189,16 @@ internal class TerminalController(
                 heightPx = height,
                 columns = columns,
                 rows = rows,
-                cellWidthPx = metrics.cellWidthPx.toInt().coerceAtLeast(1),
-                cellHeightPx = metrics.cellHeightPx.toInt().coerceAtLeast(1),
-                contentTopPx = metrics.lineSpacingAndAscentPx.toInt().coerceAtLeast(0)
+                cellWidthPx = cellWidth,
+                cellHeightPx = cellHeight,
+                contentTopPx = contentTop
             )
         )
+    }
+
+    private fun invalidateViewportMeasurement() {
+        lastResizeWidth = -1
+        lastResizeHeight = -1
     }
 
     /** Latest backend frame, or null before the first invalidation. */

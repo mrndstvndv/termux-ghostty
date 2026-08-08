@@ -107,6 +107,53 @@ class TerminalControllerTest {
     }
 
     @Test
+    fun fontSizeChangeRecomputesGridAtUnchangedViewportSize() {
+        val backend = RecordingBackend()
+        val controller = TerminalController(backend, UnusedGraphicsContext) { config, width, height ->
+            TerminalMetrics.of(
+                cellWidthPx = config.fontSize.toFloat(),
+                cellHeightPx = config.fontSize.toFloat() * 2,
+                ascentPx = -config.fontSize.toFloat(),
+                lineSpacingAndAscentPx = 4f,
+                viewportWidthPx = width,
+                viewportHeightPx = height
+            )
+        }
+        controller.configure(TerminalCanvasConfig(fontSize = 10))
+        controller.resizeIfNeeded(widthPx = 640, heightPx = 480)
+
+        controller.configure(TerminalCanvasConfig(fontSize = 20))
+        controller.resizeIfNeeded(widthPx = 640, heightPx = 480)
+
+        assertEquals(2, backend.resizes.size)
+        assertTrue(backend.resizes[1].columns < backend.resizes[0].columns)
+        assertTrue(backend.resizes[1].rows < backend.resizes[0].rows)
+    }
+
+    @Test
+    fun fontGeometryChangeResizesBackendEvenWhenMinimumGridIsUnchanged() {
+        val backend = RecordingBackend()
+        val controller = TerminalController(backend, UnusedGraphicsContext) { config, width, height ->
+            TerminalMetrics.of(
+                cellWidthPx = config.fontSize.toFloat(),
+                cellHeightPx = config.fontSize.toFloat() * 2,
+                ascentPx = -config.fontSize.toFloat(),
+                lineSpacingAndAscentPx = 4f,
+                viewportWidthPx = width,
+                viewportHeightPx = height
+            )
+        }
+        controller.configure(TerminalCanvasConfig(fontSize = 10))
+        controller.resizeIfNeeded(widthPx = 20, heightPx = 20)
+
+        controller.configure(TerminalCanvasConfig(fontSize = 11))
+        controller.resizeIfNeeded(widthPx = 20, heightPx = 20)
+
+        assertEquals(listOf(4 to 4, 4 to 4), backend.resizes.map { it.columns to it.rows })
+        assertEquals(listOf(10, 11), backend.resizes.map { it.cellWidthPx })
+    }
+
+    @Test
     fun columnSizingUsesRawWidthInsteadOfRoundedVisualWidth() {
         val measuredCellWidthPx = 7.5f
 

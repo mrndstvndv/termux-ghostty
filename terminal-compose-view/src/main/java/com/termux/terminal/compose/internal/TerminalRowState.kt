@@ -14,9 +14,9 @@ internal class TerminalRowState(
     var cursorStyle = Int.MIN_VALUE
     var reverseVideo = false
     var paletteVersion = Int.MIN_VALUE
-    var linkFrameSequence = Long.MIN_VALUE
+    var linkContentHash = Long.MIN_VALUE
 
-    fun applyFrame(row: TerminalRow, hints: RowRenderHints, paletteVersion: Int, linkFrameSequence: Long) {
+    fun applyFrame(row: TerminalRow, hints: RowRenderHints, paletteVersion: Int, linkContentHash: Long) {
         contentHash = row.contentHash
         selectionStart = hints.selectionStart
         selectionEnd = hints.selectionEnd
@@ -24,13 +24,13 @@ internal class TerminalRowState(
         cursorStyle = hints.cursorStyle
         reverseVideo = hints.reverseVideo
         this.paletteVersion = paletteVersion
-        this.linkFrameSequence = linkFrameSequence
+        this.linkContentHash = linkContentHash
     }
 }
 
 /** True when the row's content or link spans changed. */
-internal fun rowContentOutdated(rowState: TerminalRowState, row: TerminalRow, linkFrameSequence: Long): Boolean =
-    rowState.contentHash != row.contentHash || rowState.linkFrameSequence != linkFrameSequence
+internal fun rowContentOutdated(rowState: TerminalRowState, row: TerminalRow, linkContentHash: Long): Boolean =
+    rowState.contentHash != row.contentHash || rowState.linkContentHash != linkContentHash
 
 /** True when the row-local selection overlay changed. */
 internal fun rowSelectionOutdated(rowState: TerminalRowState, hints: RowRenderHints): Boolean =

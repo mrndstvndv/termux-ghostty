@@ -23,6 +23,8 @@ internal class TerminalSessionFrameAdapter(
     private var paletteColors: IntArray? = null
     private var paletteVersion = 0
     private var previousFrame: TerminalFrame? = null
+    private var previousSourceLinkLayout: TerminalViewLinkLayout? = null
+    private var previousLinkLayout: TerminalLinkLayout? = null
 
     fun build(): TerminalFrame? {
         val renderCache: RenderFrameCache = view.getRenderFrameCache()
@@ -38,6 +40,7 @@ internal class TerminalSessionFrameAdapter(
         }
 
         val previousRows = previousFrame?.rows.orEmpty()
+        val sourceLinkLayout = view.getVisibleLinkLayout()
         val nextFrame = TerminalFrame(
             sequence = snapshot.frameSequence,
             viewport = TerminalViewport(
@@ -63,10 +66,22 @@ internal class TerminalSessionFrameAdapter(
             rows = List(snapshot.rows) { rowIndex ->
                 snapshot.reusableTerminalRow(rowIndex, previousRows) ?: snapshot.toTerminalRow(rowIndex)
             },
-            linkLayout = snapshot.toTerminalLinkLayout(view.getVisibleLinkLayout())
+            linkLayout = toTerminalLinkLayout(snapshot, sourceLinkLayout)
         )
         previousFrame = nextFrame
         return nextFrame
+    }
+
+    private fun toTerminalLinkLayout(
+        snapshot: ScreenSnapshot,
+        source: TerminalViewLinkLayout?
+    ): TerminalLinkLayout? {
+        if (source === previousSourceLinkLayout) return previousLinkLayout
+
+        val nextLayout = snapshot.toTerminalLinkLayout(source)
+        previousSourceLinkLayout = source
+        previousLinkLayout = nextLayout
+        return nextLayout
     }
 }
 

@@ -12,6 +12,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import com.termux.terminal.compose.TerminalCursor
 import com.termux.terminal.compose.TerminalFrame
+import com.termux.terminal.compose.TerminalLinkLayout
 import com.termux.terminal.compose.TerminalPalette
 import com.termux.terminal.compose.TerminalRow
 import com.termux.terminal.compose.TerminalSelection
@@ -45,7 +46,7 @@ internal class TerminalRenderNodeRenderer(
     private var lastCursor = TerminalCursor(Int.MIN_VALUE, Int.MIN_VALUE, false, Int.MIN_VALUE)
     private var lastReverseVideo = false
     private var lastFrameSequence = Long.MIN_VALUE
-    private var lastLinkFrameSequence = Long.MIN_VALUE
+    private var lastLinkLayout: TerminalLinkLayout? = null
     private var lastPaletteVersion = Int.MIN_VALUE
     private var paletteVersion = 0
     private var boundShaders: List<CompiledShader> = emptyList()
@@ -178,8 +179,7 @@ internal class TerminalRenderNodeRenderer(
         val cursor = frame.cursor
         val reverseVideo = frame.reverseVideo
         val frameChanged = frame.sequence != lastFrameSequence
-        val linkFrameSequence = frame.linkLayout?.frameSequence ?: Long.MIN_VALUE
-        val linkLayoutChanged = linkFrameSequence != lastLinkFrameSequence
+        val linkLayoutChanged = frame.linkLayout !== lastLinkLayout
         if (frameChanged && frame.palette.version != lastPaletteVersion) paletteVersion++
 
         val overlaysUnchanged = selection == lastSelection &&
@@ -199,7 +199,8 @@ internal class TerminalRenderNodeRenderer(
                 val rowCursorX = if (cursor.visible && absoluteRow == cursor.row) cursor.column else -1
                 val hints = RowRenderHints(selectionStart, selectionEnd, rowCursorX, cursor.style, reverseVideo)
                 val rowState = rows[rowIndex]
-                val contentChanged = rowContentOutdated(rowState, row, linkFrameSequence)
+                val linkContentHash = frame.linkLayout?.rowContentHash(rowIndex) ?: 0L
+                val contentChanged = rowContentOutdated(rowState, row, linkContentHash)
                 val overlayChanged = rowSelectionOutdated(rowState, hints) ||
                     rowCursorOutdated(rowState, hints) ||
                     rowStyleOutdated(rowState, hints, paletteVersion)
@@ -214,7 +215,7 @@ internal class TerminalRenderNodeRenderer(
         lastCursor = cursor
         lastReverseVideo = reverseVideo
         lastFrameSequence = frame.sequence
-        lastLinkFrameSequence = linkFrameSequence
+        lastLinkLayout = frame.linkLayout
         lastPaletteVersion = frame.palette.version
     }
 
@@ -250,7 +251,7 @@ internal class TerminalRenderNodeRenderer(
             row,
             hints,
             paletteVersion,
-            frame.linkLayout?.frameSequence ?: Long.MIN_VALUE
+            frame.linkLayout?.rowContentHash(rowIndex) ?: 0L
         )
         parentDisplayListDirty = true
     }
@@ -323,7 +324,7 @@ internal class TerminalRenderNodeRenderer(
         lastCursor = TerminalCursor(Int.MIN_VALUE, Int.MIN_VALUE, false, Int.MIN_VALUE)
         lastReverseVideo = false
         lastFrameSequence = Long.MIN_VALUE
-        lastLinkFrameSequence = Long.MIN_VALUE
+        lastLinkLayout = null
         lastPaletteVersion = Int.MIN_VALUE
     }
 }

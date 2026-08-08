@@ -373,9 +373,16 @@ class TerminalLinkLayout(
     segmentsPerRow: List<List<TerminalLinkSegment>>
 ) {
     private val segmentsPerRow = segmentsPerRow.map { it.toTypedArray() }
+    private val rowContentHashes = LongArray(this.segmentsPerRow.size) { rowIndex ->
+        this.segmentsPerRow[rowIndex].linkContentHash()
+    }
 
     fun rowSegments(rowIndex: Int): Array<TerminalLinkSegment> =
         segmentsPerRow.getOrElse(rowIndex) { EMPTY_SEGMENTS }
+
+    /** Stable row-local identity used to retain rows across frame sequences. */
+    internal fun rowContentHash(rowIndex: Int): Long =
+        rowContentHashes.getOrElse(rowIndex) { 0L }
 
     fun findAt(absoluteRow: Int, column: Int): TerminalLinkSegment? {
         val rowIndex = absoluteRow - topRow
@@ -389,6 +396,9 @@ class TerminalLinkLayout(
         val EMPTY_SEGMENTS = arrayOf<TerminalLinkSegment>()
     }
 }
+
+private fun Array<TerminalLinkSegment>.linkContentHash(): Long =
+    if (isEmpty()) 0L else contentHashCode().toLong()
 
 /** One link span in a [TerminalLinkLayout]. */
 data class TerminalLinkSegment(

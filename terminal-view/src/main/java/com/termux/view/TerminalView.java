@@ -1527,22 +1527,13 @@ public class TerminalView extends View {
         if (handleKeyCodeAction(keyCode, keyMod))
             return true;
 
-        String code = KeyHandler.getCode(keyCode, keyMod, mTermSession.isCursorKeysApplicationMode(), mTermSession.isKeypadApplicationMode());
+        String code = KeyHandler.getCode(
+                keyCode,
+                keyMod,
+                mTermSession.isCursorKeysApplicationMode(),
+                mTermSession.isKeypadApplicationMode(),
+                mTermSession.getKittyKeyboardFlags());
         if (code == null) return false;
-
-        // Kitty keyboard protocol: when active, encode ESC as CSI 27u (optionally
-        // with modifiers) instead of a bare 0x1b. A lone 0x1b is the prefix of
-        // arrow/function-key sequences, so the remote (tmux, vim, ...) otherwise
-        // waits an escape-sequence disambiguation timeout before acting on ESC.
-        // CSI 27u is self-describing, so the remote acts on it immediately.
-        if (keyCode == KeyEvent.KEYCODE_ESCAPE
-                && (mTermSession.getKittyKeyboardFlags() & 0x1) != 0) {
-            final int kittyMods = 1
-                    + ((keyMod & KeyHandler.KEYMOD_SHIFT) != 0 ? 1 : 0)
-                    + ((keyMod & KeyHandler.KEYMOD_ALT) != 0 ? 2 : 0)
-                    + ((keyMod & KeyHandler.KEYMOD_CTRL) != 0 ? 4 : 0);
-            code = kittyMods > 1 ? "\u001b[27;" + kittyMods + "u" : "\u001b[27u";
-        }
 
         mTermSession.write(code);
         return true;

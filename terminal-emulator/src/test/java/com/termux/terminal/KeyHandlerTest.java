@@ -103,6 +103,28 @@ public class KeyHandlerTest extends TestCase {
 		assertKeysEquals("\033[24;2~", KeyHandler.getCodeFromTermcap("FE", false, false));
 	}
 
+	public void testKittyEscapeEncoding() {
+		assertKeysEquals("\033", KeyHandler.getCode(KeyEvent.KEYCODE_ESCAPE, 0, false, false));
+		assertKeysEquals(
+				"\033[27u",
+				KeyHandler.getCode(
+						KeyEvent.KEYCODE_ESCAPE,
+						0,
+						false,
+						false,
+						KeyHandler.KITTY_KEYBOARD_FLAG_DISAMBIGUATE_ESCAPE));
+
+		int modifiers = KeyHandler.KEYMOD_SHIFT | KeyHandler.KEYMOD_ALT | KeyHandler.KEYMOD_CTRL;
+		assertKeysEquals(
+				"\033[27;8u",
+				KeyHandler.getCode(
+						KeyEvent.KEYCODE_ESCAPE,
+						modifiers,
+						false,
+						false,
+						KeyHandler.KITTY_KEYBOARD_FLAG_DISAMBIGUATE_ESCAPE));
+	}
+
 	public void testKeyCodes() {
 		// Return sends carriage return (\r), which normally gets translated by the device driver to newline (\n) unless the ICRNL termios
 		// flag has been set.

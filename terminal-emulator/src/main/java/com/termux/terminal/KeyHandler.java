@@ -60,6 +60,7 @@ public final class KeyHandler {
     public static final int KEYMOD_CTRL = 0x40000000;
     public static final int KEYMOD_SHIFT = 0x20000000;
     public static final int KEYMOD_NUM_LOCK = 0x10000000;
+    public static final int KITTY_KEYBOARD_FLAG_DISAMBIGUATE_ESCAPE = 0x1;
 
     private static final Map<String, Integer> TERMCAP_TO_KEYCODE = new HashMap<>();
 
@@ -151,6 +152,25 @@ public final class KeyHandler {
             keyCode &= ~KEYMOD_NUM_LOCK;
         }
         return getCode(keyCode, keyMod, cursorKeysApplication, keypadApplication);
+    }
+
+    /**
+     * Encodes a key using the Kitty keyboard protocol when its escape
+     * disambiguation flag is active.
+     */
+    public static String getCode(int keyCode, int keyMode, boolean cursorApp, boolean keypadApplication, int kittyKeyboardFlags) {
+        String code = getCode(keyCode, keyMode, cursorApp, keypadApplication);
+        if (code == null) return null;
+        if (keyCode != KEYCODE_ESCAPE
+                || (kittyKeyboardFlags & KITTY_KEYBOARD_FLAG_DISAMBIGUATE_ESCAPE) == 0) {
+            return code;
+        }
+
+        int kittyModifiers = 1
+                + ((keyMode & KEYMOD_SHIFT) != 0 ? 1 : 0)
+                + ((keyMode & KEYMOD_ALT) != 0 ? 2 : 0)
+                + ((keyMode & KEYMOD_CTRL) != 0 ? 4 : 0);
+        return kittyModifiers > 1 ? "\033[27;" + kittyModifiers + "u" : "\033[27u";
     }
 
     public static String getCode(int keyCode, int keyMode, boolean cursorApp, boolean keypadApplication) {

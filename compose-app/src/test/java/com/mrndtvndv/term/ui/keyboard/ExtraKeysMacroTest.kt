@@ -1,5 +1,6 @@
 package com.mrndtvndv.term.ui.keyboard
 
+import com.termux.terminal.KeyHandler
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -12,6 +13,19 @@ class ExtraKeysMacroTest {
     @Test
     fun preservesKittyCtrlShiftEncoding() {
         assertEquals("\u001b[74;6u", encodeExtraKeyMacro("CTRL SHIFT J", false, false))
+    }
+
+    @Test
+    fun encodesEscapeImmediatelyWhenKittyDisambiguationIsEnabled() {
+        assertEquals(
+            "\u001b[27u",
+            encodeExtraKeyMacro(
+                "ESC",
+                false,
+                false,
+                kittyKeyboardFlags = KeyHandler.KITTY_KEYBOARD_FLAG_DISAMBIGUATE_ESCAPE
+            )
+        )
     }
 
     @Test

@@ -31,6 +31,12 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
+private data class ExtraKeyEncodingOptions(
+    val cursorKeysApplicationMode: Boolean,
+    val keypadApplicationMode: Boolean,
+    val kittyKeyboardFlags: Int
+)
+
 @Composable
 fun ExtraKeysToolbar(
     extraKeysController: ExtraKeysController,
@@ -300,7 +306,8 @@ fun dispatchExtraKey(
         val sequence = encodeExtraKeyMacro(
             macro = key,
             cursorKeysApplicationMode = session.isCursorKeysApplicationMode,
-            keypadApplicationMode = session.isKeypadApplicationMode
+            keypadApplicationMode = session.isKeypadApplicationMode,
+            kittyKeyboardFlags = session.getKittyKeyboardFlags()
         )
         if (sequence.isNotEmpty()) {
             session.setCursorBlinkState(true)
@@ -324,9 +331,15 @@ fun dispatchExtraKey(
 internal fun encodeExtraKeyMacro(
     macro: String,
     cursorKeysApplicationMode: Boolean,
-    keypadApplicationMode: Boolean
+    keypadApplicationMode: Boolean,
+    kittyKeyboardFlags: Int = 0
 ): String {
     val sequence = StringBuilder()
+    val encodingOptions = ExtraKeyEncodingOptions(
+        cursorKeysApplicationMode = cursorKeysApplicationMode,
+        keypadApplicationMode = keypadApplicationMode,
+        kittyKeyboardFlags = kittyKeyboardFlags
+    )
     var ctrl = false
     var alt = false
     var shift = false
@@ -340,13 +353,12 @@ internal fun encodeExtraKeyMacro(
             else -> {
                 sequence.append(
                     encodeExtraKeyPart(
-                        part,
-                        ctrl,
-                        alt,
-                        shift,
-                        fn,
-                        cursorKeysApplicationMode,
-                        keypadApplicationMode
+                        key = part,
+                        ctrl = ctrl,
+                        alt = alt,
+                        shift = shift,
+                        fn = fn,
+                        options = encodingOptions
                     )
                 )
                 ctrl = false
@@ -365,8 +377,7 @@ private fun encodeExtraKeyPart(
     alt: Boolean,
     shift: Boolean,
     fn: Boolean,
-    cursorKeysApplicationMode: Boolean,
-    keypadApplicationMode: Boolean
+    options: ExtraKeyEncodingOptions
 ): String {
     val keyCode = ExtraKeysConstants.PRIMARY_KEY_CODES_FOR_STRINGS[key]
     val keyCodeSequence = if (keyCode != null && !fn) {
@@ -377,8 +388,9 @@ private fun encodeExtraKeyPart(
         KeyHandler.getCode(
             keyCode,
             keyModifiers,
-            cursorKeysApplicationMode,
-            keypadApplicationMode
+            options.cursorKeysApplicationMode,
+            options.keypadApplicationMode,
+            options.kittyKeyboardFlags
         ).orEmpty()
     } else {
         null
@@ -431,8 +443,11 @@ private fun sendSingleKey(
         alt = alt,
         shift = shift,
         fn = fn,
-        cursorKeysApplicationMode = session.isCursorKeysApplicationMode,
-        keypadApplicationMode = session.isKeypadApplicationMode
+        options = ExtraKeyEncodingOptions(
+            cursorKeysApplicationMode = session.isCursorKeysApplicationMode,
+            keypadApplicationMode = session.isKeypadApplicationMode,
+            kittyKeyboardFlags = session.getKittyKeyboardFlags()
+        )
     )
     if (sequence.isNotEmpty()) {
         session.setCursorBlinkState(true)

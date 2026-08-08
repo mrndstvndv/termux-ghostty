@@ -23,7 +23,7 @@ import com.mrndtvndv.term.ui.notification.NotificationState
 import com.mrndtvndv.term.ui.prefs.UserPrefs
 import com.mrndtvndv.term.ui.MainContent
 import com.termux.shared.interact.ShareUtils
-import com.termux.view.TerminalView
+import com.termux.terminal.compose.TerminalBackend
 import androidx.core.content.FileProvider
 import java.io.File
 
@@ -48,14 +48,14 @@ class MainActivity : ComponentActivity(), SessionHost {
         }
     }
 
-    private var activeTerminalView: TerminalView? = null
+    private var activeTerminalBackend: TerminalBackend? = null
 
     private val viewingFileState = mutableStateOf<File?>(null)
 
     // ── SessionHost: live UI half of AppSessionManager ───────────────
 
     override fun onFrameAvailable() {
-        activeTerminalView?.onFrameAvailable()
+        activeTerminalBackend?.refresh()
     }
 
     override fun copyToClipboard(text: String) {
@@ -79,7 +79,7 @@ class MainActivity : ComponentActivity(), SessionHost {
         // Frame callbacks are intentionally dropped while the activity is stopped. Re-apply the
         // latest published delta now so RenderFrameCache can detect a gap and request a full
         // snapshot instead of waiting for terminal input to cause another redraw.
-        activeTerminalView?.onScreenUpdated()
+        activeTerminalBackend?.refresh()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -131,18 +131,15 @@ class MainActivity : ComponentActivity(), SessionHost {
                 viewModel = viewModel,
                 sharedPreferences = sharedPreferences,
                 customFontFamily = customFontFamily,
-                onViewCreated = { view ->
-                    activeTerminalView = view
-                    registerForContextMenu(view)
-                    // The session may have published its first frame before this Compose view
-                    // was registered with the activity. Replay the latest delta so the initial
-                    // screen does not depend on a focus or input event to become visible.
-                    view.onScreenUpdated()
+                onBackendCreated = { backend ->
+                    activeTerminalBackend = backend
+                    // The session may have published its first frame before this backend
+                    // was registered with the activity. Replay the latest publication.
+                    backend.refresh()
                 },
-                onViewReleased = { view ->
-                    activeTerminalView?.let { unregisterForContextMenu(it) }
-                    if (activeTerminalView === view) {
-                        activeTerminalView = null
+                onBackendReleased = { backend ->
+                    if (activeTerminalBackend === backend) {
+                        activeTerminalBackend = null
                     }
                 },
                 onOpenFile = { file -> openDownloadedFile(file) },
@@ -198,50 +195,6 @@ class MainActivity : ComponentActivity(), SessionHost {
         intent.removeExtra(AppSessionManager.EXTRA_NOTIFICATION_SERVER_ID)
         val body = intent.getStringExtra(AppSessionManager.EXTRA_NOTIFICATION_BODY)
         viewModel.focusHerdrNotification(serverId, body)
-    }
-
-    override fun onCreateContextMenu(
-        menu: android.view.ContextMenu,
-        v: android.view.View,
-        menuInfo: android.view.ContextMenu.ContextMenuInfo?,
-    ) {
-        super.onCreateContextMenu(menu, v, menuInfo)
-        val view = activeTerminalView ?: return
-        if (v === view) {
-            menu.add(android.view.Menu.NONE, 1, android.view.Menu.NONE, "Share selected text").apply {
-                isEnabled = !view.storedSelectedText.isNullOrEmpty()
-            }
-            menu.add(android.view.Menu.NONE, 2, android.view.Menu.NONE, "Share transcript")
-        }
-    }
-
-    override fun onContextItemSelected(item: android.view.MenuItem): Boolean {
-        val view = activeTerminalView
-        val serverId = (viewModel.uiState.value.screen as? ScreenState.TerminalWorkspace)?.serverId
-        val server = serverId?.let { viewModel.getServer(it) }
-
-        if (view == null || server == null) {
-            return super.onContextItemSelected(item)
-        }
-
-        val currentSession = server.terminalSession
-        return when (item.itemId) {
-            1 -> {
-                val selectedText = view.storedSelectedText
-                if (!selectedText.isNullOrEmpty()) {
-                    ShareUtils.shareText(this, "Terminal selection", selectedText)
-                    view.unsetStoredSelectedText()
-                }
-                true
-            }
-            2 -> {
-                val transcript = currentSession.getTerminalContent()
-                    ?.getTranscriptText(true, true) ?: ""
-                ShareUtils.shareText(this, "Terminal transcript", transcript)
-                true
-            }
-            else -> super.onContextItemSelected(item)
-        }
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {

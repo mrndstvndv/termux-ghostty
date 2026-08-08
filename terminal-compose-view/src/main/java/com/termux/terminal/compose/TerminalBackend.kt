@@ -24,11 +24,17 @@ interface TerminalBackend {
     fun detach()
 
     /**
-     * Resizes the terminal to the given viewport size in pixels. The backend
-     * may debounce or clamp; the canvas must keep calling it with the latest
-     * size on configuration changes.
+     * Applies the latest producer publication. Hosts call this when their
+     * terminal-session callback fires and when returning to the foreground.
      */
-    fun resize(widthPx: Int, heightPx: Int)
+    fun refresh()
+
+    /**
+     * Resizes the terminal to the canvas-derived viewport geometry. The
+     * backend may debounce; the canvas supplies the exact grid and cell size
+     * used for drawing so no hidden renderer needs to measure it again.
+     */
+    fun resize(size: TerminalSize)
 
     /**
      * Submits an input or navigation command. Returns a result; a failed
@@ -57,6 +63,24 @@ interface TerminalBackend {
      * Releasing is idempotent.
      */
     fun release()
+}
+
+/** Complete terminal viewport geometry derived by the canvas renderer. */
+data class TerminalSize(
+    val widthPx: Int,
+    val heightPx: Int,
+    val columns: Int,
+    val rows: Int,
+    val cellWidthPx: Int,
+    val cellHeightPx: Int,
+    val contentTopPx: Int
+) {
+    init {
+        require(widthPx > 0 && heightPx > 0) { "Viewport pixels must be positive" }
+        require(columns > 0 && rows > 0) { "Terminal grid must be positive" }
+        require(cellWidthPx > 0 && cellHeightPx > 0) { "Cell pixels must be positive" }
+        require(contentTopPx >= 0) { "Content top must not be negative" }
+    }
 }
 
 /** Callback interface for a [TerminalBackend]. */

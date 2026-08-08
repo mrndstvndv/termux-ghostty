@@ -4,7 +4,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import com.termux.terminal.TerminalSession
 import com.mrndtvndv.term.ui.sftp.SftpViewModel
-import com.termux.view.TerminalView
+import com.termux.terminal.compose.TerminalBackend
 import com.mrndtvndv.term.ui.review.ReviewViewModel
 import com.mrndtvndv.term.server.HerdrWorkspaceResolver
 import java.io.File
@@ -27,8 +27,8 @@ fun TerminalWorkspaceScreen(
     onFocusHerdrPane: (HerdrWorkspaceResolver.HerdrPaneNode) -> Unit = {},
     onCloseHerdrPane: (HerdrWorkspaceResolver.HerdrPaneNode) -> Unit = {},
     herdrAgentFabOpacity: Float = 0.7f,
-    onViewCreated: (TerminalView) -> Unit,
-    onViewReleased: (TerminalView) -> Unit,
+    onBackendCreated: (TerminalBackend) -> Unit,
+    onBackendReleased: (TerminalBackend) -> Unit,
     activeTab: WorkspaceTab,
     onTabSelected: (WorkspaceTab) -> Unit,
     onOpenFile: (File) -> Unit,
@@ -38,27 +38,11 @@ fun TerminalWorkspaceScreen(
     modifier: Modifier = Modifier
 ) {
     val extraKeysController = remember { com.mrndtvndv.term.ui.keyboard.ExtraKeysController() }
-    val activeTerminalViewRef = remember { arrayOfNulls<TerminalView>(1) }
-    val getActiveTerminalView = remember { { activeTerminalViewRef[0] } }
-
-    val handleViewCreated: (TerminalView) -> Unit = { view ->
-        activeTerminalViewRef[0] = view
-        onViewCreated(view)
-    }
-
-    val handleViewReleased: (TerminalView) -> Unit = { view ->
-        if (activeTerminalViewRef[0] === view) {
-            activeTerminalViewRef[0] = null
-        }
-        onViewReleased(view)
-    }
-
     TabbedWorkspace(
         session = session,
         sftpViewModel = sftpViewModel,
         reviewViewModel = reviewViewModel,
         extraKeysController = extraKeysController,
-        getActiveTerminalView = getActiveTerminalView,
         extraKeysEnabled = extraKeysEnabled,
         extraKeysJson = extraKeysJson,
         hideTabs = hideWorkspaceTabs,
@@ -71,8 +55,8 @@ fun TerminalWorkspaceScreen(
         onFocusHerdrPane = onFocusHerdrPane,
         onCloseHerdrPane = onCloseHerdrPane,
         herdrAgentFabOpacity = herdrAgentFabOpacity,
-        onViewCreated = handleViewCreated,
-        onViewReleased = handleViewReleased,
+        onBackendCreated = onBackendCreated,
+        onBackendReleased = onBackendReleased,
         activeTab = activeTab,
         onTabSelected = onTabSelected,
         onOpenFile = onOpenFile,

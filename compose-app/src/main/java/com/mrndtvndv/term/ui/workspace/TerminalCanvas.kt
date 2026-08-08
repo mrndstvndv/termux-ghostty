@@ -23,6 +23,7 @@ import com.termux.terminal.compose.ModifierKeyReader
 import com.termux.terminal.compose.ShaderDefinition as ComposeShaderDefinition
 import com.termux.terminal.compose.TerminalCanvas as ComposeTerminalCanvas
 import com.termux.terminal.compose.TerminalCanvasConfig
+import com.termux.terminal.compose.TerminalBackend
 
 /** Default soft-keyboard resize debounce in milliseconds (0 = immediate). */
 const val DefaultKeyboardResizeDebounceMillis = 0
@@ -42,8 +43,8 @@ fun TerminalCanvas(
     session: TerminalSession,
     extraKeysController: ExtraKeysController,
     onOpenUrl: (String) -> Unit,
-    onViewCreated: (com.termux.view.TerminalView) -> Unit,
-    onViewReleased: (com.termux.view.TerminalView) -> Unit,
+    onBackendCreated: (TerminalBackend) -> Unit,
+    onBackendReleased: (TerminalBackend) -> Unit,
     isTerminalActive: Boolean,
     modifier: Modifier = Modifier
 ) {
@@ -65,14 +66,10 @@ fun TerminalCanvas(
     }
     val typeface = remember(context) { loadTerminalTypeface(context) }
     val backend = rememberTerminalBackend(
-        context = context,
         session = session,
-        extraKeysController = extraKeysController,
-        fontSize = fontSize.intValue,
         resizeDebounceMillis = resizeDebounceMillis,
-        typeface = typeface,
-        onViewCreated = onViewCreated,
-        onViewReleased = onViewReleased
+        onBackendCreated = onBackendCreated,
+        onBackendReleased = onBackendReleased
     )
     val shaderDefinitions = rememberShaderDefinitions(context, preferences)
     val cursorTrail = CursorTrailEffect.fromPref(preferences.getString("cursor_trail_effect", null))
@@ -127,31 +124,20 @@ private fun TerminalCanvasSurface(
 @Suppress("LongParameterList")
 @Composable
 private fun rememberTerminalBackend(
-    context: Context,
     session: TerminalSession,
-    extraKeysController: ExtraKeysController,
-    fontSize: Int,
     resizeDebounceMillis: Long,
-    typeface: Typeface,
-    onViewCreated: (com.termux.view.TerminalView) -> Unit,
-    onViewReleased: (com.termux.view.TerminalView) -> Unit
+    onBackendCreated: (TerminalBackend) -> Unit,
+    onBackendReleased: (TerminalBackend) -> Unit
 ): TerminalSessionBackend {
-    val backend = remember(session, context, extraKeysController) {
+    val backend = remember(session) {
         TerminalSessionBackend(
-            context = context,
             session = session,
-            extraKeysController = extraKeysController,
-            fontSize = fontSize,
-            terminalTypeface = typeface,
             resizeDebounceMillis = resizeDebounceMillis
         )
     }
     DisposableEffect(backend) {
-        onViewCreated(backend.view)
-        onDispose { onViewReleased(backend.view) }
-    }
-    LaunchedEffect(backend, fontSize) {
-        backend.setFontSize(fontSize)
+        onBackendCreated(backend)
+        onDispose { onBackendReleased(backend) }
     }
     LaunchedEffect(backend, resizeDebounceMillis) {
         backend.setResizeDebounceMillis(resizeDebounceMillis)

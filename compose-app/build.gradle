@@ -134,7 +134,6 @@ ktlint {
 
 dependencies {
     implementation project(':terminal-compose-view')
-    implementation project(':terminal-view')
     implementation project(':terminal-emulator')
     implementation project(':termux-shared')
     implementation 'com.google.android.material:material:1.14.0'

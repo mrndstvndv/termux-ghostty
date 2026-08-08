@@ -41,7 +41,7 @@ import com.mrndtvndv.term.ui.workspace.TerminalWorkspaceScreen
 import com.mrndtvndv.term.ui.workspace.loadSelectedShaderIds
 import com.mrndtvndv.term.ui.workspace.saveSelectedShaderIds
 import com.mrndtvndv.term.ui.workspace.VisualEffectFrameRate
-import com.termux.view.TerminalView
+import com.termux.terminal.compose.TerminalBackend
 import java.io.File
 
 @Suppress("LongParameterList", "LongMethod", "CyclomaticComplexMethod")
@@ -51,8 +51,8 @@ fun MainContent(
     viewModel: MainViewModel,
     sharedPreferences: SharedPreferences,
     customFontFamily: androidx.compose.ui.text.font.FontFamily?,
-    onViewCreated: (TerminalView) -> Unit,
-    onViewReleased: (TerminalView) -> Unit,
+    onBackendCreated: (TerminalBackend) -> Unit,
+    onBackendReleased: (TerminalBackend) -> Unit,
     onOpenFile: (File) -> Unit,
     onOpenFileError: (String) -> Unit,
     onOpenUrl: (String) -> Unit,
@@ -362,8 +362,8 @@ fun MainContent(
                                         onCloseHerdrPane = { pane ->
                                             viewModel.closeHerdrPane(serverId, pane)
                                         },
-                                        onViewCreated = onViewCreated,
-                                        onViewReleased = onViewReleased,
+                                        onBackendCreated = onBackendCreated,
+                                        onBackendReleased = onBackendReleased,
                                         activeTab = uiState.activeTab,
                                         onOpenFile = onOpenFile,
                                         onOpenFileError = onOpenFileError,

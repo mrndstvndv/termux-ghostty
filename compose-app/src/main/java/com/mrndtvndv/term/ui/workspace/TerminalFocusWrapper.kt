@@ -4,7 +4,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import com.mrndtvndv.term.ui.keyboard.ExtraKeysController
 import com.termux.terminal.TerminalSession
-import com.termux.view.TerminalView
+import com.termux.terminal.compose.TerminalBackend
 
 /**
  * Compatibility boundary for the workspace pager. Focus and key dispatch are
@@ -15,16 +15,16 @@ fun TerminalFocusWrapper(
     session: TerminalSession,
     extraKeysController: ExtraKeysController,
     isTerminalActive: Boolean,
-    onViewCreated: (TerminalView) -> Unit,
-    onViewReleased: (TerminalView) -> Unit,
+    onBackendCreated: (TerminalBackend) -> Unit,
+    onBackendReleased: (TerminalBackend) -> Unit,
     onOpenUrl: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     TerminalWorkspaceContainer(
         session = session,
         extraKeysController = extraKeysController,
-        onViewCreated = onViewCreated,
-        onViewReleased = onViewReleased,
+        onBackendCreated = onBackendCreated,
+        onBackendReleased = onBackendReleased,
         onOpenUrl = onOpenUrl,
         isTerminalActive = isTerminalActive,
         modifier = modifier

@@ -245,7 +245,6 @@ fun SettingsScreen(
                         ) {
                             ExtraKeysToolbar(
                                 extraKeysController = previewController,
-                                getActiveTerminalView = { null },
                                 session = null,
                                 extraKeysJson = resolvedJson
                             )

@@ -16,7 +16,7 @@ import com.mrndtvndv.term.ui.sftp.SftpFileBrowser
 import com.mrndtvndv.term.ui.sftp.SftpViewModel
 import com.mrndtvndv.term.ui.keyboard.ExtraKeysToolbar
 import com.mrndtvndv.term.ui.keyboard.ExtraKeysController
-import com.termux.view.TerminalView
+import com.termux.terminal.compose.TerminalBackend
 import com.mrndtvndv.term.server.HerdrWorkspaceResolver
 import com.mrndtvndv.term.ui.review.ReviewViewModel
 import com.mrndtvndv.term.ui.review.GitReviewScreen
@@ -42,7 +42,6 @@ fun TabbedWorkspace(
     sftpViewModel: SftpViewModel?,
     reviewViewModel: ReviewViewModel?,
     extraKeysController: ExtraKeysController,
-    getActiveTerminalView: () -> TerminalView?,
     extraKeysEnabled: Boolean,
     extraKeysJson: String,
     hideTabs: Boolean = false,
@@ -55,8 +54,8 @@ fun TabbedWorkspace(
     onFocusHerdrPane: (HerdrWorkspaceResolver.HerdrPaneNode) -> Unit = {},
     onCloseHerdrPane: (HerdrWorkspaceResolver.HerdrPaneNode) -> Unit = {},
     herdrAgentFabOpacity: Float = 0.7f,
-    onViewCreated: (TerminalView) -> Unit,
-    onViewReleased: (TerminalView) -> Unit,
+    onBackendCreated: (TerminalBackend) -> Unit,
+    onBackendReleased: (TerminalBackend) -> Unit,
     activeTab: WorkspaceTab,
     onTabSelected: (WorkspaceTab) -> Unit,
     onOpenFile: (File) -> Unit,
@@ -246,8 +245,8 @@ fun TabbedWorkspace(
                                     session = session,
                                     extraKeysController = extraKeysController,
                                     isTerminalActive = activeTab == WorkspaceTab.Terminal,
-                                    onViewCreated = onViewCreated,
-                                    onViewReleased = onViewReleased,
+                                    onBackendCreated = onBackendCreated,
+                                    onBackendReleased = onBackendReleased,
                                     onOpenUrl = onOpenUrl
                                 )
                                 if (herdrEnabled) {
@@ -269,7 +268,6 @@ fun TabbedWorkspace(
                             if (extraKeysEnabled) {
                                 ExtraKeysToolbar(
                                     extraKeysController = extraKeysController,
-                                    getActiveTerminalView = getActiveTerminalView,
                                     session = session,
                                     extraKeysJson = extraKeysJson,
                                 )

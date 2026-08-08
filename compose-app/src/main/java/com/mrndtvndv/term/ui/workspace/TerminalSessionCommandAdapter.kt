@@ -1,19 +1,21 @@
 package com.mrndtvndv.term.ui.workspace
 
 import android.view.KeyEvent
-import android.view.MotionEvent
 import com.termux.terminal.GhosttyMouseEvent
 import com.termux.terminal.KeyHandler
 import com.termux.terminal.TerminalSession
 import com.termux.terminal.compose.TerminalCommand
 import com.termux.terminal.compose.TerminalCommandResult
 import com.termux.terminal.compose.TerminalPointerEvent
+import com.termux.terminal.compose.TerminalSize
 import kotlin.math.roundToInt
 
 /** Translates neutral canvas commands to the existing Ghostty session API. */
 internal class TerminalSessionCommandAdapter(
     private val session: TerminalSession,
-    private val view: ComposeInputTerminalView
+    private val currentTopRow: () -> Int,
+    private val updateTopRow: (Int) -> Unit,
+    private val currentSize: () -> TerminalSize?
 ) {
     fun submit(command: TerminalCommand): TerminalCommandResult = when (command) {
         is TerminalCommand.Text -> writeText(command.text)
@@ -79,29 +81,64 @@ internal class TerminalSessionCommandAdapter(
     }
 
     private fun submitScroll(command: TerminalCommand.Scroll): TerminalCommandResult {
-        if (command.rowsDown == 0) return TerminalCommandResult.Success
-
-        val time = android.os.SystemClock.uptimeMillis()
-        val event = MotionEvent.obtain(
-            time,
-            time,
-            MotionEvent.ACTION_MOVE,
-            command.xPx,
-            command.yPx,
-            0
-        )
-        try {
-            view.doScroll(event, command.rowsDown)
-        } finally {
-            event.recycle()
+        return when {
+            command.rowsDown == 0 -> TerminalCommandResult.Success
+            !session.isMouseTrackingActive && !session.isAlternateBufferActive -> {
+                updateTopRow(currentTopRow() + command.rowsDown)
+                TerminalCommandResult.Success
+            }
+            session.isMouseTrackingActive && currentSize() == null ->
+                TerminalCommandResult.Unsupported("Terminal size is not available")
+            else -> {
+                submitTrackedScroll(command, currentSize())
+                TerminalCommandResult.Success
+            }
         }
-        return TerminalCommandResult.Success
+    }
+
+    private fun submitTrackedScroll(command: TerminalCommand.Scroll, size: TerminalSize?) {
+        val up = command.rowsDown < 0
+        repeat(kotlin.math.abs(command.rowsDown)) {
+            if (session.isMouseTrackingActive) {
+                sendWheelEvent(command, size ?: return)
+            } else {
+                sendAlternateBufferScrollKey(up)
+            }
+        }
+    }
+
+    private fun sendWheelEvent(command: TerminalCommand.Scroll, size: TerminalSize) {
+        session.sendGhosttyMouseEvent(
+            GhosttyMouseEvent(
+                GhosttyMouseEvent.PRESS,
+                if (command.rowsDown < 0) GhosttyMouseEvent.BUTTON_WHEEL_UP else GhosttyMouseEvent.BUTTON_WHEEL_DOWN,
+                0,
+                command.xPx,
+                command.yPx,
+                size.widthPx,
+                size.heightPx,
+                size.cellWidthPx,
+                size.cellHeightPx,
+                size.contentTopPx,
+                0,
+                0,
+                0
+            )
+        )
+    }
+
+    private fun sendAlternateBufferScrollKey(up: Boolean) {
+        val keyCode = if (up) KeyEvent.KEYCODE_DPAD_UP else KeyEvent.KEYCODE_DPAD_DOWN
+        KeyHandler.getCode(
+            keyCode,
+            0,
+            session.isCursorKeysApplicationMode,
+            session.isKeypadApplicationMode
+        )?.let(session::write)
     }
 
     private fun setViewportTopRow(topRow: Int): TerminalCommandResult {
-        val clamped = topRow.coerceIn(-session.getActiveTranscriptRows(), 0)
-        view.setTopRow(clamped)
-        view.invalidate()
+        updateTopRow(topRow)
         return TerminalCommandResult.Success
     }
 

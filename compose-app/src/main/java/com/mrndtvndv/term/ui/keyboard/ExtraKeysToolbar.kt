@@ -1,8 +1,6 @@
 package com.mrndtvndv.term.ui.keyboard
 
-import android.os.Build
 import android.view.HapticFeedbackConstants
-import android.view.KeyEvent as AndroidKeyEvent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -26,7 +24,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Popup
 import com.termux.terminal.KeyHandler
 import com.termux.terminal.TerminalSession
-import com.termux.view.TerminalView
 import com.termux.shared.termux.extrakeys.ExtraKeysInfo
 import com.termux.shared.termux.extrakeys.ExtraKeyButton
 import com.termux.shared.termux.extrakeys.ExtraKeysConstants
@@ -37,7 +34,6 @@ import kotlinx.coroutines.launch
 @Composable
 fun ExtraKeysToolbar(
     extraKeysController: ExtraKeysController,
-    getActiveTerminalView: () -> TerminalView?,
     session: TerminalSession?,
     extraKeysJson: String?,
     modifier: Modifier = Modifier
@@ -86,7 +82,6 @@ fun ExtraKeysToolbar(
                     ExtraKeyButtonComponent(
                         buttonInfo = buttonInfo,
                         extraKeysController = extraKeysController,
-                        getActiveTerminalView = getActiveTerminalView,
                         session = session,
                         modifier = Modifier.weight(1f)
                     )
@@ -97,10 +92,10 @@ fun ExtraKeysToolbar(
 }
 
 @Composable
+@Suppress("LongMethod", "CyclomaticComplexMethod")
 fun ExtraKeyButtonComponent(
     buttonInfo: ExtraKeyButton,
     extraKeysController: ExtraKeysController,
-    getActiveTerminalView: () -> TerminalView?,
     session: TerminalSession?,
     modifier: Modifier = Modifier
 ) {
@@ -186,7 +181,7 @@ fun ExtraKeyButtonComponent(
                                     // Repeat action
                                     while (true) {
                                         if (session != null) {
-                                            dispatchExtraKey(buttonInfo, extraKeysController, getActiveTerminalView(), session)
+                                            dispatchExtraKey(buttonInfo, extraKeysController, session)
                                         }
                                         delay(80) // Repeat delay (80ms)
                                     }
@@ -227,7 +222,7 @@ fun ExtraKeyButtonComponent(
 
                                     if (isSwipedUp && buttonInfo.popup != null) {
                                         if (session != null) {
-                                            dispatchExtraKey(buttonInfo.popup!!, extraKeysController, getActiveTerminalView(), session)
+                                            dispatchExtraKey(buttonInfo.popup!!, extraKeysController, session)
                                         }
                                     } else if (!isLongPressed || isModifier) {
                                         if (isModifier) {
@@ -237,7 +232,7 @@ fun ExtraKeyButtonComponent(
                                         } else {
                                             view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                                             if (session != null) {
-                                                dispatchExtraKey(buttonInfo, extraKeysController, getActiveTerminalView(), session)
+                                                dispatchExtraKey(buttonInfo, extraKeysController, session)
                                             }
                                         }
                                     }
@@ -289,7 +284,6 @@ fun ExtraKeyButtonComponent(
 fun dispatchExtraKey(
     buttonInfo: ExtraKeyButton,
     extraKeysController: ExtraKeysController,
-    activeTerminalView: TerminalView?,
     session: TerminalSession
 ) {
     val key = buttonInfo.key
@@ -320,7 +314,7 @@ fun dispatchExtraKey(
         val shift = extraKeysController.readShift()
         val fn = extraKeysController.readFn()
         try {
-            sendSingleKey(key, ctrl, alt, shift, fn, activeTerminalView, session)
+            sendSingleKey(key, ctrl, alt, shift, fn, session)
         } finally {
             extraKeysController.clearConsumedModifiers()
         }
@@ -429,92 +423,19 @@ private fun sendSingleKey(
     alt: Boolean,
     shift: Boolean,
     fn: Boolean,
-    activeTerminalView: TerminalView?,
     session: TerminalSession
 ) {
-    if (ExtraKeysConstants.PRIMARY_KEY_CODES_FOR_STRINGS.containsKey(key)) {
-        val keyCode = ExtraKeysConstants.PRIMARY_KEY_CODES_FOR_STRINGS[key] ?: return
-        var metaState = 0
-        if (ctrl) metaState = metaState or (AndroidKeyEvent.META_CTRL_ON or AndroidKeyEvent.META_CTRL_LEFT_ON)
-        if (alt) metaState = metaState or (AndroidKeyEvent.META_ALT_ON or AndroidKeyEvent.META_ALT_LEFT_ON)
-        if (shift) metaState = metaState or (AndroidKeyEvent.META_SHIFT_ON or AndroidKeyEvent.META_SHIFT_LEFT_ON)
-        if (fn) metaState = metaState or AndroidKeyEvent.META_FUNCTION_ON
-
-        val keyEvent = AndroidKeyEvent(0, 0, AndroidKeyEvent.ACTION_UP, keyCode, 0, metaState)
-        if (activeTerminalView != null) {
-            activeTerminalView.onKeyDown(keyCode, keyEvent)
-        } else {
-            val escapeCode = when (key) {
-                "ESC" -> "\u001b"
-                "TAB" -> "\t"
-                "LEFT" -> "\u001b[D"
-                "UP" -> "\u001b[A"
-                "DOWN" -> "\u001b[B"
-                "RIGHT" -> "\u001b[C"
-                "ENTER" -> "\r"
-                "BKSP" -> "\u007f"
-                else -> null
-            }
-            if (escapeCode != null) {
-                session.write(escapeCode)
-            }
-        }
-    } else {
-        // Resolve codePoint and apply control character mapping directly if ctrl is true
-        val codePoint = if (key.length == 1) key.codePointAt(0) else -1
-        if (codePoint != -1) {
-            var finalCodePoint = codePoint
-            var isUpperCase = finalCodePoint in 'A'.code..'Z'.code
-
-            if (shift) {
-                if (finalCodePoint in 'a'.code..'z'.code) {
-                    finalCodePoint -= 32
-                    isUpperCase = true
-                }
-            }
-
-            if (ctrl && isUpperCase && shift) {
-                // Kitty Keyboard Protocol for Ctrl+Shift+Letter
-                val modifier = if (alt) 14 else 6
-                val sequence = "\u001b[${finalCodePoint};${modifier}u"
-                session.write(sequence)
-                return
-            }
-
-            if (ctrl) {
-                if (finalCodePoint in 'a'.code..'z'.code) {
-                    finalCodePoint = finalCodePoint - 'a'.code + 1
-                } else if (finalCodePoint in 'A'.code..'Z'.code) {
-                    finalCodePoint = finalCodePoint - 'A'.code + 1
-                } else if (finalCodePoint == ' '.code || finalCodePoint == '2'.code) {
-                    finalCodePoint = 0
-                } else if (finalCodePoint == '['.code || finalCodePoint == '3'.code) {
-                    finalCodePoint = 27
-                } else if (finalCodePoint == '\\'.code || finalCodePoint == '4'.code) {
-                    finalCodePoint = 28
-                } else if (finalCodePoint == ']'.code || finalCodePoint == '5'.code) {
-                    finalCodePoint = 29
-                } else if (finalCodePoint == '^'.code || finalCodePoint == '6'.code) {
-                    finalCodePoint = 30
-                } else if (finalCodePoint == '_'.code || finalCodePoint == '7'.code || finalCodePoint == '/'.code) {
-                    finalCodePoint = 31
-                } else if (finalCodePoint == '8'.code) {
-                    finalCodePoint = 127
-                }
-            }
-
-            if (activeTerminalView != null) {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                    // Pass false for controlDownFromEvent because finalCodePoint is already converted
-                    activeTerminalView.inputCodePoint(TerminalView.KEY_EVENT_SOURCE_VIRTUAL_KEYBOARD, finalCodePoint, false, alt)
-                } else {
-                    session.writeCodePoint(alt, finalCodePoint)
-                }
-            } else {
-                session.writeCodePoint(alt, finalCodePoint)
-            }
-        } else {
-            session.write(key)
-        }
+    val sequence = encodeExtraKeyPart(
+        key = key,
+        ctrl = ctrl,
+        alt = alt,
+        shift = shift,
+        fn = fn,
+        cursorKeysApplicationMode = session.isCursorKeysApplicationMode,
+        keypadApplicationMode = session.isKeypadApplicationMode
+    )
+    if (sequence.isNotEmpty()) {
+        session.setCursorBlinkState(true)
+        session.write(sequence)
     }
 }

@@ -522,6 +522,12 @@ final class GhosttySessionWorker extends Thread {
         long buildDurationNanos = SystemClock.elapsedRealtimeNanos() - buildStartNanos;
 
         mLastSnapshotTime = SystemClock.uptimeMillis();
+        FrameDelta publishedFrame = mPublishedFrameDelta.get();
+        if (!FramePublicationDecision.shouldPublish(stagingSnapshot, stagingViewportLinks, publishedFrame)) {
+            mPendingFrameReasonFlags.set(0);
+            return;
+        }
+
         mPublishedFrameCount++;
         stagingSnapshot.setFrameSequence(mPublishedFrameCount);
         stagingViewportLinks.setFrameSequence(mPublishedFrameCount);

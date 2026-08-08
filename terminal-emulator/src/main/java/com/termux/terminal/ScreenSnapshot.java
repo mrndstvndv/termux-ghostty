@@ -209,6 +209,16 @@ public final class ScreenSnapshot {
         return mFullRebuild;
     }
 
+    public FrameUpdateKind getUpdateKind() {
+        if (mFullRebuild) {
+            return FrameUpdateKind.FULL;
+        }
+        if (mDirtyRowCount > 0 || mMetadataFlags != 0) {
+            return FrameUpdateKind.ROWS;
+        }
+        return FrameUpdateKind.UNCHANGED;
+    }
+
     public int getDirtyRowCount() {
         return mDirtyRowCount;
     }

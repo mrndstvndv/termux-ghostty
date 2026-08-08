@@ -101,6 +101,30 @@ public final class ViewportLinkSnapshot {
         return mSegments[index];
     }
 
+    /** Compares visible link content while deliberately ignoring publication sequence. */
+    public boolean hasSameContent(ViewportLinkSnapshot other) {
+        if (other == null
+            || mTopRow != other.mTopRow
+            || mRows != other.mRows
+            || mColumns != other.mColumns
+            || mSegments.length != other.mSegments.length) {
+            return false;
+        }
+
+        for (int index = 0; index < mSegments.length; index++) {
+            Segment current = mSegments[index];
+            Segment candidate = other.mSegments[index];
+            if (current.mRow != candidate.mRow
+                || current.mStartColumn != candidate.mStartColumn
+                || current.mEndColumnExclusive != candidate.mEndColumnExclusive
+                || current.mSource != candidate.mSource
+                || !current.mUrl.equals(candidate.mUrl)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     public boolean isCompatibleWith(ScreenSnapshot snapshot) {
         if (snapshot == null) {
             throw new IllegalArgumentException("snapshot must not be null");

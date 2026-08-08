@@ -13,6 +13,7 @@ import com.termux.terminal.compose.TerminalDiagnostic
 import com.termux.terminal.compose.TerminalFrame
 import com.termux.terminal.compose.TerminalMetrics
 import com.termux.terminal.compose.TerminalSelection
+import com.termux.terminal.compose.TerminalSize
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.Channel.Factory.CONFLATED
 
@@ -34,7 +35,16 @@ internal fun terminalColumnsForMeasuredCellWidth(widthPx: Int, measuredCellWidth
  */
 internal class TerminalController(
     private val backend: TerminalBackend,
-    private val graphicsContext: GraphicsContext
+    private val graphicsContext: GraphicsContext,
+    private val measureMetrics: (TerminalCanvasConfig, Int, Int) -> TerminalMetrics =
+        { config, width, height ->
+            TerminalMetrics.from(
+                fontSizePx = config.fontSize.toFloat(),
+                typeface = config.typeface,
+                viewportWidthPx = width,
+                viewportHeightPx = height
+            )
+        }
 ) : TerminalBackendListener {
 
     /** Invoked by the composable when backend invalidation arrives. */
@@ -132,7 +142,7 @@ internal class TerminalController(
      * Resizes the backend when the display grid (columns x rows) changes.
      *
      * The grid is derived from the row renderer's measured cell width using
-     * the same raw-width formula as the backing [TerminalView.updateSize], so
+     * the same raw-width formula as terminal rendering, so
      * pixel drift during a drag-resize that does not cross a cell boundary is coalesced away. This
      * avoids churning every intermediate size through reflow -> SIGWINCH ->
      * full tmux redraw. Once the grid changes, the actual pixel size is still
@@ -145,26 +155,28 @@ internal class TerminalController(
         lastResizeWidth = width
         lastResizeHeight = height
 
-        val renderer = this.rowRenderer ?: run {
-            // No renderer yet (before the first draw): fall back to pixel-based
-            // coalescing so the initial size is applied before the first frame.
-            cursorEffectState.reset()
-            cursorFramePending = false
-            backend.resize(width, height)
-            return
-        }
-        // Keep terminal column sizing on the raw measured width. The hidden
-        // migration adapter uses this same policy; rounded cellWidthPx is for
-        // visual placement and session cell-width metadata only.
-        val columns = terminalColumnsForMeasuredCellWidth(width, renderer.measuredCellWidthPx)
-        val rows = ((height - renderer.lineSpacingAndAscentPx) / renderer.lineSpacingPx)
+        val metrics = measureMetrics(config, width, height)
+        // Keep terminal column sizing on the raw measured width. Rounded
+        // cellWidthPx remains the visual placement and session metadata size.
+        val columns = terminalColumnsForMeasuredCellWidth(width, metrics.measuredCellWidthPx)
+        val rows = ((height - metrics.lineSpacingAndAscentPx) / metrics.cellHeightPx).toInt()
             .coerceAtLeast(MinGridDimension)
         if (columns == lastResizeColumns && rows == lastResizeRows) return
         lastResizeColumns = columns
         lastResizeRows = rows
         cursorEffectState.reset()
         cursorFramePending = false
-        backend.resize(width, height)
+        backend.resize(
+            TerminalSize(
+                widthPx = width,
+                heightPx = height,
+                columns = columns,
+                rows = rows,
+                cellWidthPx = metrics.cellWidthPx.toInt().coerceAtLeast(1),
+                cellHeightPx = metrics.cellHeightPx.toInt().coerceAtLeast(1),
+                contentTopPx = metrics.lineSpacingAndAscentPx.toInt().coerceAtLeast(0)
+            )
+        )
     }
 
     /** Latest backend frame, or null before the first invalidation. */

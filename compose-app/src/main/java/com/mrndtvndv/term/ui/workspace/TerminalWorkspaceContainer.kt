@@ -4,14 +4,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import com.mrndtvndv.term.ui.keyboard.ExtraKeysController
 import com.termux.terminal.TerminalSession
-import com.termux.view.TerminalView
+import com.termux.terminal.compose.TerminalBackend
 
 @Composable
 fun TerminalWorkspaceContainer(
     session: TerminalSession,
     extraKeysController: ExtraKeysController,
-    onViewCreated: (TerminalView) -> Unit,
-    onViewReleased: (TerminalView) -> Unit,
+    onBackendCreated: (TerminalBackend) -> Unit,
+    onBackendReleased: (TerminalBackend) -> Unit,
     onOpenUrl: (String) -> Unit,
     isTerminalActive: Boolean,
     modifier: Modifier = Modifier
@@ -20,8 +20,8 @@ fun TerminalWorkspaceContainer(
         session = session,
         extraKeysController = extraKeysController,
         onOpenUrl = onOpenUrl,
-        onViewCreated = onViewCreated,
-        onViewReleased = onViewReleased,
+        onBackendCreated = onBackendCreated,
+        onBackendReleased = onBackendReleased,
         isTerminalActive = isTerminalActive,
         modifier = modifier
     )

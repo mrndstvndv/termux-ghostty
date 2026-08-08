@@ -13,6 +13,7 @@ import com.termux.terminal.compose.TerminalMetrics
 import com.termux.terminal.compose.TerminalCommand
 import com.termux.terminal.compose.TerminalCommandResult
 import com.termux.terminal.compose.TerminalFrame
+import com.termux.terminal.compose.TerminalSize
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -46,10 +47,12 @@ class TerminalControllerTest {
     @Test
     fun resizesBackendBeforeFirstFrameIsAvailable() {
         val backend = RecordingBackend()
-        val controller = TerminalController(backend, UnusedGraphicsContext)
+        val controller = testController(backend)
         controller.resizeIfNeeded(widthPx = 640, heightPx = 480)
 
-        assertEquals(listOf(640 to 480), backend.resizes)
+        assertEquals(listOf(640 to 480), backend.resizes.map { it.widthPx to it.heightPx })
+        assertTrue(backend.resizes.single().columns >= 4)
+        assertTrue(backend.resizes.single().rows >= 4)
     }
 
     @Test
@@ -94,13 +97,13 @@ class TerminalControllerTest {
     @Test
     fun repeatedResizeCallsCoalesceToOneBackendResize() {
         val backend = RecordingBackend()
-        val controller = TerminalController(backend, UnusedGraphicsContext)
+        val controller = testController(backend)
 
         controller.resizeIfNeeded(widthPx = 640, heightPx = 480)
         controller.resizeIfNeeded(widthPx = 640, heightPx = 480)
         controller.resizeIfNeeded(widthPx = 320, heightPx = 240)
 
-        assertEquals(listOf(640 to 480, 320 to 240), backend.resizes)
+        assertEquals(listOf(640 to 480, 320 to 240), backend.resizes.map { it.widthPx to it.heightPx })
     }
 
     @Test
@@ -125,6 +128,18 @@ private object TestCursorEffect : CursorEffect {
     ) = Unit
 }
 
+private fun testController(backend: TerminalBackend): TerminalController =
+    TerminalController(backend, UnusedGraphicsContext) { _, width, height ->
+        TerminalMetrics.of(
+            cellWidthPx = 8f,
+            cellHeightPx = 16f,
+            ascentPx = -12f,
+            lineSpacingAndAscentPx = 4f,
+            viewportWidthPx = width,
+            viewportHeightPx = height
+        )
+    }
+
 private object UnusedGraphicsContext : GraphicsContext {
     override fun createGraphicsLayer(): GraphicsLayer = error("Not used by this test")
 
@@ -132,7 +147,7 @@ private object UnusedGraphicsContext : GraphicsContext {
 }
 
 private class RecordingBackend : TerminalBackend {
-    val resizes = mutableListOf<Pair<Int, Int>>()
+    val resizes = mutableListOf<TerminalSize>()
     val lifecycle = mutableListOf<String>()
     var attachedListener: TerminalBackendListener? = null
 
@@ -146,8 +161,10 @@ private class RecordingBackend : TerminalBackend {
         attachedListener = null
     }
 
-    override fun resize(widthPx: Int, heightPx: Int) {
-        resizes += widthPx to heightPx
+    override fun refresh() = Unit
+
+    override fun resize(size: TerminalSize) {
+        resizes += size
     }
 
     override fun submit(command: TerminalCommand): TerminalCommandResult =

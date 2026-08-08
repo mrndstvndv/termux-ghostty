@@ -3,7 +3,7 @@ package com.mrndtvndv.term.ui.workspace
 import com.termux.terminal.RenderFrameCache
 import com.termux.terminal.ScreenSnapshot
 import com.termux.terminal.TextStyle
-import com.termux.terminal.TerminalSession
+import com.termux.terminal.ViewportLinkSnapshot
 import com.termux.terminal.compose.TerminalCellLayout
 import com.termux.terminal.compose.TerminalCursor
 import com.termux.terminal.compose.TerminalFrame
@@ -13,33 +13,75 @@ import com.termux.terminal.compose.TerminalModes
 import com.termux.terminal.compose.TerminalPalette
 import com.termux.terminal.compose.TerminalRow
 import com.termux.terminal.compose.TerminalViewport
-import com.termux.view.TerminalViewLinkLayout
 
-/** Converts the legacy UI cache into immutable frames owned by the compose library. */
-internal class TerminalSessionFrameAdapter(
-    private val session: TerminalSession,
-    private val view: ComposeInputTerminalView
-) {
+/** Session values that are not encoded in the visible frame transport. */
+internal data class TerminalFrameSessionState(
+    val transcriptRows: Int,
+    val cursorBlinkingEnabled: Boolean,
+    val cursorBlinkState: Boolean,
+    val cursorKeysApplicationMode: Boolean,
+    val keypadApplicationMode: Boolean,
+    val mouseTrackingActive: Boolean,
+    val alternateBufferActive: Boolean
+)
+
+/** Applies session deltas and publishes immutable frames without a View intermediary. */
+internal class TerminalSessionFrameStore {
+    enum class ApplyResult {
+        UPDATED,
+        IGNORED,
+        NEEDS_FULL_REFRESH
+    }
+
+    private val renderCache = RenderFrameCache()
+    private val frameAdapter = TerminalSessionFrameAdapter()
+    private var frame: TerminalFrame? = null
+
+    fun apply(
+        frameDelta: com.termux.terminal.FrameDelta,
+        state: TerminalFrameSessionState
+    ): ApplyResult = when (val result = renderCache.apply(frameDelta)) {
+        RenderFrameCache.ApplyResult.APPLIED -> {
+            val snapshot = renderCache.getSnapshotForRender(
+                state.cursorBlinkingEnabled,
+                state.cursorBlinkState
+            ) ?: return ApplyResult.NEEDS_FULL_REFRESH
+            frame = frameAdapter.build(snapshot, frameDelta.viewportLinkSnapshot, state)
+            ApplyResult.UPDATED
+        }
+        RenderFrameCache.ApplyResult.IGNORED_OLDER_OR_DUPLICATE -> ApplyResult.IGNORED
+        else -> if (result.requiresFullRefresh()) {
+            ApplyResult.NEEDS_FULL_REFRESH
+        } else {
+            ApplyResult.IGNORED
+        }
+    }
+
+    fun currentFrame(): TerminalFrame? = frame
+
+    fun clear() {
+        renderCache.reset()
+        frame = null
+    }
+}
+
+/** Converts a complete render-cache snapshot into a compose-owned immutable frame. */
+internal class TerminalSessionFrameAdapter {
     private val contentCache = TerminalFrameContentCache()
-    private var previousSourceLinkLayout: TerminalViewLinkLayout? = null
-    private var previousLinkLayout: TerminalLinkLayout? = null
 
-    fun build(): TerminalFrame? {
-        val renderCache: RenderFrameCache = view.getRenderFrameCache()
-        val snapshot = renderCache.getSnapshotForRender(
-            session.isGhosttyCursorBlinkingEnabled,
-            session.getGhosttyCursorBlinkState()
-        ) ?: return null
-
+    fun build(
+        snapshot: ScreenSnapshot,
+        viewportLinks: ViewportLinkSnapshot,
+        state: TerminalFrameSessionState
+    ): TerminalFrame {
         val content = contentCache.update(snapshot)
-        val sourceLinkLayout = view.getVisibleLinkLayout()
-        val nextFrame = TerminalFrame(
+        return TerminalFrame(
             sequence = snapshot.frameSequence,
             viewport = TerminalViewport(
                 topRow = snapshot.topRow,
                 rows = snapshot.rows,
                 columns = snapshot.columns,
-                transcriptRows = session.getActiveTranscriptRows()
+                transcriptRows = state.transcriptRows
             ),
             cursor = TerminalCursor(
                 column = snapshot.cursorCol,
@@ -49,28 +91,15 @@ internal class TerminalSessionFrameAdapter(
             ),
             modes = TerminalModes(
                 reverseVideo = snapshot.isReverseVideo,
-                cursorKeysApplicationMode = session.isCursorKeysApplicationMode,
-                keypadApplicationMode = session.isKeypadApplicationMode,
-                mouseTrackingActive = session.isMouseTrackingActive,
-                alternateBufferActive = session.isAlternateBufferActive
+                cursorKeysApplicationMode = state.cursorKeysApplicationMode,
+                keypadApplicationMode = state.keypadApplicationMode,
+                mouseTrackingActive = state.mouseTrackingActive,
+                alternateBufferActive = state.alternateBufferActive
             ),
             palette = content.palette,
             rows = content.rows,
-            linkLayout = toTerminalLinkLayout(snapshot, sourceLinkLayout)
+            linkLayout = TerminalFrameLinkLayoutBuilder.build(snapshot, viewportLinks)
         )
-        return nextFrame
-    }
-
-    private fun toTerminalLinkLayout(
-        snapshot: ScreenSnapshot,
-        source: TerminalViewLinkLayout?
-    ): TerminalLinkLayout? {
-        if (source === previousSourceLinkLayout) return previousLinkLayout
-
-        val nextLayout = snapshot.toTerminalLinkLayout(source)
-        previousSourceLinkLayout = source
-        previousLinkLayout = nextLayout
-        return nextLayout
     }
 }
 
@@ -182,35 +211,225 @@ private fun ScreenSnapshot.toTerminalRow(rowIndex: Int): TerminalRow {
     )
 }
 
-private fun ScreenSnapshot.toTerminalLinkLayout(
-    source: TerminalViewLinkLayout?
-): TerminalLinkLayout? {
-    if (source == null) return null
-
-    val segmentsPerRow = List(rows) { rowIndex ->
-        val absoluteRow = topRow + rowIndex
-        val segments = mutableListOf<TerminalLinkSegment>()
-        var column = 0
-        while (column < columns) {
-            val url = source.findAt(absoluteRow, column)?.url
-            if (url == null) {
-                column++
-                continue
-            }
-
-            val startColumn = column
-            do {
-                column++
-            } while (column < columns && source.findAt(absoluteRow, column)?.url == url)
-            segments += TerminalLinkSegment(startColumn, column, url)
-        }
-        segments
-    }
-    return TerminalLinkLayout(
-        frameSequence = source.frameSequence,
-        topRow = topRow,
-        rows = rows,
-        columns = columns,
-        segmentsPerRow = segmentsPerRow
+private object TerminalFrameLinkLayoutBuilder {
+    private val urlPattern = Regex(
+        pattern =
+            """(?i)\b(?:(?:(?:dav|dict|dns|file|finger|ftp(?:s?)|git|gemini|gopher|http(?:s?)|""" +
+                """imap(?:s?)|irc(?:[6s]?)|ip[fn]s|ldap(?:s?)|pop3(?:s?)|redis(?:s?)|rsync|""" +
+                """rtsp(?:[su]?)|sftp|smb(?:s?)|smtp(?:s?)|ssh|svn(?:\+ssh)?|tcp|telnet|tftp|""" +
+                """udp|vnc|ws(?:s?))://|(?:mailto|magnet|news|tel):)[^\s\u0000-\u001F<>"']+)"""
     )
+
+    fun build(snapshot: ScreenSnapshot, viewportLinks: ViewportLinkSnapshot): TerminalLinkLayout {
+        val segments = List(snapshot.rows) { mutableListOf<TerminalLinkSegment>() }
+        val claimedCells = BooleanArray(snapshot.rows * snapshot.columns)
+        addOsc8Segments(snapshot, viewportLinks, segments, claimedCells)
+        addLiteralUrls(snapshot, segments, claimedCells)
+        return TerminalLinkLayout(
+            frameSequence = snapshot.frameSequence,
+            topRow = snapshot.topRow,
+            rows = snapshot.rows,
+            columns = snapshot.columns,
+            segmentsPerRow = segments
+        )
+    }
+
+    private fun addOsc8Segments(
+        snapshot: ScreenSnapshot,
+        viewportLinks: ViewportLinkSnapshot,
+        segments: List<MutableList<TerminalLinkSegment>>,
+        claimedCells: BooleanArray
+    ) {
+        if (!viewportLinks.isCompatibleWith(snapshot)) return
+        repeat(viewportLinks.segmentCount) { index ->
+            val source = viewportLinks.getSegment(index)
+            if (source.url.isEmpty() || source.row !in 0 until snapshot.rows) return@repeat
+            if (source.startColumn !in 0 until snapshot.columns) return@repeat
+            if (source.endColumnExclusive !in (source.startColumn + 1)..snapshot.columns) return@repeat
+            addSegment(
+                row = source.row,
+                segment = TerminalLinkSegment(source.startColumn, source.endColumnExclusive, source.url),
+                columns = snapshot.columns,
+                segments = segments,
+                claimedCells = claimedCells
+            )
+        }
+    }
+
+    private fun addLiteralUrls(
+        snapshot: ScreenSnapshot,
+        segments: List<MutableList<TerminalLinkSegment>>,
+        claimedCells: BooleanArray
+    ) {
+        var firstRow = 0
+        while (firstRow < snapshot.rows) {
+            var lastRow = firstRow
+            while (lastRow < snapshot.rows - 1 && snapshot.getRow(lastRow).isLineWrap) lastRow++
+            addLogicalLineUrls(snapshot, firstRow, lastRow, segments, claimedCells)
+            firstRow = lastRow + 1
+        }
+    }
+
+    private fun addLogicalLineUrls(
+        snapshot: ScreenSnapshot,
+        firstRow: Int,
+        lastRow: Int,
+        segments: List<MutableList<TerminalLinkSegment>>,
+        claimedCells: BooleanArray
+    ) {
+        val text = StringBuilder()
+        val spans = mutableListOf<CellTextSpan>()
+        for (row in firstRow..lastRow) {
+            val source = snapshot.getRow(row)
+            if (!source.hasCellLayout()) return
+            var column = 0
+            while (column < snapshot.columns) {
+                val width = source.getCellDisplayWidth(column)
+                if (width <= 0) {
+                    column++
+                    continue
+                }
+                val start = text.length
+                val length = source.getCellTextLength(column)
+                if (length > 0) {
+                    text.append(source.text, source.getCellTextStart(column), length)
+                } else {
+                    repeat(width) { text.append(' ') }
+                }
+                spans += CellTextSpan(row, column, column + width, start, text.length)
+                column += width
+            }
+        }
+
+        urlPattern.findAll(text).forEach { match ->
+            val end = trimmedUrlEnd(text, match.range.first, match.range.last + 1)
+            if (end > match.range.first) {
+                addUrlMatch(
+                    match.range.first,
+                    end,
+                    text.substring(match.range.first, end),
+                    spans,
+                    snapshot.columns,
+                    segments,
+                    claimedCells
+                )
+            }
+        }
+    }
+
+    @Suppress("LongParameterList")
+    private fun addUrlMatch(
+        start: Int,
+        end: Int,
+        url: String,
+        spans: List<CellTextSpan>,
+        columns: Int,
+        segments: List<MutableList<TerminalLinkSegment>>,
+        claimedCells: BooleanArray
+    ) {
+        val accumulator = UrlSegmentAccumulator(url, columns, segments, claimedCells)
+        for (span in spans) {
+            if (span.textStart >= end) break
+            if (span.textEnd > start) {
+                accumulator.append(span)
+            }
+        }
+        accumulator.flush()
+    }
+
+    private fun addSegment(
+        row: Int,
+        segment: TerminalLinkSegment,
+        columns: Int,
+        segments: List<MutableList<TerminalLinkSegment>>,
+        claimedCells: BooleanArray
+    ) {
+        segments[row] += segment
+        for (column in segment.startColumn until segment.endColumnExclusive) {
+            claimedCells[(row * columns) + column] = true
+        }
+    }
+
+    private fun trimmedUrlEnd(text: CharSequence, start: Int, end: Int): Int {
+        var result = end
+        while (result > start) {
+            val trailing = text[result - 1]
+            if (trailing in ".,:;!?'\">" || hasUnmatchedClosingBracket(text, start, result, trailing)) {
+                result--
+            } else {
+                break
+            }
+        }
+        return result
+    }
+
+    private fun hasUnmatchedClosingBracket(
+        text: CharSequence,
+        start: Int,
+        end: Int,
+        closing: Char
+    ): Boolean {
+        val opening = when (closing) {
+            ')' -> '('
+            ']' -> '['
+            '}' -> '{'
+            else -> return false
+        }
+        var balance = 0
+        for (index in start until end) {
+            if (text[index] == opening) balance++
+            if (text[index] == closing) balance--
+        }
+        return balance < 0
+    }
+
+    private data class CellTextSpan(
+        val row: Int,
+        val startColumn: Int,
+        val endColumn: Int,
+        val textStart: Int,
+        val textEnd: Int
+    )
+
+    private class UrlSegmentAccumulator(
+        private val url: String,
+        private val columns: Int,
+        private val segments: List<MutableList<TerminalLinkSegment>>,
+        private val claimedCells: BooleanArray
+    ) {
+        private var activeRow = -1
+        private var activeStart = -1
+        private var activeEnd = -1
+
+        fun append(span: CellTextSpan) {
+            for (column in span.startColumn until span.endColumn) {
+                appendCell(span.row, column)
+            }
+        }
+
+        fun flush() {
+            if (activeRow < 0) return
+            addSegment(
+                activeRow,
+                TerminalLinkSegment(activeStart, activeEnd, url),
+                columns,
+                segments,
+                claimedCells
+            )
+            activeRow = -1
+        }
+
+        private fun appendCell(row: Int, column: Int) {
+            when {
+                claimedCells[(row * columns) + column] -> flush()
+                activeRow == row && activeEnd == column -> activeEnd = column + 1
+                else -> {
+                    flush()
+                    activeRow = row
+                    activeStart = column
+                    activeEnd = column + 1
+                }
+            }
+        }
+    }
 }

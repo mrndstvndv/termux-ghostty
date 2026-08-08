@@ -316,6 +316,8 @@ private fun WorkspaceListItem(
  * https://github.com/simple-icons/simple-icons/blob/develop/icons/fishshell.svg
  * The Java/OpenJDK mark is sourced from Simple Icons (CC0 1.0):
  * https://github.com/simple-icons/simple-icons/blob/develop/icons/openjdk.svg
+ * The Bun mark is sourced from Simple Icons (CC0 1.0):
+ * https://github.com/simple-icons/simple-icons/blob/develop/icons/bun.svg
  */
 private fun agentIconResource(agent: String?): Int? = when (agent?.lowercase(Locale.ROOT)) {
     "amp" -> R.drawable.agent_amp
@@ -357,6 +359,7 @@ private fun processIconResource(processName: String?): Int? = when (
     "nvim" -> R.drawable.agent_nvim
     "fish" -> R.drawable.agent_fish
     "java", "javac", "openjdk" -> R.drawable.agent_java
+    "bun", "bunx" -> R.drawable.agent_bun
     else -> null
 }
 

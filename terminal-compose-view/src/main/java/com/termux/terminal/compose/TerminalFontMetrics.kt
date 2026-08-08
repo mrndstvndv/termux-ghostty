@@ -24,6 +24,7 @@ internal class TerminalFontMetrics private constructor(
     /** Configures a paint with the same base settings used for measurement. */
     fun configurePaint(paint: Paint) {
         paint.set(basePaint)
+        paint.flags = paint.flags or Paint.SUBPIXEL_TEXT_FLAG
         paint.textScaleX = textScaleX
     }
 
@@ -52,7 +53,7 @@ internal class TerminalFontMetrics private constructor(
         private fun configureBasePaint(paint: Paint, typeface: Typeface, fontSizePx: Float) {
             paint.typeface = typeface
             paint.isAntiAlias = true
-            paint.isSubpixelText = true
+            paint.flags = paint.flags or Paint.SUBPIXEL_TEXT_FLAG
             paint.textSize = fontSizePx
             paint.textScaleX = 1f
         }

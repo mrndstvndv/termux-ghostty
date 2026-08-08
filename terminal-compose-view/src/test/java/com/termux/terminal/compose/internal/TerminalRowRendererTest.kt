@@ -236,7 +236,8 @@ class TerminalRowRendererTest {
             paint: Paint
         ) {
             if (count > 0) {
-                textRuns += TextRun(index, count, x, paint.textScaleX, paint.isSubpixelText)
+                val subpixelText = paint.flags and Paint.SUBPIXEL_TEXT_FLAG != 0
+                textRuns += TextRun(index, count, x, paint.textScaleX, subpixelText)
             }
         }
     }

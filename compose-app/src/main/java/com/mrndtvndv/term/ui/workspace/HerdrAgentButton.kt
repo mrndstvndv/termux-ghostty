@@ -109,7 +109,6 @@ fun HerdrAgentButton(
         modifier = modifier.alpha(fabOpacity.coerceIn(0f, 1f)),
         containerColor = MaterialTheme.colorScheme.primaryContainer,
         contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-        shadowElevation = 0.dp,
         elevation = FloatingActionButtonDefaults.elevation(
             defaultElevation = 0.dp,
             pressedElevation = 0.dp,

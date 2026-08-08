@@ -43,7 +43,7 @@ data class GitCommit(
     val subject: String
 )
 
-@Suppress("TooManyFunctions")
+@Suppress("LargeClass", "TooManyFunctions")
 class ReviewViewModel(
     private val execCommand: suspend (String) -> String,
     private val workspaceDir: StateFlow<String>

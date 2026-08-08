@@ -175,6 +175,14 @@ class MainViewModel(
         }
     }
 
+    fun closeHerdrPane(serverId: String, pane: HerdrWorkspaceResolver.HerdrPaneNode) {
+        val resolver = herdrResolver(serverId) ?: return
+        viewModelScope.launch {
+            resolver.closePane(pane.paneId)
+            loadHerdrAgents(serverId)
+        }
+    }
+
     /**
      * Handle a tapped terminal notification: focus the herdr workspace (and tab,
      * when identifiable) that produced it, using the notification body as the

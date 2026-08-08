@@ -53,6 +53,7 @@ fun TabbedWorkspace(
     onLoadHerdrAgents: () -> Unit = {},
     onFocusHerdrTab: (HerdrWorkspaceResolver.HerdrTabNode) -> Unit = {},
     onFocusHerdrPane: (HerdrWorkspaceResolver.HerdrPaneNode) -> Unit = {},
+    onCloseHerdrPane: (HerdrWorkspaceResolver.HerdrPaneNode) -> Unit = {},
     herdrAgentFabOpacity: Float = 0.7f,
     onViewCreated: (TerminalView) -> Unit,
     onViewReleased: (TerminalView) -> Unit,
@@ -257,6 +258,7 @@ fun TabbedWorkspace(
                                         onRefresh = onLoadHerdrAgents,
                                         onFocusTab = onFocusHerdrTab,
                                         onFocusPane = onFocusHerdrPane,
+                                        onClosePane = onCloseHerdrPane,
                                         fabOpacity = herdrAgentFabOpacity,
                                         modifier = Modifier
                                             .align(androidx.compose.ui.Alignment.BottomEnd)

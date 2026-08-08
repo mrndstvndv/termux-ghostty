@@ -359,6 +359,9 @@ fun MainContent(
                                         onFocusHerdrPane = { pane ->
                                             viewModel.focusHerdrPane(serverId, pane)
                                         },
+                                        onCloseHerdrPane = { pane ->
+                                            viewModel.closeHerdrPane(serverId, pane)
+                                        },
                                         onViewCreated = onViewCreated,
                                         onViewReleased = onViewReleased,
                                         activeTab = uiState.activeTab,

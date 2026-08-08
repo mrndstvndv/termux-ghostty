@@ -197,7 +197,7 @@ class AppSessionManager private constructor(context: Context) {
             override fun onFrameAvailable(changedSession: TerminalSession) {
                 val host = hostRef?.get() ?: return
                 if (!host.isAtLeast(Lifecycle.State.STARTED)) return
-                host.onFrameAvailable()
+                host.onFrameAvailable(changedSession)
             }
 
             override fun onCopyTextToClipboard(session: TerminalSession, text: String) {

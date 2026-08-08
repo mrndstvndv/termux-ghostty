@@ -43,8 +43,8 @@ fun TerminalCanvas(
     session: TerminalSession,
     extraKeysController: ExtraKeysController,
     onOpenUrl: (String) -> Unit,
-    onBackendCreated: (TerminalBackend) -> Unit,
-    onBackendReleased: (TerminalBackend) -> Unit,
+    onBackendCreated: (TerminalSession, TerminalBackend) -> Unit,
+    onBackendReleased: (TerminalSession, TerminalBackend) -> Unit,
     isTerminalActive: Boolean,
     modifier: Modifier = Modifier
 ) {
@@ -126,8 +126,8 @@ private fun TerminalCanvasSurface(
 private fun rememberTerminalBackend(
     session: TerminalSession,
     resizeDebounceMillis: Long,
-    onBackendCreated: (TerminalBackend) -> Unit,
-    onBackendReleased: (TerminalBackend) -> Unit
+    onBackendCreated: (TerminalSession, TerminalBackend) -> Unit,
+    onBackendReleased: (TerminalSession, TerminalBackend) -> Unit
 ): TerminalSessionBackend {
     val backend = remember(session) {
         TerminalSessionBackend(
@@ -136,8 +136,8 @@ private fun rememberTerminalBackend(
         )
     }
     DisposableEffect(backend) {
-        onBackendCreated(backend)
-        onDispose { onBackendReleased(backend) }
+        onBackendCreated(session, backend)
+        onDispose { onBackendReleased(session, backend) }
     }
     LaunchedEffect(backend, resizeDebounceMillis) {
         backend.setResizeDebounceMillis(resizeDebounceMillis)

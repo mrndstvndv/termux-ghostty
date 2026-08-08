@@ -42,6 +42,7 @@ import com.mrndtvndv.term.ui.workspace.loadSelectedShaderIds
 import com.mrndtvndv.term.ui.workspace.saveSelectedShaderIds
 import com.mrndtvndv.term.ui.workspace.VisualEffectFrameRate
 import com.termux.terminal.compose.TerminalBackend
+import com.termux.terminal.TerminalSession
 import java.io.File
 
 @Suppress("LongParameterList", "LongMethod", "CyclomaticComplexMethod")
@@ -51,8 +52,8 @@ fun MainContent(
     viewModel: MainViewModel,
     sharedPreferences: SharedPreferences,
     customFontFamily: androidx.compose.ui.text.font.FontFamily?,
-    onBackendCreated: (TerminalBackend) -> Unit,
-    onBackendReleased: (TerminalBackend) -> Unit,
+    onBackendCreated: (TerminalSession, TerminalBackend) -> Unit,
+    onBackendReleased: (TerminalSession, TerminalBackend) -> Unit,
     onOpenFile: (File) -> Unit,
     onOpenFileError: (String) -> Unit,
     onOpenUrl: (String) -> Unit,

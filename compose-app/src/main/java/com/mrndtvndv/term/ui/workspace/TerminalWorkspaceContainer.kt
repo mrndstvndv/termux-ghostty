@@ -10,8 +10,8 @@ import com.termux.terminal.compose.TerminalBackend
 fun TerminalWorkspaceContainer(
     session: TerminalSession,
     extraKeysController: ExtraKeysController,
-    onBackendCreated: (TerminalBackend) -> Unit,
-    onBackendReleased: (TerminalBackend) -> Unit,
+    onBackendCreated: (TerminalSession, TerminalBackend) -> Unit,
+    onBackendReleased: (TerminalSession, TerminalBackend) -> Unit,
     onOpenUrl: (String) -> Unit,
     isTerminalActive: Boolean,
     modifier: Modifier = Modifier

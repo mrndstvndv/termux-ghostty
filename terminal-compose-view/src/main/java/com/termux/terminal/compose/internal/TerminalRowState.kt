@@ -1,12 +1,9 @@
 package com.termux.terminal.compose.internal
 
-import androidx.compose.ui.graphics.layer.GraphicsLayer
 import com.termux.terminal.compose.TerminalRow
 
-/** Retained state of one rendered row layer: content plus overlay bookkeeping. */
-internal class TerminalRowState(
-    val layer: GraphicsLayer
-) {
+/** Retained content and overlay identity for one rendered viewport row. */
+internal class TerminalRowState {
     var contentHash = Long.MIN_VALUE
     var selectionStart = Int.MIN_VALUE
     var selectionEnd = Int.MIN_VALUE
@@ -25,6 +22,17 @@ internal class TerminalRowState(
         reverseVideo = hints.reverseVideo
         this.paletteVersion = paletteVersion
         this.linkContentHash = linkContentHash
+    }
+
+    fun clear() {
+        contentHash = Long.MIN_VALUE
+        selectionStart = Int.MIN_VALUE
+        selectionEnd = Int.MIN_VALUE
+        cursorX = Int.MIN_VALUE
+        cursorStyle = Int.MIN_VALUE
+        reverseVideo = false
+        paletteVersion = Int.MIN_VALUE
+        linkContentHash = Long.MIN_VALUE
     }
 }
 

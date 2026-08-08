@@ -6,6 +6,7 @@ import androidx.compose.ui.graphics.GraphicsContext
 import androidx.compose.ui.graphics.asComposeRenderEffect
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.unit.IntOffset
@@ -14,13 +15,12 @@ import com.termux.terminal.compose.TerminalCursor
 import com.termux.terminal.compose.TerminalFrame
 import com.termux.terminal.compose.TerminalLinkLayout
 import com.termux.terminal.compose.TerminalPalette
-import com.termux.terminal.compose.TerminalRow
 import com.termux.terminal.compose.TerminalSelection
 
 /**
- * Retained terminal renderer backed by Compose-managed RenderNodes. Each row
- * owns a display list and is re-recorded only when its content or row-local
- * overlays change.
+ * Retained terminal renderer backed by Compose-managed RenderNodes. Four-row
+ * tiles bound sparse redraw work while reducing layer fan-out, and one stable
+ * parent display list presents all tiles through a single draw operation.
  *
  * The renderer consumes only [TerminalFrame] and library-owned types; it never
  * calls back into a session or backend while drawing.
@@ -32,9 +32,12 @@ internal class TerminalRenderNodeRenderer(
 ) {
     private val hasAnimatedShader = shaders.any { it.definition.usesTimeUniform }
     private val animatedBitmapRenderer = AnimatedTerminalBitmapRenderer(shaders, rowRenderer)
+    private val tilePlanner = TerminalRenderTilePlanner()
 
     private var parentLayer = graphicsContext.createGraphicsLayer()
-    private var rows: Array<TerminalRowState> = emptyArray()
+    private var rowStates: Array<TerminalRowState> = emptyArray()
+    private var tiles: Array<TerminalTileState> = emptyArray()
+    private var dirtyRows = BooleanArray(0)
     private var visibleRowCount = 0
     private var width = -1
     private var height = -1
@@ -52,6 +55,7 @@ internal class TerminalRenderNodeRenderer(
     private var boundShaders: List<CompiledShader> = emptyList()
     private var shaderResolutionWidth = Float.NaN
     private var shaderResolutionHeight = Float.NaN
+    private var forceFullTileRecord = true
 
     fun draw(
         drawScope: DrawScope,
@@ -76,25 +80,18 @@ internal class TerminalRenderNodeRenderer(
         ensureLayout(frame, targetWidth, targetHeight)
         updateRowsIfNeeded(drawScope, frame, contentVersion, selection)
         updateBackground(frame)
-
-        if (shaders.isEmpty()) {
-            drawScope.drawRect(backgroundColor)
-            for (rowIndex in 0 until visibleRowCount) {
-                drawScope.drawLayer(rows[rowIndex].layer)
-            }
-            return
-        }
-
         updateParentDisplayList(drawScope)
-        updateShaders(timeSeconds)
+        if (shaders.isNotEmpty()) updateShaders(timeSeconds)
         drawScope.drawLayer(parentLayer)
     }
 
     fun release() {
         animatedBitmapRenderer.release()
         parentLayer.renderEffect = null
-        releaseRows()
-        rows = emptyArray()
+        releaseTiles()
+        rowStates = emptyArray()
+        tiles = emptyArray()
+        dirtyRows = BooleanArray(0)
         visibleRowCount = 0
         graphicsContext.releaseGraphicsLayer(parentLayer)
     }
@@ -108,27 +105,26 @@ internal class TerminalRenderNodeRenderer(
             return
         }
 
-        // Row layers' vertical offsets depend on the line height, so a font
-        // metric change still rebuilds every layer. Any other size change keeps
-        // and reuses the retained layers: reflowed content changes the row
-        // data, and updateRowsIfNeeded re-records only the layers whose content
-        // or overlays really changed. This avoids the release/recreate churn
-        // (and the resulting one-frame layer blanking) on every intermediate
-        // width during a drag-resize.
+        // Tile offsets depend on line height, so a font metric change rebuilds
+        // every render resource. Pixel-only size changes retain the tiles;
+        // backend grid coalescing decides when reflow actually changes rows.
         if (nextLineHeight != lineHeight) {
             parentLayer.renderEffect = null
-            releaseRows()
+            releaseTiles()
             graphicsContext.releaseGraphicsLayer(parentLayer)
             width = targetWidth
             height = targetHeight
             lineHeight = nextLineHeight
             parentLayer = graphicsContext.createGraphicsLayer()
-            rows = Array(frame.rowsVisible) { rowIndex -> createRowLayer(rowIndex) }
+            rowStates = Array(frame.rowsVisible) { TerminalRowState() }
+            tiles = Array(tilePlanner.tileCount(frame.rowsVisible), ::createTileLayer)
+            dirtyRows = BooleanArray(frame.rowsVisible)
             visibleRowCount = frame.rowsVisible
             boundShaders = emptyList()
             shaderResolutionWidth = Float.NaN
             shaderResolutionHeight = Float.NaN
             parentDisplayListDirty = true
+            forceFullTileRecord = true
             invalidateProcessedFrame()
             return
         }
@@ -138,9 +134,10 @@ internal class TerminalRenderNodeRenderer(
             parentDisplayListDirty = true
         }
         if (visibleRowsChanged) {
-            ensureRowCapacity(frame.rowsVisible)
+            ensureCapacity(frame.rowsVisible)
             visibleRowCount = frame.rowsVisible
             parentDisplayListDirty = true
+            forceFullTileRecord = true
             invalidateProcessedFrame()
         }
         if (parentSizeChanged) {
@@ -149,25 +146,32 @@ internal class TerminalRenderNodeRenderer(
         }
     }
 
-    private fun ensureRowCapacity(requiredRows: Int) {
-        if (requiredRows <= rows.size) return
-
-        val existingRows = rows
-        rows = Array(requiredRows) { rowIndex ->
-            if (rowIndex < existingRows.size) existingRows[rowIndex]
-            else createRowLayer(rowIndex)
+    private fun ensureCapacity(requiredRows: Int) {
+        if (requiredRows > rowStates.size) {
+            val existingRows = rowStates
+            rowStates = Array(requiredRows) { rowIndex ->
+                if (rowIndex < existingRows.size) existingRows[rowIndex] else TerminalRowState()
+            }
+            dirtyRows = BooleanArray(requiredRows)
+        }
+        val requiredTiles = tilePlanner.tileCount(requiredRows)
+        if (requiredTiles > tiles.size) {
+            val existingTiles = tiles
+            tiles = Array(requiredTiles) { tileIndex ->
+                if (tileIndex < existingTiles.size) existingTiles[tileIndex] else createTileLayer(tileIndex)
+            }
         }
     }
 
-    private fun createRowLayer(rowIndex: Int): TerminalRowState =
-        TerminalRowState(
+    private fun createTileLayer(tileIndex: Int): TerminalTileState =
+        TerminalTileState(
             graphicsContext.createGraphicsLayer().apply {
-                topLeft = IntOffset(0, rowIndex * lineHeight)
+                topLeft = IntOffset(0, tilePlanner.firstRow(tileIndex) * lineHeight)
             }
         )
 
-    private fun releaseRows() {
-        rows.forEach { row -> graphicsContext.releaseGraphicsLayer(row.layer) }
+    private fun releaseTiles() {
+        tiles.forEach { tile -> graphicsContext.releaseGraphicsLayer(tile.layer) }
     }
 
     private fun updateRowsIfNeeded(
@@ -188,26 +192,27 @@ internal class TerminalRenderNodeRenderer(
         val frameAndLinksUnchanged = !frameChanged && !linkLayoutChanged
         val contentUnchanged = contentVersion == lastProcessedContentVersion
         val unchanged = contentUnchanged && overlaysUnchanged
-        if (unchanged && frameAndLinksUnchanged) return
+        if (!forceFullTileRecord && unchanged && frameAndLinksUnchanged) return
 
+        dirtyRows.fill(false, 0, visibleRowCount)
         for (rowIndex in 0 until visibleRowCount) {
             val row = frame.row(rowIndex)
             if (row != null) {
-                val absoluteRow = frame.topRow + rowIndex
-                val selectionStart = if (absoluteRow == selection.startRow) selection.startCol else -1
-                val selectionEnd = rowSelectionEnd(absoluteRow, selection, frame.columns)
-                val rowCursorX = if (cursor.visible && absoluteRow == cursor.row) cursor.column else -1
-                val hints = RowRenderHints(selectionStart, selectionEnd, rowCursorX, cursor.style, reverseVideo)
-                val rowState = rows[rowIndex]
+                val hints = rowRenderHints(frame, selection, rowIndex)
+                val rowState = rowStates[rowIndex]
                 val linkContentHash = frame.linkLayout?.rowContentHash(rowIndex) ?: 0L
                 val contentChanged = rowContentOutdated(rowState, row, linkContentHash)
                 val overlayChanged = rowSelectionOutdated(rowState, hints) ||
                     rowCursorOutdated(rowState, hints) ||
                     rowStyleOutdated(rowState, hints, paletteVersion)
-                if (contentChanged || overlayChanged) {
-                    recordRowLayer(drawScope, frame, rowIndex, row, hints)
-                }
+                dirtyRows[rowIndex] = forceFullTileRecord || contentChanged || overlayChanged
+            } else if (rowStates[rowIndex].contentHash != Long.MIN_VALUE) {
+                dirtyRows[rowIndex] = true
             }
+        }
+        val work = tilePlanner.plan(visibleRowCount, dirtyRows)
+        repeat(work.recordedLayerCount) { workIndex ->
+            recordTileLayer(drawScope, frame, selection, work, workIndex)
         }
 
         lastProcessedContentVersion = contentVersion
@@ -217,6 +222,7 @@ internal class TerminalRenderNodeRenderer(
         lastFrameSequence = frame.sequence
         lastLinkLayout = frame.linkLayout
         lastPaletteVersion = frame.palette.version
+        forceFullTileRecord = false
     }
 
     private fun rowSelectionEnd(absoluteRow: Int, selection: TerminalSelection, columns: Int): Int = when {
@@ -225,35 +231,65 @@ internal class TerminalRenderNodeRenderer(
         else -> columns
     }
 
-    private fun recordRowLayer(
+    private fun rowRenderHints(
+        frame: TerminalFrame,
+        selection: TerminalSelection,
+        rowIndex: Int
+    ): RowRenderHints {
+        val absoluteRow = frame.topRow + rowIndex
+        val cursor = frame.cursor
+        return RowRenderHints(
+            selectionStart = if (absoluteRow == selection.startRow) selection.startCol else -1,
+            selectionEnd = rowSelectionEnd(absoluteRow, selection, frame.columns),
+            cursorX = if (cursor.visible && absoluteRow == cursor.row) cursor.column else -1,
+            cursorStyle = cursor.style,
+            reverseVideo = frame.reverseVideo
+        )
+    }
+
+    private fun recordTileLayer(
         drawScope: DrawScope,
         frame: TerminalFrame,
-        rowIndex: Int,
-        row: TerminalRow,
-        hints: RowRenderHints
+        selection: TerminalSelection,
+        work: TerminalRenderTileWork,
+        workIndex: Int
     ) {
-        val rowState = rows[rowIndex]
-        rowState.layer.record(
+        val tileIndex = work.tileIndexAt(workIndex)
+        val firstRow = work.firstRow(tileIndex)
+        val endRowExclusive = work.endRowExclusive(tileIndex)
+        val tile = tiles[tileIndex]
+        tile.layer.record(
             density = drawScope,
             layoutDirection = drawScope.layoutDirection,
-            size = IntSize(width, lineHeight)
+            size = IntSize(width, (endRowExclusive - firstRow) * lineHeight)
         ) {
             drawIntoCanvas { canvas ->
-                rowRenderer.renderRow(
-                    canvas = canvas.nativeCanvas,
-                    frame = frame,
-                    rowIndex = rowIndex,
-                    hints = hints
+                for (rowIndex in firstRow until endRowExclusive) {
+                    if (frame.row(rowIndex) != null) {
+                        rowRenderer.renderRow(
+                            canvas = canvas.nativeCanvas,
+                            frame = frame,
+                            rowIndex = rowIndex,
+                            hints = rowRenderHints(frame, selection, rowIndex),
+                            baselineY = ((rowIndex - firstRow + 1) * lineHeight).toFloat()
+                        )
+                    }
+                }
+            }
+        }
+        for (rowIndex in firstRow until endRowExclusive) {
+            val row = frame.row(rowIndex)
+            if (row == null) {
+                rowStates[rowIndex].clear()
+            } else {
+                rowStates[rowIndex].applyFrame(
+                    row,
+                    rowRenderHints(frame, selection, rowIndex),
+                    paletteVersion,
+                    frame.linkLayout?.rowContentHash(rowIndex) ?: 0L
                 )
             }
         }
-        rowState.applyFrame(
-            row,
-            hints,
-            paletteVersion,
-            frame.linkLayout?.rowContentHash(rowIndex) ?: 0L
-        )
-        parentDisplayListDirty = true
     }
 
     private fun updateBackground(frame: TerminalFrame) {
@@ -278,8 +314,9 @@ internal class TerminalRenderNodeRenderer(
             size = IntSize(width, height)
         ) {
             drawRect(backgroundColor)
-            for (rowIndex in 0 until visibleRowCount) {
-                drawLayer(rows[rowIndex].layer)
+            val visibleTileCount = tilePlanner.tileCount(visibleRowCount)
+            for (tileIndex in 0 until visibleTileCount) {
+                drawLayer(tiles[tileIndex].layer)
             }
         }
         parentDisplayListDirty = false
@@ -328,6 +365,10 @@ internal class TerminalRenderNodeRenderer(
         lastPaletteVersion = Int.MIN_VALUE
     }
 }
+
+private class TerminalTileState(
+    val layer: GraphicsLayer
+)
 
 private fun Color.toArgb(): Int {
     val r = (red * 255f).toInt().coerceIn(0, 255)

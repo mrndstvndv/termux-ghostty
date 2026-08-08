@@ -24,6 +24,7 @@ import com.mrndtvndv.term.ui.prefs.UserPrefs
 import com.mrndtvndv.term.ui.MainContent
 import com.termux.shared.interact.ShareUtils
 import com.termux.terminal.compose.TerminalBackend
+import com.termux.terminal.TerminalSession
 import androidx.core.content.FileProvider
 import java.io.File
 
@@ -48,14 +49,16 @@ class MainActivity : ComponentActivity(), SessionHost {
         }
     }
 
-    private var activeTerminalBackend: TerminalBackend? = null
+    private val terminalFrameRouter = ActiveTerminalFrameRouter<TerminalSession, TerminalBackend> { backend ->
+        backend.refresh()
+    }
 
     private val viewingFileState = mutableStateOf<File?>(null)
 
     // ── SessionHost: live UI half of AppSessionManager ───────────────
 
-    override fun onFrameAvailable() {
-        activeTerminalBackend?.refresh()
+    override fun onFrameAvailable(session: TerminalSession) {
+        terminalFrameRouter.onFrameAvailable(session)
     }
 
     override fun copyToClipboard(text: String) {
@@ -79,7 +82,7 @@ class MainActivity : ComponentActivity(), SessionHost {
         // Frame callbacks are intentionally dropped while the activity is stopped. Re-apply the
         // latest published delta now so RenderFrameCache can detect a gap and request a full
         // snapshot instead of waiting for terminal input to cause another redraw.
-        activeTerminalBackend?.refresh()
+        terminalFrameRouter.refreshActive()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -131,16 +134,11 @@ class MainActivity : ComponentActivity(), SessionHost {
                 viewModel = viewModel,
                 sharedPreferences = sharedPreferences,
                 customFontFamily = customFontFamily,
-                onBackendCreated = { backend ->
-                    activeTerminalBackend = backend
-                    // The session may have published its first frame before this backend
-                    // was registered with the activity. Replay the latest publication.
-                    backend.refresh()
+                onBackendCreated = { session, backend ->
+                    terminalFrameRouter.bind(session, backend)
                 },
-                onBackendReleased = { backend ->
-                    if (activeTerminalBackend === backend) {
-                        activeTerminalBackend = null
-                    }
+                onBackendReleased = { session, backend ->
+                    terminalFrameRouter.unbind(session, backend)
                 },
                 onOpenFile = { file -> openDownloadedFile(file) },
                 onOpenFileError = { errorMsg ->

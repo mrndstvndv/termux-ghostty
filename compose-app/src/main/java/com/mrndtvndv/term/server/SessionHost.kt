@@ -1,6 +1,7 @@
 package com.mrndtvndv.term.server
 
 import androidx.lifecycle.Lifecycle
+import com.termux.terminal.TerminalSession
 
 /**
  * The live UI half of the session manager, implemented by MainActivity.
@@ -10,7 +11,7 @@ import androidx.lifecycle.Lifecycle
  * it was rendering continue running in the background.
  */
 interface SessionHost {
-    fun onFrameAvailable()
+    fun onFrameAvailable(session: TerminalSession)
 
     fun copyToClipboard(text: String)
 

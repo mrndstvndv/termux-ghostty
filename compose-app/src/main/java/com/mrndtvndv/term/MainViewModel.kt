@@ -40,6 +40,9 @@ class MainViewModel(
 
     private val coordinator: ServerCoordinator get() = sessionManager.coordinator
     private val serverRepository: ServerRepository get() = sessionManager.serverRepository
+    private val herdrFrameSynchronizer = HerdrTerminalFrameSynchronizer { serverId ->
+        coordinator.getServer(serverId)?.terminalSession?.requestGhosttyFullSnapshotRefresh()
+    }
 
     companion object {
         private const val LOCAL_TERMINAL_ID = "local_terminal"
@@ -164,14 +167,14 @@ class MainViewModel(
     fun focusHerdrTab(serverId: String, tab: HerdrWorkspaceResolver.HerdrTabNode) {
         val resolver = herdrResolver(serverId) ?: return
         viewModelScope.launch {
-            resolver.focusTab(tab)
+            herdrFrameSynchronizer.focus(serverId) { resolver.focusTab(tab) }
         }
     }
 
     fun focusHerdrPane(serverId: String, pane: HerdrWorkspaceResolver.HerdrPaneNode) {
         val resolver = herdrResolver(serverId) ?: return
         viewModelScope.launch {
-            resolver.focusPane(pane)
+            herdrFrameSynchronizer.focus(serverId) { resolver.focusPane(pane) }
         }
     }
 
@@ -189,9 +192,10 @@ class MainViewModel(
      * target. No-op when the server is gone or the body isn't a herdr context.
      */
     fun focusHerdrNotification(serverId: String?, body: String?) {
-        val resolver = serverId?.let { herdrResolver(it) } ?: return
+        val targetServerId = serverId ?: return
+        val resolver = herdrResolver(targetServerId) ?: return
         viewModelScope.launch {
-            resolver.focusFromBody(body)
+            herdrFrameSynchronizer.focus(targetServerId) { resolver.focusFromBody(body) }
         }
     }
 

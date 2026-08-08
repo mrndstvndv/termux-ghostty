@@ -15,8 +15,8 @@ fun TerminalFocusWrapper(
     session: TerminalSession,
     extraKeysController: ExtraKeysController,
     isTerminalActive: Boolean,
-    onBackendCreated: (TerminalBackend) -> Unit,
-    onBackendReleased: (TerminalBackend) -> Unit,
+    onBackendCreated: (TerminalSession, TerminalBackend) -> Unit,
+    onBackendReleased: (TerminalSession, TerminalBackend) -> Unit,
     onOpenUrl: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {

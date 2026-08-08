@@ -66,8 +66,7 @@ final class GhosttySessionWorker extends Thread {
     private ScreenSnapshot mCurrentStaging = mSnapshotA;
     private ViewportLinkSnapshot mCurrentViewportLinkStaging = mViewportLinksA;
 
-    private final AtomicBoolean mSnapshotDirty = new AtomicBoolean(true);
-    private final AtomicBoolean mUIUpdatePending = new AtomicBoolean(false);
+    private final FramePublicationGate mFramePublicationGate = new FramePublicationGate();
     private final AtomicBoolean mAppendMessageQueued = new AtomicBoolean(false);
     private final AtomicInteger mPendingFrameReasonFlags = new AtomicInteger(0);
 
@@ -278,7 +277,7 @@ final class GhosttySessionWorker extends Thread {
         }
 
         addPendingFrameReason(FrameDelta.REASON_APPEND);
-        mSnapshotDirty.set(true);
+        mFramePublicationGate.markSnapshotDirty();
         scheduleSnapshotBuild(queuedBytes > 0);
     }
 
@@ -331,7 +330,7 @@ final class GhosttySessionWorker extends Thread {
         mCurrentCellHeightPixels = cellHeightPixels;
         mContent.requestFullSnapshotRefresh();
         updateCachedState();
-        mSnapshotDirty.set(true);
+        mFramePublicationGate.markSnapshotDirty();
         scheduleSnapshotBuild(false);
     }
 
@@ -342,7 +341,7 @@ final class GhosttySessionWorker extends Thread {
         mContent.requestFullSnapshotRefresh();
         updateCachedState();
         handleProgressUpdate();
-        mSnapshotDirty.set(true);
+        mFramePublicationGate.markSnapshotDirty();
         buildAndPublishSnapshot();
         mMainThreadHandler.post(mSession::onColorsChanged);
     }
@@ -351,7 +350,7 @@ final class GhosttySessionWorker extends Thread {
         addPendingFrameReason(FrameDelta.REASON_COLOR_SCHEME);
         mContent.applyColorScheme(colors);
         mContent.requestFullSnapshotRefresh();
-        mSnapshotDirty.set(true);
+        mFramePublicationGate.markSnapshotDirty();
         buildAndPublishSnapshot();
         mMainThreadHandler.post(mSession::onColorsChanged);
     }
@@ -369,7 +368,7 @@ final class GhosttySessionWorker extends Thread {
 
         mCurrentTopRow = updatedTopRow;
         addPendingFrameReason(FrameDelta.REASON_VIEWPORT_SCROLL);
-        mSnapshotDirty.set(true);
+        mFramePublicationGate.markSnapshotDirty();
         scheduleSnapshotBuild(false);
     }
 
@@ -470,7 +469,7 @@ final class GhosttySessionWorker extends Thread {
     private void handleRequestFullSnapshotRefresh() {
         GhosttyLog.debug("Forcing full Ghostty snapshot refresh session=" + mSession.mHandle);
         mContent.requestFullSnapshotRefresh();
-        mSnapshotDirty.set(true);
+        mFramePublicationGate.markSnapshotDirty();
         buildAndPublishSnapshot();
     }
 
@@ -483,7 +482,7 @@ final class GhosttySessionWorker extends Thread {
     }
 
     private void scheduleSnapshotBuild(boolean busy) {
-        if (!mSnapshotDirty.get()) return;
+        if (!mFramePublicationGate.isSnapshotDirty()) return;
 
         long snapshotInterval = busy ? SNAPSHOT_INTERVAL_BUSY_MILLIS : SNAPSHOT_INTERVAL_MILLIS;
         long now = SystemClock.uptimeMillis();
@@ -502,17 +501,19 @@ final class GhosttySessionWorker extends Thread {
     }
 
     private void buildAndPublishSnapshot() {
-        if (!mSnapshotDirty.compareAndSet(true, false)) return;
+        if (!mFramePublicationGate.tryStartSnapshotBuild()) {
+            if (mFramePublicationGate.isUIUpdatePending()
+                && mFramePublicationGate.isSnapshotDirty()) {
+                mCoalescedBuildRequestCount++;
+            }
+            return;
+        }
 
         ScreenSnapshot stagingSnapshot = mCurrentStaging;
         ViewportLinkSnapshot stagingViewportLinks = mCurrentViewportLinkStaging;
         ScreenSnapshot publishedSnapshot = mPublishedSnapshot.get();
         if (publishedSnapshot != null && publishedSnapshot != stagingSnapshot) {
             stagingSnapshot.copyPersistentMetadataFrom(publishedSnapshot);
-        }
-
-        if (mUIUpdatePending.get()) {
-            mContent.requestFullSnapshotRefresh();
         }
 
         long buildStartNanos = SystemClock.elapsedRealtimeNanos();
@@ -540,10 +541,15 @@ final class GhosttySessionWorker extends Thread {
         mCurrentViewportLinkStaging = (stagingViewportLinks == mViewportLinksA)
             ? mViewportLinksB : mViewportLinksA;
 
-        if (mUIUpdatePending.compareAndSet(false, true)) {
+        if (mFramePublicationGate.tryScheduleUIUpdate()) {
             mMainThreadHandler.post(() -> {
-                mUIUpdatePending.set(false);
-                mSession.notifyFrameAvailable();
+                try {
+                    mSession.notifyFrameAvailable();
+                } finally {
+                    if (mFramePublicationGate.completeUIUpdate()) {
+                        getWorkerHandler().post(() -> scheduleSnapshotBuild(false));
+                    }
+                }
             });
             return;
         }
@@ -619,7 +625,7 @@ final class GhosttySessionWorker extends Thread {
                     byte[] data = (byte[]) msg.obj;
                     appendToNative(data, 0, data.length);
                     addPendingFrameReason(FrameDelta.REASON_APPEND_DIRECT);
-                    mSnapshotDirty.set(true);
+                    mFramePublicationGate.markSnapshotDirty();
                     scheduleSnapshotBuild(false);
                     break;
                 case MSG_BUILD_SNAPSHOT:

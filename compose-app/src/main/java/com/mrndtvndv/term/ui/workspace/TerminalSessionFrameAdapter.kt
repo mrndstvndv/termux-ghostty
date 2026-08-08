@@ -20,9 +20,7 @@ internal class TerminalSessionFrameAdapter(
     private val session: TerminalSession,
     private val view: ComposeInputTerminalView
 ) {
-    private var paletteColors: IntArray? = null
-    private var paletteVersion = 0
-    private var previousFrame: TerminalFrame? = null
+    private val contentCache = TerminalFrameContentCache()
     private var previousSourceLinkLayout: TerminalViewLinkLayout? = null
     private var previousLinkLayout: TerminalLinkLayout? = null
 
@@ -33,13 +31,7 @@ internal class TerminalSessionFrameAdapter(
             session.getGhosttyCursorBlinkState()
         ) ?: return null
 
-        val colors = IntArray(TextStyle.NUM_INDEXED_COLORS) { index -> snapshot.getPaletteColor(index) }
-        if (paletteColors?.contentEquals(colors) != true) {
-            paletteColors = colors
-            paletteVersion++
-        }
-
-        val previousRows = previousFrame?.rows.orEmpty()
+        val content = contentCache.update(snapshot)
         val sourceLinkLayout = view.getVisibleLinkLayout()
         val nextFrame = TerminalFrame(
             sequence = snapshot.frameSequence,
@@ -62,13 +54,10 @@ internal class TerminalSessionFrameAdapter(
                 mouseTrackingActive = session.isMouseTrackingActive,
                 alternateBufferActive = session.isAlternateBufferActive
             ),
-            palette = TerminalPalette.takeOwnership(colors, paletteVersion),
-            rows = List(snapshot.rows) { rowIndex ->
-                snapshot.reusableTerminalRow(rowIndex, previousRows) ?: snapshot.toTerminalRow(rowIndex)
-            },
+            palette = content.palette,
+            rows = content.rows,
             linkLayout = toTerminalLinkLayout(snapshot, sourceLinkLayout)
         )
-        previousFrame = nextFrame
         return nextFrame
     }
 
@@ -82,6 +71,72 @@ internal class TerminalSessionFrameAdapter(
         previousSourceLinkLayout = source
         previousLinkLayout = nextLayout
         return nextLayout
+    }
+}
+
+internal data class TerminalFrameContent(
+    val palette: TerminalPalette,
+    val rows: List<TerminalRow>
+)
+
+/** Reuses immutable palette and row objects while applying a complete render-cache snapshot. */
+internal class TerminalFrameContentCache {
+    private var content: TerminalFrameContent? = null
+    private var frameSequence = Long.MIN_VALUE
+    private var paletteColors: IntArray? = null
+    private var palette: TerminalPalette? = null
+    private var paletteVersion = 0
+    private var rows: List<TerminalRow> = emptyList()
+    private var topRow = 0
+    private var columns = -1
+
+    fun update(snapshot: ScreenSnapshot): TerminalFrameContent {
+        val current = content
+        if (current != null && frameSequence == snapshot.frameSequence) return current
+
+        val nextPalette = updatePalette(snapshot)
+        val nextRows = updateRows(snapshot)
+        rows = nextRows
+        topRow = snapshot.topRow
+        columns = snapshot.columns
+        frameSequence = snapshot.frameSequence
+        return TerminalFrameContent(nextPalette, nextRows).also { content = it }
+    }
+
+    private fun updatePalette(snapshot: ScreenSnapshot): TerminalPalette {
+        val current = palette
+        if (current != null && !snapshot.hasPaletteUpdate()) return current
+
+        val colors = IntArray(TextStyle.NUM_INDEXED_COLORS) { index -> snapshot.getPaletteColor(index) }
+        if (current != null && paletteColors?.contentEquals(colors) == true) return current
+
+        paletteColors = colors
+        paletteVersion++
+        return TerminalPalette.takeOwnership(colors, paletteVersion).also { palette = it }
+    }
+
+    private fun updateRows(snapshot: ScreenSnapshot): List<TerminalRow> {
+        val previousRows = rows
+        val dimensionsMatch = previousRows.size == snapshot.rows && columns == snapshot.columns
+        if (!dimensionsMatch || snapshot.isFullRebuild) {
+            return List(snapshot.rows) { rowIndex ->
+                snapshot.reusableTerminalRow(rowIndex, previousRows) ?: snapshot.toTerminalRow(rowIndex)
+            }
+        }
+
+        val dirtyRows = BooleanArray(snapshot.rows)
+        repeat(snapshot.dirtyRowCount) { dirtyIndex ->
+            dirtyRows[snapshot.getDirtyRow(dirtyIndex)] = true
+        }
+        return List(snapshot.rows) { rowIndex ->
+            val previousIndex = snapshot.topRow + rowIndex - topRow
+            val previousRow = previousRows.getOrNull(previousIndex)
+            if (!dirtyRows[rowIndex] && previousRow?.matches(snapshot.getRow(rowIndex), snapshot.columns) == true) {
+                previousRow
+            } else {
+                snapshot.reusableTerminalRow(rowIndex, previousRows) ?: snapshot.toTerminalRow(rowIndex)
+            }
+        }
     }
 }
 

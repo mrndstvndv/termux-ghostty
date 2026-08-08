@@ -89,6 +89,8 @@ class HerdrWorkspaceResolver(
         val agent: String?,
         val agentStatus: String,
         val focused: Boolean,
+        /** Foreground process name (`argv0`) when herdr reports it; null otherwise. */
+        val processName: String? = null,
     )
 
     data class HerdrTabNode(
@@ -142,7 +144,20 @@ class HerdrWorkspaceResolver(
 
     suspend fun listWorkspaceTabs(): List<HerdrWorkspaceNode> {
         val prefix = "export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; "
-        return parseWorkspaceTabs(execCommand(prefix + "herdr workspace list; herdr pane list"))
+        val workspaces = parseWorkspaceTabs(
+            execCommand(prefix + "herdr workspace list; herdr pane list")
+        )
+        val idlePaneIds = workspaces.asSequence()
+            .flatMap { it.tabs }
+            .flatMap { it.panes }
+            .filter { it.agent == null }
+            .map { it.paneId }
+            .toList()
+        if (idlePaneIds.isEmpty()) return workspaces
+        val processQuery = prefix + idlePaneIds.joinToString("; ") { paneId ->
+            "herdr pane process-info --pane ${shellQuote(paneId)}"
+        }
+        return attachProcessNames(workspaces, parseProcessNames(execCommand(processQuery)))
     }
 
     suspend fun focusAgent(agent: HerdrAgentInfo): Boolean = focusAgentPane(agent.paneId)
@@ -152,6 +167,17 @@ class HerdrWorkspaceResolver(
 
     suspend fun focusPane(pane: HerdrPaneNode): Boolean =
         if (pane.agent != null) focusAgentPane(pane.paneId) else focusTabId(pane.tabId)
+
+    /**
+     * Close a pane's terminal. Herdr kills whatever runs inside the pane.
+     * @return true when the close command was issued
+     */
+    suspend fun closePane(paneId: String): Boolean {
+        val validPaneId = paneId.takeIf { it.isNotBlank() } ?: return false
+        val prefix = "export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; "
+        execCommand(prefix + "herdr pane close ${shellQuote(validPaneId)}")
+        return true
+    }
 
     private suspend fun focusTabId(tabId: String): Boolean {
         val validTabId = tabId.takeIf { it.isNotBlank() } ?: return false
@@ -251,7 +277,55 @@ class HerdrWorkspaceResolver(
             )
         }
 
-    internal fun parseWorkspaceTabs(output: String): List<HerdrWorkspaceNode> {
+    /** Maps pane id to the leading foreground process name (`argv0`, falling back to `name`). */
+    internal fun parseProcessNames(output: String): Map<String, String> = buildMap {
+        output.lineSequence()
+            .mapNotNull(::parseHerdrLine)
+            .filter { (id, _) -> id == "cli:pane:process_info" }
+            .mapNotNull { (_, result) -> parseProcessName(result) }
+            .forEach { (paneId, processName) -> put(paneId, processName) }
+    }
+
+    private fun parseProcessName(result: JsonObject): Pair<String, String>? {
+        val processInfo = runCatching {
+            result["process_info"]?.jsonObject
+        }.getOrNull() ?: return null
+        val paneId = jsonContent(processInfo, "pane_id")?.takeIf { it.isNotBlank() }
+            ?: jsonContent(result, "pane_id")?.takeIf { it.isNotBlank() }
+        val firstProcess = runCatching {
+            processInfo["foreground_processes"]?.jsonArray
+        }.getOrNull().orEmpty().firstOrNull()
+            ?.let { element -> runCatching { element.jsonObject }.getOrNull() }
+        val processName = firstProcess?.let { process ->
+            jsonContent(process, "argv0")?.takeIf { it.isNotBlank() }
+                ?: jsonContent(process, "name")?.takeIf { it.isNotBlank() }
+        }
+        if (paneId == null || processName == null) return null
+        return paneId to processName
+    }
+
+    /** Replaces idle pane titles with their process name (e.g. `nvim /path` → `nvim`). */
+    internal fun attachProcessNames(
+        workspaces: List<HerdrWorkspaceNode>,
+        processNames: Map<String, String>,
+    ): List<HerdrWorkspaceNode> {
+        if (processNames.isEmpty()) return workspaces
+        return workspaces.map { workspace ->
+            workspace.copy(
+                tabs = workspace.tabs.map { tab ->
+                    tab.copy(
+                        panes = tab.panes.map { pane ->
+                            if (pane.agent != null) return@map pane
+                            val processName = processNames[pane.paneId] ?: return@map pane
+                            pane.copy(processName = processName, title = processName)
+                        }
+                    )
+                }
+            )
+        }
+    }
+
+    private fun parseWorkspaceTabs(output: String): List<HerdrWorkspaceNode> {
         val workspaceLabels = parseWorkspaceLabels(output)
         val workspaces = parseWorkspaceEntries(output)
         if (workspaces.isEmpty()) return emptyList()

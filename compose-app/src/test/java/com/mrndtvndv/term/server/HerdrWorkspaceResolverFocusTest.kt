@@ -196,4 +196,70 @@ class HerdrWorkspaceResolverFocusTest {
                 .focusAgent(agent)
         )
     }
+
+    // ── process-info and pane titles ──────────────────────────────────
+
+    private val paneListOutput = buildString {
+        append("""{"id":"cli:workspace:list","result":{"type":"workspace_list","workspaces":[""")
+        append("""{"workspace_id":"w0","label":"proj","focused":true}]}}""")
+        append("\n")
+        append("""{"id":"cli:pane:list","result":{"type":"pane_list","panes":[""")
+        append("""{"pane_id":"w0:p1","tab_id":"w0:t1","workspace_id":"w0",""")
+        append(""""terminal_title":"nvim /work/proj","terminal_title_stripped":"nvim /work/proj",""")
+        append(""""focused":true,"cwd":"/work/proj"}""")
+        append(",")
+        append("""{"pane_id":"w0:p2","tab_id":"w0:t1","workspace_id":"w0","agent":"pi",""")
+        append(""""terminal_title":"π - proj","terminal_title_stripped":"π - proj",""")
+        append(""""agent_status":"working","focused":false,"cwd":"/work/proj"}]}}""")
+    }
+
+    private val processInfo = buildString {
+        append("""{"id":"cli:pane:process_info","result":{"type":"pane_process_info",""")
+        append(""""process_info":{"shell_pid":1,"pane_id":"w0:p1",""")
+        append(""""foreground_processes":[{"pid":2,"argv0":"nvim","name":"nvim",""")
+        append(""""cmdline":"nvim /work/proj"}]}}}""")
+    }
+
+    @Test
+    fun `queries process info for idle panes and replaces titles`() = runTest {
+        val commands = mutableListOf<String>()
+        val workspaces = resolver { cmd ->
+            commands += cmd
+            if (cmd.contains("process-info")) processInfo else paneListOutput
+        }.listWorkspaceTabs()
+
+        assertEquals(2, commands.size)
+        assertTrue(commands[1].contains("herdr pane process-info --pane 'w0:p1'"))
+        val idlePane = workspaces[0].tabs[0].panes.first { it.paneId == "w0:p1" }
+        assertEquals("nvim", idlePane.processName)
+        assertEquals("nvim", idlePane.title)
+        val agentPane = workspaces[0].tabs[0].panes.first { it.paneId == "w0:p2" }
+        assertEquals("π - proj", agentPane.title)
+        assertNull(agentPane.processName)
+    }
+
+    @Test
+    fun `skips process info when every pane runs an agent`() = runTest {
+        val commands = mutableListOf<String>()
+        val allAgents = paneListOutput.replaceFirst(
+            "\"terminal_title\":\"nvim /work/proj\"",
+            "\"agent\":\"pi\",\"agent_status\":\"idle\",\"terminal_title\":\"pi - proj\"",
+        )
+        resolver { cmd -> commands += cmd; allAgents }.listWorkspaceTabs()
+
+        assertEquals(1, commands.size)
+    }
+
+    @Test
+    fun `keeps original title when process info is unavailable`() = runTest {
+        val commands = mutableListOf<String>()
+        val workspaces = resolver { cmd ->
+            commands += cmd
+            if (cmd.contains("process-info")) "" else paneListOutput
+        }.listWorkspaceTabs()
+
+        val idlePane = workspaces[0].tabs[0].panes.first { it.paneId == "w0:p1" }
+        assertEquals("nvim /work/proj", idlePane.title)
+        assertNull(idlePane.processName)
+    }
 }

@@ -87,7 +87,7 @@ fun MainContent(
         onNavigateBack = { viewModel.navigateBack() },
     )
 
-    val savedTheme = sharedPreferences.getString("app_theme", "Dark") ?: "Dark"
+    val savedTheme = sharedPreferences.getString("app_theme", "Black") ?: "Black"
     val savedExtraKeysEnabled = sharedPreferences.getBoolean("extra_keys_enabled", true)
     val savedExtraKeysPreset =
         sharedPreferences.getString("extra_keys_preset", "Double Row") ?: "Double Row"

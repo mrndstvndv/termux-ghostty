@@ -74,7 +74,7 @@ fun codeFontFamily(): FontFamily = LocalCustomFontFamily.current ?: FontFamily.M
 
 @Composable
 fun TermuxGhosttyTheme(
-    theme: String = "Dark",
+    theme: String = "Black",
     customFontFamily: FontFamily? = null,
     content: @Composable () -> Unit
 ) {

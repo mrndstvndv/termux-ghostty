@@ -797,6 +797,8 @@ fun FileChangesList(
                             item {
                                 BranchHeader(
                                     currentBranch = uiState.currentBranch,
+                                    aheadCount = uiState.aheadCount,
+                                    behindCount = uiState.behindCount,
                                     onBranchClick = onBranchHeaderClick
                                 )
                             }
@@ -2328,6 +2330,8 @@ private fun getColors(type: DiffLineType, isDark: Boolean, fallbackColor: Color)
 fun BranchHeader(
     currentBranch: String,
     onBranchClick: () -> Unit,
+    aheadCount: Int = 0,
+    behindCount: Int = 0,
     modifier: Modifier = Modifier
 ) {
     Surface(
@@ -2378,9 +2382,53 @@ fun BranchHeader(
                     )
                 }
             }
-
+            BranchSyncIndicators(
+                aheadCount = aheadCount,
+                behindCount = behindCount
+            )
         }
     }
+}
+
+@Composable
+private fun BranchSyncIndicators(
+    aheadCount: Int,
+    behindCount: Int
+) {
+    if (aheadCount <= 0 && behindCount <= 0) return
+
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        if (aheadCount > 0) {
+            BranchSyncIndicator(
+                arrow = "↑",
+                count = aheadCount,
+                tint = MaterialTheme.colorScheme.primary
+            )
+        }
+        if (behindCount > 0) {
+            BranchSyncIndicator(
+                arrow = "↓",
+                count = behindCount,
+                tint = MaterialTheme.colorScheme.secondary
+            )
+        }
+    }
+}
+
+@Composable
+private fun BranchSyncIndicator(
+    arrow: String,
+    count: Int,
+    tint: Color
+) {
+    Text(
+        text = "$arrow $count",
+        style = MaterialTheme.typography.labelMedium,
+        color = tint
+    )
 }
 
 @Suppress("LongMethod", "CyclomaticComplexMethod")

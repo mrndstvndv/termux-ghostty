@@ -15,7 +15,9 @@ sealed interface ReviewUiState {
         val recentCommits: List<GitCommit> = emptyList(),
         val hasMoreCommits: Boolean = true,
         val currentBranch: String = "",
-        val branches: List<GitBranch> = emptyList()
+        val branches: List<GitBranch> = emptyList(),
+        val aheadCount: Int = 0,
+        val behindCount: Int = 0
     ) : ReviewUiState
     data class Error(val message: String) : ReviewUiState
 }
@@ -46,6 +48,11 @@ class ReviewViewModel(
     private val execCommand: suspend (String) -> String,
     private val workspaceDir: StateFlow<String>
 ) : ViewModel() {
+
+    private data class BranchSyncStatus(
+        val aheadCount: Int = 0,
+        val behindCount: Int = 0
+    )
 
     private val _uiState = MutableStateFlow<ReviewUiState>(ReviewUiState.Loading)
     val uiState = _uiState.asStateFlow()
@@ -225,6 +232,23 @@ class ReviewViewModel(
         }
     }
 
+    private suspend fun fetchBranchSyncStatus(repoRoot: String): BranchSyncStatus {
+        return try {
+            val pathEnv = "export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; "
+            val command = "$pathEnv cd ${shellQuote(repoRoot)} && " +
+                "git rev-list --left-right --count HEAD...@{upstream}"
+            val counts = execCommand(command).trim().split(Regex("\\s+"))
+            if (counts.size < 2) return BranchSyncStatus()
+
+            BranchSyncStatus(
+                aheadCount = counts[0].toIntOrNull() ?: 0,
+                behindCount = counts[1].toIntOrNull() ?: 0
+            )
+        } catch (e: Exception) {
+            BranchSyncStatus()
+        }
+    }
+
     @Suppress("LongMethod")
     private val gitReset = GitResetOperations(execCommand, workspaceDir)
 
@@ -259,13 +283,16 @@ class ReviewViewModel(
                 
                 val initialCommits = fetchCommits(repoRoot, limit = 15, skip = 0)
                 val (currentBranch, branches) = fetchBranchInfo(repoRoot)
+                val branchSyncStatus = fetchBranchSyncStatus(repoRoot)
                 _uiState.value = ReviewUiState.Success(
                     stagedFiles = staged,
                     unstagedFiles = unstaged,
                     recentCommits = initialCommits,
                     hasMoreCommits = initialCommits.size == 15,
                     currentBranch = currentBranch,
-                    branches = branches
+                    branches = branches,
+                    aheadCount = branchSyncStatus.aheadCount,
+                    behindCount = branchSyncStatus.behindCount
                 )
             } catch (e: Exception) {
                 if (_uiState.value !is ReviewUiState.Success) {

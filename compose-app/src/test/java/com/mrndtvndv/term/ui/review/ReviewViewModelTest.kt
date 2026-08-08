@@ -78,6 +78,7 @@ class ReviewViewModelTest {
                         "refs/heads/feature/test|feature/test|*\n" +
                         "refs/remotes/origin/main|origin/main| \n" +
                         "refs/remotes/origin/HEAD|origin/HEAD| \n"
+                    command.contains("git rev-list --left-right --count") -> "2\t3\n"
                     else -> ""
                 }
             },
@@ -92,6 +93,8 @@ class ReviewViewModelTest {
         assertEquals(GitBranch("main", isCurrent = false, isRemote = false), state.branches[0])
         assertEquals(GitBranch("feature/test", isCurrent = true, isRemote = false), state.branches[1])
         assertEquals(GitBranch("origin/main", isCurrent = false, isRemote = true), state.branches[2])
+        assertEquals(2, state.aheadCount)
+        assertEquals(3, state.behindCount)
     }
 
     @Test

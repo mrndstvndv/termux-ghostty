@@ -331,6 +331,10 @@ private fun WorkspaceListItem(
  * https://github.com/PrimeIntellect-ai/prime-agent/blob/main/assets/brand/prime-butterfly.svg
  * The Cline mark is sourced from https://uxwing.com/cline-ai-icon/.
  * The Neovim mark is sourced from https://neovim.io/logos/neovim-mark.svg.
+ * The fish mark is sourced from Simple Icons (CC0 1.0, https://github.com/simple-icons/simple-icons/blob/develop/LICENSE.md):
+ * https://github.com/simple-icons/simple-icons/blob/develop/icons/fishshell.svg
+ * The Java/OpenJDK mark is sourced from Simple Icons (CC0 1.0):
+ * https://github.com/simple-icons/simple-icons/blob/develop/icons/openjdk.svg
  */
 private fun agentIconResource(agent: String?): Int? = when (agent?.lowercase(Locale.ROOT)) {
     "amp" -> R.drawable.agent_amp
@@ -353,7 +357,7 @@ private fun agentIconResource(agent: String?): Int? = when (agent?.lowercase(Loc
     else -> null
 }
 
-/** True when a non-agent pane is running nvim: title is `NVIM` or `<path> - NVIM`. */
+//** True when a non-agent pane is running nvim: title is `NVIM` or `<path> - NVIM`. */
 private fun isNvimTitle(title: String, agent: String?): Boolean {
     if (!agent.isNullOrBlank()) return false
     val lower = title.lowercase(Locale.ROOT)
@@ -363,31 +367,38 @@ private fun isNvimTitle(title: String, agent: String?): Boolean {
 /** Width of the long-press pane context menu; used to keep the menu inside the row. */
 private val ContextMenuWidth = 168.dp
 
-private fun isNvimProcess(processName: String?): Boolean =
-    processName?.equals("nvim", ignoreCase = true) == true
-
-/** Authoritative process name when herdr reports it; falls back to the title heuristic. */
-private fun isNvimPane(pane: HerdrPaneNode): Boolean {
-    if (pane.agent != null) return false
-    val processName = pane.processName
-    if (processName != null) return isNvimProcess(processName)
-    return isNvimTitle(pane.title, pane.agent)
+private fun processIconResource(processName: String?): Int? = when (
+    processName?.lowercase(Locale.ROOT)
+) {
+    "nvim" -> R.drawable.agent_nvim
+    "fish" -> R.drawable.agent_fish
+    "java", "javac", "openjdk" -> R.drawable.agent_java
+    else -> null
 }
 
-/** Nvim icon for a non-agent pane in a tab; falls back to the tab's own title. */
-private fun showsNvimMark(pane: HerdrPaneNode?, tab: HerdrTabNode): Boolean {
-    if (pane != null) return isNvimPane(pane)
-    return tab.agent.isNullOrBlank() && isNvimTitle(tab.title, tab.agent)
+/** Foreground process of an idle pane; nvim title fallback when herdr reports none. */
+private fun idleProcessName(agent: String?, processName: String?, title: String): String? {
+    if (!agent.isNullOrBlank()) return null
+    if (processName != null) return processName
+    return if (isNvimTitle(title, agent)) "nvim" else null
 }
+
+/** Idle process shown for a tab row: its display pane, or the tab's own title. */
+private fun tabIdleProcessName(pane: HerdrPaneNode?, tab: HerdrTabNode): String? =
+    idleProcessName(
+        agent = pane?.agent ?: tab.agent,
+        processName = pane?.processName,
+        title = pane?.title ?: tab.title,
+    )
 
 @Composable
 private fun AgentIcon(
     agent: String?,
-    isNvim: Boolean,
+    processName: String?,
     tint: Color,
     modifier: Modifier,
 ) {
-    val iconResource = if (isNvim) R.drawable.agent_nvim else agentIconResource(agent)
+    val iconResource = processIconResource(processName) ?: agentIconResource(agent)
     if (iconResource == null) {
         Icon(
             imageVector = if (agent.isNullOrBlank()) {
@@ -483,7 +494,7 @@ private fun AgentTabListItem(
     onClosePane: (HerdrPaneNode) -> Unit,
 ) {
     val displayAgent = pane?.agent ?: tab.agent
-    val isNvim = showsNvimMark(pane, tab)
+    val idleProcess = tabIdleProcessName(pane, tab)
     val displayStatus = pane?.agentStatus ?: tab.agentStatus
     val displayTitle = pane?.title ?: tab.title
     val status = displayStatus.lowercase(Locale.ROOT).ifBlank { "unknown" }
@@ -546,7 +557,7 @@ private fun AgentTabListItem(
         leadingContent = {
             AgentIcon(
                 agent = displayAgent,
-                isNvim = isNvim,
+                processName = idleProcess,
                 tint = statusColor,
                 modifier = Modifier.size(24.dp),
             )
@@ -666,7 +677,7 @@ private fun PaneListItem(
         leadingContent = {
             AgentIcon(
                 agent = pane.agent,
-                isNvim = isNvimPane(pane),
+                processName = idleProcessName(pane.agent, pane.processName, pane.title),
                 tint = statusColor,
                 modifier = Modifier.size(24.dp),
             )

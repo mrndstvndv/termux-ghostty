@@ -4,6 +4,7 @@ import android.view.View
 import android.view.Window
 import android.view.WindowManager
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -14,7 +15,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -32,8 +32,6 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.SmallFloatingActionButton
@@ -290,44 +288,36 @@ private fun WorkspaceListItem(
     onClick: () -> Unit,
 ) {
     val tabCount = workspace.tabs.size
-    ListItem(
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(min = 25.dp)
-            .clickable(onClick = onClick),
-        colors = ListItemDefaults.colors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-        ),
-        headlineContent = {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = workspace.label,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f),
-                )
-                Text(
-                    text = if (tabCount == 1) "1 tab" else "$tabCount tabs",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.labelMedium,
-                    modifier = Modifier.padding(start = 8.dp),
-                )
-            }
-        },
-        trailingContent = {
-            Icon(
-                imageVector = if (isExpanded) {
-                    Icons.Default.ExpandMore
-                } else {
-                    Icons.Default.ChevronRight
-                },
-                contentDescription = if (isExpanded) "Collapse workspace" else "Expand workspace",
-            )
-        },
-    )
+            .clickable(onClick = onClick)
+            .background(MaterialTheme.colorScheme.surfaceContainerLow)
+            .padding(horizontal = 16.dp, vertical = WorkspaceRowVerticalPadding),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = workspace.label,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        Text(
+            text = if (tabCount == 1) "1 tab" else "$tabCount tabs",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.labelMedium,
+            modifier = Modifier.padding(start = 8.dp),
+        )
+        Spacer(modifier = Modifier.width(16.dp))
+        Icon(
+            imageVector = if (isExpanded) {
+                Icons.Default.ExpandMore
+            } else {
+                Icons.Default.ChevronRight
+            },
+            contentDescription = if (isExpanded) "Collapse workspace" else "Expand workspace",
+        )
+    }
 }
 
 /*
@@ -373,6 +363,9 @@ private fun isNvimTitle(title: String, agent: String?): Boolean {
 
 /** Width of the long-press pane context menu; used to keep the menu inside the row. */
 private val ContextMenuWidth = 168.dp
+
+private val WorkspaceRowVerticalPadding = 4.dp
+private val AgentRowVerticalPadding = 8.dp
 
 private fun processIconResource(processName: String?): Int? = when (
     processName?.lowercase(Locale.ROOT)
@@ -516,6 +509,16 @@ private fun AgentTabListItem(
     } else {
         MaterialTheme.colorScheme.surfaceContainerLow
     }
+    val headlineColor = when {
+        status == "working" -> statusColor
+        highlighted -> MaterialTheme.colorScheme.onPrimaryContainer
+        else -> MaterialTheme.colorScheme.onSurface
+    }
+    val supportingColor = if (highlighted) {
+        MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    }
     val density = LocalDensity.current
     val hapticFeedback = LocalHapticFeedback.current
     var showMenu by remember { mutableStateOf(false) }
@@ -546,55 +549,47 @@ private fun AgentTabListItem(
                 )
             },
     ) {
-        ListItem(
-            modifier = Modifier,
-            colors = ListItemDefaults.colors(
-                containerColor = containerColor,
-                headlineColor = when {
-                    status == "working" -> statusColor
-                    highlighted -> MaterialTheme.colorScheme.onPrimaryContainer
-                    else -> MaterialTheme.colorScheme.onSurface
-                },
-                supportingColor = if (highlighted) {
-                    MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                },
-            ),
-        leadingContent = {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(containerColor)
+                .padding(horizontal = 16.dp, vertical = AgentRowVerticalPadding),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             AgentIcon(
                 agent = displayAgent,
                 processName = idleProcess,
                 tint = statusColor,
                 modifier = Modifier.size(24.dp),
             )
-        },
-        headlineContent = {
-            Text(
-                text = displayTitle.ifBlank { "Terminal" },
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        },
-        supportingContent = {
-            displayAgent?.takeIf { it.isNotBlank() }?.let { agentName ->
+            Spacer(modifier = Modifier.width(16.dp))
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = agentName,
+                    text = displayTitle.ifBlank { "Terminal" },
+                    color = headlineColor,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.bodyLarge,
                 )
+                displayAgent?.takeIf { it.isNotBlank() }?.let { agentName ->
+                    Text(
+                        text = agentName,
+                        color = supportingColor,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
             }
-        },
-        trailingContent = {
             if (displayAgent != null) {
+                Spacer(modifier = Modifier.width(16.dp))
                 Text(
                     text = status,
                     color = statusColor,
                     style = MaterialTheme.typography.labelMedium,
                 )
             }
-        },
-    )
+        }
         DropdownMenu(
             expanded = showMenu,
             onDismissRequest = { showMenu = false },
@@ -636,6 +631,16 @@ private fun PaneListItem(
     } else {
         MaterialTheme.colorScheme.surfaceContainerLow
     }
+    val headlineColor = when {
+        status == "working" -> statusColor
+        highlighted -> MaterialTheme.colorScheme.onPrimaryContainer
+        else -> MaterialTheme.colorScheme.onSurface
+    }
+    val supportingColor = if (highlighted) {
+        MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    }
     val density = LocalDensity.current
     val hapticFeedback = LocalHapticFeedback.current
     var showMenu by remember { mutableStateOf(false) }
@@ -666,55 +671,47 @@ private fun PaneListItem(
                 )
             },
     ) {
-        ListItem(
-            modifier = Modifier,
-            colors = ListItemDefaults.colors(
-                containerColor = containerColor,
-                headlineColor = when {
-                    status == "working" -> statusColor
-                    highlighted -> MaterialTheme.colorScheme.onPrimaryContainer
-                    else -> MaterialTheme.colorScheme.onSurface
-                },
-                supportingColor = if (highlighted) {
-                    MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                },
-            ),
-        leadingContent = {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(containerColor)
+                .padding(horizontal = 16.dp, vertical = AgentRowVerticalPadding),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             AgentIcon(
                 agent = pane.agent,
                 processName = idleProcessName(pane.agent, pane.processName, pane.title),
                 tint = statusColor,
                 modifier = Modifier.size(24.dp),
             )
-        },
-        headlineContent = {
-            Text(
-                text = pane.title,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        },
-        supportingContent = {
-            pane.agent?.takeIf { it.isNotBlank() }?.let { agentName ->
+            Spacer(modifier = Modifier.width(16.dp))
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = agentName,
+                    text = pane.title,
+                    color = headlineColor,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.bodyLarge,
                 )
+                pane.agent?.takeIf { it.isNotBlank() }?.let { agentName ->
+                    Text(
+                        text = agentName,
+                        color = supportingColor,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
             }
-        },
-        trailingContent = {
             if (pane.agent != null) {
+                Spacer(modifier = Modifier.width(16.dp))
                 Text(
                     text = status,
                     color = statusColor,
                     style = MaterialTheme.typography.labelMedium,
                 )
             }
-        },
-    )
+        }
         DropdownMenu(
             expanded = showMenu,
             onDismissRequest = { showMenu = false },

@@ -54,6 +54,8 @@ class MainActivity : ComponentActivity(), SessionHost {
     }
 
     private val viewingFileState = mutableStateOf<File?>(null)
+    private var windowHasFocus = false
+    private var focusedTerminalSession: TerminalSession? = null
 
     // ── SessionHost: live UI half of AppSessionManager ───────────────
 
@@ -83,6 +85,12 @@ class MainActivity : ComponentActivity(), SessionHost {
         // latest published delta now so RenderFrameCache can detect a gap and request a full
         // snapshot instead of waiting for terminal input to cause another redraw.
         terminalFrameRouter.refreshActive()
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        windowHasFocus = hasFocus
+        focusedTerminalSession?.sendTerminalFocus(hasFocus)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -140,6 +148,9 @@ class MainActivity : ComponentActivity(), SessionHost {
                 onBackendReleased = { session, backend ->
                     terminalFrameRouter.unbind(session, backend)
                 },
+                onActiveTerminalSessionChanged = { session ->
+                    updateFocusedTerminalSession(session)
+                },
                 onOpenFile = { file -> openDownloadedFile(file) },
                 onOpenFileError = { errorMsg ->
                     sessionManager.handleTerminalNotification("SFTP Error", errorMsg)
@@ -178,8 +189,19 @@ class MainActivity : ComponentActivity(), SessionHost {
     }
 
     override fun onDestroy() {
+        updateFocusedTerminalSession(null)
         sessionManager.setHost(null)
         super.onDestroy()
+    }
+
+    private fun updateFocusedTerminalSession(session: TerminalSession?) {
+        if (focusedTerminalSession === session) {
+            return
+        }
+
+        focusedTerminalSession?.sendTerminalFocus(false)
+        focusedTerminalSession = session
+        session?.sendTerminalFocus(windowHasFocus)
     }
 
     override fun onNewIntent(intent: Intent) {

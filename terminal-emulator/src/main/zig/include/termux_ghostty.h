@@ -38,6 +38,7 @@ void termux_ghostty_session_destroy(termux_ghostty_session* session);
 void termux_ghostty_session_reset(termux_ghostty_session* session);
 int32_t termux_ghostty_session_resize(termux_ghostty_session* session, int32_t columns, int32_t rows, int32_t cell_width_pixels, int32_t cell_height_pixels);
 int32_t termux_ghostty_session_queue_mouse_event(termux_ghostty_session* session, int32_t action, int32_t button, int32_t modifiers, float surface_x, float surface_y, int32_t screen_width_px, int32_t screen_height_px, int32_t cell_width_px, int32_t cell_height_px, int32_t padding_top_px, int32_t padding_right_px, int32_t padding_bottom_px, int32_t padding_left_px);
+int32_t termux_ghostty_session_set_focus(termux_ghostty_session* session, bool focused);
 uint32_t termux_ghostty_session_append(termux_ghostty_session* session, const uint8_t* data, size_t len);
 size_t termux_ghostty_session_drain_pending_output(termux_ghostty_session* session, uint8_t* buffer, size_t capacity);
 int32_t termux_ghostty_session_fill_snapshot(termux_ghostty_session* session, int32_t top_row, uint8_t* buffer, size_t capacity);

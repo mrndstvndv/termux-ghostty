@@ -148,6 +148,14 @@ public final class GhosttyTerminalContent implements TerminalContent, AutoClosea
         );
     }
 
+    public synchronized int setFocus(boolean focused) {
+        if (mNativeHandle == 0) {
+            GhosttyLog.warn("setFocus called on a closed terminal content");
+            return -1;
+        }
+        return GhosttyNative.nativeSetFocus(mNativeHandle, focused);
+    }
+
     public synchronized int drainPendingOutput(byte[] buffer, int offset, int length) {
         validateRange(buffer, offset, length);
         if (length == 0) {

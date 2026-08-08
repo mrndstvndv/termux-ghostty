@@ -37,6 +37,7 @@ final class GhosttySessionWorker extends Thread {
     private static final int MSG_MOUSE_EVENT = 9;
     private static final int MSG_PROGRESS_TIMEOUT = 10;
     private static final int MSG_APPLY_COLOR_SCHEME = 11;
+    private static final int MSG_FOCUS_EVENT = 12;
 
     private static final long SNAPSHOT_INTERVAL_MILLIS = 16; // ~60fps
     private static final long SNAPSHOT_INTERVAL_BUSY_MILLIS = 33; // ~30fps under sustained backlog
@@ -192,6 +193,10 @@ final class GhosttySessionWorker extends Thread {
 
     void sendMouseEvent(GhosttyMouseEvent event) {
         getWorkerHandler().obtainMessage(MSG_MOUSE_EVENT, event).sendToTarget();
+    }
+
+    void sendTerminalFocus(boolean focused) {
+        getWorkerHandler().obtainMessage(MSG_FOCUS_EVENT, focused ? 1 : 0, 0).sendToTarget();
     }
 
     void shutdown() {
@@ -383,6 +388,17 @@ final class GhosttySessionWorker extends Thread {
         }
 
         drainPendingOutput();
+    }
+
+    private void handleFocusEvent(boolean focused) {
+        int result = mContent.setFocus(focused);
+        if (result < 0) {
+            GhosttyLog.error("Ghostty focus event failed session=" + mSession.mHandle + " focused=" + focused);
+            return;
+        }
+        if (result > 0) {
+            drainPendingOutput();
+        }
     }
 
     private void processAppendResult(int result) {
@@ -651,6 +667,9 @@ final class GhosttySessionWorker extends Thread {
                     break;
                 case MSG_MOUSE_EVENT:
                     handleMouseEvent((GhosttyMouseEvent) msg.obj);
+                    break;
+                case MSG_FOCUS_EVENT:
+                    handleFocusEvent(msg.arg1 != 0);
                     break;
                 case MSG_PROGRESS_TIMEOUT:
                     handleProgressTimeout((Long) msg.obj);

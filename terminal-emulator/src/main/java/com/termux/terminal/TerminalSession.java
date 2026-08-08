@@ -119,6 +119,9 @@ public final class TerminalSession extends TerminalOutput {
     @Nullable
     private String mTitle;
 
+    private volatile boolean mGhosttyFocusKnown;
+    private volatile boolean mGhosttyFocused = true;
+
     /** True after an explicit finish request has started. Access under this object's monitor. */
     private boolean mFinishRequested;
 
@@ -283,6 +286,9 @@ public final class TerminalSession extends TerminalOutput {
                 mGhosttySessionWorker.setSshSession(mSshSessionHandle);
             }
             mGhosttySessionWorker.start();
+            if (mGhosttyFocusKnown) {
+                mGhosttySessionWorker.sendTerminalFocus(mGhosttyFocused);
+            }
             GhosttyLog.info("Ghostty backend selected for session " + mHandle);
         } catch (Throwable error) {
             if (mGhosttyTerminalContent != null) {
@@ -495,6 +501,14 @@ public final class TerminalSession extends TerminalOutput {
         }
 
         mGhosttySessionWorker.sendMouseEvent(event);
+    }
+
+    public void sendTerminalFocus(boolean focused) {
+        mGhosttyFocusKnown = true;
+        mGhosttyFocused = focused;
+        if (mGhosttySessionWorker != null) {
+            mGhosttySessionWorker.sendTerminalFocus(focused);
+        }
     }
 
     public void paste(String text) {

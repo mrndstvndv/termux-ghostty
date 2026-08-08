@@ -791,6 +791,16 @@ pub const Session = struct {
         }
     }
 
+    fn appendFocusReport(self: *Session) !void {
+        var buffer: [ghostty.input.max_focus_encode_size]u8 = undefined;
+        var writer: std.Io.Writer = .fixed(&buffer);
+        try ghostty.input.encodeFocus(
+            &writer,
+            if (self.terminal.flags.focused) .gained else .lost,
+        );
+        try self.appendPendingOutput(writer.buffered());
+    }
+
     fn clearPendingNotification(self: *Session) void {
         self.pending_notification_title.clearRetainingCapacity();
         self.pending_notification_body.clearRetainingCapacity();
@@ -1233,6 +1243,7 @@ const Handler = struct {
             .mouse_format_sgr => self.session.terminal.flags.mouse_format = if (enabled) .sgr else .x10,
             .mouse_format_urxvt => self.session.terminal.flags.mouse_format = if (enabled) .urxvt else .x10,
             .mouse_format_sgr_pixels => self.session.terminal.flags.mouse_format = if (enabled) .sgr_pixels else .x10,
+            .focus_event => if (enabled) try self.session.appendFocusReport(),
             else => {},
         }
     }
@@ -1728,6 +1739,24 @@ pub export fn termux_ghostty_session_queue_mouse_event(
     }
 
     return std.math.cast(i32, written.len) orelse -1;
+}
+
+pub export fn termux_ghostty_session_set_focus(
+    session: ?*Session,
+    focused: bool,
+) i32 {
+    const handle = session orelse return -1;
+    handle.terminal.flags.focused = focused;
+
+    if (!handle.terminal.modes.get(.focus_event)) {
+        return 0;
+    }
+
+    handle.appendFocusReport() catch |err| {
+        ghostty_log.err("core setFocus append failed session=0x{x} err={any}", .{ @intFromPtr(handle), err });
+        return -1;
+    };
+    return 1;
 }
 
 pub export fn termux_ghostty_session_append(
@@ -2623,6 +2652,33 @@ test "reset clears progress and pending notification state" {
     try testing.expect(termux_ghostty_session_consume_notification_body(session) == null);
     try testing.expectEqual(@as(i32, @intFromEnum(ProgressState.none)), termux_ghostty_session_get_progress_state(session));
     try testing.expectEqual(@as(i32, -1), termux_ghostty_session_get_progress_value(session));
+}
+
+test "focus reporting is gated and tracks current state" {
+    const session = termux_ghostty_session_create(10, 5, 100, 10, 20) orelse return error.OutOfMemory;
+    defer termux_ghostty_session_destroy(session);
+
+    var out: [64]u8 = undefined;
+    try testing.expectEqual(@as(i32, 0), termux_ghostty_session_set_focus(session, false));
+    try testing.expectEqual(
+        @as(usize, 0),
+        termux_ghostty_session_drain_pending_output(session, out[0..].ptr, out.len),
+    );
+
+    _ = appendTestBytes(session, "\x1B[?1004h");
+    const enabled_written = termux_ghostty_session_drain_pending_output(session, out[0..].ptr, out.len);
+    try testing.expectEqualSlices(u8, "\x1B[O", out[0..enabled_written]);
+
+    try testing.expectEqual(@as(i32, 1), termux_ghostty_session_set_focus(session, true));
+    const gained_written = termux_ghostty_session_drain_pending_output(session, out[0..].ptr, out.len);
+    try testing.expectEqualSlices(u8, "\x1B[I", out[0..gained_written]);
+
+    _ = appendTestBytes(session, "\x1B[?1004l");
+    try testing.expectEqual(
+        @as(usize, 0),
+        termux_ghostty_session_drain_pending_output(session, out[0..].ptr, out.len),
+    );
+    try testing.expectEqual(@as(i32, 0), termux_ghostty_session_set_focus(session, false));
 }
 
 test "queue mouse event updates pressed state and emits sgr bytes" {

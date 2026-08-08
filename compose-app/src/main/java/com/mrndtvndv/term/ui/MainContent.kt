@@ -38,6 +38,7 @@ import com.mrndtvndv.term.ui.workspace.DefaultKeyboardResizeDebounceMillis
 import com.mrndtvndv.term.ui.workspace.MaxKeyboardResizeDebounceMillis
 import com.mrndtvndv.term.ui.workspace.ShaderRepository
 import com.mrndtvndv.term.ui.workspace.TerminalWorkspaceScreen
+import com.mrndtvndv.term.ui.workspace.WorkspaceTab
 import com.mrndtvndv.term.ui.workspace.loadSelectedShaderIds
 import com.mrndtvndv.term.ui.workspace.saveSelectedShaderIds
 import com.mrndtvndv.term.ui.workspace.VisualEffectFrameRate
@@ -54,6 +55,7 @@ fun MainContent(
     customFontFamily: androidx.compose.ui.text.font.FontFamily?,
     onBackendCreated: (TerminalSession, TerminalBackend) -> Unit,
     onBackendReleased: (TerminalSession, TerminalBackend) -> Unit,
+    onActiveTerminalSessionChanged: (TerminalSession?) -> Unit,
     onOpenFile: (File) -> Unit,
     onOpenFileError: (String) -> Unit,
     onOpenUrl: (String) -> Unit,
@@ -170,6 +172,10 @@ fun MainContent(
             val activeServer = (uiState.screen as? ScreenState.TerminalWorkspace)?.serverId
                 ?.let { serverId -> viewModel.getServer(serverId) }
             val currentSession = activeServer?.terminalSession
+            val focusedSession = currentSession?.takeIf { uiState.activeTab == WorkspaceTab.Terminal }
+            LaunchedEffect(focusedSession) {
+                onActiveTerminalSessionChanged(focusedSession)
+            }
             TerminalThemeSync(termSession = currentSession, appTheme = appTheme)
 
             val resolvedJson = remember(extraKeysPreset, extraKeysCustomJson) {

@@ -80,6 +80,9 @@ public final class GhosttyNative {
         int paddingLeftPx
     );
 
+    /** Report window focus to the terminal core; mode 1004 gates CSI I/O emission. */
+    static native int nativeSetFocus(long nativeHandle, boolean focused);
+
     static native int nativeAppend(long nativeHandle, byte[] data, int offset, int length);
 
     static native int nativeDrainPendingOutput(long nativeHandle, byte[] buffer, int offset, int length);

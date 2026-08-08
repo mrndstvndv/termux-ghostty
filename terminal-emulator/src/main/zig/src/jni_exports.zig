@@ -152,6 +152,20 @@ pub export fn Java_com_termux_terminal_GhosttyNative_nativeQueueMouseEvent(
     return result;
 }
 
+pub export fn Java_com_termux_terminal_GhosttyNative_nativeSetFocus(
+    env: ?*c.JNIEnv,
+    clazz: c.jclass,
+    native_handle: jlong,
+    focused: jboolean,
+) jint {
+    _ = env;
+    _ = clazz;
+    return @intCast(core.termux_ghostty_session_set_focus(
+        sessionFromHandle(native_handle),
+        focused != c.JNI_FALSE,
+    ));
+}
+
 pub export fn Java_com_termux_terminal_GhosttyNative_nativeAppend(
     env: ?*c.JNIEnv,
     clazz: c.jclass,

@@ -2,10 +2,13 @@ package com.mrndtvndv.term.ui.review
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 sealed interface ReviewUiState {
     object Loading : ReviewUiState
@@ -43,6 +46,23 @@ data class GitCommit(
     val subject: String
 )
 
+/**
+ * Parsed diff state for the viewer. Computation happens on a background
+ * dispatcher so a large diff never stalls the UI thread.
+ */
+internal sealed interface DiffContentState {
+    object Loading : DiffContentState
+    data class Ready(val sections: List<DiffSectionView>) : DiffContentState
+    data class Error(val message: String) : DiffContentState
+}
+
+internal data class DiffSectionView(
+    val filePath: String,
+    val lines: List<ParsedDiffLine>,
+    /** Word-diff grouped rows (pairs when both sides exist). */
+    val groups: List<DiffRowGroup>
+)
+
 @Suppress("LargeClass", "TooManyFunctions")
 class ReviewViewModel(
     private val execCommand: suspend (String) -> String,
@@ -63,11 +83,11 @@ class ReviewViewModel(
     private val _selectedCommit = MutableStateFlow<GitCommit?>(null)
     val selectedCommit = _selectedCommit.asStateFlow()
 
-    private val _selectedFileDiff = MutableStateFlow<String?>(null)
-    val selectedFileDiff = _selectedFileDiff.asStateFlow()
+    private val _diffContent = MutableStateFlow<DiffContentState?>(null)
+    internal val diffContent = _diffContent.asStateFlow()
 
-    private val _isDiffLoading = MutableStateFlow(false)
-    val isDiffLoading = _isDiffLoading.asStateFlow()
+    /** Cancels an in-flight diff load when a new file/commit is selected. */
+    private var diffLoadJob: Job? = null
 
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage = _errorMessage.asStateFlow()
@@ -277,7 +297,7 @@ class ReviewViewModel(
                         _selectedFile.value = matchingFile
                     } else {
                         _selectedFile.value = null
-                        _selectedFileDiff.value = null
+                        _diffContent.value = null
                     }
                 }
                 
@@ -363,32 +383,31 @@ class ReviewViewModel(
     fun deselectFile() {
         _selectedFile.value = null
         _selectedCommit.value = null
-        _selectedFileDiff.value = null
+        _diffContent.value = null
     }
 
     private fun loadCommitDiff(commit: GitCommit) {
-        viewModelScope.launch {
-            _isDiffLoading.value = true
-            _selectedFileDiff.value = null
+        diffLoadJob?.cancel()
+        diffLoadJob = viewModelScope.launch {
+            _diffContent.value = DiffContentState.Loading
             val dir = workspaceDir.value
             try {
                 val repoRoot = getRepoRoot(execCommand, dir)
                 val command = "export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; cd \"$repoRoot\" && " +
                     "git show --stat -p \"${commit.hash}\""
                 val diffOutput = execCommand(command)
-                _selectedFileDiff.value = diffOutput
+                _diffContent.value = buildDiffContent(diffOutput)
             } catch (e: Exception) {
-                _selectedFileDiff.value = "Failed to load commit diff: ${e.localizedMessage}"
-            } finally {
-                _isDiffLoading.value = false
+                _diffContent.value =
+                    DiffContentState.Error("Failed to load commit diff: ${e.localizedMessage}")
             }
         }
     }
 
     private fun loadDiff(file: GitFileStatus) {
-        viewModelScope.launch {
-            _isDiffLoading.value = true
-            _selectedFileDiff.value = null
+        diffLoadJob?.cancel()
+        diffLoadJob = viewModelScope.launch {
+            _diffContent.value = DiffContentState.Loading
             val dir = workspaceDir.value
             val contextFlag = if (_isFullFileMode.value) "-U999999 " else ""
             try {
@@ -408,14 +427,31 @@ class ReviewViewModel(
                     }
                 }
                 val diffOutput = execCommand(command)
-                _selectedFileDiff.value = diffOutput
+                _diffContent.value = buildDiffContent(diffOutput)
             } catch (e: Exception) {
-                _selectedFileDiff.value = "Failed to load diff: ${e.localizedMessage}"
-            } finally {
-                _isDiffLoading.value = false
+                _diffContent.value =
+                    DiffContentState.Error("Failed to load diff: ${e.localizedMessage}")
             }
         }
     }
+
+    /**
+     * Parses and groups the raw git output on a background dispatcher: line
+     * classification, syntax-highlight token ranges, and the word-diff LCS
+     * never touch the main thread.
+     */
+    private suspend fun buildDiffContent(diffOutput: String): DiffContentState.Ready =
+        withContext(Dispatchers.Default) {
+            DiffContentState.Ready(
+                parseFileDiffSections(diffOutput).map { section ->
+                    DiffSectionView(
+                        filePath = section.filePath,
+                        lines = section.lines,
+                        groups = groupDiffRows(section.lines)
+                    )
+                }
+            )
+        }
 
     fun stageFiles(files: List<GitFileStatus>) {
         if (files.isEmpty()) return

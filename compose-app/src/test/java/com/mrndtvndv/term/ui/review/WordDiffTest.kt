@@ -107,8 +107,8 @@ class WordDiffTest {
         val groups = groupDiffRows(parse("+new", "-old"))
         assertEquals(1, groups.size)
         val pair = groups[0] as DiffRowGroup.WordDiffPair
-        assertEquals("old", pair.oldContent)
-        assertEquals("new", pair.newContent)
+        assertEquals("old", pair.oldLine.text.drop(1))
+        assertEquals("new", pair.newLine.text.drop(1))
     }
 
     @Test

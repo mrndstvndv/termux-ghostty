@@ -8,13 +8,13 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 
-private enum class TokenType {
+internal enum class TokenType {
     COMMENT, STRING, KEYWORD, NUMBER, ANNOTATION, TYPE
 }
 
 private data class TokenRule(val type: TokenType, val regex: Regex)
 
-private data class CodeMatch(val type: TokenType, val range: IntRange)
+internal data class CodeMatch(val type: TokenType, val range: IntRange)
 
 private val syntaxRules = listOf(
     // Comments (single line and multi line)
@@ -31,7 +31,13 @@ private val syntaxRules = listOf(
     TokenRule(TokenType.TYPE, Regex("\\b[A-Z][A-Za-z0-9_]*\\b"))
 )
 
-fun highlightCode(code: String, isDark: Boolean): AnnotatedString {
+/**
+ * Runs the syntax rules over [code] and returns the non-overlapping token
+ * ranges. This is the expensive part (regex scanning) but is pure — it does
+ * not know about theme colors — so callers can run it on a background
+ * dispatcher and feed the result into [buildHighlighted].
+ */
+internal fun syntaxHighlightRanges(code: String): List<CodeMatch> {
     val matches = mutableListOf<CodeMatch>()
     for (rule in syntaxRules) {
         rule.regex.findAll(code).forEach { result ->
@@ -50,9 +56,16 @@ fun highlightCode(code: String, isDark: Boolean): AnnotatedString {
             lastEnd = match.range.last
         }
     }
+    return nonOverlapping
+}
 
+/**
+ * Applies the theme's colors to the token ranges produced by
+ * [syntaxHighlightRanges]. Cheap span application — safe on the main thread.
+ */
+internal fun buildHighlighted(code: String, matches: List<CodeMatch>, isDark: Boolean): AnnotatedString {
     val builder = AnnotatedString.Builder(code)
-    for (match in nonOverlapping) {
+    for (match in matches) {
         val style = if (isDark) {
             when (match.type) {
                 TokenType.COMMENT -> SpanStyle(color = Color(0xFF808080), fontStyle = FontStyle.Italic)
@@ -76,3 +89,6 @@ fun highlightCode(code: String, isDark: Boolean): AnnotatedString {
     }
     return builder.toAnnotatedString()
 }
+
+fun highlightCode(code: String, isDark: Boolean): AnnotatedString =
+    buildHighlighted(code, syntaxHighlightRanges(code), isDark)

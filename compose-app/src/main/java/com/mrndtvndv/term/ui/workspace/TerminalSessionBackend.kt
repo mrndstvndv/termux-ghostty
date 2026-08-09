@@ -67,7 +67,11 @@ internal class TerminalSessionBackend(
 
     override fun refresh() {
         if (released || !session.hasActiveTerminalBackend()) return
-        val frameDelta = session.ghosttyPublishedFrameDelta ?: return
+        val frameDelta = session.ghosttyPublishedFrameDelta
+        if (frameDelta == null) {
+            session.requestGhosttyFullSnapshotRefresh()
+            return
+        }
         synchronizeViewport(frameDelta)
         try {
             when (frameStore.apply(frameDelta, session.frameState())) {

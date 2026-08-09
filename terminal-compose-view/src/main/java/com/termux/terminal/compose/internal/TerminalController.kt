@@ -33,6 +33,7 @@ internal fun terminalColumnsForMeasuredCellWidth(widthPx: Int, measuredCellWidth
  * The controller is main-thread confined. [release] is idempotent and releases
  * every row layer, parent layer, bitmap, shader, and backend resource.
  */
+@Suppress("TooManyFunctions") // lifecycle and rendering responsibilities share one backend owner
 internal class TerminalController(
     private val backend: TerminalBackend,
     private val graphicsContext: GraphicsContext,
@@ -207,6 +208,12 @@ internal class TerminalController(
     private fun invalidateViewportMeasurement() {
         lastResizeWidth = -1
         lastResizeHeight = -1
+    }
+
+    /** Replays the latest backend publication after a first-frame attach race. */
+    fun refresh() {
+        if (released) return
+        backend.refresh()
     }
 
     /** Latest backend frame, or null before the first invalidation. */

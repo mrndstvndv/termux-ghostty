@@ -55,6 +55,13 @@ import com.termux.terminal.compose.internal.terminalTaps
 import com.termux.terminal.compose.internal.updateSelectionHandle
 
 /**
+ * How long after controller attach to issue the initial-frame settle repaint.
+ * Long enough to let a just-published frame land in the backend store, short
+ * enough that the repaint is imperceptible.
+ */
+private const val AttachSettleMillis = 64L
+
+/**
  * Compose terminal canvas.
  *
  * Owns rendering, input/IME translation, selection gestures, links, scrolling,
@@ -86,6 +93,15 @@ fun TerminalCanvas(
         backend, graphicsContext, frameTimeState, fontSizeState, config,
         onInvalidated = { contentVersionState.intValue++ }
     )
+    // Initial-frame safety net: a frame published before the canvas attached
+    // (or while the backend was still wiring itself to the session) never
+    // delivers an invalidation. One settle repaint, shortly after attach,
+    // guarantees the first frame paints even if that event was lost.
+    LaunchedEffect(controller) {
+        kotlinx.coroutines.delay(AttachSettleMillis)
+        controller.refresh()
+        contentVersionState.intValue++
+    }
     val (translator, imeHost) = rememberInputPipeline(controller, modifierKeys)
     val metrics = rememberCanvasMetrics(fontSizeState, config, viewportSizePx)
     LaunchedEffect(requestFocus) {
@@ -304,13 +320,16 @@ private fun rememberTerminalController(
     onInvalidated: () -> Unit
 ): TerminalController {
     val controller = remember(backend, graphicsContext) { TerminalController(backend, graphicsContext) }
-    DisposableEffect(controller) {
-        controller.attach()
-        onDispose { controller.release() }
-    }
+    // Wire the invalidation callback BEFORE attach: attach() replays the
+    // latest published frame synchronously, and onFrameInvalidated() during
+    // that replay must reach the canvas or the initial paint stays stale.
     DisposableEffect(controller) {
         controller.onInvalidated = onInvalidated
         onDispose { controller.onInvalidated = null }
+    }
+    DisposableEffect(controller) {
+        controller.attach()
+        onDispose { controller.release() }
     }
     return controller
 }

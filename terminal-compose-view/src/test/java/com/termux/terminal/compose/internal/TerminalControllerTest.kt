@@ -29,6 +29,16 @@ class TerminalControllerTest {
         assertTrue(controller.needsFrame(0f))
     }
 
+
+    @Test
+    fun initialFrameRecoveryRefreshesBackendBeforeRepaint() {
+        val backend = RecordingBackend()
+        val controller = TerminalController(backend, UnusedGraphicsContext)
+
+        controller.refresh()
+
+        assertEquals(1, backend.refreshCount)
+    }
     @Test
     fun invisibleCursorDoesNotBecomePreviousTrailPosition() {
         val state = CursorEffectState()
@@ -197,7 +207,7 @@ private class RecordingBackend : TerminalBackend {
     val resizes = mutableListOf<TerminalSize>()
     val lifecycle = mutableListOf<String>()
     var attachedListener: TerminalBackendListener? = null
-
+    var refreshCount = 0
     override fun attach(listener: TerminalBackendListener) {
         lifecycle += "attach"
         attachedListener = listener
@@ -208,7 +218,9 @@ private class RecordingBackend : TerminalBackend {
         attachedListener = null
     }
 
-    override fun refresh() = Unit
+    override fun refresh() {
+        refreshCount++
+    }
 
     override fun resize(size: TerminalSize) {
         resizes += size

@@ -56,6 +56,22 @@ class TerminalFrameContentCacheTest {
     }
 
     @Test
+    fun `frame modes come from the same transport snapshot as its rows`() {
+        val store = TerminalSessionFrameStore()
+        val snapshot = snapshot(true, intArrayOf(), longArrayOf(11L, 22L), true, 0)
+        snapshot.setModeBits(GhosttyNative.MODE_MOUSE_TRACKING or GhosttyNative.MODE_ALTERNATE_BUFFER)
+        snapshot.setFrameSequence(1L)
+
+        assertEquals(
+            TerminalSessionFrameStore.ApplyResult.UPDATED,
+            store.apply(FrameDelta(1L, FrameDelta.REASON_RESET, snapshot), frameState())
+        )
+
+        assertEquals(true, store.currentFrame()?.mouseTrackingActive)
+        assertEquals(true, store.currentFrame()?.alternateBufferActive)
+    }
+
+    @Test
     fun `frame store requests full refresh after a sequence gap`() {
         val store = TerminalSessionFrameStore()
         val initial = snapshot(true, intArrayOf(), longArrayOf(11L, 22L), true, 0)
@@ -329,11 +345,7 @@ class TerminalFrameContentCacheTest {
     private fun frameState() = TerminalFrameSessionState(
         transcriptRows = 0,
         cursorBlinkingEnabled = false,
-        cursorBlinkState = true,
-        cursorKeysApplicationMode = false,
-        keypadApplicationMode = false,
-        mouseTrackingActive = false,
-        alternateBufferActive = false
+        cursorBlinkState = true
     )
 
     private companion object {

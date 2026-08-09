@@ -21,6 +21,7 @@ public final class GhosttyNative {
     static final int MODE_MOUSE_TRACKING = 1 << 2;
     static final int MODE_BRACKETED_PASTE = 1 << 3;
     static final int MODE_MOUSE_PROTOCOL_SGR = 1 << 4;
+    static final int MODE_ALTERNATE_BUFFER = 1 << 5;
 
     static final int PROGRESS_STATE_NONE = 0;
     static final int PROGRESS_STATE_SET = 1;

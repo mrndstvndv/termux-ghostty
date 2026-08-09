@@ -21,6 +21,7 @@ import com.termux.terminal.compose.TerminalCommand
 import com.termux.terminal.compose.TerminalFrame
 import com.termux.terminal.compose.TerminalMetrics
 import com.termux.terminal.compose.TerminalPointerEvent
+import com.termux.terminal.compose.TerminalPointerGeometry
 import kotlin.math.abs
 import kotlin.math.sqrt
 
@@ -148,19 +149,27 @@ private fun handleScrollGesture(
     val deltaRows = (scrollState.dragAccumulator / context.metrics.cellHeightPx).toInt()
     if (deltaRows != 0) {
         scrollState.dragAccumulator -= deltaRows * context.metrics.cellHeightPx
-        context.controller.submit(scrollCommandForGesture(deltaRows, centroid))
+        context.controller.submit(scrollCommandForGesture(deltaRows, centroid, context.metrics))
     }
 }
 
 /** Builds the backend command for one drag threshold crossing. */
 internal fun scrollCommandForGesture(
     deltaRows: Int,
-    touchPosition: Offset
+    touchPosition: Offset,
+    metrics: TerminalMetrics
 ): TerminalCommand.Scroll =
     TerminalCommand.Scroll(
         rowsDown = -deltaRows,
         xPx = touchPosition.x,
-        yPx = touchPosition.y
+        yPx = touchPosition.y,
+        geometry = TerminalPointerGeometry(
+            cellWidthPx = metrics.cellWidthPx,
+            cellHeightPx = metrics.cellHeightPx,
+            contentTopPx = metrics.lineSpacingAndAscentPx,
+            viewportWidthPx = metrics.viewportWidthPx,
+            viewportHeightPx = metrics.viewportHeightPx
+        )
     )
 
 /** Attaches tap and long-press handling to the terminal canvas. */
@@ -197,9 +206,11 @@ private fun handleTap(
         return
     }
     val frame = controller.currentFrame()
-    if (frame != null && frame.mouseTrackingActive) {
-        sendTapAsMouseClick(offset.x, offset.y, metrics, controller)
-    }
+    // The frame is a rendered snapshot and may lag the live terminal mode.
+    // Ghostty's encoder ignores mouse events when tracking is disabled, so
+    // forwarding the pair unconditionally avoids dropping taps during a mode
+    // transition.
+    sendTapAsMouseClick(offset.x, offset.y, metrics, controller)
     if (config.unconditionalKeyboardOnTap || frame == null || !frame.mouseTrackingActive) {
         focusRequester.requestFocus()
         imeHost.open()
@@ -225,26 +236,43 @@ private fun handleLongPress(
     selectionState.startWordSelection(frame, column, row)
 }
 
-/** Sends a left-button press/release pair for mouse-tracking taps. */
+/** Builds the left-button press/release pair used for every terminal tap. */
 private fun sendTapAsMouseClick(
     x: Float,
     y: Float,
     metrics: TerminalMetrics,
     controller: TerminalController
 ) {
-    val press = TerminalPointerEvent(
-        action = TerminalPointerEvent.Action.PRESS,
-        button = TerminalPointerEvent.BUTTON_LEFT,
-        xPx = x,
-        yPx = y,
-        cellWidthPx = metrics.cellWidthPx,
-        cellHeightPx = metrics.cellHeightPx,
-        lineSpacingAndAscentPx = metrics.lineSpacingAndAscentPx,
-        viewportWidthPx = metrics.viewportWidthPx,
-        viewportHeightPx = metrics.viewportHeightPx
-    )
+    val press = tapMousePressForPosition(x, y, metrics)
     controller.submit(TerminalCommand.Mouse(press))
     controller.submit(TerminalCommand.Mouse(press.copy(action = TerminalPointerEvent.Action.RELEASE)))
+}
+
+/** Builds the left-button press event used by terminal taps. */
+private fun tapMousePressForPosition(
+    x: Float,
+    y: Float,
+    metrics: TerminalMetrics
+): TerminalPointerEvent = TerminalPointerEvent(
+    action = TerminalPointerEvent.Action.PRESS,
+    button = TerminalPointerEvent.BUTTON_LEFT,
+    xPx = x,
+    yPx = y,
+    cellWidthPx = metrics.cellWidthPx,
+    cellHeightPx = metrics.cellHeightPx,
+    lineSpacingAndAscentPx = metrics.lineSpacingAndAscentPx,
+    viewportWidthPx = metrics.viewportWidthPx,
+    viewportHeightPx = metrics.viewportHeightPx
+)
+
+/** Keeps tap transport independent from the lagging rendered mode snapshot. */
+internal fun tapMouseEventsForPosition(
+    x: Float,
+    y: Float,
+    metrics: TerminalMetrics
+): List<TerminalPointerEvent> {
+    val press = tapMousePressForPosition(x, y, metrics)
+    return listOf(press, press.copy(action = TerminalPointerEvent.Action.RELEASE))
 }
 
 /** Hit-tests a tap against the frame's visible link layout. */

@@ -18,11 +18,7 @@ import com.termux.terminal.compose.TerminalViewport
 internal data class TerminalFrameSessionState(
     val transcriptRows: Int,
     val cursorBlinkingEnabled: Boolean,
-    val cursorBlinkState: Boolean,
-    val cursorKeysApplicationMode: Boolean,
-    val keypadApplicationMode: Boolean,
-    val mouseTrackingActive: Boolean,
-    val alternateBufferActive: Boolean
+    val cursorBlinkState: Boolean
 )
 
 /** Applies session deltas and publishes immutable frames without a View intermediary. */
@@ -92,10 +88,10 @@ internal class TerminalSessionFrameAdapter {
             ),
             modes = TerminalModes(
                 reverseVideo = snapshot.isReverseVideo,
-                cursorKeysApplicationMode = state.cursorKeysApplicationMode,
-                keypadApplicationMode = state.keypadApplicationMode,
-                mouseTrackingActive = state.mouseTrackingActive,
-                alternateBufferActive = state.alternateBufferActive
+                cursorKeysApplicationMode = snapshot.isCursorKeysApplicationMode,
+                keypadApplicationMode = snapshot.isKeypadApplicationMode,
+                mouseTrackingActive = snapshot.isMouseTrackingActive,
+                alternateBufferActive = snapshot.isAlternateBufferActive
             ),
             palette = content.palette,
             rows = content.rows,

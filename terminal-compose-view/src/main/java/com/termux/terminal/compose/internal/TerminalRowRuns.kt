@@ -29,6 +29,7 @@ internal class RowRunCache {
     var selectionStart = Int.MIN_VALUE
     var selectionEnd = Int.MIN_VALUE
     var cursorX = Int.MIN_VALUE
+    var columns = -1
     var hasCellLayout = false
     var runs: Array<RowRun>? = null
 
@@ -36,9 +37,14 @@ internal class RowRunCache {
     private var runStore = emptyArray<RowRun>()
     private var runCount = 0
 
-    fun matches(hints: RowRenderHints, hasCellLayout: Boolean, contentHash: Long): Boolean =
+    fun matches(
+        hints: RowRenderHints,
+        columns: Int,
+        hasCellLayout: Boolean,
+        contentHash: Long
+    ): Boolean =
         selectionUnchanged(hints) && cursorUnchanged(hints, hasCellLayout) &&
-            this.contentHash == contentHash
+            this.columns == columns && this.contentHash == contentHash
 
     fun selectionUnchanged(hints: RowRenderHints): Boolean =
         selectionStart == hints.selectionStart && selectionEnd == hints.selectionEnd
@@ -46,8 +52,9 @@ internal class RowRunCache {
     fun cursorUnchanged(hints: RowRenderHints, hasCellLayout: Boolean): Boolean =
         cursorX == hints.cursorX && this.hasCellLayout == hasCellLayout
 
-    fun beginBuild(hints: RowRenderHints, hasCellLayout: Boolean, contentHash: Long) {
+    fun beginBuild(hints: RowRenderHints, columns: Int, hasCellLayout: Boolean, contentHash: Long) {
         this.contentHash = contentHash
+        this.columns = columns
         selectionStart = hints.selectionStart
         selectionEnd = hints.selectionEnd
         cursorX = hints.cursorX

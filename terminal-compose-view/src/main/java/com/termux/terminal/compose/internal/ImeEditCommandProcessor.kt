@@ -519,9 +519,10 @@ internal class ImeEditCommandProcessor(
             return (imeCursorPosition + amount).coerceAtLeast(0)
         }
         val localPosition = imeCursorPosition - regionStart
-        val targetLocal = regionText.offsetByCodePoints(localPosition, amount)
-            .coerceIn(0, regionText.length)
-        return regionStart + targetLocal
+        val currentCodePoint = regionText.codePointCount(0, localPosition)
+        val targetCodePoint = (currentCodePoint + amount)
+            .coerceIn(0, regionText.codePointCount())
+        return regionStart + regionText.offsetByCodePoints(0, targetCodePoint)
     }
 
     private fun knownCursorRegion(): Pair<Int, String>? = when {

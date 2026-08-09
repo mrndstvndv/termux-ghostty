@@ -303,6 +303,16 @@ class ImeEditCommandProcessorTest {
     }
 
     @Test
+    fun backspaceAtStartOfKnownCompositionDoesNotCrash() {
+        processor.process(listOf(SetComposingTextCommand("a", 0)))
+        terminal.events.clear()
+
+        processor.process(listOf(BackspaceCommand()))
+
+        assertEquals(listOf("del"), terminal.events)
+    }
+
+    @Test
     fun backspaceAfterSurrogatePairKeepsTheImeCursorAtTheTerminalCursor() {
         processor.process(listOf(SetComposingTextCommand("😀", 1)))
         processor.process(listOf(BackspaceCommand()))

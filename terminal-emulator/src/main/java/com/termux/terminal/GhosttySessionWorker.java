@@ -5,6 +5,7 @@ import android.os.Looper;
 import android.os.Message;
 import android.os.Process;
 import android.os.SystemClock;
+import android.view.KeyEvent;
 
 import androidx.annotation.NonNull;
 
@@ -41,6 +42,10 @@ final class GhosttySessionWorker extends Thread {
 
     private static final int MSG_SET_CURSOR_BLINKING_ENABLED = 13;
     private static final int MSG_SET_CURSOR_BLINK_STATE = 14;
+    private static final int MSG_SCROLL_EVENT = 15;
+    static final int SCROLL_ROUTE_VIEWPORT = 0;
+    static final int SCROLL_ROUTE_KEYS = 1;
+    static final int SCROLL_ROUTE_MOUSE = 2;
     private static final long SNAPSHOT_INTERVAL_MILLIS = 16; // ~60fps
     private static final int MAX_APPEND_BYTES_PER_SLICE = 64 * 1024;
     private static final long MAX_APPEND_TIME_MILLIS = 8;
@@ -78,7 +83,6 @@ final class GhosttySessionWorker extends Thread {
     private int mPendingCellHeightPixels;
     private int mCurrentCellWidthPixels;
     private int mCurrentCellHeightPixels;
-    private int mPendingTopRow;
     private int mCurrentTopRow;
     private long mLastSnapshotTime;
     private long mPublishedFrameCount;
@@ -105,7 +109,6 @@ final class GhosttySessionWorker extends Thread {
         mPendingCellHeightPixels = cellHeightPixels;
         mCurrentCellWidthPixels = cellWidthPixels;
         mCurrentCellHeightPixels = cellHeightPixels;
-        mPendingTopRow = 0;
     }
 
     void setSshSession(long sshSessionHandle) {
@@ -194,6 +197,10 @@ final class GhosttySessionWorker extends Thread {
 
     void sendMouseEvent(GhosttyMouseEvent event) {
         getWorkerHandler().obtainMessage(MSG_MOUSE_EVENT, event).sendToTarget();
+    }
+
+    void sendScrollEvent(GhosttyScrollEvent event) {
+        getWorkerHandler().obtainMessage(MSG_SCROLL_EVENT, event).sendToTarget();
     }
 
     void sendTerminalFocus(boolean focused) {
@@ -374,12 +381,7 @@ final class GhosttySessionWorker extends Thread {
         mMainThreadHandler.post(mSession::onColorsChanged);
     }
 
-    private void handleViewportScroll() {
-        int requestedTopRow;
-        synchronized (this) {
-            requestedTopRow = mPendingTopRow;
-        }
-
+    private void handleViewportScroll(int requestedTopRow) {
         int updatedTopRow = mContent.setViewportTopRow(requestedTopRow);
         if (updatedTopRow == mCurrentTopRow) {
             return;
@@ -391,28 +393,103 @@ final class GhosttySessionWorker extends Thread {
         scheduleSnapshotBuild();
     }
 
+    private void handleScrollEvent(GhosttyScrollEvent event) {
+        boolean appendedOutput = appendQueuedOutputBeforeInput();
+        int modeBits = mContent.getModeBits();
+        int route = resolveScrollRoute(modeBits, mContent.isAlternateBufferActive());
+        if (route == SCROLL_ROUTE_MOUSE) {
+            repeatMouseScroll(event);
+        } else if (route == SCROLL_ROUTE_KEYS) {
+            sendAlternateBufferScrollKeys(event.rowsDown, modeBits);
+        } else {
+            handleViewportScroll(mCurrentTopRow + event.rowsDown);
+        }
+
+        publishPredrainedOutput(appendedOutput);
+    }
+
+    /** Parses PTY bytes that happened-before this input before consulting native input modes. */
+    private boolean appendQueuedOutputBeforeInput() {
+        int queuedBeforeInput = mQueue.available();
+        int processedBytes = 0;
+        while (processedBytes < queuedBeforeInput) {
+            int read = mQueue.read(mReadBuffer, false);
+            if (read <= 0) {
+                break;
+            }
+            appendToNative(mReadBuffer, 0, read);
+            processedBytes += read;
+        }
+        return processedBytes > 0;
+    }
+
+    private void repeatMouseScroll(GhosttyScrollEvent event) {
+        GhosttyMouseEvent mouseEvent = event.toMouseEvent();
+        for (int index = 0; index < Math.abs(event.rowsDown); index++) {
+            queueMouseEvent(mouseEvent);
+        }
+    }
+
+    private void sendAlternateBufferScrollKeys(int rowsDown, int modeBits) {
+        boolean applicationCursor = (modeBits & GhosttyNative.MODE_CURSOR_KEYS_APPLICATION) != 0;
+        boolean applicationKeypad = (modeBits & GhosttyNative.MODE_KEYPAD_APPLICATION) != 0;
+        int keyCode = rowsDown < 0 ? KeyEvent.KEYCODE_DPAD_UP : KeyEvent.KEYCODE_DPAD_DOWN;
+        String sequence = KeyHandler.getCode(keyCode, 0, applicationCursor, applicationKeypad);
+        if (sequence == null) {
+            return;
+        }
+        StringBuilder input = new StringBuilder(sequence.length() * Math.abs(rowsDown));
+        for (int index = 0; index < Math.abs(rowsDown); index++) {
+            input.append(sequence);
+        }
+        mSession.write(input.toString());
+    }
+
+    static int resolveScrollRoute(int modeBits, boolean alternateBufferActive) {
+        if ((modeBits & GhosttyNative.MODE_MOUSE_TRACKING) != 0) {
+            return SCROLL_ROUTE_MOUSE;
+        }
+        if (alternateBufferActive) {
+            return SCROLL_ROUTE_KEYS;
+        }
+        return SCROLL_ROUTE_VIEWPORT;
+    }
+
     private void handleMouseEvent(GhosttyMouseEvent event) {
+        boolean appendedOutput = appendQueuedOutputBeforeInput();
+        queueMouseEvent(event);
+        publishPredrainedOutput(appendedOutput);
+    }
+
+    private void queueMouseEvent(GhosttyMouseEvent event) {
         int appendedBytes = mContent.queueMouseEvent(event);
         if (appendedBytes < 0) {
             GhosttyLog.error("Ghostty mouse event failed session=" + mSession.mHandle + " action=" + event.action + " button=" + event.button);
             return;
         }
-        if (appendedBytes == 0) {
-            return;
+        if (appendedBytes > 0) {
+            drainPendingOutput();
         }
-
-        drainPendingOutput();
     }
 
     private void handleFocusEvent(boolean focused) {
+        boolean appendedOutput = appendQueuedOutputBeforeInput();
         int result = mContent.setFocus(focused);
         if (result < 0) {
             GhosttyLog.error("Ghostty focus event failed session=" + mSession.mHandle + " focused=" + focused);
-            return;
-        }
-        if (result > 0) {
+        } else if (result > 0) {
             drainPendingOutput();
         }
+        publishPredrainedOutput(appendedOutput);
+    }
+
+    private void publishPredrainedOutput(boolean appendedOutput) {
+        if (!appendedOutput) {
+            return;
+        }
+        addPendingFrameReason(FrameDelta.REASON_APPEND);
+        mFramePublicationGate.markSnapshotDirty();
+        scheduleSnapshotBuild();
     }
 
     private void processAppendResult(int result) {
@@ -598,15 +675,7 @@ final class GhosttySessionWorker extends Thread {
     }
 
     void setTopRow(int topRow) {
-        synchronized (this) {
-            mPendingTopRow = topRow;
-        }
-
-        Handler handler = getWorkerHandler();
-        if (handler.hasMessages(MSG_VIEWPORT_SCROLL)) {
-            handler.removeMessages(MSG_VIEWPORT_SCROLL);
-        }
-        handler.sendEmptyMessage(MSG_VIEWPORT_SCROLL);
+        getWorkerHandler().obtainMessage(MSG_VIEWPORT_SCROLL, topRow, 0).sendToTarget();
     }
 
     private void addPendingFrameReason(int reasonFlag) {
@@ -684,7 +753,7 @@ final class GhosttySessionWorker extends Thread {
                     handleReset();
                     break;
                 case MSG_VIEWPORT_SCROLL:
-                    handleViewportScroll();
+                    handleViewportScroll(msg.arg1);
                     break;
                 case MSG_REQUEST_FULL_SNAPSHOT_REFRESH:
                     handleRequestFullSnapshotRefresh();
@@ -708,6 +777,9 @@ final class GhosttySessionWorker extends Thread {
                 case MSG_SET_CURSOR_BLINK_STATE:
                     mContent.setCursorBlinkState(msg.arg1 != 0);
                     publishCursorBlinkChange();
+                    break;
+                case MSG_SCROLL_EVENT:
+                    handleScrollEvent((GhosttyScrollEvent) msg.obj);
                     break;
                 case MSG_SHUTDOWN:
                     cancelProgressTimeout();

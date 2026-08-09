@@ -502,6 +502,14 @@ public final class TerminalSession extends TerminalOutput {
         mGhosttySessionWorker.sendMouseEvent(event);
     }
 
+    public void sendGhosttyScrollEvent(GhosttyScrollEvent event) {
+        if (mGhosttySessionWorker == null) {
+            return;
+        }
+
+        mGhosttySessionWorker.sendScrollEvent(event);
+    }
+
     public void sendTerminalFocus(boolean focused) {
         mGhosttyFocusKnown = true;
         mGhosttyFocused = focused;

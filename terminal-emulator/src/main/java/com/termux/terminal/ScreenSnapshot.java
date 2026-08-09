@@ -165,6 +165,22 @@ public final class ScreenSnapshot {
         return mModeBits;
     }
 
+    public boolean isCursorKeysApplicationMode() {
+        return (mModeBits & GhosttyNative.MODE_CURSOR_KEYS_APPLICATION) != 0;
+    }
+
+    public boolean isKeypadApplicationMode() {
+        return (mModeBits & GhosttyNative.MODE_KEYPAD_APPLICATION) != 0;
+    }
+
+    public boolean isMouseTrackingActive() {
+        return (mModeBits & GhosttyNative.MODE_MOUSE_TRACKING) != 0;
+    }
+
+    public boolean isAlternateBufferActive() {
+        return (mModeBits & GhosttyNative.MODE_ALTERNATE_BUFFER) != 0;
+    }
+
     public boolean hasPaletteUpdate() {
         return (mMetadataFlags & SNAPSHOT_METADATA_PALETTE) != 0;
     }

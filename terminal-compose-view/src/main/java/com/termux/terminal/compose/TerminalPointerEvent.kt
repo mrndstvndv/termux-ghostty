@@ -1,5 +1,14 @@
 package com.termux.terminal.compose
 
+/** Event-time viewport geometry required for terminal pointer encoding. */
+data class TerminalPointerGeometry(
+    val cellWidthPx: Float,
+    val cellHeightPx: Float,
+    val contentTopPx: Float,
+    val viewportWidthPx: Int,
+    val viewportHeightPx: Int
+)
+
 /**
  * Pointer event reported to the backend for mouse-protocol translation.
  *

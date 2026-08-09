@@ -2,25 +2,19 @@ package com.mrndtvndv.term.ui.workspace
 
 import android.view.KeyEvent
 import com.termux.terminal.GhosttyMouseEvent
+import com.termux.terminal.GhosttyScrollEvent
 import com.termux.terminal.KeyHandler
 import com.termux.terminal.TerminalSession
 import com.termux.terminal.compose.TerminalCommand
 import com.termux.terminal.compose.TerminalCommandResult
 import com.termux.terminal.compose.TerminalPointerEvent
-import com.termux.terminal.compose.TerminalSize
 import kotlin.math.roundToInt
-
-internal fun scrollUsesTerminalInput(
-    mouseTrackingActive: Boolean,
-    alternateBufferActive: Boolean
-): Boolean = mouseTrackingActive || alternateBufferActive
 
 /** Translates neutral canvas commands to the existing Ghostty session API. */
 internal class TerminalSessionCommandAdapter(
     private val session: TerminalSession,
-    private val currentTopRow: () -> Int,
     private val updateTopRow: (Int) -> Unit,
-    private val currentSize: () -> TerminalSize?
+    private val submitScrollEvent: (GhosttyScrollEvent) -> Unit = session::sendGhosttyScrollEvent
 ) {
     fun submit(command: TerminalCommand): TerminalCommandResult = when (command) {
         is TerminalCommand.Text -> writeText(command.text)
@@ -109,62 +103,21 @@ internal class TerminalSessionCommandAdapter(
     }
 
     private fun submitScroll(command: TerminalCommand.Scroll): TerminalCommandResult {
-        val mouseTrackingActive = session.isMouseTrackingActive
-        val alternateBufferActive = session.isAlternateBufferActive
-        return when {
-            command.rowsDown == 0 -> TerminalCommandResult.Success
-            !scrollUsesTerminalInput(mouseTrackingActive, alternateBufferActive) -> {
-                updateTopRow(currentTopRow() + command.rowsDown)
-                TerminalCommandResult.Success
-            }
-            mouseTrackingActive && currentSize() == null ->
-                TerminalCommandResult.Unsupported("Terminal size is not available")
-            else -> {
-                submitTrackedScroll(command, currentSize())
-                TerminalCommandResult.Success
-            }
-        }
-    }
-
-    private fun submitTrackedScroll(command: TerminalCommand.Scroll, size: TerminalSize?) {
-        val up = command.rowsDown < 0
-        repeat(kotlin.math.abs(command.rowsDown)) {
-            if (session.isMouseTrackingActive) {
-                sendWheelEvent(command, size ?: return)
-            } else {
-                sendAlternateBufferScrollKey(up)
-            }
-        }
-    }
-
-    private fun sendWheelEvent(command: TerminalCommand.Scroll, size: TerminalSize) {
-        session.sendGhosttyMouseEvent(
-            GhosttyMouseEvent(
-                GhosttyMouseEvent.PRESS,
-                if (command.rowsDown < 0) GhosttyMouseEvent.BUTTON_WHEEL_UP else GhosttyMouseEvent.BUTTON_WHEEL_DOWN,
-                0,
+        if (command.rowsDown == 0) return TerminalCommandResult.Success
+        val geometry = command.geometry
+        submitScrollEvent(
+            GhosttyScrollEvent(
+                command.rowsDown,
                 command.xPx,
                 command.yPx,
-                size.widthPx,
-                size.heightPx,
-                size.cellWidthPx,
-                size.cellHeightPx,
-                size.contentTopPx,
-                0,
-                0,
-                0
+                geometry.viewportWidthPx,
+                geometry.viewportHeightPx,
+                geometry.cellWidthPx.roundToInt().coerceAtLeast(1),
+                geometry.cellHeightPx.roundToInt().coerceAtLeast(1),
+                geometry.contentTopPx.roundToInt().coerceAtLeast(0)
             )
         )
-    }
-
-    private fun sendAlternateBufferScrollKey(up: Boolean) {
-        val keyCode = if (up) KeyEvent.KEYCODE_DPAD_UP else KeyEvent.KEYCODE_DPAD_DOWN
-        KeyHandler.getCode(
-            keyCode,
-            0,
-            session.isCursorKeysApplicationMode,
-            session.isKeypadApplicationMode
-        )?.let(session::write)
+        return TerminalCommandResult.Success
     }
 
     private fun setViewportTopRow(topRow: Int): TerminalCommandResult {

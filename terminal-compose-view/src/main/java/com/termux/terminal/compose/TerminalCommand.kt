@@ -52,11 +52,14 @@ sealed interface TerminalCommand {
      *
      * The position is the touch location in viewport pixels. Backends that
      * forward scrolls to a mouse-tracking terminal use it to select the pane.
+     * [geometry] is captured with the gesture; backends must not substitute a
+     * cached resize because pixel-only canvas changes may be resize-coalesced.
      */
     data class Scroll(
         val rowsDown: Int,
         val xPx: Float,
-        val yPx: Float
+        val yPx: Float,
+        val geometry: TerminalPointerGeometry
     ) : TerminalCommand
 
     /** Jumps the viewport to the given absolute top row. */

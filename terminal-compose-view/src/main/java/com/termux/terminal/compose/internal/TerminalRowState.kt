@@ -41,7 +41,7 @@ internal class TerminalRowState {
 
 /** True when the row's content or link spans changed. */
 internal fun rowContentOutdated(rowState: TerminalRowState, row: TerminalRow, linkContentHash: Long): Boolean =
-    rowState.contentHash != row.contentHash || rowState.linkContentHash != linkContentHash
+    rowState.row !== row || rowState.linkContentHash != linkContentHash
 
 /** True when the row-local selection overlay changed. */
 internal fun rowSelectionOutdated(rowState: TerminalRowState, selectionStart: Int, selectionEnd: Int): Boolean =

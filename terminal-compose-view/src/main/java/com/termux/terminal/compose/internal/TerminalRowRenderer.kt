@@ -46,8 +46,6 @@ internal class TerminalRowRenderer(
     private var rowRunCaches = arrayOfNulls<RowRunCache>(0)
     private var preparedSequence = Long.MIN_VALUE
     private var preparedTopRow = 0
-    private var preparedRows = -1
-    private var preparedColumns = -1
 
     init {
         fontMetrics.configurePaint(textPaint)
@@ -67,8 +65,6 @@ internal class TerminalRowRenderer(
             rowRunCaches = arrayOfNulls(rows)
             preparedSequence = Long.MIN_VALUE
             preparedTopRow = frame.topRow
-            preparedRows = rows
-            preparedColumns = frame.columns
             return
         }
         val sequence = frame.sequence
@@ -81,8 +77,6 @@ internal class TerminalRowRenderer(
         }
         preparedSequence = sequence
         preparedTopRow = frame.topRow
-        preparedRows = rows
-        preparedColumns = frame.columns
     }
 
     fun invalidate() {
@@ -163,10 +157,10 @@ internal class TerminalRowRenderer(
         val contentHash = row.contentHash
         val hasCellLayout = row.cellLayout != null
         var cache = rowRunCaches[rowIndex]
-        if (cache != null && cache.matches(hints, hasCellLayout, contentHash)) {
+        if (cache != null && cache.matches(hints, columns, hasCellLayout, contentHash)) {
             return cache
         }
-        val matchIndex = findMatchingCache(hints, hasCellLayout, contentHash, rowIndex)
+        val matchIndex = findMatchingCache(hints, columns, hasCellLayout, contentHash, rowIndex)
         if (matchIndex != -1) {
             val matching = rowRunCaches[matchIndex]!!
             rowRunCaches[matchIndex] = cache
@@ -177,7 +171,7 @@ internal class TerminalRowRenderer(
             cache = RowRunCache()
             rowRunCaches[rowIndex] = cache
         }
-        cache.beginBuild(hints, hasCellLayout, contentHash)
+        cache.beginBuild(hints, columns, hasCellLayout, contentHash)
         if (hasCellLayout) {
             buildNativeRuns(cache, row, columns, hints)
         } else {
@@ -188,13 +182,14 @@ internal class TerminalRowRenderer(
 
     private fun findMatchingCache(
         hints: RowRenderHints,
+        columns: Int,
         hasCellLayout: Boolean,
         contentHash: Long,
         excludedIndex: Int
     ): Int {
         for (index in rowRunCaches.indices) {
             val candidate = if (index == excludedIndex) null else rowRunCaches[index]
-            if (candidate != null && candidate.matches(hints, hasCellLayout, contentHash)) {
+            if (candidate != null && candidate.matches(hints, columns, hasCellLayout, contentHash)) {
                 return index
             }
         }

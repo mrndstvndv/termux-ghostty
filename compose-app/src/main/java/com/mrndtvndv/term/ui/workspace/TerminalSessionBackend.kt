@@ -31,14 +31,11 @@ internal class TerminalSessionBackend(
     private val frameStore = TerminalSessionFrameStore()
     private val commandAdapter = TerminalSessionCommandAdapter(
         session = session,
-        currentTopRow = { topRow },
-        updateTopRow = ::updateTopRow,
-        currentSize = { appliedSize }
+        updateTopRow = ::updateTopRow
     )
     private val resizeHandler = Handler(Looper.getMainLooper())
     private val resizeRunnable = Runnable { applyPendingResize() }
     private var pendingResize: TerminalSize? = null
-    private var appliedSize: TerminalSize? = null
     private var resizeDebounceMillis = resizeDebounceMillis.coerceAtLeast(0L)
     private var listener: TerminalBackendListener? = null
     private var topRow = 0
@@ -145,26 +142,24 @@ internal class TerminalSessionBackend(
         pendingResize = null
         if (released) return
         session.updateSize(size.columns, size.rows, size.cellWidthPx, size.cellHeightPx)
-        appliedSize = size
         topRow = 0
     }
 
     private fun synchronizeViewport(frameDelta: FrameDelta) {
         val transcriptRows = session.activeTranscriptRows
-        topRow = topRow.coerceIn(-transcriptRows, 0)
-        val preserveViewport = frameDelta.reasonFlags == FrameDelta.REASON_VIEWPORT_SCROLL
-        if (session.isAutoScrollDisabled) {
-            val rowShift = session.scrollCounter
-            topRow = if (-topRow + rowShift > transcriptRows) {
-                -transcriptRows
-            } else {
-                topRow - rowShift
-            }
-        } else if (!preserveViewport) {
-            topRow = 0
-        }
+        val viewportChanged = frameDelta.reasonFlags and FrameDelta.REASON_VIEWPORT_SCROLL != 0
+        topRow = when {
+            viewportChanged -> frameDelta.topRow
+            session.isAutoScrollDisabled -> shiftedTopRow(transcriptRows, session.scrollCounter)
+            else -> 0
+        }.coerceIn(-transcriptRows, 0)
         session.clearScrollCounter()
         session.setGhosttyTopRow(topRow)
+    }
+
+    private fun shiftedTopRow(transcriptRows: Int, rowShift: Int): Int {
+        if (-topRow + rowShift > transcriptRows) return -transcriptRows
+        return topRow - rowShift
     }
 
     private fun updateTopRow(requestedTopRow: Int) {
@@ -189,11 +184,7 @@ internal class TerminalSessionBackend(
         TerminalFrameSessionState(
             transcriptRows = activeTranscriptRows,
             cursorBlinkingEnabled = isGhosttyCursorBlinkingEnabled,
-            cursorBlinkState = ghosttyCursorBlinkState,
-            cursorKeysApplicationMode = isCursorKeysApplicationMode,
-            keypadApplicationMode = isKeypadApplicationMode,
-            mouseTrackingActive = isMouseTrackingActive,
-            alternateBufferActive = isAlternateBufferActive
+            cursorBlinkState = ghosttyCursorBlinkState
         )
 
     private fun reportError(code: Int, message: String) {

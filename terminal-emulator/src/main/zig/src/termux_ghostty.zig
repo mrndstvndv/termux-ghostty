@@ -21,6 +21,7 @@ pub const mode_keypad_application: u32 = 1 << 1;
 pub const mode_mouse_tracking: u32 = 1 << 2;
 pub const mode_bracketed_paste: u32 = 1 << 3;
 pub const mode_mouse_protocol_sgr: u32 = 1 << 4;
+pub const mode_alternate_buffer: u32 = 1 << 5;
 
 const ProgressState = enum(i32) {
     none = 0,
@@ -234,6 +235,9 @@ pub const Session = struct {
         }
         if (self.terminal.flags.mouse_format == .sgr or self.terminal.flags.mouse_format == .sgr_pixels) {
             bits |= mode_mouse_protocol_sgr;
+        }
+        if (self.alternateBufferActive()) {
+            bits |= mode_alternate_buffer;
         }
         return bits;
     }

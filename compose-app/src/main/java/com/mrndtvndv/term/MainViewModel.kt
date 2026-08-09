@@ -130,6 +130,11 @@ class MainViewModel(
         reloadServers()
     }
 
+    fun updateServer(config: ServerConfig) {
+        serverRepository.update(config)
+        reloadServers()
+    }
+
     fun deleteServer(id: String) {
         coordinator.disconnect(id)
         _activeIds.value = _activeIds.value - id

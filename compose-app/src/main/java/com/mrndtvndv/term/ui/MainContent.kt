@@ -201,6 +201,7 @@ fun MainContent(
                                 connectingId = viewModel.connectingId.value,
                                 onTap = { serverId -> viewModel.connect(serverId) },
                                 onDelete = { serverId -> viewModel.deleteServer(serverId) },
+                                onEdit = { serverId -> navigator.navigate(AppNavKey.EditServer(serverId)) },
                                 onDisconnect = { serverId -> viewModel.disconnect(serverId) },
                                 onAdd = { navigator.navigate(AppNavKey.AddServer) },
                                 onSettingsClick = { navigator.navigate(AppNavKey.Settings) },
@@ -214,6 +215,17 @@ fun MainContent(
                             AddServerScreen(
                                 onSave = { config: ServerConfig ->
                                     viewModel.saveServer(config)
+                                    navigator.goBack()
+                                },
+                                onBack = { navigator.goBack() },
+                            )
+                        }
+
+                        entry<AppNavKey.EditServer> { editServer ->
+                            AddServerScreen(
+                                initialConfig = savedServers.find { it.id == editServer.serverId },
+                                onSave = { config: ServerConfig ->
+                                    viewModel.updateServer(config)
                                     navigator.goBack()
                                 },
                                 onBack = { navigator.goBack() },

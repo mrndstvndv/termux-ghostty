@@ -9,8 +9,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Terminal
@@ -30,6 +32,7 @@ fun ServerListScreen(
     servers: List<ServerConfig>,
     activeIds: Set<String>,
     onTap: (String) -> Unit,
+    onEdit: (String) -> Unit,
     onDelete: (String) -> Unit,
     onDisconnect: (String) -> Unit,
     disconnectingId: String? = null,
@@ -43,6 +46,7 @@ fun ServerListScreen(
 ) {
     var showStartupDialog by remember { mutableStateOf(false) }
     var startupInput by remember { mutableStateOf("") }
+    var pendingDeleteId by remember { mutableStateOf<String?>(null) }
 
     Scaffold(
         topBar = {
@@ -108,7 +112,8 @@ fun ServerListScreen(
                         isConnecting = config.id == connectingId,
                         onClick = { onTap(config.id) },
                         onDisconnect = { onDisconnect(config.id) },
-                        onDelete = { onDelete(config.id) },
+                        onEdit = { onEdit(config.id) },
+                        onDelete = { pendingDeleteId = config.id },
                     )
                 }
             }
@@ -146,6 +151,29 @@ fun ServerListScreen(
                 },
                 dismissButton = {
                     TextButton(onClick = { showStartupDialog = false }) {
+                        Text("Cancel")
+                    }
+                },
+            )
+        }
+
+        // Delete confirmation dialog
+        val pendingDelete = pendingDeleteId?.let { id -> servers.find { it.id == id } }
+        if (pendingDelete != null) {
+            AlertDialog(
+                onDismissRequest = { pendingDeleteId = null },
+                title = { Text("Delete server?") },
+                text = { Text("Delete \"${pendingDelete.label}\"? This cannot be undone.") },
+                confirmButton = {
+                    TextButton(onClick = {
+                        onDelete(pendingDelete.id)
+                        pendingDeleteId = null
+                    }) {
+                        Text("Delete", color = MaterialTheme.colorScheme.error)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { pendingDeleteId = null }) {
                         Text("Cancel")
                     }
                 },
@@ -218,7 +246,7 @@ private fun LocalTerminalCard(
 }
 
 @Composable
-@Suppress("LongMethod")
+@Suppress("LongMethod", "LongParameterList")
 private fun ServerCard(
     config: ServerConfig,
     isActive: Boolean,
@@ -226,6 +254,7 @@ private fun ServerCard(
     isConnecting: Boolean = false,
     onClick: () -> Unit,
     onDisconnect: () -> Unit,
+    onEdit: () -> Unit,
     onDelete: () -> Unit,
 ) {
     Card(
@@ -281,16 +310,48 @@ private fun ServerCard(
                     )
                 } else {
                     IconButton(onClick = onDisconnect) {
-                        Icon(Icons.Default.Close, "Disconnect", tint = MaterialTheme.colorScheme.error)
+                        Icon(Icons.Default.Stop, "Disconnect", tint = MaterialTheme.colorScheme.error)
                     }
                 }
             }
-            IconButton(onClick = onDelete) {
-                Icon(
-                    Icons.Default.Delete,
-                    contentDescription = "Delete server",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+            if (!isActive) {
+                var menuExpanded by remember { mutableStateOf(false) }
+                Box {
+                    IconButton(onClick = { menuExpanded = true }) {
+                        Icon(
+                            Icons.Default.MoreVert,
+                            contentDescription = "Server options",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    DropdownMenu(
+                        expanded = menuExpanded,
+                        onDismissRequest = { menuExpanded = false },
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Edit") },
+                            leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) },
+                            onClick = {
+                                menuExpanded = false
+                                onEdit()
+                            },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Delete") },
+                            leadingIcon = {
+                                Icon(
+                                    Icons.Default.Delete,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.error,
+                                )
+                            },
+                            onClick = {
+                                menuExpanded = false
+                                onDelete()
+                            },
+                        )
+                    }
+                }
             }
         }
     }

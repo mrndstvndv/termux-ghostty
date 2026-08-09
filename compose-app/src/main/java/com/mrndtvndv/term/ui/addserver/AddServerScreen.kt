@@ -22,19 +22,21 @@ import com.mrndtvndv.term.domain.ServerConfig
 fun AddServerScreen(
     onSave: (ServerConfig) -> Unit,
     onBack: () -> Unit,
+    initialConfig: ServerConfig? = null,
     modifier: Modifier = Modifier,
 ) {
-    var label by remember { mutableStateOf("") }
-    var host by remember { mutableStateOf("") }
-    var portString by remember { mutableStateOf("22") }
-    var username by remember { mutableStateOf("") }
-    var password by remember { mutableStateOf("") }
-    var herdrEnabled by remember { mutableStateOf(true) }
+    val initialPassword = (initialConfig?.auth as? AuthType.Password)?.password.orEmpty()
+    var label by remember(initialConfig) { mutableStateOf(initialConfig?.label ?: "") }
+    var host by remember(initialConfig) { mutableStateOf(initialConfig?.host ?: "") }
+    var portString by remember(initialConfig) { mutableStateOf(initialConfig?.port?.toString() ?: "22") }
+    var username by remember(initialConfig) { mutableStateOf(initialConfig?.username ?: "") }
+    var password by remember(initialConfig) { mutableStateOf(initialPassword) }
+    var herdrEnabled by remember(initialConfig) { mutableStateOf(initialConfig?.herdrEnabled ?: true) }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Add Server") },
+                title = { Text(if (initialConfig == null) "Add Server" else "Edit Server") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
@@ -106,6 +108,7 @@ fun AddServerScreen(
                 onClick = {
                     onSave(
                         ServerConfig(
+                            id = initialConfig?.id ?: java.util.UUID.randomUUID().toString(),
                             label = label,
                             host = host,
                             port = portString.toIntOrNull() ?: 22,

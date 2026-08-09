@@ -12,6 +12,9 @@ sealed interface AppNavKey : NavKey {
     data object AddServer : AppNavKey
 
     @Serializable
+    data class EditServer(val serverId: String) : AppNavKey
+
+    @Serializable
     data class TerminalWorkspace(val serverId: String) : AppNavKey
 
     @Serializable

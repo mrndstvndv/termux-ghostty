@@ -145,17 +145,30 @@ final class GhosttySessionWorker extends Thread {
         Looper.prepare();
         synchronized (this) {
             mWorkerHandler = new WorkerHandler(Looper.myLooper());
-            // Publish the initial terminal state even when the PTY is idle. Without this, an
-            // idle shell has no output-driven frame and the first snapshot is delayed until a
-            // resize, focus, or another terminal event occurs.
-            mWorkerHandler.sendEmptyMessage(MSG_REQUEST_FULL_SNAPSHOT_REFRESH);
-            if (mSshSessionHandle != 0L) {
-                registerSshOutputCallback();
-            }
+            initializeWorkerStartup(
+                mSshSessionHandle != 0L,
+                () -> mWorkerHandler.sendEmptyMessage(MSG_REQUEST_FULL_SNAPSHOT_REFRESH),
+                this::registerSshOutputCallback
+            );
             notifyAll();
         }
         Looper.loop();
         GhosttyLog.info("Ghostty worker thread exiting: " + getName());
+    }
+
+    static void initializeWorkerStartup(
+        boolean hasSshSession,
+        Runnable requestInitialSnapshot,
+        Runnable registerSshOutputCallback
+    ) {
+        if (hasSshSession) {
+            // Registration synchronously delivers output buffered during SSH setup. Queue that
+            // append before the initial full snapshot so the first visible frame contains it.
+            registerSshOutputCallback.run();
+        }
+        // Publish an initial frame even when the PTY is idle. Registration comes first for SSH;
+        // otherwise a blank frame can win the attach race until the next resize forces a rebuild.
+        requestInitialSnapshot.run();
     }
 
     private synchronized Handler getWorkerHandler() {

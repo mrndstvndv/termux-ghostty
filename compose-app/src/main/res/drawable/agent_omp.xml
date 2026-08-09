@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  omp (Oh My Pi) mark, sourced from:
+  https://github.com/can1357/oh-my-pi/blob/main/assets/icon.svg
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M2 4.6h20v2.4H2zM5 7h2.4v12.4H5zM15 7h2.4v9H15zM14.2 14h4v3.2h-4z" />
+</vector>

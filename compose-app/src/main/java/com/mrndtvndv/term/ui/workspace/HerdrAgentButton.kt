@@ -308,6 +308,8 @@ private fun WorkspaceListItem(
  * Brand marks are vendored from Herdr's Apache-2.0 repository:
  * https://github.com/herdrdev/herdr/tree/master/website/assets/agent-icons
  * The Pi mark is sourced from https://pi.dev/logo-on-dark.svg.
+ * The omp (Oh My Pi) mark is sourced from:
+ * https://github.com/can1357/oh-my-pi/blob/main/assets/icon.svg
  * The Prime Agent mark is sourced from:
  * https://github.com/PrimeIntellect-ai/prime-agent/blob/main/assets/brand/prime-butterfly.svg
  * The Cline mark is sourced from https://uxwing.com/cline-ai-icon/.
@@ -319,6 +321,7 @@ private fun WorkspaceListItem(
  * The Bun mark is sourced from Simple Icons (CC0 1.0):
  * https://github.com/simple-icons/simple-icons/blob/develop/icons/bun.svg
  */
+@Suppress("CyclomaticComplexMethod")
 private fun agentIconResource(agent: String?): Int? = when (agent?.lowercase(Locale.ROOT)) {
     "amp" -> R.drawable.agent_amp
     "agy", "antigravity" -> R.drawable.agent_antigravity
@@ -333,6 +336,7 @@ private fun agentIconResource(agent: String?): Int? = when (agent?.lowercase(Loc
     "kimi" -> R.drawable.agent_kimi
     "kiro" -> R.drawable.agent_kiro
     "mastracode" -> R.drawable.agent_mastracode
+    "omp" -> R.drawable.agent_omp
     "opencode" -> R.drawable.agent_opencode
     "pi" -> R.drawable.agent_pi
     "prime", "prime-agent", "primeintellect" -> R.drawable.agent_prime
@@ -377,6 +381,9 @@ private fun tabIdleProcessName(pane: HerdrPaneNode?, tab: HerdrTabNode): String?
         processName = pane?.processName,
         title = pane?.title ?: tab.title,
     )
+
+private fun agentRowTitle(pane: HerdrPaneNode?, tab: HerdrTabNode): String =
+    pane?.agentSessionName ?: tab.agentSessionName ?: pane?.title ?: tab.title
 
 @Composable
 private fun AgentIcon(
@@ -483,7 +490,7 @@ private fun AgentTabListItem(
     val displayAgent = pane?.agent ?: tab.agent
     val idleProcess = tabIdleProcessName(pane, tab)
     val displayStatus = pane?.agentStatus ?: tab.agentStatus
-    val displayTitle = pane?.title ?: tab.title
+    val displayTitle = agentRowTitle(pane, tab)
     val status = displayStatus.lowercase(Locale.ROOT).ifBlank { "unknown" }
     val statusColor = when (status) {
         "working" -> MaterialTheme.colorScheme.primary
@@ -674,7 +681,7 @@ private fun PaneListItem(
             Spacer(modifier = Modifier.width(16.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = pane.title,
+                    text = pane.agentSessionName ?: pane.title,
                     color = headlineColor,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,

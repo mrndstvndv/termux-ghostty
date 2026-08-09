@@ -68,7 +68,7 @@ class NativeSftpClient(
         try {
             destination.parentFile?.mkdirs()
             destination.outputStream().use { localOut ->
-                val buffer = ByteArray(32 * 1024)
+                val buffer = ByteArray(256 * 1024)
                 var totalRead = 0L
                 while (true) {
                     val read = synchronized(lock) {
@@ -109,7 +109,7 @@ class NativeSftpClient(
         if (fileHandle == 0L) throw IOException("Failed to open remote file: $remotePath")
         try {
             source.inputStream().use { localIn ->
-                val buffer = ByteArray(32 * 1024)
+                val buffer = ByteArray(256 * 1024)
                 var totalWritten = 0L
                 while (true) {
                     val read = localIn.read(buffer)

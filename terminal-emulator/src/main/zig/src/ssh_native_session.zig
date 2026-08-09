@@ -71,6 +71,9 @@ pub const SshNativeSession = struct {
     const queue_allocator = std.heap.page_allocator;
     const socket_poll_timeout_ms: c_int = 1000;
     const keepalive_interval_seconds: c_uint = 10;
+    // Deliver shell output to the JVM in ~64 KiB batches instead of one JNI
+    // callback + Handler message per libssh2 read chunk (16 KiB).
+    const output_flush_threshold_bytes: usize = 64 * 1024;
 
     allocator: std.mem.Allocator,
     session: *c.LIBSSH2_SESSION,
@@ -88,6 +91,17 @@ pub const SshNativeSession = struct {
     output_closed_method: ?c.jmethodID,
     thread: ?std.Thread,
     running: std.atomic.Value(bool),
+    // SFTP read-ahead: one 256 KiB staging buffer holds the chunk fetched
+    // while the JVM drains the previous one, hiding the network RTT behind
+    // local disk I/O. libssh2 stays on the single loop thread; at most one
+    // read request is ever in flight.
+    sftp_staging: ?[]u8 = null,
+    sftp_staging_handle: ?*anyopaque = null,
+    sftp_staging_len: usize = 0,
+    sftp_staging_read_handle: ?*anyopaque = null,
+    sftp_staging_armed: bool = false,
+    sftp_staging_eof: bool = false,
+    sftp_staging_error: bool = false,
     const CommandKind = enum {
         write,
         resize,
@@ -175,6 +189,19 @@ pub const SshNativeSession = struct {
     }
 
     fn configureSocketLiveness(socket_fd: c_int) void {
+        // SSH is a packet protocol with its own framing: Nagle's algorithm only
+        // adds delayed-ACK latency to interactive keystroke round trips, so
+        // disable it like OpenSSH does. Set it here on the raw fd so it applies
+        // deterministically, independent of how the fd was created.
+        if (@hasDecl(c, "TCP_NODELAY")) {
+            setSocketOption(socket_fd, c.IPPROTO_TCP, c.TCP_NODELAY, 1);
+        }
+
+        // Size socket buffers for high-bandwidth-delay-product links so SFTP
+        // and bulk shell output aren't limited by the small Android defaults.
+        setSocketOption(socket_fd, c.SOL_SOCKET, c.SO_RCVBUF, 1 << 20);
+        setSocketOption(socket_fd, c.SOL_SOCKET, c.SO_SNDBUF, 1 << 20);
+
         setSocketOption(socket_fd, c.SOL_SOCKET, c.SO_KEEPALIVE, 1);
 
         if (@hasDecl(c, "TCP_KEEPIDLE")) {
@@ -380,6 +407,7 @@ pub const SshNativeSession = struct {
         self.callback_lock.unlock();
         self.output_queue.deinit(queue_allocator);
         self.command_queue.deinit(queue_allocator);
+        if (self.sftp_staging) |staging| queue_allocator.free(staging);
 
         const allocator = self.allocator;
         allocator.destroy(self);
@@ -554,7 +582,20 @@ pub const SshNativeSession = struct {
             const directions = c.libssh2_session_block_directions(self.session);
             if ((directions & c.LIBSSH2_SESSION_BLOCK_OUTBOUND) != 0) fds[0].events |= c.POLLOUT;
 
-            const poll_result = c.poll(&fds, 2, socket_poll_timeout_ms);
+            // An idle session only needs to wake to send keepalives: sleep up
+            // to the keepalive deadline instead of a fixed 1 s tick (10x fewer
+            // wakeups). Any pending write or inbound data still wakes poll
+            // immediately, so latency is unaffected. Clamp the deadline to the
+            // configured interval so a libssh2-side anomaly can never overflow
+            // the c_int multiply or busy-loop the poll.
+            var poll_timeout_ms: c_int = socket_poll_timeout_ms;
+            if (seconds_to_next > 0) {
+                const clamped_seconds = @min(seconds_to_next, @as(c_int, @intCast(keepalive_interval_seconds)));
+                const keepalive_deadline_ms: c_int = clamped_seconds * 1000;
+                if (keepalive_deadline_ms > poll_timeout_ms) poll_timeout_ms = keepalive_deadline_ms;
+            }
+
+            const poll_result = c.poll(&fds, 2, poll_timeout_ms);
             if (poll_result < 0) {
                 self.running.store(false, .release);
                 break;
@@ -571,6 +612,13 @@ pub const SshNativeSession = struct {
             if ((socket_events & (c.POLLIN | c.POLLOUT | c.POLLERR | c.POLLHUP | c.POLLNVAL)) != 0) {
                 self.processRead(jni_env);
                 self.processCommands();
+                // Advance an in-flight SFTP prefetch whenever the socket wakes,
+                // so the next chunk is ready by the time the JVM asks for it.
+                if (self.sftp_staging_armed) {
+                    if (self.sftp_staging_read_handle) |file_handle| {
+                        _ = self.tryCompleteSftpPrefetch(file_handle);
+                    }
+                }
                 if ((socket_events & (c.POLLERR | c.POLLHUP | c.POLLNVAL)) != 0) {
                     self.running.store(false, .release);
                 }
@@ -585,14 +633,30 @@ pub const SshNativeSession = struct {
     }
 
     fn processRead(self: *SshNativeSession, env: ?*c.JNIEnv) void {
-        var buffer: [16384]u8 = undefined;
+        // Deliveries are no-ops without a registered JVM callback, so buffering
+        // shell output then would grow output_queue unboundedly (e.g. during
+        // the window before registerSshOutputCallback, or SFTP-only sessions).
+        // Still read the channel either way to keep the SSH receive window
+        // flowing; bytes are just discarded when nobody is listening.
+        self.callback_lock.lock();
+        const have_callback = self.output_callback != null;
+        self.callback_lock.unlock();
+
+        var buffer: [32768]u8 = undefined;
         while (self.running.load(.acquire)) {
             const count = c.libssh2_channel_read(self.channel, &buffer, buffer.len);
             if (count > 0) {
+                if (!have_callback) continue;
                 self.output_lock.lock();
                 self.output_queue.appendSlice(queue_allocator, buffer[0..@intCast(count)]) catch {};
+                const queued = self.output_queue.items.len;
                 self.output_lock.unlock();
-                self.deliverOutput(env);
+                // Flush mid-drain once a batch has accumulated so a continuous
+                // burst doesn't grow an unbounded queue or stall the JVM side;
+                // the flush below the loop covers the tail.
+                if (queued >= output_flush_threshold_bytes) {
+                    self.deliverOutput(env);
+                }
             } else if (count == c.LIBSSH2_ERROR_EAGAIN) {
                 break;
             } else {
@@ -600,6 +664,7 @@ pub const SshNativeSession = struct {
                 break;
             }
         }
+        self.deliverOutput(env);
     }
 
     fn processCommands(self: *SshNativeSession) void {
@@ -824,11 +889,17 @@ pub const SshNativeSession = struct {
     fn sftpCloseCallback(self: *SshNativeSession, command: *Command) void {
         const context: *SftpCloseContext = @ptrCast(@alignCast(command.context.?));
         const handle: *c.LIBSSH2_SFTP = @ptrCast(@alignCast(context.handle));
+        // Complete an in-flight file prefetch before tearing the SFTP session
+        // down so no orphaned request outlives it.
+        if (self.sftp_staging_armed) {
+            if (self.sftp_staging_read_handle) |file_handle| self.drainSftpPrefetch(file_handle);
+        }
         while (self.running.load(.acquire)) {
             const result = c.libssh2_sftp_shutdown(handle);
-            if (result == 0 or result != c.LIBSSH2_ERROR_EAGAIN) return;
+            if (result == 0 or result != c.LIBSSH2_ERROR_EAGAIN) break;
             waitSocket(self.socket_fd, self.session) catch return;
         }
+        self.sftpResetStaging();
     }
 
     fn appendJsonEscaped(output: *std.ArrayList(u8), allocator: std.mem.Allocator, str: []const u8) !void {
@@ -950,20 +1021,150 @@ pub const SshNativeSession = struct {
     fn sftpFileCloseCallback(self: *SshNativeSession, command: *Command) void {
         const context: *SftpFileCloseContext = @ptrCast(@alignCast(command.context.?));
         const handle: *c.LIBSSH2_SFTP_HANDLE = @ptrCast(@alignCast(context.handle));
+        // Complete any in-flight prefetch for this handle before closing so
+        // libssh2 never sees a request for a freed handle.
+        self.drainSftpPrefetch(context.handle);
         while (self.running.load(.acquire)) {
             const result = c.libssh2_sftp_close_handle(handle);
-            if (result == 0 or result != c.LIBSSH2_ERROR_EAGAIN) return;
+            if (result == 0 or result != c.LIBSSH2_ERROR_EAGAIN) break;
+            waitSocket(self.socket_fd, self.session) catch return;
+        }
+        self.sftpResetStaging();
+    }
+
+    fn sftpStagingBuffer(self: *SshNativeSession) ?[]u8 {
+        if (self.sftp_staging) |buffer| return buffer;
+        const buffer = queue_allocator.alloc(u8, 256 * 1024) catch return null;
+        self.sftp_staging = buffer;
+        return buffer;
+    }
+
+    fn sftpResetStaging(self: *SshNativeSession) void {
+        self.sftp_staging_handle = null;
+        self.sftp_staging_read_handle = null;
+        self.sftp_staging_len = 0;
+        self.sftp_staging_armed = false;
+        self.sftp_staging_eof = false;
+        self.sftp_staging_error = false;
+    }
+
+    // Complete an armed (in-flight) prefetch read into staging if the socket
+    // has data. Returns true once the staging slot holds a finished state
+    // (bytes available, EOF, or error); returns false while still in flight.
+    fn tryCompleteSftpPrefetch(self: *SshNativeSession, handle: *anyopaque) bool {
+        if (!self.sftp_staging_armed) {
+            return self.sftp_staging_len > 0 or self.sftp_staging_eof or self.sftp_staging_error;
+        }
+        const staging = self.sftpStagingBuffer() orelse {
+            self.sftp_staging_error = true;
+            self.sftp_staging_armed = false;
+            return true;
+        };
+        const result = c.libssh2_sftp_read(@ptrCast(@alignCast(handle)), staging.ptr, staging.len);
+        if (result > 0) {
+            self.sftp_staging_len = @intCast(result);
+        } else if (result == c.LIBSSH2_ERROR_EAGAIN) {
+            return false;
+        } else if (result == 0) {
+            self.sftp_staging_eof = true;
+        } else {
+            self.sftp_staging_error = true;
+        }
+        self.sftp_staging_armed = false;
+        return true;
+    }
+
+    // Issue the next chunk read into staging without waiting for it, so it
+    // completes while the JVM drains the chunk just served.
+    fn armSftpPrefetch(self: *SshNativeSession, file_handle: *anyopaque) void {
+        const staging = self.sftpStagingBuffer() orelse return;
+        const handle: *c.LIBSSH2_SFTP_HANDLE = @ptrCast(@alignCast(file_handle));
+        const result = c.libssh2_sftp_read(handle, staging.ptr, staging.len);
+        if (result > 0) {
+            self.sftp_staging_len = @intCast(result);
+        } else if (result == c.LIBSSH2_ERROR_EAGAIN) {
+            self.sftp_staging_armed = true;
+            self.sftp_staging_read_handle = file_handle;
+        } else if (result == 0) {
+            self.sftp_staging_eof = true;
+        } else {
+            self.sftp_staging_error = true;
+        }
+    }
+
+    // Block (on the loop thread, via waitSocket) until the armed prefetch
+    // request is finished. Used before closing handles/sessions so libssh2
+    // never sees an orphaned in-flight request.
+    fn drainSftpPrefetch(self: *SshNativeSession, file_handle: *anyopaque) void {
+        while (self.running.load(.acquire) and self.sftp_staging_armed) {
+            if (self.tryCompleteSftpPrefetch(file_handle)) return;
             waitSocket(self.socket_fd, self.session) catch return;
         }
     }
 
+    // Copy the staged chunk into the caller's buffer, keep any remainder, and
+    // arm the next fetch. Returns false when staging held no data.
+    fn serveSftpStaging(self: *SshNativeSession, context: *SftpReadContext, file_handle: *anyopaque) bool {
+        if (self.sftp_staging_len == 0) return false;
+        const available = self.sftp_staging.?[0..self.sftp_staging_len];
+        const count = @min(available.len, context.buffer.len);
+        @memcpy(context.buffer[0..count], available[0..count]);
+        self.sftp_staging_len -= count;
+        if (self.sftp_staging_len > 0) {
+            std.mem.copyForwards(u8, available[0..self.sftp_staging_len], available[count..]);
+        }
+        context.result = @intCast(count);
+        if (count > 0) self.armSftpPrefetch(file_handle);
+        return true;
+    }
+
     fn sftpReadCallback(self: *SshNativeSession, command: *Command) void {
         const context: *SftpReadContext = @ptrCast(@alignCast(command.context.?));
-        const handle: *c.LIBSSH2_SFTP_HANDLE = @ptrCast(@alignCast(context.handle));
+        const file_handle: *anyopaque = context.handle;
+        const handle: *c.LIBSSH2_SFTP_HANDLE = @ptrCast(@alignCast(file_handle));
+
+        if (self.sftp_staging_handle != file_handle) {
+            // Handle changed (or closed): finish any in-flight request for the
+            // old handle before discarding its staging state.
+            if (self.sftp_staging_armed) {
+                if (self.sftp_staging_read_handle) |old_handle| self.drainSftpPrefetch(old_handle);
+            }
+            self.sftpResetStaging();
+            self.sftp_staging_handle = file_handle;
+        }
+
+        // Serve a finished prefetch chunk without touching the socket.
+        if (self.serveSftpStaging(context, file_handle)) return;
+        if (self.sftp_staging_eof) {
+            context.result = 0;
+            self.sftpResetStaging();
+            return;
+        }
+        if (self.sftp_staging_error) {
+            self.sftpResetStaging();
+            return;
+        }
+
+        // A read request is already in flight toward staging: wait for it.
+        while (self.sftp_staging_armed and self.running.load(.acquire)) {
+            if (self.tryCompleteSftpPrefetch(file_handle)) {
+                if (self.serveSftpStaging(context, file_handle)) return;
+                if (self.sftp_staging_eof) {
+                    context.result = 0;
+                    self.sftpResetStaging();
+                    return;
+                }
+                self.sftpResetStaging();
+                return; // read error
+            }
+            waitSocket(self.socket_fd, self.session) catch return;
+        }
+
         while (self.running.load(.acquire)) {
             const result = c.libssh2_sftp_read(handle, context.buffer.ptr, context.buffer.len);
             if (result >= 0) {
                 context.result = @intCast(result);
+                if (result > 0) self.armSftpPrefetch(file_handle);
                 return;
             }
             if (result != c.LIBSSH2_ERROR_EAGAIN) return;

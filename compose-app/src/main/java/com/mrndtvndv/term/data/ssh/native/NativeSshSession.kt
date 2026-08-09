@@ -31,6 +31,10 @@ class NativeSshSession : SshSession {
         this.config = config
         withContext(Dispatchers.IO) {
             val s = Socket()
+            // SSH carries its own framing; Nagle only adds delayed-ACK latency
+            // to interactive round trips. Mirrored in native configureSocketLiveness
+            // for the fd, set here too in case the socket outlives the native side.
+            s.tcpNoDelay = true
             s.connect(InetSocketAddress(config.host, config.port), config.connectionTimeoutMs)
             socket = s
         }

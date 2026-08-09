@@ -42,7 +42,6 @@ final class GhosttySessionWorker extends Thread {
     private static final int MSG_SET_CURSOR_BLINKING_ENABLED = 13;
     private static final int MSG_SET_CURSOR_BLINK_STATE = 14;
     private static final long SNAPSHOT_INTERVAL_MILLIS = 16; // ~60fps
-    private static final long SNAPSHOT_INTERVAL_BUSY_MILLIS = 33; // ~30fps under sustained backlog
     private static final int MAX_APPEND_BYTES_PER_SLICE = 64 * 1024;
     private static final long MAX_APPEND_TIME_MILLIS = 8;
     private static final int PERF_LOG_INTERVAL_FRAMES = 120;
@@ -297,17 +296,7 @@ final class GhosttySessionWorker extends Thread {
 
         addPendingFrameReason(FrameDelta.REASON_APPEND);
         mFramePublicationGate.markSnapshotDirty();
-        scheduleSnapshotBuild(isFloodBacklog(queuedBytes));
-    }
-
-    /**
-     * True when the append backlog still holds at least one full append slice
-     * after the current slice ran: a sustained flood, not the small trickle of
-     * interactive TUI output (spinners, shimmer, status bars). Floods publish
-     * at the slow 33 ms cadence; everything else keeps the 16 ms cadence.
-     */
-    static boolean isFloodBacklog(int queuedBytes) {
-        return queuedBytes >= MAX_APPEND_BYTES_PER_SLICE;
+        scheduleSnapshotBuild();
     }
 
     private void appendToNative(byte[] buffer, int offset, int length) {
@@ -361,7 +350,7 @@ final class GhosttySessionWorker extends Thread {
         mContent.requestFullSnapshotRefresh();
         updateCachedState();
         mFramePublicationGate.markSnapshotDirty();
-        scheduleSnapshotBuild(false);
+        scheduleSnapshotBuild();
     }
 
     private void handleReset() {
@@ -399,7 +388,7 @@ final class GhosttySessionWorker extends Thread {
         mCurrentTopRow = updatedTopRow;
         addPendingFrameReason(FrameDelta.REASON_VIEWPORT_SCROLL);
         mFramePublicationGate.markSnapshotDirty();
-        scheduleSnapshotBuild(false);
+        scheduleSnapshotBuild();
     }
 
     private void handleMouseEvent(GhosttyMouseEvent event) {
@@ -522,12 +511,11 @@ final class GhosttySessionWorker extends Thread {
         }
     }
 
-    private void scheduleSnapshotBuild(boolean busy) {
+    private void scheduleSnapshotBuild() {
         if (!mFramePublicationGate.isSnapshotDirty()) return;
 
-        long snapshotInterval = busy ? SNAPSHOT_INTERVAL_BUSY_MILLIS : SNAPSHOT_INTERVAL_MILLIS;
         long now = SystemClock.uptimeMillis();
-        long delay = Math.max(0, (mLastSnapshotTime + snapshotInterval) - now);
+        long delay = Math.max(0, (mLastSnapshotTime + SNAPSHOT_INTERVAL_MILLIS) - now);
 
         Handler handler = getWorkerHandler();
         if (handler.hasMessages(MSG_BUILD_SNAPSHOT)) {
@@ -594,7 +582,7 @@ final class GhosttySessionWorker extends Thread {
                     mSession.notifyFrameAvailable();
                 } finally {
                     if (mFramePublicationGate.completeUIUpdate()) {
-                        getWorkerHandler().post(() -> scheduleSnapshotBuild(false));
+                        getWorkerHandler().post(() -> scheduleSnapshotBuild());
                     }
                 }
             });
@@ -656,7 +644,7 @@ final class GhosttySessionWorker extends Thread {
     private void publishCursorBlinkChange() {
         addPendingFrameReason(FrameDelta.REASON_CURSOR_BLINK);
         mFramePublicationGate.markSnapshotDirty();
-        scheduleSnapshotBuild(false);
+        scheduleSnapshotBuild();
     }
 
     private static String formatDurationMillis(long durationNanos) {
@@ -679,7 +667,7 @@ final class GhosttySessionWorker extends Thread {
                     appendToNative(data, 0, data.length);
                     addPendingFrameReason(FrameDelta.REASON_APPEND_DIRECT);
                     mFramePublicationGate.markSnapshotDirty();
-                    scheduleSnapshotBuild(false);
+                    scheduleSnapshotBuild();
                     break;
                 case MSG_BUILD_SNAPSHOT:
                     buildAndPublishSnapshot();

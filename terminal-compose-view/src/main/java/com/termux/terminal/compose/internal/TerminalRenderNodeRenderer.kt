@@ -37,6 +37,15 @@ internal class TerminalRenderNodeRenderer(
     private var rowLayers: Array<TerminalRowLayerState> = emptyArray()
     private var dirtyRows = BooleanArray(0)
     private var visibleRowCount = 0
+    // Reusable per-row overlay scratch, filled during the dirty scan and
+    // consumed while recording. Avoids allocating RowRenderHints per row (and
+    // twice per dirty row) on every changed frame.
+    private var hintSelectionStarts = IntArray(0)
+    private var hintSelectionEnds = IntArray(0)
+    private var hintCursorXs = IntArray(0)
+    private var hintLinkContentHashes = LongArray(0)
+    // Reusable sink for the scroll layer rotation.
+    private var scrollScratch: Array<TerminalRowLayerState> = emptyArray()
     private var width = -1
     private var height = -1
     private var lineHeight = -1
@@ -117,6 +126,7 @@ internal class TerminalRenderNodeRenderer(
             rowLayers = Array(frame.rowsVisible) { createRowLayer() }
             dirtyRows = BooleanArray(frame.rowsVisible)
             visibleRowCount = frame.rowsVisible
+            ensureHintScratch(frame.rowsVisible)
             boundShaders = emptyList()
             shaderResolutionWidth = Float.NaN
             shaderResolutionHeight = Float.NaN
@@ -150,6 +160,15 @@ internal class TerminalRenderNodeRenderer(
             if (rowIndex < existingLayers.size) existingLayers[rowIndex] else createRowLayer()
         }
         dirtyRows = BooleanArray(requiredRows)
+        ensureHintScratch(requiredRows)
+    }
+
+    private fun ensureHintScratch(rows: Int) {
+        if (rows <= hintSelectionStarts.size) return
+        hintSelectionStarts = IntArray(rows)
+        hintSelectionEnds = IntArray(rows)
+        hintCursorXs = IntArray(rows)
+        hintLinkContentHashes = LongArray(rows)
     }
 
     private fun createRowLayer(): TerminalRowLayerState =
@@ -181,7 +200,7 @@ internal class TerminalRenderNodeRenderer(
 
         repositionRowsForScroll(frame)
         markDirtyRows(frame, selection)
-        recordDirtyRows(drawScope, frame, selection)
+        recordDirtyRows(drawScope, frame)
 
         lastProcessedContentVersion = contentVersion
         lastSelection = selection
@@ -196,58 +215,55 @@ internal class TerminalRenderNodeRenderer(
 
     private fun markDirtyRows(frame: TerminalFrame, selection: TerminalSelection) {
         dirtyRows.fill(false, 0, visibleRowCount)
+        val topRow = frame.topRow
+        val columns = frame.columns
+        val cursor = frame.cursor
+        val reverseVideo = frame.reverseVideo
+        val selectionStartRow = selection.startRow
+        val selectionEndRow = selection.endRow
+        val linkLayout = frame.linkLayout
         for (rowIndex in 0 until visibleRowCount) {
             val row = frame.row(rowIndex)
             val rowLayer = rowLayers[rowIndex]
-            if (row != null) {
-                val hints = rowRenderHints(frame, selection, rowIndex)
-                val linkContentHash = frame.linkLayout?.rowContentHash(rowIndex) ?: 0L
-                val contentChanged = rowContentOutdated(rowLayer.state, row, linkContentHash)
-                val overlayChanged = rowSelectionOutdated(rowLayer.state, hints) ||
-                    rowCursorOutdated(rowLayer.state, hints) ||
-                    rowStyleOutdated(rowLayer.state, hints, paletteVersion)
-                dirtyRows[rowIndex] = forceFullTileRecord || contentChanged || overlayChanged
-            } else if (rowLayer.state.contentHash != Long.MIN_VALUE) {
-                dirtyRows[rowIndex] = true
+            if (row == null) {
+                if (rowLayer.state.contentHash != Long.MIN_VALUE) {
+                    dirtyRows[rowIndex] = true
+                }
+                continue
             }
+            val absoluteRow = topRow + rowIndex
+            val selectionStart = if (absoluteRow == selectionStartRow) selection.startCol else -1
+            val selectionEnd = when {
+                absoluteRow < selectionStartRow || absoluteRow > selectionEndRow -> -1
+                absoluteRow == selectionEndRow -> selection.endCol
+                else -> columns
+            }
+            val cursorX = if (cursor.visible && absoluteRow == cursor.row) cursor.column else -1
+            val linkContentHash = linkLayout?.rowContentHash(rowIndex) ?: 0L
+            hintSelectionStarts[rowIndex] = selectionStart
+            hintSelectionEnds[rowIndex] = selectionEnd
+            hintCursorXs[rowIndex] = cursorX
+            hintLinkContentHashes[rowIndex] = linkContentHash
+            val contentChanged = rowContentOutdated(rowLayer.state, row, linkContentHash)
+            val overlayChanged = rowSelectionOutdated(rowLayer.state, selectionStart, selectionEnd) ||
+                rowCursorOutdated(rowLayer.state, cursorX, cursor.style) ||
+                rowStyleOutdated(rowLayer.state, reverseVideo, paletteVersion)
+            dirtyRows[rowIndex] = forceFullTileRecord || contentChanged || overlayChanged
         }
     }
 
     private fun recordDirtyRows(
         drawScope: DrawScope,
-        frame: TerminalFrame,
-        selection: TerminalSelection
+        frame: TerminalFrame
     ) {
         var recordedRow = false
         for (rowIndex in 0 until visibleRowCount) {
             if (dirtyRows[rowIndex]) {
-                recordRowLayer(drawScope, frame, selection, rowIndex)
+                recordRowLayer(drawScope, frame, rowIndex)
                 recordedRow = true
             }
         }
         if (recordedRow) parentDisplayListDirty = true
-    }
-
-    private fun rowSelectionEnd(absoluteRow: Int, selection: TerminalSelection, columns: Int): Int = when {
-        absoluteRow < selection.startRow || absoluteRow > selection.endRow -> -1
-        absoluteRow == selection.endRow -> selection.endCol
-        else -> columns
-    }
-
-    private fun rowRenderHints(
-        frame: TerminalFrame,
-        selection: TerminalSelection,
-        rowIndex: Int
-    ): RowRenderHints {
-        val absoluteRow = frame.topRow + rowIndex
-        val cursor = frame.cursor
-        return RowRenderHints(
-            selectionStart = if (absoluteRow == selection.startRow) selection.startCol else -1,
-            selectionEnd = rowSelectionEnd(absoluteRow, selection, frame.columns),
-            cursorX = if (cursor.visible && absoluteRow == cursor.row) cursor.column else -1,
-            cursorStyle = cursor.style,
-            reverseVideo = frame.reverseVideo
-        )
     }
 
     private fun repositionRowsForScroll(frame: TerminalFrame) {
@@ -255,17 +271,30 @@ internal class TerminalRenderNodeRenderer(
         val delta = frame.topRow - lastTopRow
         if (!canReuseRowsForScroll(frame, delta)) return
 
-        val previousLayers = rowLayers
-        rowLayers = Array(visibleRowCount) { rowIndex ->
-            val previousIndex = rowIndex + delta
-            val layer = when {
-                previousIndex < 0 -> previousLayers[visibleRowCount + previousIndex]
-                previousIndex >= visibleRowCount -> previousLayers[previousIndex - visibleRowCount]
-                else -> previousLayers[previousIndex]
+        // Circular rotation of the layer pool without allocating a new array:
+        // viewport row i takes the old layer for row (i + delta) modulo count.
+        val count = visibleRowCount
+        val distance = kotlin.math.abs(delta)
+        if (scrollScratch.size < distance) {
+            scrollScratch = java.util.Arrays.copyOf(scrollScratch, distance)
+        }
+        if (delta > 0) {
+            System.arraycopy(rowLayers, 0, scrollScratch, 0, distance)
+            System.arraycopy(rowLayers, distance, rowLayers, 0, count - distance)
+            System.arraycopy(scrollScratch, 0, rowLayers, count - distance, distance)
+            for (rowIndex in (count - distance) until count) {
+                rowLayers[rowIndex].state.clear()
             }
-            if (previousIndex !in 0 until visibleRowCount) layer.state.clear()
-            layer.layer.topLeft = IntOffset(0, rowIndex * lineHeight)
-            layer
+        } else {
+            System.arraycopy(rowLayers, count - distance, scrollScratch, 0, distance)
+            System.arraycopy(rowLayers, 0, rowLayers, distance, count - distance)
+            System.arraycopy(scrollScratch, 0, rowLayers, 0, distance)
+            for (rowIndex in 0 until distance) {
+                rowLayers[rowIndex].state.clear()
+            }
+        }
+        for (rowIndex in 0 until count) {
+            rowLayers[rowIndex].layer.topLeft = IntOffset(0, rowIndex * lineHeight)
         }
         parentDisplayListDirty = true
     }
@@ -282,38 +311,40 @@ internal class TerminalRenderNodeRenderer(
     private fun recordRowLayer(
         drawScope: DrawScope,
         frame: TerminalFrame,
-        selection: TerminalSelection,
         rowIndex: Int
     ) {
         val rowLayer = rowLayers[rowIndex]
         rowLayer.layer.topLeft = IntOffset(0, rowIndex * lineHeight)
+        val row = frame.row(rowIndex)
+        val hints = RowRenderHints(
+            selectionStart = hintSelectionStarts[rowIndex],
+            selectionEnd = hintSelectionEnds[rowIndex],
+            cursorX = hintCursorXs[rowIndex],
+            cursorStyle = frame.cursor.style,
+            reverseVideo = frame.reverseVideo
+        )
+        val linkContentHash = hintLinkContentHashes[rowIndex]
         rowLayer.layer.record(
             density = drawScope,
             layoutDirection = drawScope.layoutDirection,
             size = IntSize(width, lineHeight)
         ) {
             drawIntoCanvas { canvas ->
-                if (frame.row(rowIndex) != null) {
+                if (row != null) {
                     rowRenderer.renderRow(
                         canvas = canvas.nativeCanvas,
                         frame = frame,
                         rowIndex = rowIndex,
-                        hints = rowRenderHints(frame, selection, rowIndex),
+                        hints = hints,
                         baselineY = lineHeight.toFloat()
                     )
                 }
             }
         }
-        val row = frame.row(rowIndex)
         if (row == null) {
             rowLayer.state.clear()
         } else {
-            rowLayer.state.applyFrame(
-                row,
-                rowRenderHints(frame, selection, rowIndex),
-                paletteVersion,
-                frame.linkLayout?.rowContentHash(rowIndex) ?: 0L
-            )
+            rowLayer.state.applyFrame(row, hints, paletteVersion, linkContentHash)
         }
     }
 

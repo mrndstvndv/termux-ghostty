@@ -242,6 +242,7 @@ internal class TerminalRowRenderer(
             charIndex = skipContinuationCharacters(line, charIndex, charsUsed)
         }
         accumulator.flush(columns, charIndex)
+        cache.finishBuild()
     }
 
     private fun buildNativeRuns(
@@ -268,6 +269,7 @@ internal class TerminalRowRenderer(
             }
         }
         accumulator.flush(columns)
+        cache.finishBuild()
     }
 
     private fun appendBlankRuns(
@@ -315,6 +317,7 @@ internal class TerminalRowRenderer(
                 flags(lastInsideCursor, lastInsideSelection)
             )
         }
+        cache.finishBuild()
     }
 
     private fun renderCachedRow(

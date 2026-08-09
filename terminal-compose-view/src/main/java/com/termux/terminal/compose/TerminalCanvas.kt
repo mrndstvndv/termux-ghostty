@@ -76,7 +76,7 @@ fun TerminalCanvas(
     val hapticFeedback = LocalHapticFeedback.current
     val focusRequester = remember { FocusRequester() }
 
-    var contentVersion by remember { mutableIntStateOf(0) }
+    val contentVersionState = remember { mutableIntStateOf(0) }
     val frameTimeState = remember { mutableFloatStateOf(0f) }
     val fontSizeState = rememberFontSizeState(config)
     var viewportSizePx by remember { mutableStateOf(IntSize.Zero) }
@@ -84,7 +84,7 @@ fun TerminalCanvas(
 
     val controller = rememberConfiguredController(
         backend, graphicsContext, frameTimeState, fontSizeState, config,
-        onInvalidated = { contentVersion++ }
+        onInvalidated = { contentVersionState.intValue++ }
     )
     val (translator, imeHost) = rememberInputPipeline(controller, modifierKeys)
     val metrics = rememberCanvasMetrics(fontSizeState, config, viewportSizePx)
@@ -96,7 +96,7 @@ fun TerminalCanvas(
     }
 
     reportSelectionChanges(config, selectionState, controller, metrics)
-    val visibleText = rememberVisibleText(controller, contentVersion, config.accessibilityEnabled)
+    val visibleText = rememberVisibleText(controller, contentVersionState, config.accessibilityEnabled)
 
     TerminalCanvasLayout(
         modifier = modifier,
@@ -111,7 +111,7 @@ fun TerminalCanvas(
             imeHost = imeHost,
             focusRequester = focusRequester,
             hapticFeedback = hapticFeedback,
-            contentVersion = contentVersion,
+            contentVersionState = contentVersionState,
             frameTimeState = frameTimeState,
             canvasPositionInWindow = canvasPositionInWindow
         ),
@@ -131,7 +131,7 @@ private data class TerminalCanvasState(
     val imeHost: ImeHost,
     val focusRequester: FocusRequester,
     val hapticFeedback: androidx.compose.ui.hapticfeedback.HapticFeedback,
-    val contentVersion: Int,
+    val contentVersionState: MutableIntState,
     val frameTimeState: MutableFloatState,
     val canvasPositionInWindow: Offset
 )
@@ -146,9 +146,6 @@ private fun TerminalCanvasLayout(
 ) {
     var magnifierEndpoint by remember { mutableStateOf<SelectionHandleEndpoint?>(null) }
     val selection = state.selectionState.selection
-    val currentFrame = remember(state.controller, state.contentVersion, selection) {
-        state.controller.currentFrame()
-    }
 
     Box(
         modifier = modifier
@@ -161,16 +158,18 @@ private fun TerminalCanvasLayout(
             .focusTarget()
             .terminalKeyHandling(state.translator, state.selectionState)
             .terminalSelectionMagnifier(
-                visible = magnifierEndpoint != null && !selection.isEmpty && currentFrame != null
+                visible = magnifierEndpoint != null && !selection.isEmpty &&
+                    state.controller.currentFrame() != null
             ) {
                 val endpoint = magnifierEndpoint
-                if (endpoint == null || currentFrame == null) {
+                val frame = state.controller.currentFrame()
+                if (endpoint == null || frame == null) {
                     Offset.Unspecified
                 } else {
                     selectionMagnifierSourceForSelection(
                         endpoint = endpoint,
                         selection = selection,
-                        topRow = currentFrame.topRow,
+                        topRow = frame.topRow,
                         metrics = state.metrics
                     )
                 }
@@ -201,7 +200,7 @@ private fun TerminalCanvasLayout(
             state.controller.draw(
                 drawScope = this,
                 selection = state.selectionState.selection,
-                contentVersion = state.contentVersion,
+                contentVersion = state.contentVersionState.intValue,
                 timeSeconds = if (state.controller.isContinuouslyAnimated) {
                     state.frameTimeState.floatValue
                 } else {
@@ -220,7 +219,6 @@ private fun TerminalCanvasLayout(
         }
         TerminalSelectionUi(
             state = state,
-            currentFrame = currentFrame,
             onMagnifierEndpointChanged = { magnifierEndpoint = it }
         )
     }
@@ -229,7 +227,6 @@ private fun TerminalCanvasLayout(
 @Composable
 private fun TerminalSelectionUi(
     state: TerminalCanvasState,
-    currentFrame: TerminalFrame?,
     onMagnifierEndpointChanged: (SelectionHandleEndpoint?) -> Unit
 ) {
     val hostView = LocalView.current
@@ -239,29 +236,20 @@ private fun TerminalSelectionUi(
     DisposableEffect(selectionActionMode) {
         onDispose { selectionActionMode.dispose() }
     }
-    LaunchedEffect(
-        selection,
-        state.contentVersion,
-        currentFrame,
-        state.metrics,
-        state.canvasPositionInWindow,
-        state.config.onCopyRequest,
-        state.config.onPasteRequest,
-        state.config.onMoreSelectionRequest
-    ) {
-        selectionActionMode.update(
-            selection = selection,
-            frame = currentFrame,
-            selectedTextProvider = { state.controller.selectedText(selection) },
-            metrics = state.metrics,
-            canvasPositionInWindow = state.canvasPositionInWindow,
-            config = state.config,
-            clearSelection = state.selectionState::clear
-        )
-    }
+    TerminalSelectionActionUpdater(
+        contentVersionState = state.contentVersionState,
+        selection = selection,
+        controller = state.controller,
+        metrics = state.metrics,
+        canvasPositionInWindow = state.canvasPositionInWindow,
+        config = state.config,
+        selectionActionMode = selectionActionMode,
+        clearSelection = state.selectionState::clear
+    )
     TerminalSelectionOverlay(
         selection = selection,
-        frame = currentFrame,
+        controller = state.controller,
+        contentVersionState = state.contentVersionState,
         metrics = state.metrics,
         configuredColor = selectionHandleColor,
         onHandleDragStart = { endpoint ->
@@ -433,11 +421,11 @@ private fun reportSelectionChanges(
 @Composable
 private fun rememberVisibleText(
     controller: TerminalController,
-    contentVersion: Int,
+    contentVersionState: MutableIntState,
     enabled: Boolean
 ): String =
     if (enabled) {
-        remember(controller, contentVersion) {
+        remember(controller, contentVersionState.intValue) {
             controller.currentFrame()?.visibleText() ?: ""
         }
     } else {

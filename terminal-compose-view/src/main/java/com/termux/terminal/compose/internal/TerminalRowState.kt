@@ -44,13 +44,13 @@ internal fun rowContentOutdated(rowState: TerminalRowState, row: TerminalRow, li
     rowState.contentHash != row.contentHash || rowState.linkContentHash != linkContentHash
 
 /** True when the row-local selection overlay changed. */
-internal fun rowSelectionOutdated(rowState: TerminalRowState, hints: RowRenderHints): Boolean =
-    rowState.selectionStart != hints.selectionStart || rowState.selectionEnd != hints.selectionEnd
+internal fun rowSelectionOutdated(rowState: TerminalRowState, selectionStart: Int, selectionEnd: Int): Boolean =
+    rowState.selectionStart != selectionStart || rowState.selectionEnd != selectionEnd
 
 /** True when the row-local cursor overlay changed. */
-internal fun rowCursorOutdated(rowState: TerminalRowState, hints: RowRenderHints): Boolean =
-    rowState.cursorX != hints.cursorX || rowState.cursorStyle != hints.cursorStyle
+internal fun rowCursorOutdated(rowState: TerminalRowState, cursorX: Int, cursorStyle: Int): Boolean =
+    rowState.cursorX != cursorX || rowState.cursorStyle != cursorStyle
 
 /** True when the reverse-video flag or the palette changed. */
-internal fun rowStyleOutdated(rowState: TerminalRowState, hints: RowRenderHints, paletteVersion: Int): Boolean =
-    rowState.reverseVideo != hints.reverseVideo || rowState.paletteVersion != paletteVersion
+internal fun rowStyleOutdated(rowState: TerminalRowState, reverseVideo: Boolean, paletteVersion: Int): Boolean =
+    rowState.reverseVideo != reverseVideo || rowState.paletteVersion != paletteVersion

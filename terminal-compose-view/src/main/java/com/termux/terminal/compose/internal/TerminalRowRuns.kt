@@ -32,6 +32,10 @@ internal class RowRunCache {
     var hasCellLayout = false
     var runs: Array<RowRun>? = null
 
+    /** Growable scratch backing [runs]; the published build is a fixed-size copy. */
+    private var runStore = emptyArray<RowRun>()
+    private var runCount = 0
+
     fun matches(hints: RowRenderHints, hasCellLayout: Boolean, contentHash: Long): Boolean =
         selectionUnchanged(hints) && cursorUnchanged(hints, hasCellLayout) &&
             this.contentHash == contentHash
@@ -49,6 +53,7 @@ internal class RowRunCache {
         cursorX = hints.cursorX
         this.hasCellLayout = hasCellLayout
         runs = null
+        runCount = 0
     }
 
     fun addRun(
@@ -59,9 +64,19 @@ internal class RowRunCache {
         style: Long,
         flags: Int
     ) {
-        val existing = runs
-        val run = RowRun(startColumn, widthColumns, startCharIndex, widthChars, style, flags)
-        runs = if (existing == null) arrayOf(run) else existing + run
+        if (runCount == runStore.size) {
+            runStore = java.util.Arrays.copyOf(
+                runStore,
+                if (runStore.isEmpty()) 4 else runStore.size * 2
+            )
+        }
+        runStore[runCount++] =
+            RowRun(startColumn, widthColumns, startCharIndex, widthChars, style, flags)
+    }
+
+    /** Publishes the accumulated runs as this cache's immutable build. */
+    fun finishBuild() {
+        runs = java.util.Arrays.copyOf(runStore, runCount)
     }
 }
 

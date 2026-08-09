@@ -9,6 +9,7 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.MutableIntState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -35,17 +36,21 @@ private val HANDLE_VISUAL_SIZE = 20.dp
 private val HANDLE_TOUCH_TARGET_SIZE = 48.dp
 
 /** Draws and drags the two selection endpoints above the terminal canvas. */
+@Suppress("LongParameterList")
 @Composable
 internal fun TerminalSelectionOverlay(
     selection: TerminalSelection,
-    frame: TerminalFrame?,
+    controller: TerminalController,
+    contentVersionState: MutableIntState,
     metrics: TerminalMetrics,
     configuredColor: Color,
     onHandleDragStart: (SelectionHandleEndpoint) -> Unit,
     onHandleDragEnd: (SelectionHandleEndpoint) -> Unit,
     onHandleDrag: (SelectionHandleEndpoint, Float, Float) -> Unit
 ) {
-    if (frame == null || selection.isEmpty) return
+    if (selection.isEmpty) return
+    val frame = remember(contentVersionState.intValue) { controller.currentFrame() }
+    if (frame == null) return
 
     val density = LocalDensity.current
     val visualSizePx = with(density) { HANDLE_VISUAL_SIZE.toPx() }

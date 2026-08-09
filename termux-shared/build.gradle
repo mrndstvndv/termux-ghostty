@@ -1,6 +1,8 @@
 apply plugin: 'com.android.library'
 apply plugin: 'maven-publish'
 
+def termuxSelectedAbis = rootProject.ext.resolveTermuxAbis()
+
 android {
     namespace = "com.termux.shared"
 
@@ -37,6 +39,9 @@ android {
         minSdkVersion project.properties.minSdkVersion.toInteger()
         targetSdkVersion project.properties.targetSdkVersion.toInteger()
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        ndk {
+            abiFilters(*termuxSelectedAbis)
+        }
         externalNativeBuild {
             ndkBuild {
                 cFlags "-Os", "-fno-stack-protector", "-Wl,--gc-sections"

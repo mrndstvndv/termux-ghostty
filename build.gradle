@@ -16,6 +16,34 @@ plugins {
     id 'io.gitlab.arturbosch.detekt' version '1.23.8' apply false
 }
 
+ext.termuxSupportedAbis = ['arm64-v8a', 'armeabi-v7a', 'x86_64', 'x86']
+ext.resolveTermuxAbis = {
+    def configuredValue = rootProject.findProperty('termuxTargetAbis') ?: System.getenv('TERMUX_TARGET_ABIS')
+    if (configuredValue) {
+        def normalizedValue = configuredValue.toString().trim()
+        if (normalizedValue == 'all') return rootProject.ext.termuxSupportedAbis
+
+        def configuredAbis = normalizedValue.split(',')*.trim().findAll { it }.unique()
+        def unsupportedAbis = configuredAbis - rootProject.ext.termuxSupportedAbis
+        if (configuredAbis.isEmpty() || unsupportedAbis) {
+            throw new GradleException(
+                "Unsupported termuxTargetAbis value '${configuredValue}'. " +
+                    "Expected a comma-separated list of: ${rootProject.ext.termuxSupportedAbis.join(', ')}"
+            )
+        }
+        return configuredAbis
+    }
+
+    def taskNames = rootProject.gradle.startParameter.taskNames.collect { it.toLowerCase(Locale.ROOT) }
+    def requestedAbis = []
+    if (taskNames.any { it.contains('arm64') }) requestedAbis << 'arm64-v8a'
+    if (taskNames.any { it.contains('armeabi') }) requestedAbis << 'armeabi-v7a'
+    if (taskNames.any { it.contains('x86_64') }) requestedAbis << 'x86_64'
+    if (taskNames.any { it.contains('x86') && !it.contains('x86_64') }) requestedAbis << 'x86'
+
+    return requestedAbis ?: rootProject.ext.termuxSupportedAbis
+}
+
 allprojects {
     repositories {
         google()

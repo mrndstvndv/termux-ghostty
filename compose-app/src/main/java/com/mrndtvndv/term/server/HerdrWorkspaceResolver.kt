@@ -67,6 +67,13 @@ class HerdrWorkspaceResolver(
         val tabLabel: String? = null,
     )
 
+    data class HerdrAgentSession(
+        val agent: String?,
+        val kind: String?,
+        val source: String?,
+        val value: String,
+    )
+
     data class HerdrAgentInfo(
         val agent: String?,
         val name: String?,
@@ -79,6 +86,7 @@ class HerdrWorkspaceResolver(
         val focused: Boolean,
         val terminalTitle: String?,
         val workspaceLabel: String? = null,
+        val agentSession: HerdrAgentSession? = null,
     )
 
     data class HerdrPaneNode(
@@ -91,6 +99,9 @@ class HerdrWorkspaceResolver(
         val focused: Boolean,
         /** Foreground process name (`argv0`) when herdr reports it; null otherwise. */
         val processName: String? = null,
+        val agentSession: HerdrAgentSession? = null,
+        /** Human-readable name resolved from the native session metadata. */
+        val agentSessionName: String? = null,
     )
 
     data class HerdrTabNode(
@@ -102,6 +113,9 @@ class HerdrWorkspaceResolver(
         val workspaceId: String,
         val paneId: String,
         val panes: List<HerdrPaneNode> = emptyList(),
+        val agentSession: HerdrAgentSession? = null,
+        /** Human-readable name resolved from the native session metadata. */
+        val agentSessionName: String? = null,
     )
 
     data class HerdrWorkspaceNode(
@@ -153,11 +167,27 @@ class HerdrWorkspaceResolver(
             .filter { it.agent == null }
             .map { it.paneId }
             .toList()
-        if (idlePaneIds.isEmpty()) return workspaces
-        val processQuery = prefix + idlePaneIds.joinToString("; ") { paneId ->
-            "herdr pane process-info --pane ${shellQuote(paneId)}"
+        val workspacesWithProcessNames = if (idlePaneIds.isEmpty()) {
+            workspaces
+        } else {
+            val processQuery = prefix + idlePaneIds.joinToString("; ") { paneId ->
+                "herdr pane process-info --pane ${shellQuote(paneId)}"
+            }
+            attachProcessNames(workspaces, parseProcessNames(execCommand(processQuery)))
         }
-        return attachProcessNames(workspaces, parseProcessNames(execCommand(processQuery)))
+        val sessionReferences = workspacesWithProcessNames.asSequence()
+            .flatMap { it.tabs }
+            .flatMap { it.panes }
+            .mapNotNull { pane -> pane.agentSession?.let { pane.paneId to it } }
+            .toList()
+        val sessionQueries = sessionReferences.mapNotNull { (paneId, session) ->
+            buildAgentSessionNameQuery(paneId, session)
+        }
+        if (sessionQueries.isEmpty()) return workspacesWithProcessNames
+        return attachAgentSessionNames(
+            workspacesWithProcessNames,
+            parseAgentSessionNames(execCommand(prefix + sessionQueries.joinToString("; "))),
+        )
     }
 
     suspend fun focusAgent(agent: HerdrAgentInfo): Boolean = focusAgentPane(agent.paneId)
@@ -274,6 +304,7 @@ class HerdrWorkspaceResolver(
                 focused = focused,
                 terminalTitle = agent["terminal_title_stripped"]?.jsonPrimitive?.contentOrNull
                     ?: agent["terminal_title"]?.jsonPrimitive?.contentOrNull,
+                agentSession = parseAgentSession(agent),
             )
         }
 
@@ -284,6 +315,59 @@ class HerdrWorkspaceResolver(
             .filter { (id, _) -> id == "cli:pane:process_info" }
             .mapNotNull { (_, result) -> parseProcessName(result) }
             .forEach { (paneId, processName) -> put(paneId, processName) }
+    }
+
+    internal fun parseAgentSessionNames(output: String): Map<String, String> = buildMap {
+        output.lineSequence().forEach { line ->
+            val separator = line.indexOf('\t')
+            if (separator <= 0) return@forEach
+            val paneId = line.substring(0, separator).trim()
+            val name = line.substring(separator + 1).trim().takeIf { it.isNotEmpty() }
+            if (name != null) put(paneId, name)
+        }
+    }
+
+    private fun buildAgentSessionNameQuery(
+        paneId: String,
+        session: HerdrAgentSession,
+    ): String? {
+        val value = session.value.takeIf { it.isNotBlank() } ?: return null
+        val lookup = when {
+            session.kind.equals("path", ignoreCase = true) -> pathSessionNameLookup(value)
+            session.kind.equals("id", ignoreCase = true) &&
+                session.agent.equals("codex", ignoreCase = true) -> codexSessionNameLookup(value)
+            session.kind.equals("id", ignoreCase = true) &&
+                session.agent.equals("hermes", ignoreCase = true) -> hermesSessionNameLookup(value)
+            else -> return null
+        }
+        return "name=; $lookup; printf '%s\\t%s\\n' ${shellQuote(paneId)} \"\$name\""
+    }
+
+    private fun pathSessionNameLookup(path: String): String =
+        "if command -v jq >/dev/null 2>&1 && [ -f ${shellQuote(path)} ]; then " +
+            "name=\$(jq -r 'select(.type == \"session_info\") | .name // empty' " +
+            "${shellQuote(path)} 2>/dev/null | tail -n 1); " +
+            "elif [ -f ${shellQuote(path)} ]; then " +
+            "name=\$(grep '\"type\"[[:space:]]*:[[:space:]]*\"session_info\"' " +
+            "${shellQuote(path)} 2>/dev/null | " +
+            "tail -n 1 | sed -nE 's/.*\"name\"[[:space:]]*:[[:space:]]*\"([^\"]*)\".*/\\1/p'); fi"
+
+    private fun codexSessionNameLookup(sessionId: String): String {
+        val indexPath = "\"\${CODEX_HOME:-\$HOME/.codex}/session_index.jsonl\""
+        val jqFilter = "'select(.id == " + "\$id" + ") | .thread_name // empty'"
+        return "if command -v jq >/dev/null 2>&1 && [ -f $indexPath ]; then " +
+            "name=\$(jq -r --arg id ${shellQuote(sessionId)} $jqFilter " +
+            "$indexPath 2>/dev/null | tail -n 1); fi"
+    }
+
+    private fun hermesSessionNameLookup(sessionId: String): String {
+        val databasePath = "\"\$HOME/.hermes/state.db\""
+        val sql = "SELECT COALESCE(NULLIF(title, ''), NULLIF(display_name, ''), '') " +
+            "FROM sessions WHERE id = ${sqlQuote(sessionId)} " +
+            "OR session_key = ${sqlQuote(sessionId)} LIMIT 1;"
+        return "if command -v sqlite3 >/dev/null 2>&1 && [ -f $databasePath ]; then " +
+            "name=\$(sqlite3 -readonly $databasePath ${shellQuote(sql)} " +
+            "2>/dev/null | tail -n 1); fi"
     }
 
     private fun parseProcessName(result: JsonObject): Pair<String, String>? {
@@ -321,6 +405,27 @@ class HerdrWorkspaceResolver(
                         }
                     )
                 }
+            )
+        }
+    }
+
+    internal fun attachAgentSessionNames(
+        workspaces: List<HerdrWorkspaceNode>,
+        sessionNames: Map<String, String>,
+    ): List<HerdrWorkspaceNode> {
+        if (sessionNames.isEmpty()) return workspaces
+        return workspaces.map { workspace ->
+            workspace.copy(
+                tabs = workspace.tabs.map { tab ->
+                    val panes = tab.panes.map { pane ->
+                        pane.copy(agentSessionName = sessionNames[pane.paneId] ?: pane.agentSessionName)
+                    }
+                    tab.copy(
+                        panes = panes,
+                        agentSessionName = panes.firstNotNullOfOrNull { it.agentSessionName }
+                            ?: tab.agentSessionName,
+                    )
+                },
             )
         }
     }
@@ -409,6 +514,7 @@ class HerdrWorkspaceResolver(
         val agent = agentPane?.let { pane ->
             jsonContent(pane, "agent")?.takeIf { it.isNotBlank() }
         }
+        val agentSession = agentPane?.let(::parseAgentSession)
         val paneId = agentPane
             ?.let { pane -> jsonContent(pane, "pane_id") }
             ?.takeIf { it.isNotBlank() }
@@ -432,6 +538,7 @@ class HerdrWorkspaceResolver(
             workspaceId = workspaceId,
             paneId = paneId,
             panes = paneNodes,
+            agentSession = agentSession,
         )
     }
 
@@ -445,6 +552,7 @@ class HerdrWorkspaceResolver(
         val agent = pane.takeIf { it.containsKey("agent") }?.let {
             jsonContent(it, "agent")?.takeIf { value -> value.isNotBlank() }
         }
+        val agentSession = parseAgentSession(pane)
         val agentStatus = pane.takeIf { it.containsKey("agent_status") }
             ?.let { jsonContent(it, "agent_status") }
             ?.takeIf { it.isNotBlank() }
@@ -457,8 +565,23 @@ class HerdrWorkspaceResolver(
             agent = agent,
             agentStatus = agentStatus,
             focused = jsonBoolean(pane, "focused") == true,
+            agentSession = agentSession,
         )
     }
+
+    private fun parseAgentSession(element: JsonObject): HerdrAgentSession? =
+        runCatching { element["agent_session"]?.jsonObject }.getOrNull()?.let { session ->
+            jsonContent(session, "value")?.trim()?.takeIf { it.isNotEmpty() }?.let { value ->
+                HerdrAgentSession(
+                    agent = jsonContent(session, "agent") ?: jsonContent(element, "agent"),
+                    kind = jsonContent(session, "kind"),
+                    source = jsonContent(session, "source"),
+                    value = value,
+                )
+            }
+        }
+
+    private fun sqlQuote(value: String): String = "'${value.replace("'", "''")}'"
 
     private fun tabTitle(
         firstPane: JsonObject,

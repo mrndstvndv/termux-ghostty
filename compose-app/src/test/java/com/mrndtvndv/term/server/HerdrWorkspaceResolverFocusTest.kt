@@ -262,4 +262,71 @@ class HerdrWorkspaceResolverFocusTest {
         assertEquals("nvim /work/proj", idlePane.title)
         assertNull(idlePane.processName)
     }
+
+    @Test
+    fun `resolves the agent session title from session metadata`() = runTest {
+        val output = paneListOutput.replaceFirst(
+            "\"agent\":\"pi\",",
+            "\"agent\":\"pi\",\"agent_session\":{" +
+                "\"agent\":\"pi\",\"kind\":\"path\",\"source\":\"herdr:pi\"," +
+                "\"value\":\"/Users/test/.pi/sessions/session-123.jsonl\"},",
+        )
+        val workspaces = resolver { cmd ->
+            when {
+                cmd.contains("process-info") -> processInfo
+                cmd.contains("session_info") -> "w0:p2\tsession-title\n"
+                else -> output
+            }
+        }.listWorkspaceTabs()
+
+        val tab = workspaces.single().tabs.single()
+        val agentPane = tab.panes.first { it.agent == "pi" }
+        assertEquals(
+            "/Users/test/.pi/sessions/session-123.jsonl",
+            agentPane.agentSession?.value,
+        )
+        assertEquals("path", agentPane.agentSession?.kind)
+        assertEquals("session-title", agentPane.agentSessionName)
+        assertEquals("session-title", tab.agentSessionName)
+    }
+
+    @Test
+    fun `resolves codex thread name from the session index`() = runTest {
+        val output = paneListOutput.replaceFirst(
+            "\"agent\":\"pi\",",
+            "\"agent\":\"codex\",\"agent_session\":{" +
+                "\"agent\":\"codex\",\"kind\":\"id\",\"source\":\"herdr:codex\"," +
+                "\"value\":\"thread-123\"},",
+        )
+        val workspaces = resolver { cmd ->
+            when {
+                cmd.contains("process-info") -> processInfo
+                cmd.contains("session_index.jsonl") -> "w0:p2\tcodex-title\n"
+                else -> output
+            }
+        }.listWorkspaceTabs()
+
+        val agentPane = workspaces.single().tabs.single().panes.first { it.agent == "codex" }
+        assertEquals("codex-title", agentPane.agentSessionName)
+    }
+
+    @Test
+    fun `resolves hermes session title from the state database`() = runTest {
+        val output = paneListOutput.replaceFirst(
+            "\"agent\":\"pi\",",
+            "\"agent\":\"hermes\",\"agent_session\":{" +
+                "\"agent\":\"hermes\",\"kind\":\"id\",\"source\":\"herdr:hermes\"," +
+                "\"value\":\"session-123\"},",
+        )
+        val workspaces = resolver { cmd ->
+            when {
+                cmd.contains("process-info") -> processInfo
+                cmd.contains(".hermes/state.db") -> "w0:p2\thermes-title\n"
+                else -> output
+            }
+        }.listWorkspaceTabs()
+
+        val agentPane = workspaces.single().tabs.single().panes.first { it.agent == "hermes" }
+        assertEquals("hermes-title", agentPane.agentSessionName)
+    }
 }

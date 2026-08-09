@@ -14,6 +14,7 @@ import com.mrndtvndv.term.service.SshSessionService
 import com.termux.shared.termux.TermuxConstants
 import com.termux.shared.termux.terminal.TermuxTerminalSessionClientBase
 import com.termux.terminal.TerminalSession
+import kotlinx.coroutines.flow.StateFlow
 import java.lang.ref.WeakReference
 
 /**
@@ -48,6 +49,7 @@ class AppSessionManager private constructor(context: Context) {
     private val finishedSessions = SessionFinishedEvents()
     /** Emits a server id whenever one of its sessions finished on its own. */
     val sessionFinished = finishedSessions.flow
+    private val terminalProgress = TerminalProgressStore()
 
     private var hostRef: WeakReference<SessionHost>? = null
 
@@ -56,6 +58,9 @@ class AppSessionManager private constructor(context: Context) {
     fun setHost(host: SessionHost?) {
         hostRef = host?.let { WeakReference(it) }
     }
+
+    fun observeTerminalProgress(session: TerminalSession): StateFlow<TerminalProgress?> =
+        terminalProgress.observe(session)
 
     // ── Connection lifecycle ─────────────────────────────────────────
 
@@ -219,7 +224,12 @@ class AppSessionManager private constructor(context: Context) {
                 handleTerminalNotification(title, body, serverId)
             }
 
+            override fun onTerminalProgressChanged(session: TerminalSession) {
+                terminalProgress.update(session)
+            }
+
             override fun onSessionFinished(finishedSession: TerminalSession) {
+                terminalProgress.remove(finishedSession)
                 unbindTerminalSession(finishedSession)
             }
         }

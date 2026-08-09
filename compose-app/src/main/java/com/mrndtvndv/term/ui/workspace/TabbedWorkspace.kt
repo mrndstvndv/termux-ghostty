@@ -17,6 +17,7 @@ import com.mrndtvndv.term.ui.sftp.SftpViewModel
 import com.mrndtvndv.term.ui.keyboard.ExtraKeysToolbar
 import com.mrndtvndv.term.ui.keyboard.ExtraKeysController
 import com.termux.terminal.compose.TerminalBackend
+import com.mrndtvndv.term.server.TerminalProgress
 import com.mrndtvndv.term.server.HerdrWorkspaceResolver
 import com.mrndtvndv.term.ui.review.ReviewViewModel
 import com.mrndtvndv.term.ui.review.GitReviewScreen
@@ -39,6 +40,7 @@ import java.io.File
 @Composable
 fun TabbedWorkspace(
     session: TerminalSession,
+    terminalProgress: TerminalProgress?,
     sftpViewModel: SftpViewModel?,
     reviewViewModel: ReviewViewModel?,
     extraKeysController: ExtraKeysController,
@@ -240,6 +242,7 @@ fun TabbedWorkspace(
                 when (activeTabs[page]) {
                     WorkspaceTab.Terminal -> {
                         Column(modifier = Modifier.fillMaxSize()) {
+                            TerminalProgressStrip(progress = terminalProgress)
                             Box(modifier = Modifier.weight(1f)) {
                                 TerminalFocusWrapper(
                                     session = session,

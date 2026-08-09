@@ -16,6 +16,7 @@ import com.mrndtvndv.term.ui.prefs.UserPrefs
 import com.mrndtvndv.term.ui.review.ReviewViewModel
 import com.mrndtvndv.term.ui.sftp.SftpViewModel
 import com.mrndtvndv.term.ui.workspace.WorkspaceTab
+import com.termux.terminal.TerminalSession
 import kotlinx.coroutines.launch
 
 data class MainUiState(
@@ -137,6 +138,8 @@ class MainViewModel(
     }
 
     fun getServer(serverId: String): Server? = coordinator.getServer(serverId)
+
+    fun observeTerminalProgress(session: TerminalSession) = sessionManager.observeTerminalProgress(session)
 
     fun loadHerdrAgents(serverId: String) {
         val resolver = herdrResolver(serverId)

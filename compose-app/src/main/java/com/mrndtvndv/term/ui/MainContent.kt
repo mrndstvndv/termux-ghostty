@@ -347,8 +347,13 @@ fun MainContent(
                                         onBack = { navigator.goBack() },
                                     )
 
+                                    val terminalProgress by viewModel
+                                        .observeTerminalProgress(server.terminalSession)
+                                        .collectAsState()
+
                                     TerminalWorkspaceScreen(
                                         session = server.terminalSession,
+                                        terminalProgress = terminalProgress,
                                         sftpViewModel = sftpVM,
                                         reviewViewModel = reviewVM,
                                         extraKeysEnabled = extraKeysEnabled,

@@ -7,12 +7,14 @@ import com.mrndtvndv.term.ui.sftp.SftpViewModel
 import com.termux.terminal.compose.TerminalBackend
 import com.mrndtvndv.term.ui.review.ReviewViewModel
 import com.mrndtvndv.term.server.HerdrWorkspaceResolver
+import com.mrndtvndv.term.server.TerminalProgress
 import java.io.File
 
 @Suppress("LongParameterList")
 @Composable
 fun TerminalWorkspaceScreen(
     session: TerminalSession,
+    terminalProgress: TerminalProgress?,
     sftpViewModel: SftpViewModel? = null,
     reviewViewModel: ReviewViewModel? = null,
     extraKeysEnabled: Boolean,
@@ -40,6 +42,7 @@ fun TerminalWorkspaceScreen(
     val extraKeysController = remember { com.mrndtvndv.term.ui.keyboard.ExtraKeysController() }
     TabbedWorkspace(
         session = session,
+        terminalProgress = terminalProgress,
         sftpViewModel = sftpViewModel,
         reviewViewModel = reviewViewModel,
         extraKeysController = extraKeysController,

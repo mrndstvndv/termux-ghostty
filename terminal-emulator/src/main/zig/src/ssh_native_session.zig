@@ -1,4 +1,5 @@
 const std = @import("std");
+const ssh_output_buffer = @import("ssh_output_buffer.zig");
 
 pub const c = @cImport({
     // NDK 29 bionic headers use clang nullability keywords in array
@@ -633,11 +634,9 @@ pub const SshNativeSession = struct {
     }
 
     fn processRead(self: *SshNativeSession, env: ?*c.JNIEnv) void {
-        // Deliveries are no-ops without a registered JVM callback, so buffering
-        // shell output then would grow output_queue unboundedly (e.g. during
-        // the window before registerSshOutputCallback, or SFTP-only sessions).
-        // Still read the channel either way to keep the SSH receive window
-        // flowing; bytes are just discarded when nobody is listening.
+        // A newly opened shell can emit its greeting before the terminal worker
+        // registers the JVM callback. Retain that startup window with a strict
+        // cap so connection setup cannot lose the prompt or grow without bound.
         self.callback_lock.lock();
         const have_callback = self.output_callback != null;
         self.callback_lock.unlock();
@@ -646,10 +645,13 @@ pub const SshNativeSession = struct {
         while (self.running.load(.acquire)) {
             const count = c.libssh2_channel_read(self.channel, &buffer, buffer.len);
             if (count > 0) {
-                if (!have_callback) continue;
                 self.output_lock.lock();
-                self.output_queue.appendSlice(queue_allocator, buffer[0..@intCast(count)]) catch {};
-                const queued = self.output_queue.items.len;
+                const queued = ssh_output_buffer.append(
+                    &self.output_queue,
+                    queue_allocator,
+                    buffer[0..@intCast(count)],
+                    have_callback,
+                ) catch self.output_queue.items.len;
                 self.output_lock.unlock();
                 // Flush mid-drain once a batch has accumulated so a continuous
                 // burst doesn't grow an unbounded queue or stall the JVM side;

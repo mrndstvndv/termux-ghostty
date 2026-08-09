@@ -346,7 +346,11 @@ private fun rememberInputPipeline(
     val imeProcessor = remember(translator) {
         ImeEditCommandProcessor(CommandTerminalInput(translator))
     }
-    val imeHost = rememberImeHost(imeProcessor::process)
+    val imeHost = rememberImeHost(
+        onEditCommands = imeProcessor::process,
+        onSessionStarted = imeProcessor::reset,
+        onSessionClosed = imeProcessor::reset
+    )
     DisposableEffect(imeHost) {
         onDispose { imeHost.close() }
     }

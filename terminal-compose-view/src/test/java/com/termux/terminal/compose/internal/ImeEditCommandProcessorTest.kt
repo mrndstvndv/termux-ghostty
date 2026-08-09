@@ -25,7 +25,7 @@ class ImeEditCommandProcessorTest {
 
     @Test
     fun directCommitSendsEveryCodePoint() {
-        processor.process(listOf(CommitTextCommand("hi", 2)))
+        processor.process(listOf(CommitTextCommand("hi", 1)))
 
         assertEquals(listOf("cp:104", "cp:105"), terminal.events)
     }
@@ -33,24 +33,24 @@ class ImeEditCommandProcessorTest {
     @Test
     fun composingGrowthSendsOnlyNewCharacters() {
         processor.process(listOf(SetComposingTextCommand("h", 1)))
-        processor.process(listOf(SetComposingTextCommand("he", 2)))
-        processor.process(listOf(SetComposingTextCommand("hel", 3)))
+        processor.process(listOf(SetComposingTextCommand("he", 1)))
+        processor.process(listOf(SetComposingTextCommand("hel", 1)))
 
         assertEquals(listOf("cp:104", "cp:101", "cp:108"), terminal.events)
     }
 
     @Test
     fun commitAfterCompositionSendsOnlyTheSuffix() {
-        processor.process(listOf(SetComposingTextCommand("hel", 3)))
-        processor.process(listOf(CommitTextCommand("hello ", 6)))
+        processor.process(listOf(SetComposingTextCommand("hel", 1)))
+        processor.process(listOf(CommitTextCommand("hello ", 1)))
 
         assertEquals(listOf("cp:104", "cp:101", "cp:108", "cp:108", "cp:111", "cp:32"), terminal.events)
     }
 
     @Test
     fun autocorrectReplacesTheComposingRegion() {
-        processor.process(listOf(SetComposingTextCommand("teh", 3)))
-        processor.process(listOf(CommitTextCommand("the", 3)))
+        processor.process(listOf(SetComposingTextCommand("teh", 1)))
+        processor.process(listOf(CommitTextCommand("the", 1)))
 
         val expected = listOf(
             "cp:116", "cp:101", "cp:104",
@@ -63,7 +63,7 @@ class ImeEditCommandProcessorTest {
     @Test
     fun standalonePunctuationContinuesTheTrackedWord() {
         commit("foo")
-        processor.process(listOf(CommitTextCommand("foo.", 4)))
+        processor.process(listOf(CommitTextCommand("foo.", 1)))
 
         assertEquals(listOf("cp:46"), terminal.events)
     }
@@ -71,8 +71,8 @@ class ImeEditCommandProcessorTest {
     @Test
     fun recompositionAcrossPunctuationSendsOnlyTheNewCharacter() {
         commit("foo")
-        processor.process(listOf(CommitTextCommand("foo.", 4)))
-        processor.process(listOf(SetComposingTextCommand("foo.b", 5)))
+        processor.process(listOf(CommitTextCommand("foo.", 1)))
+        processor.process(listOf(SetComposingTextCommand("foo.b", 1)))
 
         assertEquals(listOf("cp:46", "cp:98"), terminal.events)
     }
@@ -111,7 +111,7 @@ class ImeEditCommandProcessorTest {
 
     @Test
     fun emptyCommitDismissesTheGestureTypedWord() {
-        processor.process(listOf(SetComposingTextCommand("hello", 5)))
+        processor.process(listOf(SetComposingTextCommand("hello", 1)))
         processor.process(listOf(CommitTextCommand("", 0)))
 
         val expected = listOf("cp:104", "cp:101", "cp:108", "cp:108", "cp:111") +
@@ -121,7 +121,7 @@ class ImeEditCommandProcessorTest {
 
     @Test
     fun compositionCancellationSendsNothing() {
-        processor.process(listOf(SetComposingTextCommand("hello", 5)))
+        processor.process(listOf(SetComposingTextCommand("hello", 1)))
         processor.process(listOf(SetComposingTextCommand("", 0)))
 
         assertEquals(listOf("cp:104", "cp:101", "cp:108", "cp:108", "cp:111"), terminal.events)
@@ -138,14 +138,14 @@ class ImeEditCommandProcessorTest {
     @Test
     fun newWordAfterCommittedWordIsSentWholeAndStopsTracking() {
         commit("foo")
-        processor.process(listOf(SetComposingTextCommand("bar", 3)))
+        processor.process(listOf(SetComposingTextCommand("bar", 1)))
 
         assertEquals(listOf("cp:98", "cp:97", "cp:114"), terminal.events)
     }
 
     @Test
     fun newlineCommitsAsCarriageReturn() {
-        processor.process(listOf(CommitTextCommand("a\nb", 3)))
+        processor.process(listOf(CommitTextCommand("a\nb", 1)))
 
         assertEquals(listOf("cp:97", "cp:13", "cp:98"), terminal.events)
     }
@@ -159,7 +159,7 @@ class ImeEditCommandProcessorTest {
     }
 
     @Test
-    fun composingRegionCommandIsIgnored() {
+    fun composingRegionCommandDoesNotEmitTerminalInput() {
         processor.process(listOf(SetComposingRegionCommand(0, 2)))
 
         assertEquals(emptyList<String>(), terminal.events)
@@ -171,8 +171,8 @@ class ImeEditCommandProcessorTest {
     fun commitAfterFinishComposingAcrossPunctuationRecomposesOnlyTheSuffix() {
         processor.process(listOf(SetComposingTextCommand("foo", 1)))
         processor.process(listOf(FinishComposingTextCommand()))
-        processor.process(listOf(CommitTextCommand("foo.", 4)))
-        processor.process(listOf(CommitTextCommand("foo.b", 5)))
+        processor.process(listOf(CommitTextCommand("foo.", 1)))
+        processor.process(listOf(CommitTextCommand("foo.b", 1)))
 
         assertEquals(listOf("cp:102", "cp:111", "cp:111", "cp:46", "cp:98"), terminal.events)
     }
@@ -182,9 +182,9 @@ class ImeEditCommandProcessorTest {
     @Test
     fun separatePeriodCommitStillRecomposesOnlyTheSuffix() {
         processor.process(listOf(SetComposingTextCommand("foo", 1)))
-        processor.process(listOf(CommitTextCommand("foo", 3)))
+        processor.process(listOf(CommitTextCommand("foo", 1)))
         processor.process(listOf(CommitTextCommand(".", 1)))
-        processor.process(listOf(SetComposingTextCommand("foo.b", 5)))
+        processor.process(listOf(SetComposingTextCommand("foo.b", 1)))
 
         assertEquals(listOf("cp:102", "cp:111", "cp:111", "cp:46", "cp:98"), terminal.events)
     }
@@ -194,9 +194,9 @@ class ImeEditCommandProcessorTest {
     @Test
     fun selectionSyncAfterPeriodCommitDoesNotBreakRecomposition() {
         processor.process(listOf(SetComposingTextCommand("foo", 1)))
-        processor.process(listOf(CommitTextCommand("foo.", 4)))
+        processor.process(listOf(CommitTextCommand("foo.", 1)))
         processor.process(listOf(SetSelectionCommand(4, 4)))
-        processor.process(listOf(SetComposingTextCommand("foo.b", 5)))
+        processor.process(listOf(SetComposingTextCommand("foo.b", 1)))
 
         assertEquals(listOf("cp:102", "cp:111", "cp:111", "cp:46", "cp:98"), terminal.events)
     }
@@ -206,11 +206,11 @@ class ImeEditCommandProcessorTest {
     @Test
     fun separatePeriodCommitWithSelectionSyncsRecomposesOnlyTheSuffix() {
         processor.process(listOf(SetComposingTextCommand("foo", 1)))
-        processor.process(listOf(CommitTextCommand("foo", 3)))
+        processor.process(listOf(CommitTextCommand("foo", 1)))
         processor.process(listOf(SetSelectionCommand(3, 3)))
         processor.process(listOf(CommitTextCommand(".", 1)))
         processor.process(listOf(SetSelectionCommand(4, 4)))
-        processor.process(listOf(SetComposingTextCommand("foo.b", 5)))
+        processor.process(listOf(SetComposingTextCommand("foo.b", 1)))
 
         assertEquals(listOf("cp:102", "cp:111", "cp:111", "cp:46", "cp:98"), terminal.events)
     }
@@ -231,7 +231,7 @@ class ImeEditCommandProcessorTest {
     @Test
     fun spacebarSwipeAfterCommitMovesCursorBackOverWord() {
         processor.process(listOf(SetComposingTextCommand("foo", 1)))
-        processor.process(listOf(CommitTextCommand("foo", 3)))
+        processor.process(listOf(CommitTextCommand("foo", 1)))
         processor.process(listOf(SetSelectionCommand(3, 3)))
         processor.process(listOf(SetSelectionCommand(0, 0)))
 
@@ -242,7 +242,7 @@ class ImeEditCommandProcessorTest {
     @Test
     fun backspaceDuringCompositionDeletesSingleCodePoint() {
         processor.process(listOf(SetComposingTextCommand("foo", 1)))
-        processor.process(listOf(SetComposingTextCommand("fo", 2)))
+        processor.process(listOf(SetComposingTextCommand("fo", 1)))
 
         assertEquals(listOf("cp:102", "cp:111", "cp:111", "del"), terminal.events)
     }
@@ -252,7 +252,7 @@ class ImeEditCommandProcessorTest {
     @Test
     fun enterAfterCommittedWordWorksEveryTime() {
         processor.process(listOf(SetComposingTextCommand("foo", 1)))
-        processor.process(listOf(CommitTextCommand("foo.", 4)))
+        processor.process(listOf(CommitTextCommand("foo.", 1)))
         processor.process(listOf(CommitTextCommand("\n", 1)))
         processor.process(listOf(CommitTextCommand("\n", 1)))
 
@@ -269,9 +269,70 @@ class ImeEditCommandProcessorTest {
         assertEquals(listOf("cp:13", "cp:13", "cp:13"), terminal.events)
     }
 
+    @Test
+    fun punctuationCommitWhileComposingKeepsTheWordForRecomposition() {
+        processor.process(listOf(SetComposingTextCommand("foo", 1)))
+        processor.process(listOf(CommitTextCommand(".", 1)))
+        processor.process(listOf(SetComposingTextCommand("foo.b", 1)))
+
+        assertEquals(
+            listOf(
+                "cp:102", "cp:111", "cp:111",
+                "cp:46", "cp:98"
+            ),
+            terminal.events
+        )
+    }
+
+    @Test
+    fun selectionMovementUsesTerminalCodePointsForSurrogatePairs() {
+        processor.process(listOf(SetComposingTextCommand("a😀", 1)))
+        processor.process(listOf(SetSelectionCommand(1, 1)))
+
+        assertEquals(listOf("cp:97", "cp:128512", "move:-1"), terminal.events)
+    }
+
+    @Test
+    fun composingTextHonorsCursorPositionBeforeInsertedText() {
+        processor.process(listOf(SetComposingTextCommand("foo", 0)))
+
+        assertEquals(
+            listOf("cp:102", "cp:111", "cp:111", "move:-3"),
+            terminal.events
+        )
+    }
+
+    @Test
+    fun backspaceAfterSurrogatePairKeepsTheImeCursorAtTheTerminalCursor() {
+        processor.process(listOf(SetComposingTextCommand("😀", 1)))
+        processor.process(listOf(BackspaceCommand()))
+        processor.process(listOf(SetSelectionCommand(0, 0)))
+
+        assertEquals(listOf("cp:128512", "del"), terminal.events)
+    }
+
+    @Test
+    fun deleteSurroundingTextAfterCursorUsesForwardDelete() {
+        processor.process(listOf(SetComposingTextCommand("abc", 1)))
+        processor.process(listOf(SetSelectionCommand(1, 1)))
+        terminal.events.clear()
+        processor.process(listOf(DeleteSurroundingTextCommand(0, 1)))
+
+        assertEquals(listOf("move:1", "del", "move:-1"), terminal.events)
+    }
+
+    @Test
+    fun resetDropsCrossPunctuationState() {
+        commit("foo")
+        processor.reset()
+        processor.process(listOf(CommitTextCommand("foo.", 1)))
+
+        assertEquals(listOf("cp:102", "cp:111", "cp:111", "cp:46"), terminal.events)
+    }
+
     private fun commit(text: String) {
-        processor.process(listOf(SetComposingTextCommand(text, text.length)))
-        processor.process(listOf(CommitTextCommand(text, text.length)))
+        processor.process(listOf(SetComposingTextCommand(text, 1)))
+        processor.process(listOf(CommitTextCommand(text, 1)))
         terminal.events.clear()
     }
 }

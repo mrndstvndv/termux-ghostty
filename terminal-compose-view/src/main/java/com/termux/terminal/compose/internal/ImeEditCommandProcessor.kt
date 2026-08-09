@@ -35,11 +35,14 @@ import androidx.compose.ui.text.input.SetSelectionCommand
  *   (the terminal never saw a delete). The spacebar swipe instead sends
  *   [SetSelectionCommand] to move the cursor back over the word; same-text re-sends are
  *   no-ops.
+ * - IME positions are UTF-16 offsets while terminal movement is in Unicode code points;
+ *   cursor deltas are converted before they reach the backend.
  *
  * The module is backend-agnostic: it knows nothing about escape sequences or terminal
  * state, only that input reaches a [TerminalInput]. This keeps the state machine unit
  * testable and reusable if the terminal backend is replaced.
  */
+@Suppress("TooManyFunctions") // one transition handler per IME command and cursor invariant
 internal class ImeEditCommandProcessor(
     private val terminal: TerminalInput
 ) {
@@ -58,226 +61,515 @@ internal class ImeEditCommandProcessor(
         }
 
         fun delete()
-        /** Negative delta moves left, positive moves right. */
+
+        /**
+         * Deletes the code point immediately after the terminal cursor.
+         *
+         * Backends that do not have a native forward-delete operation use the
+         * cursor movement fallback. The concrete terminal adapter overrides
+         * this with its native key code.
+         */
+        fun deleteForward() {
+            moveCursor(1)
+            delete()
+            moveCursor(-1)
+        }
+
+        /** Negative delta moves left, positive delta moves right. */
         fun moveCursor(delta: Int)
     }
 
-    // The IME's composing region (word currently being corrected by the keyboard).
+    // The IME's active composing region (word currently being corrected).
     private var composingText = ""
+    private var composingStartPosition = NO_POSITION
+
     // The last word committed to the terminal — Gboard may re-compose across it
     // (e.g. across a period), so it must be diffed against, not re-sent.
     private var lastComposedText = ""
-    // The IME cursor position in its own buffer. Kept in sync through composing,
-    // commits, deletes and moves so a post-commit selection sync (cursor already at
-    // the end of the committed text) resolves to zero moves instead of displacing
-    // the terminal cursor.
+    private var lastComposedStartPosition = NO_POSITION
+
+    // Some IMEs announce the composing range before replacing it.
+    private var pendingComposingStart = NO_POSITION
+
+    // IME positions are UTF-16 offsets. Terminal movement is in Unicode code
+    // points, so every cursor delta is converted before reaching the backend.
     private var imeCursorPosition = 0
+    /** Drops IME-only state when the platform input session is recreated. */
+    internal fun reset() {
+        composingText = ""
+        composingStartPosition = NO_POSITION
+        clearTrackedCommit()
+        pendingComposingStart = NO_POSITION
+        imeCursorPosition = 0
+    }
 
     fun process(commands: List<EditCommand>) {
         for (cmd in commands) {
+            if (cmd !is SetComposingRegionCommand && cmd !is SetComposingTextCommand) {
+                pendingComposingStart = NO_POSITION
+            }
             when (cmd) {
-                is CommitTextCommand -> handleCommitText(cmd.text)
-                is DeleteSurroundingTextCommand -> {
-                    if (cmd.lengthBeforeCursor > 0) {
-                        lastComposedText = ""
-                        imeCursorPosition = (imeCursorPosition - cmd.lengthBeforeCursor).coerceAtLeast(0)
-                        repeat(cmd.lengthBeforeCursor) { terminal.delete() }
-                    }
-                }
-                is DeleteSurroundingTextInCodePointsCommand -> {
-                    if (cmd.lengthBeforeCursor > 0) {
-                        lastComposedText = ""
-                        imeCursorPosition = (imeCursorPosition - cmd.lengthBeforeCursor).coerceAtLeast(0)
-                        repeat(cmd.lengthBeforeCursor) { terminal.delete() }
-                    }
-                }
+                is CommitTextCommand -> handleCommitText(cmd.text, cmd.newCursorPosition)
+                is DeleteSurroundingTextCommand -> handleDeleteBefore(
+                    length = cmd.lengthBeforeCursor,
+                    lengthIsCodePoints = false,
+                    afterLength = cmd.lengthAfterCursor
+                )
+                is DeleteSurroundingTextInCodePointsCommand -> handleDeleteBefore(
+                    length = cmd.lengthBeforeCursor,
+                    lengthIsCodePoints = true,
+                    afterLength = cmd.lengthAfterCursor
+                )
                 is BackspaceCommand -> {
-                    lastComposedText = ""
-                    imeCursorPosition = (imeCursorPosition - 1).coerceAtLeast(0)
+                    val nextCursor = moveImeCursorByCodePoints(-1)
+                    clearTrackedCommit()
+                    composingText = ""
+                    composingStartPosition = NO_POSITION
+                    imeCursorPosition = nextCursor
                     terminal.delete()
                 }
                 is DeleteAllCommand -> {
-                    lastComposedText = ""
+                    clearTrackedCommit()
+                    composingText = ""
+                    composingStartPosition = NO_POSITION
                     imeCursorPosition = 0
-                    repeat(100) { terminal.delete() }
+                    repeat(DELETE_ALL_LIMIT) { terminal.delete() }
                 }
                 is MoveCursorCommand -> {
-                    lastComposedText = ""
-                    imeCursorPosition = (imeCursorPosition + cmd.amount).coerceAtLeast(0)
+                    val nextCursor = moveImeCursorByCodePoints(cmd.amount)
+                    clearTrackedCommit()
+                    imeCursorPosition = nextCursor
                     terminal.moveCursor(cmd.amount)
                 }
-                is SetSelectionCommand -> handleSetSelection(cmd.start)
-                is SetComposingTextCommand -> handleSetComposingText(cmd.text)
-                is SetComposingRegionCommand -> { }
+                is SetSelectionCommand -> handleSetSelection(cmd.start, cmd.end)
+                is SetComposingTextCommand ->
+                    handleSetComposingText(cmd.text, cmd.newCursorPosition)
+                is SetComposingRegionCommand -> handleSetComposingRegion(cmd.start, cmd.end)
                 is FinishComposingTextCommand -> handleFinishComposing()
             }
         }
     }
 
-    private fun handleCommitText(text: String) {
-        // Start of the IME-buffer region this commit replaces (the composing region,
-        // the tracked word, or the cursor position). Used to keep imeCursorPosition
-        // consistent across separate commits of one word ("foo" then ".").
-        val regionStart = when {
-            composingText.isNotEmpty() -> (imeCursorPosition - composingText.length).coerceAtLeast(0)
-            lastComposedText.isNotEmpty() && text.startsWith(lastComposedText) ->
-                (imeCursorPosition - lastComposedText.length).coerceAtLeast(0)
-            else -> imeCursorPosition
-        }
-        when {
-            // Active composition — the word was already echoed to the terminal as it grew.
-            composingText.isNotEmpty() -> {
-                when {
-                    text.startsWith(composingText) -> {
-                        // Normal finalization — send only the suffix (space, punctuation)
-                        val delta = text.substring(composingText.length)
-                        sendCodePoints(delta)
-                        // Keep tracking the committed text: Gboard may re-compose
-                        // across punctuation ("foo." + "b" → "foo.b") and re-send it.
-                        lastComposedText = if (text.isWordLike()) text else ""
-                    }
-                    text.isEmpty() -> {
-                        // Lone empty commit = Gboard dismissing the recorrection
-                        // on the first backspace press after gesture typing (the
-                        // swipe sends SetSelectionCommand instead, never this).
-                        // The user expects one backspace to remove the gestured
-                        // word — delete the whole composing word.
-                        repeat(composingText.length) { terminal.delete() }
-                        lastComposedText = ""
-                    }
-                    else -> {
-                        // Auto-correct replaced the composing text entirely
-                        repeat(composingText.length) { terminal.delete() }
-                        sendCodePoints(text)
-                        lastComposedText = if (text.isWordLike()) text else ""
-                    }
-                }
-                composingText = ""
-            }
-            // Composition already finished — the word is in the terminal. Never delete;
-            // send only the suffix if this commit continues the word, else direct input.
-            lastComposedText.isNotEmpty() -> {
-                when {
-                    text.startsWith(lastComposedText) -> {
-                        // Continuation (or re-commit) of the tracked word — only the suffix
-                        // is new, the rest is already echoed in the terminal.
-                        val delta = text.substring(lastComposedText.length)
-                        sendCodePoints(delta)
-                        lastComposedText = text
-                    }
-                    text.isNotEmpty() && text.isPunctuationOnly() -> {
-                        // Gboard may commit the word and its punctuation separately
-                        // ("foo" then "."). The punctuation continues the word in the
-                        // terminal buffer ("foo."), and Gboard re-composes across it —
-                        // keep the joined text as the diff prefix so the re-send
-                        // collapses to just the next character.
-                        sendCodePoints(text)
-                        lastComposedText += text
-                    }
-                    text.isNotEmpty() -> {
-                        // New word after the committed one — send it whole. Whitespace-only
-                        // text (notably the Enter key's "\n") is never tracked as the
-                        // committed word: the next Enter would then look like a re-commit
-                        // of it and be swallowed with an empty delta.
-                        sendCodePoints(text)
-                        lastComposedText = if (text.isWordLike()) text else ""
-                    }
-                    else -> {
-                        lastComposedText = ""
-                    }
-                }
-            }
-            // No composition — direct input
-            else -> sendCodePoints(text)
-        }
+    private fun handleDeleteBefore(length: Int, lengthIsCodePoints: Boolean, afterLength: Int) {
+        if (length <= 0 && afterLength <= 0) return
+
+        val beforeCodePoints = if (lengthIsCodePoints) length else codePointCountBeforeCursor(length)
+        val afterCodePoints = if (lengthIsCodePoints) afterLength else codePointCountAfterCursor(afterLength)
+        val nextCursor = moveImeCursorByCodePoints(-beforeCodePoints)
+        clearTrackedCommit()
         composingText = ""
-        imeCursorPosition = regionStart + text.length
+        composingStartPosition = NO_POSITION
+
+        repeat(beforeCodePoints) { terminal.delete() }
+        imeCursorPosition = nextCursor
+
+        repeat(afterCodePoints) { terminal.deleteForward() }
     }
 
-    private fun handleSetSelection(start: Int) {
-        val diff = start - imeCursorPosition
+    private fun handleCommitText(text: String, newCursorPosition: Int) {
+        val activeComposition = composingText
+        val trackedCommit = lastComposedText
+        val regionStart = when {
+            activeComposition.isNotEmpty() -> composingStartPosition
+            trackedCommit.isNotEmpty() &&
+                (text.startsWith(trackedCommit) || text.isPunctuationOnly()) ->
+                lastComposedStartPosition
+            else -> imeCursorPosition
+        }.coerceAtLeast(0)
+
+        when {
+            activeComposition.isNotEmpty() -> handleActiveCompositionCommit(
+                activeComposition,
+                text,
+                newCursorPosition,
+                regionStart
+            )
+            trackedCommit.isNotEmpty() -> handleTrackedCommit(
+                trackedCommit,
+                text,
+                newCursorPosition,
+                regionStart
+            )
+            text.isNotEmpty() -> {
+                sendCodePoints(text)
+                placeCursorAfterInsertion(imeCursorPosition, text, newCursorPosition)
+            }
+            else -> clearTrackedCommit()
+        }
+    }
+
+    private fun handleActiveCompositionCommit(
+        activeComposition: String,
+        text: String,
+        newCursorPosition: Int,
+        regionStart: Int
+    ) {
+        when {
+            text.startsWith(activeComposition) -> {
+                moveTerminalCursorTo(
+                    from = imeCursorPosition,
+                    to = regionStart + activeComposition.length,
+                    regionStart = regionStart,
+                    regionText = activeComposition
+                )
+                sendCodePoints(text.substring(activeComposition.length))
+                finishCommit(regionStart, text, newCursorPosition)
+            }
+            text.isNotEmpty() && text.isPunctuationOnly() -> {
+                // Gboard can commit a punctuation key independently while the
+                // preceding word is still composing. Keep the joined region
+                // available for re-composition.
+                moveTerminalCursorTo(
+                    from = imeCursorPosition,
+                    to = regionStart + activeComposition.length,
+                    regionStart = regionStart,
+                    regionText = activeComposition
+                )
+                sendCodePoints(text)
+                composingText = activeComposition + text
+                composingStartPosition = regionStart
+                clearTrackedCommit()
+                placeCursorAfterInsertion(regionStart, composingText, newCursorPosition)
+            }
+            text.isEmpty() -> {
+                moveTerminalCursorTo(
+                    from = imeCursorPosition,
+                    to = regionStart + activeComposition.length,
+                    regionStart = regionStart,
+                    regionText = activeComposition
+                )
+                repeat(activeComposition.codePointCount()) { terminal.delete() }
+                clearComposition()
+                clearTrackedCommit()
+                imeCursorPosition = regionStart
+            }
+            else -> {
+                replaceComposition(activeComposition, text, regionStart)
+                finishCommit(regionStart, text, newCursorPosition)
+            }
+        }
+    }
+
+    private fun handleTrackedCommit(
+        trackedCommit: String,
+        text: String,
+        newCursorPosition: Int,
+        regionStart: Int
+    ) {
+        when {
+            text.startsWith(trackedCommit) -> {
+                moveTerminalCursorTo(
+                    from = imeCursorPosition,
+                    to = regionStart + trackedCommit.length,
+                    regionStart = regionStart,
+                    regionText = trackedCommit
+                )
+                sendCodePoints(text.substring(trackedCommit.length))
+                lastComposedText = if (text.isWordLike()) text else ""
+                lastComposedStartPosition =
+                    if (lastComposedText.isNotEmpty()) regionStart else NO_POSITION
+                placeCursorAfterInsertion(regionStart, text, newCursorPosition)
+            }
+            text.isNotEmpty() && text.isPunctuationOnly() -> {
+                moveTerminalCursorTo(
+                    from = imeCursorPosition,
+                    to = regionStart + trackedCommit.length,
+                    regionStart = regionStart,
+                    regionText = trackedCommit
+                )
+                sendCodePoints(text)
+                lastComposedText += text
+                placeCursorAfterInsertion(regionStart, lastComposedText, newCursorPosition)
+            }
+            text.isNotEmpty() -> {
+                sendCodePoints(text)
+                clearTrackedCommit()
+                placeCursorAfterInsertion(imeCursorPosition, text, newCursorPosition)
+            }
+            else -> clearTrackedCommit()
+        }
+    }
+
+    private fun finishCommit(regionStart: Int, committedText: String, newCursorPosition: Int) {
+        clearComposition()
+        lastComposedText = if (committedText.isWordLike()) committedText else ""
+        lastComposedStartPosition =
+            if (lastComposedText.isNotEmpty()) regionStart else NO_POSITION
+        placeCursorAfterInsertion(regionStart, committedText, newCursorPosition)
+    }
+
+    private fun replaceComposition(oldText: String, newText: String, regionStart: Int) {
+        moveTerminalCursorTo(
+            from = imeCursorPosition,
+            to = regionStart + oldText.length,
+            regionStart = regionStart,
+            regionText = oldText
+        )
+        repeat(oldText.codePointCount()) { terminal.delete() }
+        sendCodePoints(newText)
+    }
+
+    private fun handleSetSelection(start: Int, end: Int) {
+        val target = start.coerceAtLeast(0)
+        val diff = cursorDelta(imeCursorPosition, target)
         if (diff != 0) {
-            // The cursor moved away from the tracked word — it can no longer be diffed
-            // against, and the terminal cursor must follow.
-            lastComposedText = ""
+            // A non-zero selection move invalidates the cross-punctuation
+            // prefix; the terminal cursor must follow the IME cursor.
+            clearTrackedCommit()
             terminal.moveCursor(diff)
         }
-        // A zero diff is the post-commit selection sync: the IME cursor is already where
-        // the terminal's is, so nothing moves and the tracked word survives for the
-        // cross-punctuation re-composition that follows.
-        imeCursorPosition = start
+        // A zero-diff selection is the post-commit sync. It must preserve the
+        // tracked prefix so Gboard can re-compose across punctuation.
+        imeCursorPosition = target
+        if (start != end) {
+            // The terminal has no IME selection surface. Keep the insertion
+            // point at the range start; a following commit replaces through the
+            // normal composition path.
+            clearTrackedCommit()
+        }
     }
 
-    private fun handleSetComposingText(current: String) {
+    private fun handleSetComposingRegion(start: Int, end: Int) {
+        pendingComposingStart = minOf(start, end).coerceAtLeast(0)
+    }
+
+    private fun handleSetComposingText(current: String, newCursorPosition: Int) {
+        val previousComposition = composingText
+        val trackedCommit = lastComposedText
         val regionStart = when {
-            composingText.isNotEmpty() -> (imeCursorPosition - composingText.length).coerceAtLeast(0)
-            lastComposedText.isNotEmpty() && current.startsWith(lastComposedText) ->
-                (imeCursorPosition - lastComposedText.length).coerceAtLeast(0)
+            previousComposition.isNotEmpty() -> composingStartPosition
+            trackedCommit.isNotEmpty() && current.startsWith(trackedCommit) ->
+                lastComposedStartPosition
+            pendingComposingStart != NO_POSITION -> pendingComposingStart
             else -> imeCursorPosition
+        }.coerceAtLeast(0)
+        pendingComposingStart = NO_POSITION
+
+        // Gboard uses an unchanged composing string while the spacebar gesture
+        // moves the cursor. The SetSelection command already moved the
+        // terminal; moving back to the text end here would cause a cursor warp.
+        if (current == previousComposition) return
+
+        if (previousComposition.isEmpty()) {
+            handleFreshComposition(current, trackedCommit, regionStart)
+        } else if (handleExistingCompositionChange(previousComposition, current, regionStart)) {
+            return
         }
-        when {
-            // Gboard keeps composing across punctuation: after "foo." was committed,
-            // typing "b" re-sends the whole region as "foo.b". The old text is
-            // already in the terminal — only the new suffix reaches it.
-            composingText.isEmpty() && lastComposedText.isNotEmpty() &&
-                current.startsWith(lastComposedText) -> {
-                val delta = current.substring(lastComposedText.length)
-                sendCodePoints(delta)
-                lastComposedText = ""
-            }
-            // Fresh word composing after a committed one — send it whole.
-            composingText.isEmpty() && lastComposedText.isNotEmpty() -> {
-                sendCodePoints(current)
-                lastComposedText = ""
-            }
-            // Same text with a different cursor position (Gboard spacebar-swipe cursor
-            // mode, recorrection). Nothing changed in the terminal — ignore.
-            current == composingText -> { }
-            // Append: composing text grew (new characters typed)
-            current.length > composingText.length && current.startsWith(composingText) -> {
-                sendCodePoints(current.substring(composingText.length))
-            }
-            // Shrink: a real backspace removes one code point; a multi-character
-            // collapse is the IME cancelling the composition (e.g. Gboard spacebar
-            // swipe) and must not become backspaces — the text was already sent to
-            // the terminal as it grew.
-            composingText.length > current.length && composingText.startsWith(current) -> {
-                val removedCodePoints = Character.codePointCount(composingText, 0, composingText.length) -
-                    Character.codePointCount(current, 0, current.length)
-                if (removedCodePoints == 1) {
-                    terminal.delete()
-                }
-            }
-            // Replacement: text was corrected/replaced entirely (auto-correct, suggestion)
-            composingText.isNotEmpty() -> {
-                repeat(composingText.length) { terminal.delete() }
-                sendCodePoints(current)
-            }
-            // First composition character
-            else -> sendCodePoints(current)
-        }
+
+        clearTrackedCommit()
         composingText = current
-        imeCursorPosition = regionStart + current.length
+        composingStartPosition = if (current.isNotEmpty()) regionStart else NO_POSITION
+        if (current.isNotEmpty()) {
+            placeCursorAfterInsertion(regionStart, current, newCursorPosition)
+        } else {
+            imeCursorPosition = regionStart
+        }
+    }
+
+    private fun handleFreshComposition(current: String, trackedCommit: String, regionStart: Int) {
+        if (trackedCommit.isNotEmpty() && current.startsWith(trackedCommit)) {
+            moveTerminalCursorTo(
+                from = imeCursorPosition,
+                to = regionStart + trackedCommit.length,
+                regionStart = regionStart,
+                regionText = trackedCommit
+            )
+            sendCodePoints(current.substring(trackedCommit.length))
+        } else {
+            sendCodePoints(current)
+        }
+        clearTrackedCommit()
+    }
+
+    /** Returns true when the composition state was fully handled by the branch. */
+    private fun handleExistingCompositionChange(
+        previousComposition: String,
+        current: String,
+        regionStart: Int
+    ): Boolean = when {
+        current.length > previousComposition.length &&
+            current.startsWith(previousComposition) &&
+            imeCursorPosition == regionStart + previousComposition.length -> {
+            sendCodePoints(current.substring(previousComposition.length))
+            false
+        }
+        current.isEmpty() -> {
+            cancelComposition(previousComposition, regionStart)
+            true
+        }
+        current.length < previousComposition.length &&
+            previousComposition.startsWith(current) ->
+            handleCompositionShrink(previousComposition, current, regionStart)
+        else -> {
+            replaceComposition(previousComposition, current, regionStart)
+            false
+        }
+    }
+
+    private fun handleCompositionShrink(
+        previousComposition: String,
+        current: String,
+        regionStart: Int
+    ): Boolean {
+        val removedCodePoints =
+            previousComposition.codePointCount() - current.codePointCount()
+        return when {
+            removedCodePoints == 1 && imeCursorPosition == regionStart + previousComposition.length -> {
+                terminal.delete()
+                false
+            }
+            removedCodePoints > 1 -> {
+                cancelComposition(previousComposition, regionStart)
+                true
+            }
+            else -> false
+        }
+    }
+
+    private fun cancelComposition(previousComposition: String, regionStart: Int) {
+        // Composition cancellation does not mean terminal deletion: the
+        // terminal already received the composing text. Keep it as a tracked
+        // commit and align the cursor with its terminal end.
+        lastComposedText = previousComposition
+        lastComposedStartPosition = regionStart
+        clearComposition()
+        imeCursorPosition = regionStart + previousComposition.length
     }
 
     private fun handleFinishComposing() {
         if (composingText.isNotEmpty()) {
             lastComposedText = if (composingText.isWordLike()) composingText else ""
-            composingText = ""
+            lastComposedStartPosition =
+                if (lastComposedText.isNotEmpty()) composingStartPosition else NO_POSITION
+            clearComposition()
         }
     }
 
-    /** True when the text is a punctuation-only continuation ("." after "foo" → "foo."). */
-    private fun String.isPunctuationOnly(): Boolean {
-        if (isEmpty()) return false
-        return all { !it.isLetterOrDigit() && !it.isWhitespace() }
+    private fun clearComposition() {
+        composingText = ""
+        composingStartPosition = NO_POSITION
     }
 
-    /** True when the text contains a letter or digit — a real word that Gboard could
-     * re-compose across, unlike "\n" or a lone space. */
+    private fun clearTrackedCommit() {
+        lastComposedText = ""
+        lastComposedStartPosition = NO_POSITION
+    }
+
+    private fun placeCursorAfterInsertion(
+        insertionStart: Int,
+        insertedText: String,
+        newCursorPosition: Int
+    ) {
+        val end = insertionStart + insertedText.length
+        val target = if (newCursorPosition > 0) {
+            end + newCursorPosition - 1
+        } else {
+            insertionStart + newCursorPosition
+        }.coerceAtLeast(0)
+        moveTerminalCursorTo(
+            from = end,
+            to = target,
+            regionStart = insertionStart,
+            regionText = insertedText
+        )
+        imeCursorPosition = target
+    }
+
+    private fun moveTerminalCursorTo(from: Int, to: Int, regionStart: Int, regionText: String) {
+        val diff = cursorDelta(from, to, regionStart, regionText)
+        if (diff != 0) terminal.moveCursor(diff)
+    }
+
+    private fun cursorDelta(from: Int, to: Int): Int {
+        val region = when {
+            composingText.isNotEmpty() -> composingStartPosition to composingText
+            lastComposedText.isNotEmpty() -> lastComposedStartPosition to lastComposedText
+            else -> null
+        }
+        return if (region == null) {
+            to - from
+        } else {
+            cursorDelta(from, to, region.first, region.second)
+        }
+    }
+
+    private fun cursorDelta(from: Int, to: Int, regionStart: Int, regionText: String): Int {
+        val regionEnd = regionStart + regionText.length
+        if (from !in regionStart..regionEnd || to !in regionStart..regionEnd) {
+            return to - from
+        }
+        val fromLocal = from - regionStart
+        val toLocal = to - regionStart
+        return if (toLocal >= fromLocal) {
+            regionText.codePointCount(fromLocal, toLocal)
+        } else {
+            -regionText.codePointCount(toLocal, fromLocal)
+        }
+    }
+
+    private fun moveImeCursorByCodePoints(amount: Int): Int =
+        if (amount == 0) imeCursorPosition else moveImeCursorWithinKnownRegion(amount)
+
+    private fun moveImeCursorWithinKnownRegion(amount: Int): Int {
+        val region = knownCursorRegion()
+        if (region == null) return (imeCursorPosition + amount).coerceAtLeast(0)
+        val (regionStart, regionText) = region
+        val regionEnd = regionStart + regionText.length
+        if (imeCursorPosition !in regionStart..regionEnd) {
+            return (imeCursorPosition + amount).coerceAtLeast(0)
+        }
+        val localPosition = imeCursorPosition - regionStart
+        val targetLocal = regionText.offsetByCodePoints(localPosition, amount)
+            .coerceIn(0, regionText.length)
+        return regionStart + targetLocal
+    }
+
+    private fun knownCursorRegion(): Pair<Int, String>? = when {
+        composingText.isNotEmpty() -> composingStartPosition to composingText
+        lastComposedText.isNotEmpty() -> lastComposedStartPosition to lastComposedText
+        else -> null
+    }
+
+    private fun codePointCountBeforeCursor(length: Int): Int {
+        val region = knownCursorRegion() ?: return length
+        val (regionStart, regionText) = region
+        val end = imeCursorPosition
+        val start = (end - length).coerceAtLeast(regionStart)
+        val regionEnd = regionStart + regionText.length
+        return if (start in regionStart..regionEnd && end in regionStart..regionEnd) {
+            regionText.codePointCount(start - regionStart, end - regionStart)
+        } else {
+            length
+        }
+    }
+
+    private fun codePointCountAfterCursor(length: Int): Int {
+        val region = knownCursorRegion() ?: return length
+        val (regionStart, regionText) = region
+        val start = imeCursorPosition
+        val end = (start + length).coerceAtMost(regionStart + regionText.length)
+        val regionEnd = regionStart + regionText.length
+        return if (start in regionStart..regionEnd && end in regionStart..regionEnd) {
+            regionText.codePointCount(start - regionStart, end - regionStart)
+        } else {
+            length
+        }
+    }
+    /** True when the text is a punctuation-only continuation ("." after "foo" → "foo."). */
+    private fun String.isPunctuationOnly(): Boolean =
+        isNotEmpty() && all { !it.isLetterOrDigit() && !it.isWhitespace() }
+
+    /** True when the text contains a letter or digit that Gboard can re-compose across. */
     private fun String.isWordLike(): Boolean = any { it.isLetterOrDigit() }
+
+    private fun String.codePointCount(): Int = Character.codePointCount(this, 0, length)
 
     private fun sendCodePoints(text: String) {
         if (text.isNotEmpty()) terminal.inputText(text)
+    }
+
+    private companion object {
+        const val NO_POSITION = -1
+        const val DELETE_ALL_LIMIT = 100
     }
 }

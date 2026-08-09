@@ -33,6 +33,16 @@ sealed interface TerminalCommand {
         val combiningAccent: Int = 0
     ) : TerminalCommand
 
+    /**
+     * Moves the terminal cursor by [delta] cells without exposing repeated
+     * platform key events to the backend.
+     *
+     * Negative values move left; positive values move right. Backends can
+     * encode the complete movement as one write, which is important for
+     * remote sessions.
+     */
+    data class CursorMove(val delta: Int) : TerminalCommand
+
     /** A pointer/mouse event, e.g. for terminal mouse tracking protocols. */
     data class Mouse(val event: TerminalPointerEvent) : TerminalCommand
 

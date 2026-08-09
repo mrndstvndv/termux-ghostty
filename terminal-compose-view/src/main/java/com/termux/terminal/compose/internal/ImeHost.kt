@@ -31,15 +31,27 @@ import kotlin.math.abs
 
 @Composable
 internal fun rememberImeHost(
-    onEditCommands: (List<EditCommand>) -> Unit
+    onEditCommands: (List<EditCommand>) -> Unit,
+    onSessionStarted: () -> Unit = {},
+    onSessionClosed: () -> Unit = {}
 ): ImeHost {
     val currentOnEditCommands = rememberUpdatedState(onEditCommands)
-    return remember { ImeHost { currentOnEditCommands.value(it) } }
+    val currentOnSessionStarted = rememberUpdatedState(onSessionStarted)
+    val currentOnSessionClosed = rememberUpdatedState(onSessionClosed)
+    return remember {
+        ImeHost(
+            onEditCommands = { currentOnEditCommands.value(it) },
+            onSessionStarted = { currentOnSessionStarted.value() },
+            onSessionClosed = { currentOnSessionClosed.value() }
+        )
+    }
 }
 
 /** Owns the terminal's platform text-input session. */
 internal class ImeHost(
-    internal val onEditCommands: (List<EditCommand>) -> Unit
+    internal val onEditCommands: (List<EditCommand>) -> Unit,
+    internal val onSessionStarted: () -> Unit,
+    internal val onSessionClosed: () -> Unit
 ) {
     private var node: ImeHostNode? = null
 
@@ -100,6 +112,7 @@ internal class ImeHostNode(
 
     fun open() {
         sessionJob?.cancel()
+        imeHost.onSessionStarted()
         sessionJob = coroutineScope.launch {
             establishTextInputSession {
                 val hostView = view
@@ -114,8 +127,10 @@ internal class ImeHostNode(
     }
 
     fun close() {
+        val wasOpen = sessionJob != null
         sessionJob?.cancel()
         sessionJob = null
+        if (wasOpen) imeHost.onSessionClosed()
     }
 }
 
@@ -124,7 +139,8 @@ internal class TerminalInputConnection(
     view: View,
     private val onEditCommands: (List<EditCommand>) -> Unit
 ) : BaseInputConnection(view, true) {
-    private val pendingCommands = mutableListOf<EditCommand>()
+    private var pendingCommands = arrayListOf<EditCommand>()
+    private var dispatchCommands = arrayListOf<EditCommand>()
     private var batchDepth = 0
     private var active = true
 
@@ -169,6 +185,7 @@ internal class TerminalInputConnection(
     override fun closeConnection() {
         active = false
         pendingCommands.clear()
+        dispatchCommands.clear()
         batchDepth = 0
         super.closeConnection()
     }
@@ -187,8 +204,14 @@ internal class TerminalInputConnection(
 
     private fun flushCommands() {
         if (batchDepth > 0 || pendingCommands.isEmpty()) return
-        onEditCommands(pendingCommands.toList())
-        pendingCommands.clear()
+        val commands = pendingCommands
+        pendingCommands = dispatchCommands
+        dispatchCommands = commands
+        try {
+            onEditCommands(commands)
+        } finally {
+            commands.clear()
+        }
     }
 }
 
@@ -223,6 +246,8 @@ internal class CommandTerminalInput(
     }
 
     override fun inputText(text: String) {
+        // Keep Enter as CR before the translator's single-code-point fast path; LF is
+        // accepted by line-oriented shells but is not the terminal Enter byte in raw-mode TUIs.
         translator.sendText(text.replace('\n', '\r'))
     }
 
@@ -236,6 +261,10 @@ internal class CommandTerminalInput(
     }
 
     override fun moveCursor(delta: Int) {
+        if (delta == 0) return
+        val result = translator.submit(TerminalCommand.CursorMove(delta))
+        if (result is TerminalCommandResult.Success) return
+
         val keyCode = if (delta < 0) KeyEvent.KEYCODE_DPAD_LEFT else KeyEvent.KEYCODE_DPAD_RIGHT
         repeat(abs(delta)) {
             translator.submit(TerminalCommand.Key(keyCode = keyCode, metaState = 0, down = true))

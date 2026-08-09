@@ -17,9 +17,59 @@ class ImeInputPipelineTest {
         }
         val processor = ImeEditCommandProcessor(CommandTerminalInput(translator))
 
-        processor.process(listOf(CommitTextCommand("hello", 5)))
+        processor.process(listOf(CommitTextCommand("hello", 1)))
 
         assertEquals(listOf(TerminalCommand.Text("hello")), commands)
+    }
+
+    @Test
+    fun bulkImeCommitRemainsOneBackendTextCommand() {
+        val commands = mutableListOf<TerminalCommand>()
+        val translator = TerminalInputTranslator(ModifierKeyReader.NONE) { command ->
+            commands += command
+            TerminalCommandResult.Success
+        }
+        val processor = ImeEditCommandProcessor(CommandTerminalInput(translator))
+        val text = "x".repeat(1024)
+
+        processor.process(listOf(CommitTextCommand(text, 1)))
+
+        assertEquals(listOf(TerminalCommand.Text(text)), commands)
+    }
+
+    @Test
+    fun cursorMovementUsesOneBackendCommand() {
+        val commands = mutableListOf<TerminalCommand>()
+        val translator = TerminalInputTranslator(ModifierKeyReader.NONE) { command ->
+            commands += command
+            TerminalCommandResult.Success
+        }
+        val processor = ImeEditCommandProcessor(CommandTerminalInput(translator))
+
+        processor.process(listOf(CommitTextCommand("hello", 1)))
+        processor.process(listOf(androidx.compose.ui.text.input.SetSelectionCommand(0, 0)))
+
+        assertEquals(
+            listOf(TerminalCommand.Text("hello"), TerminalCommand.CursorMove(-5)),
+            commands
+        )
+    }
+
+    @Test
+    fun imeEnterUsesCarriageReturnForRawModeApplications() {
+        val commands = mutableListOf<TerminalCommand>()
+        val translator = TerminalInputTranslator(ModifierKeyReader.NONE) { command ->
+            commands += command
+            TerminalCommandResult.Success
+        }
+        val processor = ImeEditCommandProcessor(CommandTerminalInput(translator))
+
+        processor.process(listOf(CommitTextCommand("\n", 1)))
+
+        assertEquals(
+            listOf(TerminalCommand.Key(keyCode = 0, metaState = 0, down = true, codePoint = '\r'.code)),
+            commands
+        )
     }
 
     @Test

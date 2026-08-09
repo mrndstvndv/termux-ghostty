@@ -25,6 +25,7 @@ internal class TerminalSessionCommandAdapter(
     fun submit(command: TerminalCommand): TerminalCommandResult = when (command) {
         is TerminalCommand.Text -> writeText(command.text)
         is TerminalCommand.Key -> submitKey(command)
+        is TerminalCommand.CursorMove -> submitCursorMove(command.delta)
         is TerminalCommand.Mouse -> submitMouse(command.event)
         is TerminalCommand.Scroll -> submitScroll(command)
         is TerminalCommand.SetViewportTopRow -> setViewportTopRow(command.topRow)
@@ -33,7 +34,8 @@ internal class TerminalSessionCommandAdapter(
     private fun writeText(text: String): TerminalCommandResult {
         if (text.isEmpty()) return TerminalCommandResult.Success
         session.setCursorBlinkState(true)
-        session.write(text.replace('\n', '\r'))
+        val terminalText = if ('\n' in text) text.replace('\n', '\r') else text
+        session.write(terminalText)
         return TerminalCommandResult.Success
     }
 
@@ -54,6 +56,27 @@ internal class TerminalSessionCommandAdapter(
             session.write(code)
             TerminalCommandResult.Success
         } ?: TerminalCommandResult.Unsupported("Key is handled through Unicode input")
+    }
+
+    private fun submitCursorMove(delta: Int): TerminalCommandResult {
+        if (delta == 0) return TerminalCommandResult.Success
+        val keyCode = if (delta < 0) KeyEvent.KEYCODE_DPAD_LEFT else KeyEvent.KEYCODE_DPAD_RIGHT
+        val sequence = KeyHandler.getCode(
+            keyCode,
+            0,
+            session.isCursorKeysApplicationMode,
+            session.isKeypadApplicationMode
+        ) ?: return TerminalCommandResult.Unsupported("Cursor movement is unavailable")
+        val count = kotlin.math.abs(delta)
+        session.setCursorBlinkState(true)
+        if (count == 1) {
+            session.write(sequence)
+        } else {
+            session.write(buildString(sequence.length * count) {
+                repeat(count) { append(sequence) }
+            })
+        }
+        return TerminalCommandResult.Success
     }
 
     private fun submitMouse(event: TerminalPointerEvent): TerminalCommandResult {

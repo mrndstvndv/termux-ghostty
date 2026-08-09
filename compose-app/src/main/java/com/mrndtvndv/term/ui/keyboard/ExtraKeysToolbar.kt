@@ -50,7 +50,7 @@ fun ExtraKeysToolbar(
                 ExtraKeysInfo(extraKeysJson, "default", ExtraKeysConstants.CONTROL_CHARS_ALIASES)
             } else {
                 ExtraKeysInfo(
-                    "[['ESC','/',{key: '-', popup: '|'},'HOME','UP','END','PGUP'], ['TAB','CTRL','ALT','LEFT','DOWN','RIGHT','PGDN']]",
+                    PresetDoubleRow,
                     "default",
                     ExtraKeysConstants.CONTROL_CHARS_ALIASES
                 )
@@ -59,7 +59,7 @@ fun ExtraKeysToolbar(
             // Safe fallback
             try {
                 ExtraKeysInfo(
-                    "[['ESC','/',{key: '-', popup: '|'},'HOME','UP','END','PGUP'], ['TAB','CTRL','ALT','LEFT','DOWN','RIGHT','PGDN']]",
+                    PresetDoubleRow,
                     "default",
                     ExtraKeysConstants.CONTROL_CHARS_ALIASES
                 )

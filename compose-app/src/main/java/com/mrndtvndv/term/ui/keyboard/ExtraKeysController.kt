@@ -4,8 +4,15 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 
-const val PresetDoubleRow = "[['ESC','/',{key: '-', popup: '|'},'HOME','UP','END','PGUP']," +
-    " ['TAB','CTRL','ALT','LEFT','DOWN','RIGHT','PGDN']]"
+const val PresetDoubleRow = "[['ESC','CTRL','TAB'," +
+    "{display: 'EXIT', macro: 'CTRL d'}," +
+    "{display: 'PREV', macro: 'CTRL b p', " +
+    "popup: {macro: 'CTRL SHIFT J', display: '('}}," +
+    "{key: 'UP', popup: 'DOWN'}," +
+    "{display: 'NEXT', macro: 'CTRL b n', " +
+    "popup: {macro: 'CTRL SHIFT K', display: ')'}}," +
+    "{display: 'NEW', macro: 'CTRL b c', " +
+    "popup: {macro: 'CTRL b N', display: 'N'}}]]"
 const val PresetSingleRow = "[[ESC, TAB, CTRL, ALT, {key: '-', popup: '|'}, DOWN, UP]]"
 const val PresetArrowsOnly = "[[ESC, TAB, CTRL, ALT, UP, LEFT, DOWN, RIGHT]]"
 

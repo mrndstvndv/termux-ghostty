@@ -3,6 +3,7 @@ package com.termux.terminal;
 import org.junit.Test;
 
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.assertEquals;
 
 public class TerminalSessionGhosttyOnlyTest {
@@ -62,5 +63,18 @@ public class TerminalSessionGhosttyOnlyTest {
         session.setCursorBlinkState(false);
 
         assertFalse(session.shouldCursorBeVisible());
+    }
+
+    @Test
+    public void snapshotCadenceSlowsOnlyForFloodBacklogs() {
+        // Interactive TUI output (spinners, shimmer, status bars) keeps a small
+        // backlog below one append slice: it must keep the fast 16 ms cadence.
+        assertFalse(GhosttySessionWorker.isFloodBacklog(0));
+        assertFalse(GhosttySessionWorker.isFloodBacklog(1024));
+        assertFalse(GhosttySessionWorker.isFloodBacklog(64 * 1024 - 1));
+        // A sustained flood (at least one full slice still queued) falls back
+        // to the 33 ms throttle that keeps burst rendering stable.
+        assertTrue(GhosttySessionWorker.isFloodBacklog(64 * 1024));
+        assertTrue(GhosttySessionWorker.isFloodBacklog(128 * 1024));
     }
 }

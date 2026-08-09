@@ -297,7 +297,17 @@ final class GhosttySessionWorker extends Thread {
 
         addPendingFrameReason(FrameDelta.REASON_APPEND);
         mFramePublicationGate.markSnapshotDirty();
-        scheduleSnapshotBuild(queuedBytes > 0);
+        scheduleSnapshotBuild(isFloodBacklog(queuedBytes));
+    }
+
+    /**
+     * True when the append backlog still holds at least one full append slice
+     * after the current slice ran: a sustained flood, not the small trickle of
+     * interactive TUI output (spinners, shimmer, status bars). Floods publish
+     * at the slow 33 ms cadence; everything else keeps the 16 ms cadence.
+     */
+    static boolean isFloodBacklog(int queuedBytes) {
+        return queuedBytes >= MAX_APPEND_BYTES_PER_SLICE;
     }
 
     private void appendToNative(byte[] buffer, int offset, int length) {

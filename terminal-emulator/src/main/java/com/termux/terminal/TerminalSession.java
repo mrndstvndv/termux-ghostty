@@ -96,6 +96,7 @@ public final class TerminalSession extends TerminalOutput {
     volatile int mLastKnownGhosttyTranscriptRows;
     volatile int mLastKnownActiveRows;
     volatile int mGhosttyModeBits;
+    volatile int mGhosttyKittyKeyboardFlags;
     volatile boolean mGhosttyAlternateBufferActive;
     volatile boolean mGhosttyReverseVideo;
     volatile boolean mGhosttyCursorVisible;
@@ -272,6 +273,7 @@ public final class TerminalSession extends TerminalOutput {
             mLastKnownGhosttyTranscriptRows = mGhosttyTerminalContent.getActiveTranscriptRows();
             mLastKnownActiveRows = mGhosttyTerminalContent.getActiveRows();
             mGhosttyModeBits = mGhosttyTerminalContent.getModeBits();
+            mGhosttyKittyKeyboardFlags = mGhosttyTerminalContent.getKittyKeyboardFlags();
             mGhosttyAlternateBufferActive = mGhosttyTerminalContent.isAlternateBufferActive();
             mGhosttyReverseVideo = mGhosttyTerminalContent.isReverseVideo();
             mGhosttyCursorVisible = mGhosttyTerminalContent.isCursorEnabled();
@@ -380,10 +382,7 @@ public final class TerminalSession extends TerminalOutput {
      * remote does not wait an escape-sequence disambiguation timeout.
      */
     public int getKittyKeyboardFlags() {
-        if (mGhosttyTerminalContent == null) {
-            return 0;
-        }
-        return mGhosttyTerminalContent.getKittyKeyboardFlags();
+        return mGhosttyKittyKeyboardFlags;
     }
 
     /** Write data to the shell process. */
@@ -527,21 +526,19 @@ public final class TerminalSession extends TerminalOutput {
     }
 
     public void setCursorBlinkingEnabled(boolean cursorBlinkingEnabled) {
-        if (mGhosttyTerminalContent == null) {
-            return;
-        }
-
         mGhosttyCursorBlinkingEnabled = cursorBlinkingEnabled;
-        mGhosttyTerminalContent.setCursorBlinkingEnabled(cursorBlinkingEnabled);
+        GhosttySessionWorker worker = mGhosttySessionWorker;
+        if (worker != null) {
+            worker.setCursorBlinkingEnabled(cursorBlinkingEnabled);
+        }
     }
 
     public void setCursorBlinkState(boolean cursorBlinkState) {
-        if (mGhosttyTerminalContent == null) {
-            return;
-        }
-
         mGhosttyCursorBlinkState = cursorBlinkState;
-        mGhosttyTerminalContent.setCursorBlinkState(cursorBlinkState);
+        GhosttySessionWorker worker = mGhosttySessionWorker;
+        if (worker != null) {
+            worker.setCursorBlinkState(cursorBlinkState);
+        }
     }
 
     public boolean isCursorEnabled() {

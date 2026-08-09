@@ -109,11 +109,11 @@ class TerminalControllerTest {
     @Test
     fun fontSizeChangeRecomputesGridAtUnchangedViewportSize() {
         val backend = RecordingBackend()
-        val controller = TerminalController(backend, UnusedGraphicsContext) { config, width, height ->
+        val controller = TerminalController(backend, UnusedGraphicsContext) { fontSize, _, width, height ->
             TerminalMetrics.of(
-                cellWidthPx = config.fontSize.toFloat(),
-                cellHeightPx = config.fontSize.toFloat() * 2,
-                ascentPx = -config.fontSize.toFloat(),
+                cellWidthPx = fontSize.toFloat(),
+                cellHeightPx = fontSize.toFloat() * 2,
+                ascentPx = -fontSize.toFloat(),
                 lineSpacingAndAscentPx = 4f,
                 viewportWidthPx = width,
                 viewportHeightPx = height
@@ -133,11 +133,11 @@ class TerminalControllerTest {
     @Test
     fun fontGeometryChangeResizesBackendEvenWhenMinimumGridIsUnchanged() {
         val backend = RecordingBackend()
-        val controller = TerminalController(backend, UnusedGraphicsContext) { config, width, height ->
+        val controller = TerminalController(backend, UnusedGraphicsContext) { fontSize, _, width, height ->
             TerminalMetrics.of(
-                cellWidthPx = config.fontSize.toFloat(),
-                cellHeightPx = config.fontSize.toFloat() * 2,
-                ascentPx = -config.fontSize.toFloat(),
+                cellWidthPx = fontSize.toFloat(),
+                cellHeightPx = fontSize.toFloat() * 2,
+                ascentPx = -fontSize.toFloat(),
                 lineSpacingAndAscentPx = 4f,
                 viewportWidthPx = width,
                 viewportHeightPx = height
@@ -176,7 +176,7 @@ private object TestCursorEffect : CursorEffect {
 }
 
 private fun testController(backend: TerminalBackend): TerminalController =
-    TerminalController(backend, UnusedGraphicsContext) { _, width, height ->
+    TerminalController(backend, UnusedGraphicsContext) { _, _, width, height ->
         TerminalMetrics.of(
             cellWidthPx = 8f,
             cellHeightPx = 16f,

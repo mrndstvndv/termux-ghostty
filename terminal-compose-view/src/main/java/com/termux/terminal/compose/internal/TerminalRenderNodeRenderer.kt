@@ -18,9 +18,9 @@ import com.termux.terminal.compose.TerminalPalette
 import com.termux.terminal.compose.TerminalSelection
 
 /**
- * Retained terminal renderer backed by Compose-managed RenderNodes. Four-row
- * tiles bound sparse redraw work while reducing layer fan-out, and one stable
- * parent display list presents all tiles through a single draw operation.
+ * Retained terminal renderer backed by Compose-managed RenderNodes. One layer
+ * per visible row preserves rendered glyphs while scrolling; a stable parent
+ * display list presents those rows through a single draw operation.
  *
  * The renderer consumes only [TerminalFrame] and library-owned types; it never
  * calls back into a session or backend while drawing.
@@ -32,11 +32,9 @@ internal class TerminalRenderNodeRenderer(
 ) {
     private val hasAnimatedShader = shaders.any { it.definition.usesTimeUniform }
     private val animatedBitmapRenderer = AnimatedTerminalBitmapRenderer(shaders, rowRenderer)
-    private val tilePlanner = TerminalRenderTilePlanner()
 
     private var parentLayer = graphicsContext.createGraphicsLayer()
-    private var rowStates: Array<TerminalRowState> = emptyArray()
-    private var tiles: Array<TerminalTileState> = emptyArray()
+    private var rowLayers: Array<TerminalRowLayerState> = emptyArray()
     private var dirtyRows = BooleanArray(0)
     private var visibleRowCount = 0
     private var width = -1
@@ -57,6 +55,7 @@ internal class TerminalRenderNodeRenderer(
     private var shaderResolutionHeight = Float.NaN
     private var forceFullTileRecord = true
 
+    private var lastTopRow = Int.MIN_VALUE
     fun draw(
         drawScope: DrawScope,
         frame: TerminalFrame,
@@ -88,9 +87,8 @@ internal class TerminalRenderNodeRenderer(
     fun release() {
         animatedBitmapRenderer.release()
         parentLayer.renderEffect = null
-        releaseTiles()
-        rowStates = emptyArray()
-        tiles = emptyArray()
+        releaseRowLayers()
+        rowLayers = emptyArray()
         dirtyRows = BooleanArray(0)
         visibleRowCount = 0
         graphicsContext.releaseGraphicsLayer(parentLayer)
@@ -105,19 +103,18 @@ internal class TerminalRenderNodeRenderer(
             return
         }
 
-        // Tile offsets depend on line height, so a font metric change rebuilds
-        // every render resource. Pixel-only size changes retain the tiles;
+        // Row offsets depend on line height, so a font metric change rebuilds
+        // every render resource. Pixel-only size changes retain row layers;
         // backend grid coalescing decides when reflow actually changes rows.
         if (nextLineHeight != lineHeight) {
             parentLayer.renderEffect = null
-            releaseTiles()
+            releaseRowLayers()
             graphicsContext.releaseGraphicsLayer(parentLayer)
             width = targetWidth
             height = targetHeight
             lineHeight = nextLineHeight
             parentLayer = graphicsContext.createGraphicsLayer()
-            rowStates = Array(frame.rowsVisible) { TerminalRowState() }
-            tiles = Array(tilePlanner.tileCount(frame.rowsVisible), ::createTileLayer)
+            rowLayers = Array(frame.rowsVisible) { createRowLayer() }
             dirtyRows = BooleanArray(frame.rowsVisible)
             visibleRowCount = frame.rowsVisible
             boundShaders = emptyList()
@@ -147,31 +144,19 @@ internal class TerminalRenderNodeRenderer(
     }
 
     private fun ensureCapacity(requiredRows: Int) {
-        if (requiredRows > rowStates.size) {
-            val existingRows = rowStates
-            rowStates = Array(requiredRows) { rowIndex ->
-                if (rowIndex < existingRows.size) existingRows[rowIndex] else TerminalRowState()
-            }
-            dirtyRows = BooleanArray(requiredRows)
+        if (requiredRows <= rowLayers.size) return
+        val existingLayers = rowLayers
+        rowLayers = Array(requiredRows) { rowIndex ->
+            if (rowIndex < existingLayers.size) existingLayers[rowIndex] else createRowLayer()
         }
-        val requiredTiles = tilePlanner.tileCount(requiredRows)
-        if (requiredTiles > tiles.size) {
-            val existingTiles = tiles
-            tiles = Array(requiredTiles) { tileIndex ->
-                if (tileIndex < existingTiles.size) existingTiles[tileIndex] else createTileLayer(tileIndex)
-            }
-        }
+        dirtyRows = BooleanArray(requiredRows)
     }
 
-    private fun createTileLayer(tileIndex: Int): TerminalTileState =
-        TerminalTileState(
-            graphicsContext.createGraphicsLayer().apply {
-                topLeft = IntOffset(0, tilePlanner.firstRow(tileIndex) * lineHeight)
-            }
-        )
+    private fun createRowLayer(): TerminalRowLayerState =
+        TerminalRowLayerState(graphicsContext.createGraphicsLayer())
 
-    private fun releaseTiles() {
-        tiles.forEach { tile -> graphicsContext.releaseGraphicsLayer(tile.layer) }
+    private fun releaseRowLayers() {
+        rowLayers.forEach { row -> graphicsContext.releaseGraphicsLayer(row.layer) }
     }
 
     private fun updateRowsIfNeeded(
@@ -194,26 +179,9 @@ internal class TerminalRenderNodeRenderer(
         val unchanged = contentUnchanged && overlaysUnchanged
         if (!forceFullTileRecord && unchanged && frameAndLinksUnchanged) return
 
-        dirtyRows.fill(false, 0, visibleRowCount)
-        for (rowIndex in 0 until visibleRowCount) {
-            val row = frame.row(rowIndex)
-            if (row != null) {
-                val hints = rowRenderHints(frame, selection, rowIndex)
-                val rowState = rowStates[rowIndex]
-                val linkContentHash = frame.linkLayout?.rowContentHash(rowIndex) ?: 0L
-                val contentChanged = rowContentOutdated(rowState, row, linkContentHash)
-                val overlayChanged = rowSelectionOutdated(rowState, hints) ||
-                    rowCursorOutdated(rowState, hints) ||
-                    rowStyleOutdated(rowState, hints, paletteVersion)
-                dirtyRows[rowIndex] = forceFullTileRecord || contentChanged || overlayChanged
-            } else if (rowStates[rowIndex].contentHash != Long.MIN_VALUE) {
-                dirtyRows[rowIndex] = true
-            }
-        }
-        val work = tilePlanner.plan(visibleRowCount, dirtyRows)
-        repeat(work.recordedLayerCount) { workIndex ->
-            recordTileLayer(drawScope, frame, selection, work, workIndex)
-        }
+        repositionRowsForScroll(frame)
+        markDirtyRows(frame, selection)
+        recordDirtyRows(drawScope, frame, selection)
 
         lastProcessedContentVersion = contentVersion
         lastSelection = selection
@@ -222,7 +190,42 @@ internal class TerminalRenderNodeRenderer(
         lastFrameSequence = frame.sequence
         lastLinkLayout = frame.linkLayout
         lastPaletteVersion = frame.palette.version
+        lastTopRow = frame.topRow
         forceFullTileRecord = false
+    }
+
+    private fun markDirtyRows(frame: TerminalFrame, selection: TerminalSelection) {
+        dirtyRows.fill(false, 0, visibleRowCount)
+        for (rowIndex in 0 until visibleRowCount) {
+            val row = frame.row(rowIndex)
+            val rowLayer = rowLayers[rowIndex]
+            if (row != null) {
+                val hints = rowRenderHints(frame, selection, rowIndex)
+                val linkContentHash = frame.linkLayout?.rowContentHash(rowIndex) ?: 0L
+                val contentChanged = rowContentOutdated(rowLayer.state, row, linkContentHash)
+                val overlayChanged = rowSelectionOutdated(rowLayer.state, hints) ||
+                    rowCursorOutdated(rowLayer.state, hints) ||
+                    rowStyleOutdated(rowLayer.state, hints, paletteVersion)
+                dirtyRows[rowIndex] = forceFullTileRecord || contentChanged || overlayChanged
+            } else if (rowLayer.state.contentHash != Long.MIN_VALUE) {
+                dirtyRows[rowIndex] = true
+            }
+        }
+    }
+
+    private fun recordDirtyRows(
+        drawScope: DrawScope,
+        frame: TerminalFrame,
+        selection: TerminalSelection
+    ) {
+        var recordedRow = false
+        for (rowIndex in 0 until visibleRowCount) {
+            if (dirtyRows[rowIndex]) {
+                recordRowLayer(drawScope, frame, selection, rowIndex)
+                recordedRow = true
+            }
+        }
+        if (recordedRow) parentDisplayListDirty = true
     }
 
     private fun rowSelectionEnd(absoluteRow: Int, selection: TerminalSelection, columns: Int): Int = when {
@@ -247,48 +250,70 @@ internal class TerminalRenderNodeRenderer(
         )
     }
 
-    private fun recordTileLayer(
+    private fun repositionRowsForScroll(frame: TerminalFrame) {
+        if (lastTopRow == Int.MIN_VALUE) return
+        val delta = frame.topRow - lastTopRow
+        if (!canReuseRowsForScroll(frame, delta)) return
+
+        val previousLayers = rowLayers
+        rowLayers = Array(visibleRowCount) { rowIndex ->
+            val previousIndex = rowIndex + delta
+            val layer = when {
+                previousIndex < 0 -> previousLayers[visibleRowCount + previousIndex]
+                previousIndex >= visibleRowCount -> previousLayers[previousIndex - visibleRowCount]
+                else -> previousLayers[previousIndex]
+            }
+            if (previousIndex !in 0 until visibleRowCount) layer.state.clear()
+            layer.layer.topLeft = IntOffset(0, rowIndex * lineHeight)
+            layer
+        }
+        parentDisplayListDirty = true
+    }
+
+    private fun canReuseRowsForScroll(frame: TerminalFrame, delta: Int): Boolean {
+        if (delta == 0 || kotlin.math.abs(delta) >= visibleRowCount) return false
+        val firstSharedRow = maxOf(0, -delta)
+        val lastSharedRowExclusive = minOf(visibleRowCount, visibleRowCount - delta)
+        return (firstSharedRow until lastSharedRowExclusive).all { rowIndex ->
+            frame.row(rowIndex) === rowLayers[rowIndex + delta].state.row
+        }
+    }
+
+    private fun recordRowLayer(
         drawScope: DrawScope,
         frame: TerminalFrame,
         selection: TerminalSelection,
-        work: TerminalRenderTileWork,
-        workIndex: Int
+        rowIndex: Int
     ) {
-        val tileIndex = work.tileIndexAt(workIndex)
-        val firstRow = work.firstRow(tileIndex)
-        val endRowExclusive = work.endRowExclusive(tileIndex)
-        val tile = tiles[tileIndex]
-        tile.layer.record(
+        val rowLayer = rowLayers[rowIndex]
+        rowLayer.layer.topLeft = IntOffset(0, rowIndex * lineHeight)
+        rowLayer.layer.record(
             density = drawScope,
             layoutDirection = drawScope.layoutDirection,
-            size = IntSize(width, (endRowExclusive - firstRow) * lineHeight)
+            size = IntSize(width, lineHeight)
         ) {
             drawIntoCanvas { canvas ->
-                for (rowIndex in firstRow until endRowExclusive) {
-                    if (frame.row(rowIndex) != null) {
-                        rowRenderer.renderRow(
-                            canvas = canvas.nativeCanvas,
-                            frame = frame,
-                            rowIndex = rowIndex,
-                            hints = rowRenderHints(frame, selection, rowIndex),
-                            baselineY = ((rowIndex - firstRow + 1) * lineHeight).toFloat()
-                        )
-                    }
+                if (frame.row(rowIndex) != null) {
+                    rowRenderer.renderRow(
+                        canvas = canvas.nativeCanvas,
+                        frame = frame,
+                        rowIndex = rowIndex,
+                        hints = rowRenderHints(frame, selection, rowIndex),
+                        baselineY = lineHeight.toFloat()
+                    )
                 }
             }
         }
-        for (rowIndex in firstRow until endRowExclusive) {
-            val row = frame.row(rowIndex)
-            if (row == null) {
-                rowStates[rowIndex].clear()
-            } else {
-                rowStates[rowIndex].applyFrame(
-                    row,
-                    rowRenderHints(frame, selection, rowIndex),
-                    paletteVersion,
-                    frame.linkLayout?.rowContentHash(rowIndex) ?: 0L
-                )
-            }
+        val row = frame.row(rowIndex)
+        if (row == null) {
+            rowLayer.state.clear()
+        } else {
+            rowLayer.state.applyFrame(
+                row,
+                rowRenderHints(frame, selection, rowIndex),
+                paletteVersion,
+                frame.linkLayout?.rowContentHash(rowIndex) ?: 0L
+            )
         }
     }
 
@@ -314,9 +339,8 @@ internal class TerminalRenderNodeRenderer(
             size = IntSize(width, height)
         ) {
             drawRect(backgroundColor)
-            val visibleTileCount = tilePlanner.tileCount(visibleRowCount)
-            for (tileIndex in 0 until visibleTileCount) {
-                drawLayer(tiles[tileIndex].layer)
+            for (rowIndex in 0 until visibleRowCount) {
+                drawLayer(rowLayers[rowIndex].layer)
             }
         }
         parentDisplayListDirty = false
@@ -363,11 +387,13 @@ internal class TerminalRenderNodeRenderer(
         lastFrameSequence = Long.MIN_VALUE
         lastLinkLayout = null
         lastPaletteVersion = Int.MIN_VALUE
+        lastTopRow = Int.MIN_VALUE
     }
 }
 
-private class TerminalTileState(
-    val layer: GraphicsLayer
+private class TerminalRowLayerState(
+    val layer: GraphicsLayer,
+    val state: TerminalRowState = TerminalRowState()
 )
 
 private fun Color.toArgb(): Int {

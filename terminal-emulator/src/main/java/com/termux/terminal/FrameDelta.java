@@ -18,6 +18,7 @@ public final class FrameDelta {
     public static final int REASON_RESET = 1 << 3;
     public static final int REASON_VIEWPORT_SCROLL = 1 << 4;
     public static final int REASON_COLOR_SCHEME = 1 << 5;
+    public static final int REASON_CURSOR_BLINK = 1 << 6;
 
     private final long mFrameSequence;
     private final int mReasonFlags;

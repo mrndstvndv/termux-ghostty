@@ -2,6 +2,7 @@ package com.termux.terminal;
 
 import org.junit.Test;
 
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertEquals;
 
 public class TerminalSessionGhosttyOnlyTest {
@@ -42,5 +43,24 @@ public class TerminalSessionGhosttyOnlyTest {
             TerminalColors.COLOR_SCHEME.mDefaultColors[TextStyle.COLOR_INDEX_BACKGROUND],
             session.getBackgroundColor()
         );
+    }
+
+    @Test
+    public void kittyKeyboardFlagsUsesWorkerPublishedCache() {
+        TerminalSession session = new TerminalSession("/bin/sh", "/", new String[]{"sh"}, new String[0], null, null);
+        session.mGhosttyKittyKeyboardFlags = 1;
+
+        assertEquals(1, session.getKittyKeyboardFlags());
+    }
+
+    @Test
+    public void cursorBlinkStateUpdatesWithoutTerminalContent() {
+        TerminalSession session = new TerminalSession("/bin/sh", "/", new String[]{"sh"}, new String[0], null, null);
+        session.mGhosttyCursorVisible = true;
+        session.mGhosttyCursorBlinkingEnabled = true;
+
+        session.setCursorBlinkState(false);
+
+        assertFalse(session.shouldCursorBeVisible());
     }
 }

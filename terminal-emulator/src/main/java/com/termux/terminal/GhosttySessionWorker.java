@@ -39,6 +39,8 @@ final class GhosttySessionWorker extends Thread {
     private static final int MSG_APPLY_COLOR_SCHEME = 11;
     private static final int MSG_FOCUS_EVENT = 12;
 
+    private static final int MSG_SET_CURSOR_BLINKING_ENABLED = 13;
+    private static final int MSG_SET_CURSOR_BLINK_STATE = 14;
     private static final long SNAPSHOT_INTERVAL_MILLIS = 16; // ~60fps
     private static final long SNAPSHOT_INTERVAL_BUSY_MILLIS = 33; // ~30fps under sustained backlog
     private static final int MAX_APPEND_BYTES_PER_SLICE = 64 * 1024;
@@ -199,6 +201,18 @@ final class GhosttySessionWorker extends Thread {
         getWorkerHandler().obtainMessage(MSG_FOCUS_EVENT, focused ? 1 : 0, 0).sendToTarget();
     }
 
+    void setCursorBlinkingEnabled(boolean enabled) {
+        Handler handler = getWorkerHandler();
+        handler.removeMessages(MSG_SET_CURSOR_BLINKING_ENABLED);
+        handler.obtainMessage(MSG_SET_CURSOR_BLINKING_ENABLED, enabled ? 1 : 0, 0).sendToTarget();
+    }
+
+    void setCursorBlinkState(boolean visible) {
+        Handler handler = getWorkerHandler();
+        handler.removeMessages(MSG_SET_CURSOR_BLINK_STATE);
+        handler.obtainMessage(MSG_SET_CURSOR_BLINK_STATE, visible ? 1 : 0, 0).sendToTarget();
+    }
+
     void shutdown() {
         mSshSessionHandle = 0L;
         Handler workerHandler = getWorkerHandler();
@@ -301,6 +315,7 @@ final class GhosttySessionWorker extends Thread {
         mSession.mLastKnownGhosttyTranscriptRows = mContent.getActiveTranscriptRows();
         mSession.mLastKnownActiveRows = mContent.getActiveRows();
         mSession.mGhosttyModeBits = mContent.getModeBits();
+        mSession.mGhosttyKittyKeyboardFlags = mContent.getKittyKeyboardFlags();
         mSession.mGhosttyAlternateBufferActive = mContent.isAlternateBufferActive();
         mSession.mGhosttyReverseVideo = mContent.isReverseVideo();
         mSession.mGhosttyCursorVisible = mContent.isCursorEnabled();
@@ -617,6 +632,7 @@ final class GhosttySessionWorker extends Thread {
             + " requiredBytes=" + snapshot.getRequiredBytes()
             + " buildMs=" + formatDurationMillis(buildDurationNanos)
             + " avgBuildMs=" + formatDurationMillis(averageBuildNanos)
+
             + " coalescedBuilds=" + mCoalescedBuildRequestCount
             + " coalescedUiWakeups=" + mCoalescedUiWakeupCount;
 
@@ -626,6 +642,11 @@ final class GhosttySessionWorker extends Thread {
         }
 
         GhosttyLog.debug(message);
+    }
+    private void publishCursorBlinkChange() {
+        addPendingFrameReason(FrameDelta.REASON_CURSOR_BLINK);
+        mFramePublicationGate.markSnapshotDirty();
+        scheduleSnapshotBuild(false);
     }
 
     private static String formatDurationMillis(long durationNanos) {
@@ -676,6 +697,14 @@ final class GhosttySessionWorker extends Thread {
                     break;
                 case MSG_APPLY_COLOR_SCHEME:
                     handleApplyColorScheme((int[]) msg.obj);
+                    break;
+                case MSG_SET_CURSOR_BLINKING_ENABLED:
+                    mContent.setCursorBlinkingEnabled(msg.arg1 != 0);
+                    publishCursorBlinkChange();
+                    break;
+                case MSG_SET_CURSOR_BLINK_STATE:
+                    mContent.setCursorBlinkState(msg.arg1 != 0);
+                    publishCursorBlinkChange();
                     break;
                 case MSG_SHUTDOWN:
                     cancelProgressTimeout();

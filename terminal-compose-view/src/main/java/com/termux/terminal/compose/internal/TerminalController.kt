@@ -36,11 +36,11 @@ internal fun terminalColumnsForMeasuredCellWidth(widthPx: Int, measuredCellWidth
 internal class TerminalController(
     private val backend: TerminalBackend,
     private val graphicsContext: GraphicsContext,
-    private val measureMetrics: (TerminalCanvasConfig, Int, Int) -> TerminalMetrics =
-        { config, width, height ->
+    private val measureMetrics: (Int, android.graphics.Typeface?, Int, Int) -> TerminalMetrics =
+        { fontSizePx, typeface, width, height ->
             TerminalMetrics.from(
-                fontSizePx = config.fontSize.toFloat(),
-                typeface = config.typeface,
+                fontSizePx = fontSizePx.toFloat(),
+                typeface = typeface,
                 viewportWidthPx = width,
                 viewportHeightPx = height
             )
@@ -53,6 +53,7 @@ internal class TerminalController(
     private val invalidations = Channel<Unit>(CONFLATED)
     private var contentVersion = 0
     private var config: TerminalCanvasConfig = TerminalCanvasConfig()
+    private var effectiveFontSize = config.fontSize
     private var attached = false
     private var released = false
 
@@ -98,14 +99,21 @@ internal class TerminalController(
         backend.release()
     }
 
-    /** Applies a new configuration; cheap when nothing relevant changed. */
-    fun configure(newConfig: TerminalCanvasConfig) {
-        if (newConfig == config) return
-        val fontGeometryChanged = newConfig.fontSize != config.fontSize ||
+    /**
+     * Applies the latest host policy and rendering inputs.
+     *
+     * [fontSize] is canvas-owned because pinch zoom is local state. Keeping it
+     * separate avoids allocating a copied [TerminalCanvasConfig] on every
+     * recomposition solely to substitute that one value.
+     */
+    fun configure(newConfig: TerminalCanvasConfig, fontSize: Int = newConfig.fontSize) {
+        val fontGeometryChanged = fontSize != effectiveFontSize ||
             newConfig.typeface != config.typeface
+        val shadersChanged = newConfig.shaders != config.shaders
         config = newConfig
+        effectiveFontSize = fontSize
         if (fontGeometryChanged) invalidateViewportMeasurement()
-        if (newConfig.shaders != renderKey.shaders) {
+        if (shadersChanged) {
             shaderCompiler = TerminalShaderCompiler(newConfig.onDiagnostics)
             compiledShaders = shaderCompiler!!.compile(newConfig.shaders)
         }
@@ -161,7 +169,7 @@ internal class TerminalController(
         lastResizeWidth = width
         lastResizeHeight = height
 
-        val metrics = measureMetrics(config, width, height)
+        val metrics = measureMetrics(effectiveFontSize, config.typeface, width, height)
         // Keep terminal column sizing on the raw measured width. Rounded
         // cellWidthPx remains the visual placement and session metadata size.
         val columns = terminalColumnsForMeasuredCellWidth(width, metrics.measuredCellWidthPx)
@@ -279,7 +287,7 @@ internal class TerminalController(
         get() = compiledShaders.any { it.definition.usesTimeUniform }
 
     private fun ensureRenderer(cfg: TerminalCanvasConfig): TerminalRenderNodeRenderer? {
-        val newKey = RenderKey(cfg.fontSize, cfg.typeface, cfg.shaders)
+        val newKey = RenderKey(effectiveFontSize, cfg.typeface, cfg.shaders)
         if (renderKey == newKey) {
             return renderer
         }
@@ -288,7 +296,7 @@ internal class TerminalController(
         renderer?.release()
         rowRenderer = TerminalRowRenderer(
             typeface = cfg.typeface,
-            fontSizePx = cfg.fontSize.toFloat()
+            fontSizePx = effectiveFontSize.toFloat()
         )
         val shaders = compiledShaders.ifEmpty {
             val compiler = TerminalShaderCompiler(cfg.onDiagnostics)

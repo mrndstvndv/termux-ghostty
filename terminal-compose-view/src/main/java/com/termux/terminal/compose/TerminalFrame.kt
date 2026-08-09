@@ -365,17 +365,52 @@ data class TerminalLink(
  * underlines and to hit-test taps. [frameSequence] must match the frame it was
  * built from.
  */
-class TerminalLinkLayout(
+class TerminalLinkLayout private constructor(
     val frameSequence: Long,
     val topRow: Int,
     val rows: Int,
     val columns: Int,
-    segmentsPerRow: List<List<TerminalLinkSegment>>
+    private val segmentsPerRow: Array<Array<TerminalLinkSegment>>,
+    private val rowContentHashes: LongArray
 ) {
-    private val segmentsPerRow = segmentsPerRow.map { it.toTypedArray() }
-    private val rowContentHashes = LongArray(this.segmentsPerRow.size) { rowIndex ->
-        this.segmentsPerRow[rowIndex].linkContentHash()
-    }
+    constructor(
+        frameSequence: Long,
+        topRow: Int,
+        rows: Int,
+        columns: Int,
+        segmentsPerRow: List<List<TerminalLinkSegment>>
+    ) : this(
+        frameSequence = frameSequence,
+        topRow = topRow,
+        rows = rows,
+        columns = columns,
+        segmentsPerRow = segmentsPerRow.map { it.toTypedArray() }.toTypedArray(),
+        rowContentHashes = LongArray(segmentsPerRow.size) { rowIndex ->
+            segmentsPerRow[rowIndex].let { segments ->
+                if (segments.isEmpty()) 0L else segments.hashCode().toLong()
+            }
+        }
+    )
+
+    /**
+     * Rebinds unchanged link content to its frame without reparsing terminal text.
+     *
+     * Segment arrays are immutable after construction, so they can safely be
+     * shared by the next frame.
+     */
+    fun withFrameSequence(frameSequence: Long): TerminalLinkLayout =
+        if (frameSequence == this.frameSequence) {
+            this
+        } else {
+            TerminalLinkLayout(
+                frameSequence = frameSequence,
+                topRow = topRow,
+                rows = rows,
+                columns = columns,
+                segmentsPerRow = segmentsPerRow,
+                rowContentHashes = rowContentHashes
+            )
+        }
 
     fun rowSegments(rowIndex: Int): Array<TerminalLinkSegment> =
         segmentsPerRow.getOrElse(rowIndex) { EMPTY_SEGMENTS }
@@ -397,8 +432,6 @@ class TerminalLinkLayout(
     }
 }
 
-private fun Array<TerminalLinkSegment>.linkContentHash(): Long =
-    if (isEmpty()) 0L else contentHashCode().toLong()
 
 /** One link span in a [TerminalLinkLayout]. */
 data class TerminalLinkSegment(

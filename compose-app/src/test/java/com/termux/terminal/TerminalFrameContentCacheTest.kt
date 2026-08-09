@@ -94,6 +94,47 @@ class TerminalFrameContentCacheTest {
     }
 
     @Test
+    fun `cursor-only frame reuses parsed link geometry`() {
+        val store = TerminalSessionFrameStore()
+        val firstSnapshot = snapshot(true, intArrayOf(), longArrayOf(11L, 22L), true, 0)
+        firstSnapshot.setFrameSequence(1L)
+        val firstLinks = ViewportLinkSnapshot.create(
+            1L,
+            0,
+            RowCount,
+            ColumnCount,
+            arrayOf(ViewportLinkSnapshot.Segment(0, 0, 2, "https://example.com"))
+        )
+        assertEquals(
+            TerminalSessionFrameStore.ApplyResult.UPDATED,
+            store.apply(FrameDelta(1L, FrameDelta.REASON_RESET, firstSnapshot, firstLinks), frameState())
+        )
+        val firstLayout = store.currentFrame()!!.linkLayout!!
+
+        val cursorOnlySnapshot = snapshot(false, intArrayOf(), longArrayOf(), false, 0)
+        cursorOnlySnapshot.setFrameSequence(2L)
+        val cursorOnlyLinks = ViewportLinkSnapshot.create(
+            2L,
+            0,
+            RowCount,
+            ColumnCount,
+            arrayOf(ViewportLinkSnapshot.Segment(0, 0, 2, "https://example.com"))
+        )
+        assertEquals(
+            TerminalSessionFrameStore.ApplyResult.UPDATED,
+            store.apply(
+                FrameDelta(2L, FrameDelta.REASON_APPEND, cursorOnlySnapshot, cursorOnlyLinks),
+                frameState()
+            )
+        )
+        val cursorOnlyLayout = store.currentFrame()!!.linkLayout!!
+
+        assertEquals(2L, cursorOnlyLayout.frameSequence)
+        assertSame(firstLayout.rowSegments(0), cursorOnlyLayout.rowSegments(0))
+        assertEquals("https://example.com", cursorOnlyLayout.findAt(0, 1)?.url)
+    }
+
+    @Test
     fun `same snapshot sequence reuses complete frame content`() {
         val renderCache = RenderFrameCache()
         val contentCache = TerminalFrameContentCache()

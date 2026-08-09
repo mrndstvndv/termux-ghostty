@@ -68,6 +68,7 @@ internal class TerminalSessionFrameStore {
 /** Converts a complete render-cache snapshot into a compose-owned immutable frame. */
 internal class TerminalSessionFrameAdapter {
     private val contentCache = TerminalFrameContentCache()
+    private val linkLayoutCache = TerminalFrameLinkLayoutCache()
 
     fun build(
         snapshot: ScreenSnapshot,
@@ -98,9 +99,88 @@ internal class TerminalSessionFrameAdapter {
             ),
             palette = content.palette,
             rows = content.rows,
-            linkLayout = TerminalFrameLinkLayoutBuilder.build(snapshot, viewportLinks)
+            linkLayout = linkLayoutCache.update(snapshot, viewportLinks, content)
         )
     }
+}
+
+/**
+ * Retains parsed hyperlink geometry while visible terminal rows and OSC 8
+ * metadata stay unchanged. Cursor blink and palette-only frames otherwise
+ * rerun the regular expression over every visible cell and allocate a complete
+ * link layout despite having no link work to publish.
+ */
+private class TerminalFrameLinkLayoutCache {
+    private var previousRows: List<TerminalRow> = emptyList()
+    private var layout: TerminalLinkLayout? = null
+    private var osc8Links: List<Osc8Link> = emptyList()
+
+    fun update(
+        snapshot: ScreenSnapshot,
+        viewportLinks: ViewportLinkSnapshot,
+        content: TerminalFrameContent
+    ): TerminalLinkLayout {
+        val current = layout
+        if (current != null && canReuse(current, snapshot, viewportLinks, content.rows)) {
+            previousRows = content.rows
+            return current.withFrameSequence(snapshot.frameSequence).also { layout = it }
+        }
+
+        return TerminalFrameLinkLayoutBuilder.build(snapshot, viewportLinks).also {
+            previousRows = content.rows
+            osc8Links = viewportLinks.toOsc8Links()
+            layout = it
+        }
+    }
+
+    private fun canReuse(
+        layout: TerminalLinkLayout,
+        snapshot: ScreenSnapshot,
+        viewportLinks: ViewportLinkSnapshot,
+        rows: List<TerminalRow>
+    ): Boolean {
+        val geometryMatches = layout.topRow == snapshot.topRow &&
+            layout.rows == snapshot.rows &&
+            layout.columns == snapshot.columns
+        return geometryMatches && rowsAreIdentical(rows) && osc8LinksMatch(viewportLinks)
+    }
+
+    private fun rowsAreIdentical(rows: List<TerminalRow>): Boolean =
+        rows.size == previousRows.size && rows.indices.all { rows[it] === previousRows[it] }
+
+    private fun osc8LinksMatch(viewportLinks: ViewportLinkSnapshot): Boolean {
+        if (viewportLinks.segmentCount != osc8Links.size) return false
+        return osc8Links.indices.all { index ->
+            val candidate = viewportLinks.getSegment(index)
+            val previous = osc8Links[index]
+            candidate.row == previous.row &&
+                candidate.startColumn == previous.startColumn &&
+                candidate.endColumnExclusive == previous.endColumnExclusive &&
+                candidate.source == previous.source &&
+                candidate.url == previous.url
+        }
+    }
+
+    private fun ViewportLinkSnapshot.toOsc8Links(): List<Osc8Link> =
+        List(segmentCount) { index ->
+            getSegment(index).let { segment ->
+                Osc8Link(
+                    row = segment.row,
+                    startColumn = segment.startColumn,
+                    endColumnExclusive = segment.endColumnExclusive,
+                    source = segment.source,
+                    url = segment.url
+                )
+            }
+        }
+
+    private data class Osc8Link(
+        val row: Int,
+        val startColumn: Int,
+        val endColumnExclusive: Int,
+        val source: Int,
+        val url: String
+    )
 }
 
 internal data class TerminalFrameContent(

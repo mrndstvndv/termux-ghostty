@@ -300,10 +300,10 @@ private fun rememberConfiguredController(
         onInvalidated = onInvalidated
     )
     SideEffect {
-        controller.configure(config.copy(fontSize = fontSizeState.intValue))
+        controller.configure(config, fontSizeState.intValue)
     }
     LaunchedEffect(controller, config.shaders, config.cursorEffect, fontSizeState.intValue) {
-        controller.configure(config.copy(fontSize = fontSizeState.intValue))
+        controller.configure(config, fontSizeState.intValue)
         runFrameLoop(controller, frameTimeState)
     }
     return controller

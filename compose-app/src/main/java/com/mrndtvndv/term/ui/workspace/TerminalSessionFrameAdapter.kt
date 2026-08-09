@@ -114,6 +114,7 @@ private class TerminalFrameLinkLayoutCache {
     private var previousRows: List<TerminalRow> = emptyList()
     private var layout: TerminalLinkLayout? = null
     private var osc8Links: List<Osc8Link> = emptyList()
+    private val linkLayoutBuilder = TerminalFrameLinkLayoutBuilder()
 
     fun update(
         snapshot: ScreenSnapshot,
@@ -126,7 +127,7 @@ private class TerminalFrameLinkLayoutCache {
             return current.withFrameSequence(snapshot.frameSequence).also { layout = it }
         }
 
-        return TerminalFrameLinkLayoutBuilder.build(snapshot, viewportLinks).also {
+        return linkLayoutBuilder.build(snapshot, viewportLinks).also {
             previousRows = content.rows
             osc8Links = viewportLinks.toOsc8Links()
             layout = it
@@ -196,6 +197,7 @@ internal class TerminalFrameContentCache {
     private var palette: TerminalPalette? = null
     private var paletteVersion = 0
     private var rows: List<TerminalRow> = emptyList()
+    private var dirtyRows = BooleanArray(0)
     private var topRow = 0
     private var columns = -1
 
@@ -227,13 +229,20 @@ internal class TerminalFrameContentCache {
     private fun updateRows(snapshot: ScreenSnapshot): List<TerminalRow> {
         val previousRows = rows
         val dimensionsMatch = previousRows.size == snapshot.rows && columns == snapshot.columns
-        if (!dimensionsMatch || snapshot.isFullRebuild) {
+        if (dimensionsMatch && !snapshot.isFullRebuild) {
+            if (snapshot.topRow == topRow && snapshot.dirtyRowCount == 0) {
+                return previousRows
+            }
+        } else {
             return List(snapshot.rows) { rowIndex ->
                 snapshot.reusableTerminalRow(rowIndex, previousRows) ?: snapshot.toTerminalRow(rowIndex)
             }
         }
 
-        val dirtyRows = BooleanArray(snapshot.rows)
+        if (dirtyRows.size < snapshot.rows) {
+            dirtyRows = BooleanArray(snapshot.rows)
+        }
+        dirtyRows.fill(false, 0, snapshot.rows)
         repeat(snapshot.dirtyRowCount) { dirtyIndex ->
             dirtyRows[snapshot.getDirtyRow(dirtyIndex)] = true
         }
@@ -291,7 +300,7 @@ private fun ScreenSnapshot.toTerminalRow(rowIndex: Int): TerminalRow {
     )
 }
 
-private object TerminalFrameLinkLayoutBuilder {
+private class TerminalFrameLinkLayoutBuilder {
     private val urlPattern = Regex(
         pattern =
             """(?i)\b(?:(?:(?:dav|dict|dns|file|finger|ftp(?:s?)|git|gemini|gopher|http(?:s?)|""" +
@@ -299,10 +308,19 @@ private object TerminalFrameLinkLayoutBuilder {
                 """rtsp(?:[su]?)|sftp|smb(?:s?)|smtp(?:s?)|ssh|svn(?:\+ssh)?|tcp|telnet|tftp|""" +
                 """udp|vnc|ws(?:s?))://|(?:mailto|magnet|news|tel):)[^\s\u0000-\u001F<>"']+)"""
     )
+    private var segments = emptyArray<MutableList<TerminalLinkSegment>>()
+    private var claimedCells = BooleanArray(0)
+    private val text = StringBuilder()
+    private var spanRows = IntArray(0)
+    private var spanStarts = IntArray(0)
+    private var spanEnds = IntArray(0)
+    private var spanTextStarts = IntArray(0)
+    private var spanTextEnds = IntArray(0)
+    private var spanCount = 0
 
     fun build(snapshot: ScreenSnapshot, viewportLinks: ViewportLinkSnapshot): TerminalLinkLayout {
-        val segments = List(snapshot.rows) { mutableListOf<TerminalLinkSegment>() }
-        val claimedCells = BooleanArray(snapshot.rows * snapshot.columns)
+        val cellCount = snapshot.rows * snapshot.columns
+        ensureScratch(snapshot.rows, cellCount)
         addOsc8Segments(snapshot, viewportLinks, segments, claimedCells)
         addLiteralUrls(snapshot, segments, claimedCells)
         return TerminalLinkLayout(
@@ -310,14 +328,31 @@ private object TerminalFrameLinkLayoutBuilder {
             topRow = snapshot.topRow,
             rows = snapshot.rows,
             columns = snapshot.columns,
-            segmentsPerRow = segments
+            segmentsPerRow = segments.asList().subList(0, snapshot.rows)
         )
+    }
+
+    private fun ensureScratch(rows: Int, cellCount: Int) {
+        if (segments.size < rows) {
+            val previous = segments
+            segments = Array(rows) { row ->
+                if (row < previous.size) previous[row] else ArrayList()
+            }
+        }
+        for (row in 0 until rows) {
+            segments[row].clear()
+        }
+        if (claimedCells.size < cellCount) {
+            claimedCells = BooleanArray(cellCount)
+        } else {
+            claimedCells.fill(false, 0, cellCount)
+        }
     }
 
     private fun addOsc8Segments(
         snapshot: ScreenSnapshot,
         viewportLinks: ViewportLinkSnapshot,
-        segments: List<MutableList<TerminalLinkSegment>>,
+        segments: Array<MutableList<TerminalLinkSegment>>,
         claimedCells: BooleanArray
     ) {
         if (!viewportLinks.isCompatibleWith(snapshot)) return
@@ -338,7 +373,7 @@ private object TerminalFrameLinkLayoutBuilder {
 
     private fun addLiteralUrls(
         snapshot: ScreenSnapshot,
-        segments: List<MutableList<TerminalLinkSegment>>,
+        segments: Array<MutableList<TerminalLinkSegment>>,
         claimedCells: BooleanArray
     ) {
         var firstRow = 0
@@ -354,11 +389,11 @@ private object TerminalFrameLinkLayoutBuilder {
         snapshot: ScreenSnapshot,
         firstRow: Int,
         lastRow: Int,
-        segments: List<MutableList<TerminalLinkSegment>>,
+        segments: Array<MutableList<TerminalLinkSegment>>,
         claimedCells: BooleanArray
     ) {
-        val text = StringBuilder()
-        val spans = mutableListOf<CellTextSpan>()
+        text.setLength(0)
+        spanCount = 0
         for (row in firstRow..lastRow) {
             val source = snapshot.getRow(row)
             if (!source.hasCellLayout()) return
@@ -376,7 +411,7 @@ private object TerminalFrameLinkLayoutBuilder {
                 } else {
                     repeat(width) { text.append(' ') }
                 }
-                spans += CellTextSpan(row, column, column + width, start, text.length)
+                appendSpan(row, column, column + width, start, text.length)
                 column += width
             }
         }
@@ -388,7 +423,6 @@ private object TerminalFrameLinkLayoutBuilder {
                     match.range.first,
                     end,
                     text.substring(match.range.first, end),
-                    spans,
                     snapshot.columns,
                     segments,
                     claimedCells
@@ -397,21 +431,47 @@ private object TerminalFrameLinkLayoutBuilder {
         }
     }
 
+    private fun appendSpan(
+        row: Int,
+        startColumn: Int,
+        endColumn: Int,
+        textStart: Int,
+        textEnd: Int
+    ) {
+        if (spanCount == spanRows.size) {
+            val nextSize = if (spanRows.isEmpty()) 64 else spanRows.size * 2
+            spanRows = spanRows.copyOf(nextSize)
+            spanStarts = spanStarts.copyOf(nextSize)
+            spanEnds = spanEnds.copyOf(nextSize)
+            spanTextStarts = spanTextStarts.copyOf(nextSize)
+            spanTextEnds = spanTextEnds.copyOf(nextSize)
+        }
+        spanRows[spanCount] = row
+        spanStarts[spanCount] = startColumn
+        spanEnds[spanCount] = endColumn
+        spanTextStarts[spanCount] = textStart
+        spanTextEnds[spanCount] = textEnd
+        spanCount++
+    }
+
     @Suppress("LongParameterList")
     private fun addUrlMatch(
         start: Int,
         end: Int,
         url: String,
-        spans: List<CellTextSpan>,
         columns: Int,
-        segments: List<MutableList<TerminalLinkSegment>>,
+        segments: Array<MutableList<TerminalLinkSegment>>,
         claimedCells: BooleanArray
     ) {
         val accumulator = UrlSegmentAccumulator(url, columns, segments, claimedCells)
-        for (span in spans) {
-            if (span.textStart >= end) break
-            if (span.textEnd > start) {
-                accumulator.append(span)
+        for (spanIndex in 0 until spanCount) {
+            if (spanTextStarts[spanIndex] >= end) break
+            if (spanTextEnds[spanIndex] > start) {
+                accumulator.append(
+                    row = spanRows[spanIndex],
+                    startColumn = spanStarts[spanIndex],
+                    endColumn = spanEnds[spanIndex]
+                )
             }
         }
         accumulator.flush()
@@ -421,10 +481,10 @@ private object TerminalFrameLinkLayoutBuilder {
         row: Int,
         segment: TerminalLinkSegment,
         columns: Int,
-        segments: List<MutableList<TerminalLinkSegment>>,
+        segments: Array<MutableList<TerminalLinkSegment>>,
         claimedCells: BooleanArray
     ) {
-        segments[row] += segment
+        segments[row].add(segment)
         for (column in segment.startColumn until segment.endColumnExclusive) {
             claimedCells[(row * columns) + column] = true
         }
@@ -463,27 +523,19 @@ private object TerminalFrameLinkLayoutBuilder {
         return balance < 0
     }
 
-    private data class CellTextSpan(
-        val row: Int,
-        val startColumn: Int,
-        val endColumn: Int,
-        val textStart: Int,
-        val textEnd: Int
-    )
-
-    private class UrlSegmentAccumulator(
+    private inner class UrlSegmentAccumulator(
         private val url: String,
         private val columns: Int,
-        private val segments: List<MutableList<TerminalLinkSegment>>,
+        private val segments: Array<MutableList<TerminalLinkSegment>>,
         private val claimedCells: BooleanArray
     ) {
         private var activeRow = -1
         private var activeStart = -1
         private var activeEnd = -1
 
-        fun append(span: CellTextSpan) {
-            for (column in span.startColumn until span.endColumn) {
-                appendCell(span.row, column)
+        fun append(row: Int, startColumn: Int, endColumn: Int) {
+            for (column in startColumn until endColumn) {
+                appendCell(row, column)
             }
         }
 

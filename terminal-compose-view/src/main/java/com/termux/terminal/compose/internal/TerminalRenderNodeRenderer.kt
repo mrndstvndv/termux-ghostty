@@ -44,6 +44,7 @@ internal class TerminalRenderNodeRenderer(
     private var hintSelectionEnds = IntArray(0)
     private var hintCursorXs = IntArray(0)
     private var hintLinkContentHashes = LongArray(0)
+    private val rowHintsScratch = RowRenderHints(-1, -1, -1, TerminalCursor.STYLE_BLOCK, false)
     // Reusable sink for the scroll layer rotation.
     private var scrollScratch: Array<TerminalRowLayerState> = emptyArray()
     private var width = -1
@@ -316,13 +317,11 @@ internal class TerminalRenderNodeRenderer(
         val rowLayer = rowLayers[rowIndex]
         rowLayer.layer.topLeft = IntOffset(0, rowIndex * lineHeight)
         val row = frame.row(rowIndex)
-        val hints = RowRenderHints(
-            selectionStart = hintSelectionStarts[rowIndex],
-            selectionEnd = hintSelectionEnds[rowIndex],
-            cursorX = hintCursorXs[rowIndex],
-            cursorStyle = frame.cursor.style,
-            reverseVideo = frame.reverseVideo
-        )
+        rowHintsScratch.selectionStart = hintSelectionStarts[rowIndex]
+        rowHintsScratch.selectionEnd = hintSelectionEnds[rowIndex]
+        rowHintsScratch.cursorX = hintCursorXs[rowIndex]
+        rowHintsScratch.cursorStyle = frame.cursor.style
+        rowHintsScratch.reverseVideo = frame.reverseVideo
         val linkContentHash = hintLinkContentHashes[rowIndex]
         rowLayer.layer.record(
             density = drawScope,
@@ -335,7 +334,7 @@ internal class TerminalRenderNodeRenderer(
                         canvas = canvas.nativeCanvas,
                         frame = frame,
                         rowIndex = rowIndex,
-                        hints = hints,
+                        hints = rowHintsScratch,
                         baselineY = lineHeight.toFloat()
                     )
                 }
@@ -344,7 +343,7 @@ internal class TerminalRenderNodeRenderer(
         if (row == null) {
             rowLayer.state.clear()
         } else {
-            rowLayer.state.applyFrame(row, hints, paletteVersion, linkContentHash)
+            rowLayer.state.applyFrame(row, rowHintsScratch, paletteVersion, linkContentHash)
         }
     }
 

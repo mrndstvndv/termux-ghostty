@@ -541,17 +541,22 @@ final class GhosttySessionWorker extends Thread {
         ScreenSnapshot stagingSnapshot = mCurrentStaging;
         ViewportLinkSnapshot stagingViewportLinks = mCurrentViewportLinkStaging;
         ScreenSnapshot publishedSnapshot = mPublishedSnapshot.get();
+        FrameDelta publishedFrame = mPublishedFrameDelta.get();
+        int pendingReasonFlags = mPendingFrameReasonFlags.get();
         if (publishedSnapshot != null && publishedSnapshot != stagingSnapshot) {
             stagingSnapshot.copyPersistentMetadataFrom(publishedSnapshot);
         }
 
         long buildStartNanos = SystemClock.elapsedRealtimeNanos();
         mContent.fillSnapshot(stagingSnapshot);
-        mContent.fillViewportLinks(stagingViewportLinks);
+        if (publishedFrame != null && pendingReasonFlags == FrameDelta.REASON_CURSOR_BLINK) {
+            stagingViewportLinks.copyContentFrom(publishedFrame.getViewportLinkSnapshot());
+        } else {
+            mContent.fillViewportLinks(stagingViewportLinks);
+        }
         long buildDurationNanos = SystemClock.elapsedRealtimeNanos() - buildStartNanos;
 
         mLastSnapshotTime = SystemClock.uptimeMillis();
-        FrameDelta publishedFrame = mPublishedFrameDelta.get();
         if (!FramePublicationDecision.shouldPublish(stagingSnapshot, stagingViewportLinks, publishedFrame)) {
             mPendingFrameReasonFlags.set(0);
             return;

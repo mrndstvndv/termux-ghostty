@@ -68,6 +68,18 @@ public final class ViewportLinkSnapshot {
     void setFrameSequence(long frameSequence) {
         mFrameSequence = frameSequence;
     }
+    void copyContentFrom(ViewportLinkSnapshot source) {
+        if (source == null) {
+            throw new IllegalArgumentException("source must not be null");
+        }
+
+        mFrameSequence = source.mFrameSequence;
+        mTopRow = source.mTopRow;
+        mRows = source.mRows;
+        mColumns = source.mColumns;
+        mRequiredBytes = source.mRequiredBytes;
+        mSegments = source.mSegments;
+    }
 
     public long getFrameSequence() {
         return mFrameSequence;

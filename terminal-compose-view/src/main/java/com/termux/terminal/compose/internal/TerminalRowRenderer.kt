@@ -13,12 +13,12 @@ import com.termux.terminal.compose.TerminalRow
 import kotlin.math.abs
 
 /** Row-local overlay and selection hints used while building and drawing runs. */
-internal data class RowRenderHints(
-    val selectionStart: Int,
-    val selectionEnd: Int,
-    val cursorX: Int,
-    val cursorStyle: Int,
-    val reverseVideo: Boolean
+internal class RowRenderHints(
+    var selectionStart: Int,
+    var selectionEnd: Int,
+    var cursorX: Int,
+    var cursorStyle: Int,
+    var reverseVideo: Boolean
 )
 
 /**
@@ -129,32 +129,26 @@ internal class TerminalRowRenderer(
         selectionEndCol: Int,
         reverseVideo: Boolean
     ) {
-        prepare(frame)
-        canvas.drawColor(
-            frame.palette.color(
-                if (reverseVideo) TerminalPalette.COLOR_INDEX_FOREGROUND
-                else TerminalPalette.COLOR_INDEX_BACKGROUND
-            )
-        )
-        val cursorVisible = frame.cursor.visible
-        val cursorRow = frame.cursor.row
-        val cursorCol = frame.cursor.column
-        val cursorStyle = frame.cursor.style
+        val hints = RowRenderHints(-1, -1, -1, frame.cursor.style, reverseVideo)
         for (rowIndex in 0 until frame.rowsVisible) {
             val absoluteRow = frame.topRow + rowIndex
-            val selectionStart = if (absoluteRow == selectionStartRow) selectionStartCol else -1
-            val selectionEnd = when {
+            hints.selectionStart = if (absoluteRow == selectionStartRow) selectionStartCol else -1
+            hints.selectionEnd = when {
                 absoluteRow < selectionStartRow || absoluteRow > selectionEndRow -> -1
                 absoluteRow == selectionEndRow -> selectionEndCol
                 else -> frame.columns
             }
-            val rowCursorX = if (cursorVisible && absoluteRow == cursorRow) cursorCol else -1
+            hints.cursorX = if (frame.cursor.visible && absoluteRow == frame.cursor.row) {
+                frame.cursor.column
+            } else {
+                -1
+            }
             val baselineY = (lineSpacingAndAscentPx + lineSpacingPx * (rowIndex + 1)).toFloat()
             renderRow(
                 canvas = canvas,
                 frame = frame,
                 rowIndex = rowIndex,
-                hints = RowRenderHints(selectionStart, selectionEnd, rowCursorX, cursorStyle, reverseVideo),
+                hints = hints,
                 baselineY = baselineY
             )
         }

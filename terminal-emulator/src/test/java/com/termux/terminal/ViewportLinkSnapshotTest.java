@@ -1,6 +1,8 @@
 package com.termux.terminal;
 
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
@@ -13,6 +15,17 @@ public final class ViewportLinkSnapshotTest {
         ViewportLinkSnapshot second = snapshot(2, "https://example.com");
 
         assertTrue(first.hasSameContent(second));
+    }
+    @Test
+    public void copyContentSharesParsedSegments() {
+        ViewportLinkSnapshot source = snapshot(3, "https://example.com");
+        ViewportLinkSnapshot target = new ViewportLinkSnapshot();
+
+        target.copyContentFrom(source);
+
+        assertTrue(target.hasSameContent(source));
+        assertEquals(source.getFrameSequence(), target.getFrameSequence());
+        assertSame(source.getSegment(0), target.getSegment(0));
     }
 
     @Test

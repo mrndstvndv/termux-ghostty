@@ -239,6 +239,7 @@ class TerminalFrameContentCacheTest {
         )
 
         assertNotSame(first.palette, second.palette)
+        assertSame(first.rows, second.rows)
         assertSame(first.rows[0], second.rows[0])
         assertSame(first.rows[1], second.rows[1])
     }

@@ -579,6 +579,12 @@ pub const SshNativeSession = struct {
                 break;
             }
 
+            // libssh2 operations can consume socket packets while leaving shell data in the
+            // channel's internal buffer. Drain it before poll; otherwise no fd readiness remains
+            // to wake an idle shell until a later keypress or resize generates more traffic.
+            self.processRead(jni_env);
+            if (!self.running.load(.acquire)) break;
+
             fds[0].events = c.POLLIN;
             const directions = c.libssh2_session_block_directions(self.session);
             if ((directions & c.LIBSSH2_SESSION_BLOCK_OUTBOUND) != 0) fds[0].events |= c.POLLOUT;

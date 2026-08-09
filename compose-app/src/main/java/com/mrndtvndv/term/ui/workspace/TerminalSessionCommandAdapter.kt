@@ -10,6 +10,11 @@ import com.termux.terminal.compose.TerminalPointerEvent
 import com.termux.terminal.compose.TerminalSize
 import kotlin.math.roundToInt
 
+internal fun scrollUsesTerminalInput(
+    mouseTrackingActive: Boolean,
+    alternateBufferActive: Boolean
+): Boolean = mouseTrackingActive || alternateBufferActive
+
 /** Translates neutral canvas commands to the existing Ghostty session API. */
 internal class TerminalSessionCommandAdapter(
     private val session: TerminalSession,
@@ -81,13 +86,15 @@ internal class TerminalSessionCommandAdapter(
     }
 
     private fun submitScroll(command: TerminalCommand.Scroll): TerminalCommandResult {
+        val mouseTrackingActive = session.isMouseTrackingActive
+        val alternateBufferActive = session.isAlternateBufferActive
         return when {
             command.rowsDown == 0 -> TerminalCommandResult.Success
-            !session.isMouseTrackingActive && !session.isAlternateBufferActive -> {
+            !scrollUsesTerminalInput(mouseTrackingActive, alternateBufferActive) -> {
                 updateTopRow(currentTopRow() + command.rowsDown)
                 TerminalCommandResult.Success
             }
-            session.isMouseTrackingActive && currentSize() == null ->
+            mouseTrackingActive && currentSize() == null ->
                 TerminalCommandResult.Unsupported("Terminal size is not available")
             else -> {
                 submitTrackedScroll(command, currentSize())

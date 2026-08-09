@@ -35,8 +35,6 @@ private data class GestureContext(
 
 /** Per-gesture scroll, pan, and zoom state. */
 private class ScrollGestureState {
-    var initialScrollSet = false
-    var gestureStartY = 0f
     var dragAccumulator = 0f
     var totalPanX = 0f
     var totalPanY = 0f
@@ -137,28 +135,15 @@ private fun handlePinchZoom(
     return 1f
 }
 
-/** Applies vertical scroll: ratio jump to the gesture start, then incremental deltas. */
+/** Applies vertical scroll through backend-routed incremental deltas. */
 private fun handleScrollGesture(
     event: PointerEvent,
     context: GestureContext,
     scrollState: ScrollGestureState
 ) {
     event.changes.forEach { if (it.positionChanged()) it.consume() }
+    // Keep routing in the backend; a rendered frame can lag live multiplexer modes.
     val centroid = event.calculateCentroid()
-    val frame = context.controller.currentFrame()
-    if (!scrollState.initialScrollSet) {
-        scrollState.initialScrollSet = true
-        scrollState.gestureStartY = centroid.y
-        if (frame != null && !frame.mouseTrackingActive && !frame.alternateBufferActive) {
-            val viewHeight = context.metrics.viewportHeightPx.toFloat()
-            if (viewHeight > 0f && frame.viewport.transcriptRows > 0) {
-                val ratio = (scrollState.gestureStartY / viewHeight).coerceIn(0f, 1f)
-                val targetTopRow = -(frame.viewport.transcriptRows * ratio).toInt()
-                    .coerceIn(-frame.viewport.transcriptRows, 0)
-                context.controller.submit(TerminalCommand.SetViewportTopRow(targetTopRow))
-            }
-        }
-    }
     scrollState.dragAccumulator += event.calculatePan().y
     val deltaRows = (scrollState.dragAccumulator / context.metrics.cellHeightPx).toInt()
     if (deltaRows != 0) {

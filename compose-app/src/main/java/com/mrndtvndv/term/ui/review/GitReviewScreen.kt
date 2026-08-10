@@ -52,9 +52,11 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.zIndex
 
 @Suppress("LongMethod", "CyclomaticComplexMethod")
 @OptIn(ExperimentalMaterial3Api::class)
@@ -1700,29 +1702,38 @@ private fun DiffContent(
         }
     }
 
-    Box(
+    BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.1f))
             .transformable(state = transformState)
     ) {
+        val viewportWidth = maxWidth
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.1f))
+                .horizontalScroll(horizScrollState)
         ) {
             sections.forEachIndexed { sectionIndex, section ->
                 item(key = "header:$sectionIndex") {
-                    FileDiffHeader(
-                        filePath = section.filePath,
-                        isCollapsed = section.filePath in collapsedSections,
-                        onToggleCollapse = {
-                            collapsedSections = if (section.filePath in collapsedSections) {
-                                collapsedSections - section.filePath
-                            } else {
-                                collapsedSections + section.filePath
+                    Box(
+                        modifier = Modifier
+                            .width(viewportWidth)
+                            .offset { IntOffset(horizScrollState.value, 0) }
+                            .zIndex(1f)
+                    ) {
+                        FileDiffHeader(
+                            filePath = section.filePath,
+                            isCollapsed = section.filePath in collapsedSections,
+                            onToggleCollapse = {
+                                collapsedSections = if (section.filePath in collapsedSections) {
+                                    collapsedSections - section.filePath
+                                } else {
+                                    collapsedSections + section.filePath
+                                }
                             }
-                        }
-                    )
+                        )
+                    }
                 }
                 items(
                     count = rowsBySection[sectionIndex].size,
@@ -1734,7 +1745,8 @@ private fun DiffContent(
                         horizScrollState = horizScrollState,
                         isDark = isDark,
                         fallbackColor = fallbackColor,
-                        showLineNumbers = showLineNumbers
+                        showLineNumbers = showLineNumbers,
+                        minimumWidth = viewportWidth
                     )
                 }
             }
@@ -1803,6 +1815,7 @@ private data class ScaledDiffDimensions(
     val lineNumFontSize: androidx.compose.ui.unit.TextUnit
 )
 
+@Suppress("LongMethod")
 @Composable
 private fun DiffRowItem(
     row: DiffRow,
@@ -1810,7 +1823,8 @@ private fun DiffRowItem(
     horizScrollState: androidx.compose.foundation.ScrollState,
     isDark: Boolean,
     fallbackColor: Color,
-    showLineNumbers: Boolean
+    showLineNumbers: Boolean,
+    minimumWidth: androidx.compose.ui.unit.Dp
 ) {
     val line = row.line
     val (bgColor, textColor) = getColors(line.type, isDark, fallbackColor)
@@ -1826,12 +1840,15 @@ private fun DiffRowItem(
     }
     Row(
         modifier = Modifier
-            .fillMaxWidth()
+            .widthIn(min = minimumWidth)
             .height(dims.lineHeight)
             .background(bgColor)
     ) {
         if (showLineNumbers) {
             LineNumberCell(
+                modifier = Modifier
+                    .offset { IntOffset(horizScrollState.value, 0) }
+                    .zIndex(1f),
                 line = line,
                 fontSize = dims.lineNumFontSize,
                 numWidth = dims.numWidth,
@@ -1841,6 +1858,8 @@ private fun DiffRowItem(
             )
             Box(
                 modifier = Modifier
+                    .offset { IntOffset(horizScrollState.value, 0) }
+                    .zIndex(1f)
                     .width(1.dp)
                     .fillMaxHeight()
                     .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
@@ -1848,13 +1867,13 @@ private fun DiffRowItem(
         }
         SelectionContainer(
             modifier = Modifier
-                .weight(1f)
                 .fillMaxHeight()
+                .wrapContentWidth(unbounded = true)
         ) {
             Box(
                 modifier = Modifier
-                    .fillMaxSize()
-                    .horizontalScroll(horizScrollState)
+                    .fillMaxHeight()
+                    .wrapContentWidth(unbounded = true)
                     .padding(horizontal = 8.dp),
                 contentAlignment = Alignment.CenterStart
             ) {
@@ -1876,11 +1895,12 @@ private fun LineNumberCell(
     numWidth: androidx.compose.ui.unit.Dp,
     columnWidth: androidx.compose.ui.unit.Dp,
     isDark: Boolean,
-    fallbackColor: Color
+    fallbackColor: Color,
+    modifier: Modifier = Modifier
 ) {
     val (bgColor, _) = getColors(line.type, isDark, fallbackColor)
     Column(
-        modifier = Modifier
+        modifier = modifier
             .width(columnWidth)
             .fillMaxHeight()
             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))

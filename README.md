@@ -22,6 +22,14 @@ An experimental Android terminal app using libghostty-vt as the terminal backend
 
 A vibe coding companion for Android — an SSH client with Herdr integration and a Ghostty terminal backend, built as a separate Jetpack Compose app (`com.mrndtvndv.term`).
 
+### Screenshots
+
+| Local & SSH | Herdr Workspaces | Git Review |
+| :---: | :---: | :---: |
+| ![Local & SSH](compose-app/screenshots/local-and-ssh.png) | ![Herdr Workspaces](compose-app/screenshots/herdr-workspaces-integration.png) | ![Git Review](compose-app/screenshots/git-tab.png) |
+| **Diff Viewer** | **SFTP Browser** | **Cursor Trail Shaders** |
+| ![Diff Viewer](compose-app/screenshots/diff.png) | ![SFTP Browser](compose-app/screenshots/sftp.png) | ![Cursor Trail Shaders](compose-app/screenshots/shaders.png) |
+
 ### Features
 
 - **Ghostty terminal backend** — Native VT parsing and terminal state via `libghostty-vt`, rendered with Compose Canvas.

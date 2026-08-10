@@ -21,6 +21,7 @@ import com.mrndtvndv.term.NativeLogcatLogger
 import com.mrndtvndv.term.ui.keyboard.PresetArrowsOnly
 import com.mrndtvndv.term.ui.keyboard.PresetDoubleRow
 import com.mrndtvndv.term.ui.keyboard.PresetSingleRow
+import com.mrndtvndv.term.ui.keyboard.PresetTmux
 import com.mrndtvndv.term.ui.keyboard.validateExtraKeysJson
 import com.mrndtvndv.term.ui.keyboard.ExtraKeysController
 import com.mrndtvndv.term.ui.keyboard.ExtraKeysToolbar
@@ -164,7 +165,7 @@ fun SettingsScreen(
                             modifier = Modifier.align(Alignment.Start)
                         )
 
-                        val presets = listOf("Double Row", "Single Row", "Arrows Only", "Custom")
+                        val presets = listOf("Double Row", "Tmux", "Single Row", "Arrows Only", "Custom")
                         var expanded by remember { mutableStateOf(false) }
 
                         Box(modifier = Modifier.fillMaxWidth()) {
@@ -193,6 +194,7 @@ fun SettingsScreen(
 
                         val resolvedJson = when (extraKeysPreset) {
                             "Double Row" -> PresetDoubleRow
+                            "Tmux" -> PresetTmux
                             "Single Row" -> PresetSingleRow
                             "Arrows Only" -> PresetArrowsOnly
                             else -> extraKeysCustomJson

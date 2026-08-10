@@ -4,7 +4,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 
-const val PresetDoubleRow = "[['ESC','CTRL','TAB'," +
+const val PresetDoubleRow = "[['ESC','/',{key: '-', popup: '|'},'HOME','UP','END','PGUP']," +
+    " ['TAB','CTRL','ALT','LEFT','DOWN','RIGHT','PGDN']]"
+const val PresetTmux = "[['ESC','CTRL','TAB'," +
     "{display: 'EXIT', macro: 'CTRL d'}," +
     "{display: 'PREV', macro: 'CTRL b p', " +
     "popup: {macro: 'CTRL SHIFT J', display: '('}}," +

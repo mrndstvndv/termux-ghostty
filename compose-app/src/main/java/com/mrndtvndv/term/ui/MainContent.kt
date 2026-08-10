@@ -26,6 +26,7 @@ import com.mrndtvndv.term.ui.addserver.AddServerScreen
 import com.mrndtvndv.term.ui.keyboard.PresetArrowsOnly
 import com.mrndtvndv.term.ui.keyboard.PresetDoubleRow
 import com.mrndtvndv.term.ui.keyboard.PresetSingleRow
+import com.mrndtvndv.term.ui.keyboard.PresetTmux
 import com.mrndtvndv.term.ui.notification.InAppNotificationBanner
 import com.mrndtvndv.term.ui.serverlist.ServerListScreen
 import com.mrndtvndv.term.ui.settings.SettingsScreen
@@ -181,6 +182,7 @@ fun MainContent(
             val resolvedJson = remember(extraKeysPreset, extraKeysCustomJson) {
                 when (extraKeysPreset) {
                     "Double Row" -> PresetDoubleRow
+                    "Tmux" -> PresetTmux
                     "Single Row" -> PresetSingleRow
                     "Arrows Only" -> PresetArrowsOnly
                     else -> extraKeysCustomJson

@@ -1,0 +1,162 @@
+Terminal scroll routing bug report
+================================
+
+Date: 2026-08-09
+Status: Still reproducible after the current routing/cache fix
+
+User-visible symptom
+--------------------
+When vertically swiping the terminal while running a TUI or a multiplexer pane
+(for example tmux), the swipe sometimes scrolls Ghostty/terminal scrollback
+instead of scrolling the active TUI or multiplexer pane.
+
+The behavior is intermittent: it works sometimes and fails sometimes. On the
+user's slow Android phone it fails most of the time. The user also previously
+reported that terminal input/tap handling felt unreliable, so tap routing may
+be related, but the primary unresolved symptom is scroll ownership.
+
+Expected behavior
+-----------------
+- Ordinary shell: vertical swipe scrolls terminal scrollback.
+- Alternate-screen TUI without mouse tracking: vertical swipe sends the
+  equivalent arrow-key input to the TUI.
+- Mouse-tracking TUI/multiplexer pane: vertical swipe sends wheel mouse events
+  to the terminal application; the local terminal scrollback must not move.
+
+Observed behavior
+-----------------
+The app occasionally chooses the ordinary-shell path while a TUI or
+multiplexer is active. The terminal scrollback then moves, while the pane/TUI
+does not. Repeating the same gesture may work after the terminal catches up.
+The failure rate increases substantially on a slower phone.
+
+Relevant current code path
+--------------------------
+1. Compose gesture collection:
+   terminal-compose-view/src/main/java/com/termux/terminal/compose/internal/TerminalGestures.kt
+   - handleScrollGesture() accumulates vertical pan distance.
+   - Every crossed cell-height threshold submits
+     TerminalCommand.Scroll(rowsDown = -deltaRows, xPx, yPx).
+   - The pointer changes are consumed in this handler.
+
+2. Backend command routing:
+   compose-app/src/main/java/com/mrndtvndv/term/ui/workspace/TerminalSessionCommandAdapter.kt
+   - submitScroll() decides ownership.
+   - Ordinary shell calls updateTopRow(), moving local scrollback.
+   - Mouse tracking calls sendGhosttyMouseEvent() with wheel buttons.
+   - Alternate buffer without mouse tracking sends DPAD_UP/DPAD_DOWN bytes.
+   - The adapter currently calls refreshInputMode before reading the mode flags
+     and uses one mouse-tracking snapshot for the whole scroll command.
+
+3. Mode state:
+   terminal-emulator/src/main/java/com/termux/terminal/TerminalSession.java
+   - isMouseTrackingActive() reads mGhosttyModeBits.
+   - isAlternateBufferActive() reads mGhosttyAlternateBufferActive.
+   - refreshGhosttyInputMode() reads the live GhosttyTerminalContent while
+     holding its monitor and refreshes those two cached values.
+
+4. Ghostty worker:
+   terminal-emulator/src/main/java/com/termux/terminal/GhosttySessionWorker.java
+   - handleAppend() processes PTY output on the worker thread.
+   - appendToNative() calls mContent.append(), then updateCachedState().
+   - updateCachedState() publishes mode bits and alternate-buffer state to the
+     TerminalSession cache.
+   - Snapshot/frame publication happens separately from input dispatch.
+
+Current fix already attempted
+-----------------------------
+The original implementation trusted the session mode cache and, for taps,
+trusted rendered-frame mode flags. That created a race: the TUI could have
+sent mode-changing escape sequences while the UI gesture was handled before
+the worker/cache/frame had caught up.
+
+The attempted fix:
+- refreshes mode state from live GhosttyTerminalContent before scroll routing;
+- captures the route once instead of re-reading the cached mouse flag per row;
+- forwards tap press/release events regardless of the rendered frame mode;
+- relies on Ghostty's encoder to emit nothing for mouse events when tracking is
+  disabled.
+
+The user reports that the scroll symptom still occurs, so the cache/frame lag
+hypothesis is incomplete or there is another race/path after this adapter.
+
+Why the behavior looks random
+-----------------------------
+The likely timing window is between terminal output, Ghostty worker parsing,
+frame publication, UI gesture dispatch, and the worker's eventual input
+handling. A volatile cache makes a published value visible; it does not force
+queued PTY bytes to be parsed before a touch event arrives.
+
+On a fast device the worker often processes the TUI's mode sequence before the
+next swipe, so routing appears correct. On a slow device, worker backlog and
+frame/input scheduling enlarge the window in which the app can make a decision
+using state from immediately before the TUI/multiplexer mode transition.
+
+This explanation is supported by code inspection and the timing pattern, but
+has not been proven with an on-device trace.
+
+Important unresolved hypotheses
+--------------------------------
+A. The PTY output containing the mode sequence may still be queued and not yet
+   appended to Ghostty when refreshGhosttyInputMode() runs. Refreshing the live
+   native content cannot see bytes that have not been processed yet.
+
+B. The gesture may not reach handleScrollGesture() consistently. The workspace
+   uses HorizontalPager plus a custom Initial-pass pointerInput gate:
+   compose-app/src/main/java/com/mrndtvndv/term/ui/workspace/TabbedWorkspace.kt
+   Inspect whether pager arbitration, event consumption, or recomposition can
+   cancel vertical terminal gestures on a slow device.
+
+C. TerminalCommand.Scroll may be submitted correctly but lost/overridden later
+   in TerminalSessionBackend or TerminalController. Trace command submission,
+   TerminalSessionCommandAdapter.submitScroll(), and the resulting native
+   queue/top-row update on the same gesture.
+
+D. The native Ghostty input queue may process the wheel event after a mode
+   transition, while the local top-row update was already selected by the UI.
+   The ordering between MSG_APPEND, MSG_MOUSE_EVENT, and viewport updates needs
+   an event-sequenced trace.
+
+E. tmux/TUI mouse mode may not actually be enabled at the moment of the swipe,
+   or the application may switch between alternate-screen and normal-screen
+   modes during the gesture. Verify the actual mode bits and emitted bytes,
+   rather than inferring state from the rendered frame.
+
+F. The current scroll path sends incremental rows. A gesture can cross several
+   thresholds while mode state changes; verify that all rows in one command are
+   routed consistently and that a later command cannot update local scrollback.
+
+Recommended next investigation
+------------------------------
+Add temporary, timestamped tracing at these boundaries for one gesture:
+
+1. TerminalGestures.handleScrollGesture(): pointer id, consumed state,
+   deltaRows, centroid, command sequence number.
+2. TerminalController.submit(): command sequence and result.
+3. TerminalSessionCommandAdapter.submitScroll(): cached mode before refresh,
+   mode after refresh, selected route, rowsDown, and currentSize result.
+4. TerminalSession.refreshGhosttyInputMode(): native mode values and thread.
+5. GhosttySessionWorker.handleAppend(): append sequence and mode values after
+   append.
+6. GhosttySessionWorker.handleMouseEvent(): event sequence, button, current
+   mode, and appended output count.
+7. GhosttySession.setGhosttyTopRow()/viewport handling: every local scrollback
+   mutation and its originating command sequence.
+
+Use one monotonically increasing gesture/command sequence and monotonic clock
+values. The decisive evidence is whether a failing gesture:
+- never reaches handleScrollGesture;
+- reaches it but chooses the ordinary-shell route;
+- chooses the wheel/key route but native input is not emitted/consumed; or
+- emits native input while a separate later path moves local scrollback.
+
+Testing constraints and existing evidence
+------------------------------------------
+- Existing JVM tests pass for the current adapter routing branches, stale-mode
+  seam, and tap mouse press/release construction.
+- The tests do not exercise Android pointer dispatch, real PTY output timing,
+  Ghostty native mode transitions, or a slow device.
+- Repository rules prohibit device/emulator/manual validation for this task,
+  so an on-device trace is required from the next investigator if the issue
+  cannot be reproduced in a deterministic instrumentation harness.
+- No commit was created for the current changes.

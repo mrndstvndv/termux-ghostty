@@ -83,4 +83,10 @@ class TerminalEffectTest {
         assertEquals(VisualEffectFrameRate.FPS_120, VisualEffectFrameRate.fromPref("120"))
         assertEquals(120f, VisualEffectFrameRate.FPS_120.framesPerSecond)
     }
+
+    @Test
+    fun cursorTrailRejectsViewportSpanningMoves() {
+        assertTrue(isRenderableCursorTrailDistance(4f))
+        assertFalse(isRenderableCursorTrailDistance(40f))
+    }
 }

@@ -38,7 +38,7 @@ internal class AppCursorEffect(
         val moveRows = (state.currentRow - state.previousRow).toFloat()
         val moveDistance = sqrt(moveColumns * moveColumns + moveRows * moveRows)
         val progressSeconds = timeSeconds - state.changeSeconds
-        if (moveDistance < TrailMinDistanceCells ||
+        if (!isRenderableCursorTrailDistance(moveDistance) ||
             progressSeconds >= maxDurationSeconds - 0.001f
         ) return
 
@@ -263,7 +263,11 @@ private fun cursorTrailColor(frame: TerminalFrame): Color {
     return color
 }
 
+internal fun isRenderableCursorTrailDistance(moveDistance: Float): Boolean =
+    moveDistance >= TrailMinDistanceCells && moveDistance <= TrailMaxDistanceCells
+
 private const val TrailMinDistanceCells = 1.5f
+private const val TrailMaxDistanceCells = 8f
 private const val WarpDurationSeconds = 0.2f
 private const val WarpTrailSize = 0.8f
 private const val WarpThicknessY = 1.0f

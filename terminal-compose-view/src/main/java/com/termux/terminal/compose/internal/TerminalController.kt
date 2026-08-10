@@ -264,7 +264,7 @@ internal class TerminalController(
         if (released) return
         val effect = config.cursorEffect ?: return
         val frame = backend.currentFrame() ?: return
-        cursorEffectState.observe(frame.cursor, timeSeconds)
+        cursorEffectState.observe(frame, timeSeconds)
         cursorFramePending = false
         effect.draw(drawScope, frame, metrics, cursorEffectState, timeSeconds)
     }

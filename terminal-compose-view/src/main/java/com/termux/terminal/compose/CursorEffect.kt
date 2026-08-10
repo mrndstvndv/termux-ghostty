@@ -34,7 +34,7 @@ interface CursorEffect {
 
 /**
  * Cursor movement state tracked by the canvas and handed to [CursorEffect].
- * Reset whenever the backend identity or effect instance changes.
+ * Reset whenever the backend identity, effect instance, frame sequence, or viewport geometry changes.
  */
 class CursorEffectState {
     var hasPreviousPosition: Boolean = false
@@ -50,7 +50,38 @@ class CursorEffectState {
     var changeSeconds: Float = 0f
         internal set
 
+    private var lastFrameSequence = Long.MIN_VALUE
+    private var lastTopRow = Int.MIN_VALUE
+    private var lastRowsVisible = -1
+    private var lastColumns = -1
+
+    /** Tracks only cursor movement across contiguous, stable frame geometry. */
+    internal fun observe(frame: TerminalFrame, timeSeconds: Float) {
+        val hasPreviousFrame = lastFrameSequence != Long.MIN_VALUE
+        val sequenceWentBack = frame.sequence < lastFrameSequence
+        val sequenceSkipped = frame.sequence > lastFrameSequence + 1L
+        val frameDiscontinuity = hasPreviousFrame && (
+            sequenceWentBack ||
+                sequenceSkipped ||
+                frame.topRow != lastTopRow ||
+                frame.rowsVisible != lastRowsVisible ||
+                frame.columns != lastColumns
+            )
+        if (frameDiscontinuity) reset()
+
+        lastFrameSequence = frame.sequence
+        lastTopRow = frame.topRow
+        lastRowsVisible = frame.rowsVisible
+        lastColumns = frame.columns
+        observeCursor(frame.cursor, timeSeconds)
+    }
+
+    /** Kept for focused state tests that do not need frame continuity metadata. */
     internal fun observe(cursor: TerminalCursor, timeSeconds: Float) {
+        observeCursor(cursor, timeSeconds)
+    }
+
+    private fun observeCursor(cursor: TerminalCursor, timeSeconds: Float) {
         if (!cursor.visible) return
         if (cursor.column == currentColumn && cursor.row == currentRow) return
         if (hasPreviousPosition) {
@@ -70,5 +101,9 @@ class CursorEffectState {
         currentColumn = -1
         currentRow = -1
         changeSeconds = 0f
+        lastFrameSequence = Long.MIN_VALUE
+        lastTopRow = Int.MIN_VALUE
+        lastRowsVisible = -1
+        lastColumns = -1
     }
 }

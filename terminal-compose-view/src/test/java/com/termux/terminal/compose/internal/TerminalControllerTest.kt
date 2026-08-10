@@ -13,7 +13,10 @@ import com.termux.terminal.compose.TerminalMetrics
 import com.termux.terminal.compose.TerminalCommand
 import com.termux.terminal.compose.TerminalCommandResult
 import com.termux.terminal.compose.TerminalFrame
+import com.termux.terminal.compose.TerminalModes
+import com.termux.terminal.compose.TerminalPalette
 import com.termux.terminal.compose.TerminalSize
+import com.termux.terminal.compose.TerminalViewport
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -52,6 +55,33 @@ class TerminalControllerTest {
         assertEquals(2, state.currentColumn)
         assertEquals(1, state.currentRow)
         assertEquals(0.3f, state.changeSeconds, 0f)
+    }
+
+    @Test
+    fun frameSequenceGapDoesNotBecomeCursorTrailMovement() {
+        val state = CursorEffectState()
+
+        state.observe(cursorFrame(1L, 1, 1), 0.1f)
+        state.observe(cursorFrame(3L, 40, 20), 0.2f)
+
+        assertEquals(-1, state.previousColumn)
+        assertEquals(-1, state.previousRow)
+        assertEquals(40, state.currentColumn)
+        assertEquals(20, state.currentRow)
+    }
+
+    @Test
+    fun repeatedFrameDoesNotResetCursorTrailOrigin() {
+        val state = CursorEffectState()
+
+        state.observe(cursorFrame(1L, 1, 1), 0.1f)
+        state.observe(cursorFrame(1L, 1, 1), 0.15f)
+        state.observe(cursorFrame(2L, 2, 1), 0.2f)
+
+        assertEquals(1, state.previousColumn)
+        assertEquals(1, state.previousRow)
+        assertEquals(2, state.currentColumn)
+        assertEquals(1, state.currentRow)
     }
 
     @Test
@@ -184,6 +214,17 @@ private object TestCursorEffect : CursorEffect {
         timeSeconds: Float
     ) = Unit
 }
+
+private fun cursorFrame(sequence: Long, column: Int, row: Int): TerminalFrame =
+    TerminalFrame(
+        sequence = sequence,
+        viewport = TerminalViewport(topRow = 0, rows = 24, columns = 80, transcriptRows = 0),
+        cursor = TerminalCursor(column, row, true, TerminalCursor.STYLE_BLOCK),
+        modes = TerminalModes(false, false, false, false, false),
+        palette = TerminalPalette.of(IntArray(259)),
+        rows = emptyList(),
+        linkLayout = null
+    )
 
 private fun testController(backend: TerminalBackend): TerminalController =
     TerminalController(backend, UnusedGraphicsContext) { _, _, width, height ->

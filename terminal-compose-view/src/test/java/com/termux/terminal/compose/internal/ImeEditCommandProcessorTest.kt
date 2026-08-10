@@ -100,6 +100,27 @@ class ImeEditCommandProcessorTest {
 
         assertEquals(listOf("del"), terminal.events)
     }
+    @Test
+    fun directCommittedSurrogatePairSelectionMovesByOneCodePoint() {
+        processor.process(listOf(CommitTextCommand("😀", 1)))
+        terminal.events.clear()
+
+        processor.process(listOf(SetSelectionCommand(0, 0)))
+
+        assertEquals(listOf("move:-1"), terminal.events)
+    }
+
+    @Test
+    fun backspaceAfterDirectCommittedSurrogatePairKeepsCursorAligned() {
+        processor.process(listOf(CommitTextCommand("😀", 1)))
+        processor.process(listOf(BackspaceCommand()))
+        terminal.events.clear()
+
+        processor.process(listOf(SetSelectionCommand(0, 0)))
+
+        assertEquals(emptyList<String>(), terminal.events)
+    }
+
 
     @Test
     fun deleteSurroundingTextBeforeCursorDeletesPerCharacter() {

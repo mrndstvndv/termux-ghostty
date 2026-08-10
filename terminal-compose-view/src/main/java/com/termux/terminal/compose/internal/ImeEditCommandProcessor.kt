@@ -88,6 +88,10 @@ internal class ImeEditCommandProcessor(
     private var lastComposedText = ""
     private var lastComposedStartPosition = NO_POSITION
 
+    // The most recent insertion, including direct commits that are not tracked as a word.
+    private var lastInsertedText = ""
+    private var lastInsertedStartPosition = NO_POSITION
+
     // Some IMEs announce the composing range before replacing it.
     private var pendingComposingStart = NO_POSITION
 
@@ -99,6 +103,7 @@ internal class ImeEditCommandProcessor(
         composingText = ""
         composingStartPosition = NO_POSITION
         clearTrackedCommit()
+        clearLastInsertion()
         pendingComposingStart = NO_POSITION
         imeCursorPosition = 0
     }
@@ -123,6 +128,7 @@ internal class ImeEditCommandProcessor(
                 is BackspaceCommand -> {
                     val nextCursor = moveImeCursorByCodePoints(-1)
                     clearTrackedCommit()
+                    clearLastInsertion()
                     composingText = ""
                     composingStartPosition = NO_POSITION
                     imeCursorPosition = nextCursor
@@ -130,6 +136,7 @@ internal class ImeEditCommandProcessor(
                 }
                 is DeleteAllCommand -> {
                     clearTrackedCommit()
+                    clearLastInsertion()
                     composingText = ""
                     composingStartPosition = NO_POSITION
                     imeCursorPosition = 0
@@ -138,6 +145,7 @@ internal class ImeEditCommandProcessor(
                 is MoveCursorCommand -> {
                     val nextCursor = moveImeCursorByCodePoints(cmd.amount)
                     clearTrackedCommit()
+                    clearLastInsertion()
                     imeCursorPosition = nextCursor
                     terminal.moveCursor(cmd.amount)
                 }
@@ -157,6 +165,7 @@ internal class ImeEditCommandProcessor(
         val afterCodePoints = if (lengthIsCodePoints) afterLength else codePointCountAfterCursor(afterLength)
         val nextCursor = moveImeCursorByCodePoints(-beforeCodePoints)
         clearTrackedCommit()
+        clearLastInsertion()
         composingText = ""
         composingStartPosition = NO_POSITION
 
@@ -194,7 +203,10 @@ internal class ImeEditCommandProcessor(
                 sendCodePoints(text)
                 placeCursorAfterInsertion(imeCursorPosition, text, newCursorPosition)
             }
-            else -> clearTrackedCommit()
+            else -> {
+                clearTrackedCommit()
+                clearLastInsertion()
+            }
         }
     }
 
@@ -241,6 +253,7 @@ internal class ImeEditCommandProcessor(
                 repeat(activeComposition.codePointCount()) { terminal.delete() }
                 clearComposition()
                 clearTrackedCommit()
+                clearLastInsertion()
                 imeCursorPosition = regionStart
             }
             else -> {
@@ -316,6 +329,7 @@ internal class ImeEditCommandProcessor(
             // A non-zero selection move invalidates the cross-punctuation
             // prefix; the terminal cursor must follow the IME cursor.
             clearTrackedCommit()
+            clearLastInsertion()
             terminal.moveCursor(diff)
         }
         // A zero-diff selection is the post-commit sync. It must preserve the
@@ -326,6 +340,7 @@ internal class ImeEditCommandProcessor(
             // point at the range start; a following commit replaces through the
             // normal composition path.
             clearTrackedCommit()
+            clearLastInsertion()
         }
     }
 
@@ -454,6 +469,10 @@ internal class ImeEditCommandProcessor(
         lastComposedText = ""
         lastComposedStartPosition = NO_POSITION
     }
+    private fun clearLastInsertion() {
+        lastInsertedText = ""
+        lastInsertedStartPosition = NO_POSITION
+    }
 
     private fun placeCursorAfterInsertion(
         insertionStart: Int,
@@ -473,6 +492,10 @@ internal class ImeEditCommandProcessor(
             regionText = insertedText
         )
         imeCursorPosition = target
+        if (insertedText.isNotEmpty()) {
+            lastInsertedText = insertedText
+            lastInsertedStartPosition = insertionStart
+        }
     }
 
     private fun moveTerminalCursorTo(from: Int, to: Int, regionStart: Int, regionText: String) {
@@ -484,6 +507,7 @@ internal class ImeEditCommandProcessor(
         val region = when {
             composingText.isNotEmpty() -> composingStartPosition to composingText
             lastComposedText.isNotEmpty() -> lastComposedStartPosition to lastComposedText
+            lastInsertedText.isNotEmpty() -> lastInsertedStartPosition to lastInsertedText
             else -> null
         }
         return if (region == null) {
@@ -528,6 +552,7 @@ internal class ImeEditCommandProcessor(
     private fun knownCursorRegion(): Pair<Int, String>? = when {
         composingText.isNotEmpty() -> composingStartPosition to composingText
         lastComposedText.isNotEmpty() -> lastComposedStartPosition to lastComposedText
+        lastInsertedText.isNotEmpty() -> lastInsertedStartPosition to lastInsertedText
         else -> null
     }
 

@@ -1,6 +1,8 @@
 package com.mrndtvndv.term.ui.workspace
 
 import android.os.Debug
+import android.os.Process
+import android.os.SystemClock
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -52,12 +54,18 @@ fun DebugHud(modifier: Modifier = Modifier) {
         }
     }
 
-    // RAM sampling stays off the frame path: Debug.getMemoryInfo is not free
-    // and would perturb the very FPS this HUD measures.
+    // Resource sampling stays off the frame path: these calls are not free and
+    // would perturb the very FPS this HUD measures.
     LaunchedEffect(Unit) {
+        var previousCpuSample = readProcessCpuSample()
         while (true) {
             delay(1_000)
-            metrics = metrics.copy(ramMegabytes = readProcessRamMegabytes())
+            val currentCpuSample = readProcessCpuSample()
+            metrics = metrics.copy(
+                cpuPercent = calculateProcessCpuPercent(previousCpuSample, currentCpuSample),
+                ramMegabytes = readProcessRamMegabytes()
+            )
+            previousCpuSample = currentCpuSample
         }
     }
 
@@ -70,31 +78,46 @@ fun DebugHud(modifier: Modifier = Modifier) {
         contentColor = Color.White,
         tonalElevation = 4.dp
     ) {
-        Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
-            Text(
-                text = "DEBUG HUD",
-                style = MaterialTheme.typography.labelSmall
-            )
-            Text(
-                text = "FPS ${formatFps(metrics.framesPerSecond)}",
-                style = MaterialTheme.typography.labelMedium
-            )
-            Text(
-                text = "RAM ${metrics.ramMegabytes} MB",
-                style = MaterialTheme.typography.labelMedium
-            )
-            Text(
-                text = "MISSED ${metrics.missedFrames}",
-                style = MaterialTheme.typography.labelMedium
-            )
-        }
+        DebugHudContent(metrics)
+    }
+}
+
+@Composable
+private fun DebugHudContent(metrics: DebugHudMetrics) {
+    Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
+        Text(
+            text = "DEBUG HUD",
+            style = MaterialTheme.typography.labelSmall
+        )
+        Text(
+            text = "FPS ${formatFps(metrics.framesPerSecond)}",
+            style = MaterialTheme.typography.labelMedium
+        )
+        Text(
+            text = "CPU ${formatPercent(metrics.cpuPercent)}",
+            style = MaterialTheme.typography.labelMedium
+        )
+        Text(
+            text = "RAM ${metrics.ramMegabytes} MB",
+            style = MaterialTheme.typography.labelMedium
+        )
+        Text(
+            text = "MISSED ${metrics.missedFrames}",
+            style = MaterialTheme.typography.labelMedium
+        )
     }
 }
 
 private data class DebugHudMetrics(
     val framesPerSecond: Float = 0f,
+    val cpuPercent: Float = 0f,
     val ramMegabytes: Int = 0,
     val missedFrames: Int = 0
+)
+
+private data class ProcessCpuSample(
+    val processCpuTimeMillis: Long,
+    val elapsedRealtimeMillis: Long
 )
 
 private class FrameMetricsAccumulator(refreshRate: Float) {
@@ -148,6 +171,24 @@ private class FrameMetricsAccumulator(refreshRate: Float) {
     }
 }
 
+private fun readProcessCpuSample(): ProcessCpuSample = ProcessCpuSample(
+    processCpuTimeMillis = Process.getElapsedCpuTime(),
+    elapsedRealtimeMillis = SystemClock.elapsedRealtime()
+)
+
+private fun calculateProcessCpuPercent(
+    previous: ProcessCpuSample,
+    current: ProcessCpuSample
+): Float {
+    val elapsedRealtimeMillis = current.elapsedRealtimeMillis - previous.elapsedRealtimeMillis
+    if (elapsedRealtimeMillis <= 0L) return 0f
+
+    val processCpuTimeMillis = current.processCpuTimeMillis - previous.processCpuTimeMillis
+    if (processCpuTimeMillis < 0L) return 0f
+
+    return (processCpuTimeMillis.toDouble() * 100 / elapsedRealtimeMillis).toFloat()
+}
+
 private fun readProcessRamMegabytes(): Int {
     val memoryInfo = Debug.MemoryInfo()
     Debug.getMemoryInfo(memoryInfo)
@@ -156,3 +197,6 @@ private fun readProcessRamMegabytes(): Int {
 
 private fun formatFps(framesPerSecond: Float): String =
     String.format(Locale.US, "%.1f", framesPerSecond)
+
+private fun formatPercent(percent: Float): String =
+    String.format(Locale.US, "%.1f%%", percent)

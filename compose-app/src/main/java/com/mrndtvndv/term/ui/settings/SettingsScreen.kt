@@ -821,7 +821,7 @@ fun SettingsScreen(
                         Column(modifier = Modifier.weight(1f)) {
                             Text("Debug Performance HUD", style = MaterialTheme.typography.bodyLarge)
                             Text(
-                                text = "Show live FPS, app RAM, and missed frames over the terminal workspace",
+                                text = "Show live FPS, app CPU, RAM, and missed frames over the terminal workspace",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )

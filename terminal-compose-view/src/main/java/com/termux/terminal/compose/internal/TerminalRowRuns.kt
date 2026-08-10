@@ -13,6 +13,7 @@ internal class RowRun(
     val widthColumns: Int,
     val startCharIndex: Int,
     val widthChars: Int,
+    val measuredWidth: Float,
     val style: Long,
     val flags: Int
 ) {
@@ -68,6 +69,7 @@ internal class RowRunCache {
         widthColumns: Int,
         startCharIndex: Int,
         widthChars: Int,
+        measuredWidth: Float,
         style: Long,
         flags: Int
     ) {
@@ -78,7 +80,7 @@ internal class RowRunCache {
             )
         }
         runStore[runCount++] =
-            RowRun(startColumn, widthColumns, startCharIndex, widthChars, style, flags)
+            RowRun(startColumn, widthColumns, startCharIndex, widthChars, measuredWidth, style, flags)
     }
 
     /** Publishes the accumulated runs as this cache's immutable build. */

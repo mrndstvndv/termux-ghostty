@@ -21,7 +21,7 @@ class TerminalRowRunCacheTest {
         val cache = RowRunCache()
         cache.beginBuild(hints, columns = 12, hasCellLayout = false, contentHash = 7L)
         for (column in 0 until 12) {
-            cache.addRun(column, 1, column, 1, 0L, 0)
+            cache.addRun(column, 1, column, 1, 0f, 0L, 0)
         }
         cache.finishBuild()
 
@@ -38,12 +38,12 @@ class TerminalRowRunCacheTest {
     fun finishBuildPublishesAnImmutableSnapshotPerBuild() {
         val cache = RowRunCache()
         cache.beginBuild(hints, columns = 1, hasCellLayout = false, contentHash = 1L)
-        cache.addRun(0, 1, 0, 1, 0L, 0)
+        cache.addRun(0, 1, 0, 1, 0f, 0L, 0)
         cache.finishBuild()
         val firstBuild = cache.runs!!
 
         cache.beginBuild(hints, columns = 2, hasCellLayout = false, contentHash = 2L)
-        cache.addRun(5, 2, 3, 2, 0L, 0)
+        cache.addRun(5, 2, 3, 2, 0f, 0L, 0)
         cache.finishBuild()
         val secondBuild = cache.runs!!
 

@@ -424,8 +424,11 @@ fun GitReviewScreen(
                 }
                 entry<ReviewNavKey.FileDiff> { navKey ->
                     Scaffold(
+                        modifier = modifier.fillMaxSize(),
+                        contentWindowInsets = WindowInsets(0, 0, 0, 0),
                         topBar = {
                             TopAppBar(
+                                windowInsets = WindowInsets(0, 0, 0, 0),
                                 title = {
                                     Column {
                                         Text(
@@ -514,7 +517,7 @@ fun GitReviewScreen(
                             )
                         }
                     ) { padding ->
-                        Box(modifier = modifier.fillMaxSize().padding(padding)) {
+                        Box(modifier = Modifier.fillMaxSize().padding(padding)) {
                             DiffViewer(
                                 selectedFile = selectedFile,
                                 selectedCommit = selectedCommit,
@@ -532,8 +535,11 @@ fun GitReviewScreen(
                 }
                 entry<ReviewNavKey.CommitDiff> { navKey ->
                     Scaffold(
+                        modifier = modifier.fillMaxSize(),
+                        contentWindowInsets = WindowInsets(0, 0, 0, 0),
                         topBar = {
                             TopAppBar(
+                                windowInsets = WindowInsets(0, 0, 0, 0),
                                 title = {
                                     Column {
                                         Text(
@@ -598,7 +604,7 @@ fun GitReviewScreen(
                             )
                         }
                     ) { padding ->
-                        Box(modifier = modifier.fillMaxSize().padding(padding)) {
+                        Box(modifier = Modifier.fillMaxSize().padding(padding)) {
                             DiffViewer(
                                 selectedFile = selectedFile,
                                 selectedCommit = selectedCommit,

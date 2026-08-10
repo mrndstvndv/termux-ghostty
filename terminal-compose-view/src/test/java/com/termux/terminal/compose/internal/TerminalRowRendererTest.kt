@@ -46,7 +46,7 @@ class TerminalRowRendererTest {
     }
 
     @Test
-    fun usesOneGlobalTextScaleAndRoundedCellCoordinates() {
+    fun usesGlobalTextScaleAndFitsNativeCellCoordinates() {
         val renderer = TerminalRowRenderer(Typeface.MONOSPACE, 14f)
         val row = TerminalRow(
             columns = 3,
@@ -72,12 +72,8 @@ class TerminalRowRendererTest {
 
         assertEquals(0, canvas.scaleCalls)
         assertEquals(renderer.cellWidthPx, canvas.textRuns.single().x, 0f)
+        assertEquals(renderer.cellWidthPx * 2f, canvas.textRuns.single().drawnWidth, 0.01f)
         assertEquals(renderer.textScaleX, canvas.textRuns.single().textScaleX, 0f)
-        assertEquals(
-            renderer.cellWidthPx / renderer.measuredCellWidthPx,
-            canvas.textRuns.single().textScaleX,
-            0f
-        )
         assertTrue("text should use subpixel positioning", canvas.textRuns.single().subpixelText)
         val cursor = canvas.rects.single()
         assertEquals(renderer.cellWidthPx, cursor.left, 0f)
@@ -126,7 +122,7 @@ class TerminalRowRendererTest {
     }
 
     @Test
-    fun preservesNativeGraphemeRangesWithoutWidthCorrection() {
+    fun preservesNativeGraphemeRangesAndFitsDeclaredWidths() {
         val graphemes = listOf("🧠", "界", "e\u0301", "👩‍💻", "⚙️")
         val widths = listOf(2, 2, 1, 2, 1)
         val text = graphemes.joinToString("").toCharArray()
@@ -176,9 +172,75 @@ class TerminalRowRendererTest {
             assertEquals(starts[expectedColumn], draw.index)
             assertEquals(grapheme.length, draw.count)
             assertEquals(expectedColumn * renderer.cellWidthPx, draw.x, 0f)
+            assertEquals(widths[index] * renderer.cellWidthPx, draw.drawnWidth, 0.01f)
             expectedColumn += widths[index]
         }
         assertEquals(0, canvas.scaleCalls)
+    }
+    @Test
+    fun keepsCursorAfterWideNativeGrapheme() {
+        val renderer = TerminalRowRenderer(Typeface.MONOSPACE, 14f)
+        val text = "👩‍💻x".toCharArray()
+        val row = TerminalRow(
+            columns = 3,
+            text = text,
+            charsUsed = text.size,
+            styles = LongArray(3),
+            contentHash = 6L,
+            cellLayout = TerminalCellLayout(
+                start = intArrayOf(0, 0, 5),
+                length = intArrayOf(5, 0, 1),
+                displayWidth = intArrayOf(2, 0, 1)
+            ),
+            isLineWrap = false
+        )
+        val canvas = RecordingCanvas()
+
+        renderer.renderRow(
+            canvas = canvas,
+            frame = frame(row),
+            rowIndex = 0,
+            hints = RowRenderHints(-1, -1, 2, TerminalCursor.STYLE_BAR, false)
+        )
+
+        assertEquals(2, canvas.textRuns.size)
+        assertEquals(2f * renderer.cellWidthPx, canvas.textRuns[0].drawnWidth, 0.01f)
+        assertEquals(2f * renderer.cellWidthPx, canvas.textRuns[1].x, 0f)
+        val cursor = canvas.rects.single()
+        assertEquals(2f * renderer.cellWidthPx, cursor.left, 0f)
+        assertEquals(2.25f * renderer.cellWidthPx, cursor.right, 0f)
+    }
+
+    @Test
+    fun scalesEmojiToItsCellBeforeDrawingFollowingCursor() {
+        val renderer = TerminalRowRenderer(Typeface.MONOSPACE, 14f)
+        val emoji = "👩‍💻".toCharArray()
+        val row = TerminalRow(
+            columns = 2,
+            text = emoji,
+            charsUsed = emoji.size,
+            styles = LongArray(2),
+            contentHash = 5L,
+            cellLayout = TerminalCellLayout(
+                start = intArrayOf(0, 0),
+                length = intArrayOf(emoji.size, 0),
+                displayWidth = intArrayOf(1, 1)
+            ),
+            isLineWrap = false
+        )
+        val canvas = RecordingCanvas()
+
+        renderer.renderRow(
+            canvas = canvas,
+            frame = frame(row),
+            rowIndex = 0,
+            hints = RowRenderHints(-1, -1, 1, TerminalCursor.STYLE_BAR, false)
+        )
+
+        assertEquals(renderer.cellWidthPx, canvas.textRuns.single().drawnWidth, 0.01f)
+        val cursor = canvas.rects.single()
+        assertEquals(renderer.cellWidthPx, cursor.left, 0f)
+        assertEquals(renderer.cellWidthPx * 1.25f, cursor.right, 0f)
     }
 
     private fun frame(row: TerminalRow, linkLayout: TerminalLinkLayout? = null): TerminalFrame =
@@ -198,7 +260,8 @@ class TerminalRowRendererTest {
             val count: Int,
             val x: Float,
             val textScaleX: Float,
-            val subpixelText: Boolean
+            val subpixelText: Boolean,
+            val drawnWidth: Float
         )
 
         data class DrawRect(
@@ -237,7 +300,10 @@ class TerminalRowRendererTest {
         ) {
             if (count > 0) {
                 val subpixelText = paint.flags and Paint.SUBPIXEL_TEXT_FLAG != 0
-                textRuns += TextRun(index, count, x, paint.textScaleX, subpixelText)
+                textRuns += TextRun(
+                    index, count, x, paint.textScaleX, subpixelText,
+                    paint.measureText(text, index, count)
+                )
             }
         }
     }

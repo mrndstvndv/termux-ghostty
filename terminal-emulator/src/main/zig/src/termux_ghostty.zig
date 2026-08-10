@@ -1511,6 +1511,9 @@ pub export fn termux_ghostty_session_create(
         .rows = parsed_rows,
         .max_scrollback_bytes = scrollback_bytes,
         .colors = colors,
+        // Match Ghostty's Unicode grapheme-width default so emoji sequences,
+        // variation selectors, and ZWJ clusters occupy the cells they render in.
+        .default_modes = .{ .grapheme_cluster = true },
     }) catch |err| {
         ghostty_log.err("core create terminal init failed err={any}", .{ err });
         return null;
@@ -2596,6 +2599,30 @@ fn expectOwnedText(actual: ?[*:0]u8, expected: ?[]const u8) !void {
     }
 
     try testing.expect(actual == null);
+}
+
+test "session enables Unicode grapheme widths for emoji" {
+    const cases = [_]struct {
+        text: []const u8,
+        expected_cursor_column: usize,
+    }{
+        .{ .text = "👩‍💻x", .expected_cursor_column = 3 },
+        .{ .text = "⚙️x", .expected_cursor_column = 3 },
+        .{ .text = "👍🏽x", .expected_cursor_column = 3 },
+        .{ .text = "🇺🇸x", .expected_cursor_column = 3 },
+    };
+
+    for (cases, 0..) |case, index| {
+        const session = termux_ghostty_session_create(10, 5, 100, 10, 20) orelse return error.OutOfMemory;
+        defer termux_ghostty_session_destroy(session);
+
+        _ = appendTestBytes(session, case.text);
+
+        if (index == 0) {
+            try testing.expect(session.terminal.modes.get(.grapheme_cluster));
+        }
+        try testing.expectEqual(case.expected_cursor_column, @as(usize, session.terminal.screens.active.cursor.x));
+    }
 }
 
 test "osc 9 stores pending desktop notification body" {

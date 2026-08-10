@@ -42,6 +42,7 @@ internal class TerminalRowRenderer(
 
     private val fontMetrics = TerminalFontMetrics.from(typeface, fontSizePx)
     private val textPaint = Paint()
+    private val asciiMeasures = FloatArray(127)
     private val linkUnderlinePainter: TerminalLinkUnderlinePainter
     private var rowRunCaches = arrayOfNulls<RowRunCache>(0)
     private var preparedSequence = Long.MIN_VALUE
@@ -56,6 +57,11 @@ internal class TerminalRowRenderer(
         ascentPx = fontMetrics.ascentPx
         lineSpacingAndAscentPx = fontMetrics.lineSpacingAndAscentPx
         linkUnderlinePainter = TerminalLinkUnderlinePainter(textPaint, fontSizePx, cellWidthPx)
+        val measureBuffer = StringBuilder(" ")
+        for (index in asciiMeasures.indices) {
+            measureBuffer.setCharAt(0, index.toChar())
+            asciiMeasures[index] = textPaint.measureText(measureBuffer, 0, 1)
+        }
     }
 
     /** Prepares row caches for a frame; shifts caches on viewport scroll. */
@@ -226,6 +232,7 @@ internal class TerminalRowRenderer(
                 accumulator.flush(column, charIndex)
                 accumulator.beginRun(cell, charIndex)
             }
+            accumulator.measuredWidth += cell.measuredWidth
             column += cell.width
             charIndex += codePointChars(line, charIndex)
             charIndex = skipContinuationCharacters(line, charIndex, charsUsed)
@@ -288,7 +295,7 @@ internal class TerminalRowRenderer(
             if (splitRun) {
                 if (lastStartColumn != -1) {
                     cache.addRun(
-                        lastStartColumn, column - lastStartColumn, 0, 0, lastStyle,
+                        lastStartColumn, column - lastStartColumn, 0, 0, 0f, lastStyle,
                         flags(lastInsideCursor, lastInsideSelection)
                     )
                 }
@@ -302,7 +309,7 @@ internal class TerminalRowRenderer(
 
         if (lastStartColumn != -1) {
             cache.addRun(
-                lastStartColumn, endColumnExclusive - lastStartColumn, 0, 0, lastStyle,
+                lastStartColumn, endColumnExclusive - lastStartColumn, 0, 0, 0f, lastStyle,
                 flags(lastInsideCursor, lastInsideSelection)
             )
         }
@@ -339,7 +346,8 @@ internal class TerminalRowRenderer(
         val italic = (effect and TextStyle.CHARACTER_ATTRIBUTE_ITALIC) != 0
         val strikeThrough = (effect and TextStyle.CHARACTER_ATTRIBUTE_STRIKETHROUGH) != 0
 
-        val hasText = run.widthChars > 0
+        val hasText = run.widthChars > 0 && run.measuredWidth > 0f
+        val scale = if (hasText) runScale(run) else 1f
         val left = run.startColumn * cellWidthPx
         val right = left + run.widthColumns * cellWidthPx
 
@@ -362,14 +370,21 @@ internal class TerminalRowRenderer(
             textPaint.textSkewX = if (italic) -0.35f else 0f
             textPaint.isStrikeThruText = strikeThrough
             textPaint.color = (packedColors ushr 32).toInt()
+            if (scale != 1f) textPaint.textScaleX = textScaleX * scale
             canvas.drawTextRun(
                 line, run.startCharIndex, run.widthChars,
                 run.startCharIndex, run.widthChars,
                 left, baselineY - lineSpacingAndAscentPx,
                 false, textPaint
             )
+            if (scale != 1f) textPaint.textScaleX = textScaleX
         }
-
+    }
+    private fun runScale(run: RowRun): Float {
+        val targetWidth = run.widthColumns * cellWidthPx
+        if (targetWidth <= 0f || run.measuredWidth <= 0f) return 1f
+        val scale = targetWidth / run.measuredWidth
+        return if (abs(scale - 1f) <= 0.01f) 1f else scale
     }
 
     private fun drawCursorBlock(
@@ -406,8 +421,11 @@ internal class TerminalRowRenderer(
             if (charsForCodePoint == 2) Character.toCodePoint(charAtIndex, line[charIndex + 1])
             else charAtIndex.code
         val width = WcWidth.width(codePoint)
+        val measuredCodePointWidth = measureCellWidth(line, charIndex, charsForCodePoint)
+        val widthMismatch = width > 0 &&
+            abs(measuredCodePointWidth - width * cellWidthPx) > 0.01f
         val style = if (column < rowColumns) row.style(column) else 0L
-        return JavaRunCell(column, width, style)
+        return JavaRunCell(column, width, style, measuredCodePointWidth, widthMismatch)
     }
 
     private fun nativeCellAt(
@@ -420,9 +438,26 @@ internal class TerminalRowRenderer(
         val cellTextLength = layout.cellTextLength(column)
         val cellDisplayWidth = layout.cellDisplayWidth(column)
         if (!isValidCell(cellTextStart, cellTextLength, cellDisplayWidth, charsUsed)) return null
+        val hasText = cellTextLength > 0
+        val measuredWidth = if (hasText) {
+            measureCellWidth(row.text(), cellTextStart, cellTextLength)
+        } else {
+            0f
+        }
+        val widthMismatch = hasText &&
+            abs(measuredWidth - cellDisplayWidth * cellWidthPx) > 0.01f
         return NativeRunCell(
-            column, cellTextStart, cellTextLength, cellDisplayWidth, row.style(column)
+            column, cellTextStart, cellTextLength, cellDisplayWidth,
+            row.style(column), measuredWidth, widthMismatch
         )
+    }
+    private fun measureCellWidth(line: CharArray, start: Int, length: Int): Float {
+        if (length <= 0) return 0f
+        if (length == 1) {
+            val codeUnit = line[start].code
+            if (codeUnit < asciiMeasures.size) return asciiMeasures[codeUnit]
+        }
+        return textPaint.measureText(line, start, length)
     }
 
     private fun shiftRowCaches(topRowDelta: Int, rows: Int) {
@@ -472,7 +507,9 @@ private fun skipContinuationCharacters(line: CharArray, startIndex: Int, charsUs
 private data class JavaRunCell(
     val column: Int,
     val width: Int,
-    val style: Long
+    val style: Long,
+    val measuredWidth: Float,
+    val widthMismatch: Boolean
 )
 
 /** Builds [RowRun]s for a Java-rendered row, tracking the trailing run state. */
@@ -483,20 +520,26 @@ private class JavaRunAccumulator(
     var lastStyle = 0L
     var lastInsideCursor = false
     var lastInsideSelection = false
+    var lastWidthMismatch = false
     var lastStartColumn = -1
     var lastStartIndex = 0
+    var measuredWidth = 0f
 
     fun runPropertiesChanged(cell: JavaRunCell): Boolean =
         cell.style != lastStyle ||
             insideCursor(cell) != lastInsideCursor ||
-            insideSelection(cell) != lastInsideSelection
+            insideSelection(cell) != lastInsideSelection ||
+            cell.widthMismatch ||
+            lastWidthMismatch
 
     fun beginRun(cell: JavaRunCell, charIndex: Int) {
+        measuredWidth = 0f
         lastStyle = cell.style
         lastInsideCursor = insideCursor(cell)
         lastInsideSelection = insideSelection(cell)
         lastStartColumn = cell.column
         lastStartIndex = charIndex
+        lastWidthMismatch = cell.widthMismatch
     }
 
     fun flush(endColumn: Int, endCharIndex: Int) {
@@ -506,6 +549,7 @@ private class JavaRunAccumulator(
                 endColumn - lastStartColumn,
                 lastStartIndex,
                 endCharIndex - lastStartIndex,
+                measuredWidth,
                 lastStyle,
                 flags(lastInsideCursor, lastInsideSelection)
             )
@@ -525,7 +569,9 @@ private data class NativeRunCell(
     val cellTextStart: Int,
     val cellTextLength: Int,
     val cellDisplayWidth: Int,
-    val style: Long
+    val style: Long,
+    val measuredWidth: Float,
+    val widthMismatch: Boolean
 ) {
     val hasText: Boolean
         get() = cellTextLength > 0
@@ -540,18 +586,23 @@ private class NativeRunAccumulator(
     var lastInsideCursor = false
     var lastInsideSelection = false
     var lastHasText = false
+    var lastWidthMismatch = false
     var lastStartColumn = -1
     var lastStartIndex = 0
     var lastEndIndex = 0
+    var measuredWidth = 0f
 
     fun runPropertiesChanged(cell: NativeRunCell): Boolean =
         cell.style != lastStyle ||
             insideCursor(cell) != lastInsideCursor ||
             insideSelection(cell) != lastInsideSelection ||
             cell.hasText != lastHasText ||
+            cell.widthMismatch ||
+            lastWidthMismatch ||
             (cell.hasText && lastHasText && cell.cellTextStart != lastEndIndex)
 
     fun beginRun(cell: NativeRunCell) {
+        measuredWidth = 0f
         lastStyle = cell.style
         lastInsideCursor = insideCursor(cell)
         lastInsideSelection = insideSelection(cell)
@@ -559,10 +610,12 @@ private class NativeRunAccumulator(
         lastStartColumn = cell.column
         lastStartIndex = cell.cellTextStart
         lastEndIndex = cell.cellTextStart
+        lastWidthMismatch = cell.widthMismatch
     }
 
     fun add(cell: NativeRunCell) {
         if (cell.hasText) {
+            measuredWidth += cell.measuredWidth
             lastEndIndex = cell.cellTextStart + cell.cellTextLength
         }
     }
@@ -574,6 +627,7 @@ private class NativeRunAccumulator(
                 endColumn - lastStartColumn,
                 lastStartIndex,
                 lastEndIndex - lastStartIndex,
+                measuredWidth,
                 lastStyle,
                 flags(lastInsideCursor, lastInsideSelection)
             )

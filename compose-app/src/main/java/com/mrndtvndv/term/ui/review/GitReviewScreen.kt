@@ -35,6 +35,7 @@ import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.DisableSelection
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -1715,45 +1716,49 @@ private fun DiffContent(
             .transformable(state = transformState)
     ) {
         val viewportWidth = maxWidth
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .horizontalScroll(horizScrollState)
-        ) {
-            sections.forEachIndexed { sectionIndex, section ->
-                item(key = "header:$sectionIndex") {
-                    Box(
-                        modifier = Modifier
-                            .width(viewportWidth)
-                            .offset { IntOffset(horizScrollState.value, 0) }
-                            .zIndex(1f)
-                    ) {
-                        FileDiffHeader(
-                            filePath = section.filePath,
-                            isCollapsed = section.filePath in collapsedSections,
-                            onToggleCollapse = {
-                                collapsedSections = if (section.filePath in collapsedSections) {
-                                    collapsedSections - section.filePath
-                                } else {
-                                    collapsedSections + section.filePath
-                                }
+        SelectionContainer(modifier = Modifier.fillMaxSize()) {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .horizontalScroll(horizScrollState)
+            ) {
+                sections.forEachIndexed { sectionIndex, section ->
+                    item(key = "header:$sectionIndex") {
+                        DisableSelection {
+                            Box(
+                                modifier = Modifier
+                                    .width(viewportWidth)
+                                    .offset { IntOffset(horizScrollState.value, 0) }
+                                    .zIndex(1f)
+                            ) {
+                                FileDiffHeader(
+                                    filePath = section.filePath,
+                                    isCollapsed = section.filePath in collapsedSections,
+                                    onToggleCollapse = {
+                                        collapsedSections = if (section.filePath in collapsedSections) {
+                                            collapsedSections - section.filePath
+                                        } else {
+                                            collapsedSections + section.filePath
+                                        }
+                                    }
+                                )
                             }
+                        }
+                    }
+                    items(
+                        count = rowsBySection[sectionIndex].size,
+                        key = { rowIndex -> "row:$sectionIndex:$rowIndex" }
+                    ) { rowIndex ->
+                        DiffRowItem(
+                            row = rowsBySection[sectionIndex][rowIndex],
+                            dims = dims,
+                            horizScrollState = horizScrollState,
+                            isDark = isDark,
+                            fallbackColor = fallbackColor,
+                            showLineNumbers = showLineNumbers,
+                            minimumWidth = viewportWidth
                         )
                     }
-                }
-                items(
-                    count = rowsBySection[sectionIndex].size,
-                    key = { rowIndex -> "row:$sectionIndex:$rowIndex" }
-                ) { rowIndex ->
-                    DiffRowItem(
-                        row = rowsBySection[sectionIndex][rowIndex],
-                        dims = dims,
-                        horizScrollState = horizScrollState,
-                        isDark = isDark,
-                        fallbackColor = fallbackColor,
-                        showLineNumbers = showLineNumbers,
-                        minimumWidth = viewportWidth
-                    )
                 }
             }
         }
@@ -1851,45 +1856,41 @@ private fun DiffRowItem(
             .background(bgColor)
     ) {
         if (showLineNumbers) {
-            LineNumberCell(
-                modifier = Modifier
-                    .offset { IntOffset(horizScrollState.value, 0) }
-                    .zIndex(1f),
-                line = line,
-                fontSize = dims.lineNumFontSize,
-                numWidth = dims.numWidth,
-                columnWidth = dims.columnWidth,
-                isDark = isDark,
-                fallbackColor = fallbackColor
-            )
-            Box(
-                modifier = Modifier
-                    .offset { IntOffset(horizScrollState.value, 0) }
-                    .zIndex(1f)
-                    .width(1.dp)
-                    .fillMaxHeight()
-                    .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
-            )
+            DisableSelection {
+                LineNumberCell(
+                    modifier = Modifier
+                        .offset { IntOffset(horizScrollState.value, 0) }
+                        .zIndex(1f),
+                    line = line,
+                    fontSize = dims.lineNumFontSize,
+                    numWidth = dims.numWidth,
+                    columnWidth = dims.columnWidth,
+                    isDark = isDark,
+                    fallbackColor = fallbackColor
+                )
+                Box(
+                    modifier = Modifier
+                        .offset { IntOffset(horizScrollState.value, 0) }
+                        .zIndex(1f)
+                        .width(1.dp)
+                        .fillMaxHeight()
+                        .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+                )
+            }
         }
-        SelectionContainer(
+        Box(
             modifier = Modifier
                 .fillMaxHeight()
                 .wrapContentWidth(unbounded = true)
+                .padding(horizontal = 8.dp),
+            contentAlignment = Alignment.CenterStart
         ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxHeight()
-                    .wrapContentWidth(unbounded = true)
-                    .padding(horizontal = 8.dp),
-                contentAlignment = Alignment.CenterStart
-            ) {
-                Text(
-                    text = annotatedText,
-                    fontSize = dims.codeFontSize,
-                    fontFamily = codeFontFamily(),
-                    softWrap = false
-                )
-            }
+            Text(
+                text = annotatedText,
+                fontSize = dims.codeFontSize,
+                fontFamily = codeFontFamily(),
+                softWrap = false
+            )
         }
     }
 }

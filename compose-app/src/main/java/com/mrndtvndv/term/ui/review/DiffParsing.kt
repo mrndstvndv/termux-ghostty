@@ -36,6 +36,27 @@ internal data class FileDiffSection(
     val lines: List<ParsedDiffLine>
 )
 
+internal data class TextMatch(
+    val start: Int,
+    val endExclusive: Int
+)
+
+internal fun findTextMatches(text: String, query: String): List<TextMatch> {
+    if (text.isEmpty() || query.isEmpty()) return emptyList()
+
+    val matches = mutableListOf<TextMatch>()
+    var searchStart = 0
+    while (searchStart <= text.length) {
+        val start = text.indexOf(query, searchStart, ignoreCase = true)
+        if (start < 0) break
+
+        val endExclusive = start + query.length
+        matches.add(TextMatch(start, endExclusive))
+        searchStart = endExclusive
+    }
+    return matches
+}
+
 @Suppress("LongMethod")
 private fun parseDiffLines(diffText: String): List<ParsedDiffLine> {
     var currentOldLine = 0

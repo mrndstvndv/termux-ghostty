@@ -30,12 +30,15 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.DisableSelection
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -50,8 +53,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -94,6 +102,13 @@ fun GitReviewScreen(
     var hardResetTarget by remember { mutableStateOf<GitCommit?>(null) }
     var showBranchDialog by remember { mutableStateOf(false) }
     var showCreateBranchDialog by remember { mutableStateOf(false) }
+    var isDiffSearchVisible by remember { mutableStateOf(false) }
+    var diffSearchQuery by remember { mutableStateOf("") }
+
+    val closeDiffSearch = {
+        isDiffSearchVisible = false
+        diffSearchQuery = ""
+    }
 
     val stagedFileCount = (uiState as? ReviewUiState.Success)?.stagedFiles?.size ?: 0
 
@@ -378,6 +393,7 @@ fun GitReviewScreen(
             backStack = reviewBackStack,
             onBack = {
                 if (isTabActive && reviewBackStack.size > 1) {
+                    closeDiffSearch()
                     viewModel.deselectFile()
                     reviewBackStack.removeLastOrNull()
                 }
@@ -396,10 +412,12 @@ fun GitReviewScreen(
                         onToggleUnstagedExpanded = { viewModel.toggleUnstagedExpanded() },
                         onToggleCommitsExpanded = { viewModel.toggleCommitsExpanded() },
                         onFileSelected = { file ->
+                            closeDiffSearch()
                             viewModel.selectFile(file)
                             reviewBackStack.add(ReviewNavKey.FileDiff(file.path, file.isStaged))
                         },
                         onCommitSelected = { commit ->
+                            closeDiffSearch()
                             viewModel.selectCommit(commit)
                             reviewBackStack.add(ReviewNavKey.CommitDiff(commit.hash))
                         },
@@ -447,6 +465,7 @@ fun GitReviewScreen(
                                 },
                                 navigationIcon = {
                                     IconButton(onClick = {
+                                        closeDiffSearch()
                                         viewModel.deselectFile()
                                         reviewBackStack.removeLastOrNull()
                                     }) {
@@ -462,6 +481,14 @@ fun GitReviewScreen(
                                         verticalAlignment = Alignment.CenterVertically,
                                         modifier = Modifier.padding(end = 8.dp)
                                     ) {
+                                        IconButton(onClick = {
+                                            if (isDiffSearchVisible) closeDiffSearch() else isDiffSearchVisible = true
+                                        }) {
+                                            Icon(
+                                                imageVector = Icons.Default.Search,
+                                                contentDescription = "Search diff"
+                                            )
+                                        }
                                         WordDiffToggle(
                                             isEnabled = isWordDiffEnabled,
                                             onToggle = { viewModel.toggleWordDiff() }
@@ -529,6 +556,10 @@ fun GitReviewScreen(
                                 onToggleLineNumbers = { viewModel.toggleLineNumbers() },
                                 isWordDiffEnabled = isWordDiffEnabled,
                                 onToggleWordDiff = { viewModel.toggleWordDiff() },
+                                searchVisible = isDiffSearchVisible,
+                                searchQuery = diffSearchQuery,
+                                onSearchQueryChange = { diffSearchQuery = it },
+                                onCloseSearch = closeDiffSearch,
                                 showHeader = false
                             )
                         }
@@ -560,6 +591,7 @@ fun GitReviewScreen(
                                 },
                                 navigationIcon = {
                                     IconButton(onClick = {
+                                        closeDiffSearch()
                                         viewModel.deselectFile()
                                         reviewBackStack.removeLastOrNull()
                                     }) {
@@ -575,6 +607,14 @@ fun GitReviewScreen(
                                         verticalAlignment = Alignment.CenterVertically,
                                         modifier = Modifier.padding(end = 8.dp)
                                     ) {
+                                        IconButton(onClick = {
+                                            if (isDiffSearchVisible) closeDiffSearch() else isDiffSearchVisible = true
+                                        }) {
+                                            Icon(
+                                                imageVector = Icons.Default.Search,
+                                                contentDescription = "Search diff"
+                                            )
+                                        }
                                         WordDiffToggle(
                                             isEnabled = isWordDiffEnabled,
                                             onToggle = { viewModel.toggleWordDiff() }
@@ -616,6 +656,10 @@ fun GitReviewScreen(
                                 onToggleLineNumbers = { viewModel.toggleLineNumbers() },
                                 isWordDiffEnabled = isWordDiffEnabled,
                                 onToggleWordDiff = { viewModel.toggleWordDiff() },
+                                searchVisible = isDiffSearchVisible,
+                                searchQuery = diffSearchQuery,
+                                onSearchQueryChange = { diffSearchQuery = it },
+                                onCloseSearch = closeDiffSearch,
                                 showHeader = false
                             )
                         }
@@ -1545,6 +1589,10 @@ internal fun DiffViewer(
     onToggleLineNumbers: () -> Unit = {},
     isWordDiffEnabled: Boolean = true,
     onToggleWordDiff: () -> Unit = {},
+    searchVisible: Boolean = false,
+    searchQuery: String = "",
+    onSearchQueryChange: (String) -> Unit = {},
+    onCloseSearch: () -> Unit = {},
     showHeader: Boolean = false
 ) {
     if (selectedFile == null && selectedCommit == null) {
@@ -1594,7 +1642,11 @@ internal fun DiffViewer(
                         DiffContent(
                             sections = content.sections,
                             showLineNumbers = showLineNumbers,
-                            isWordDiffEnabled = isWordDiffEnabled
+                            isWordDiffEnabled = isWordDiffEnabled,
+                            searchVisible = searchVisible,
+                            searchQuery = searchQuery,
+                            onSearchQueryChange = onSearchQueryChange,
+                            onCloseSearch = onCloseSearch
                         )
                     }
                 }
@@ -1662,12 +1714,16 @@ fun FileDiffHeader(
     HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
 }
 
-@Suppress("LongMethod")
+@Suppress("LongMethod", "LongParameterList")
 @Composable
 private fun DiffContent(
     sections: List<DiffSectionView>,
     showLineNumbers: Boolean = true,
     isWordDiffEnabled: Boolean = true,
+    searchVisible: Boolean = false,
+    searchQuery: String = "",
+    onSearchQueryChange: (String) -> Unit = {},
+    onCloseSearch: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var fontScale by remember { mutableFloatStateOf(1f) }
@@ -1699,29 +1755,83 @@ private fun DiffContent(
         )
     }
 
-    val rowsBySection = remember(sections, collapsedSections, isWordDiffEnabled) {
-        sections.map { section ->
-            if (section.filePath in collapsedSections) {
-                emptyList()
-            } else {
-                flattenRows(section, isWordDiffEnabled)
-            }
+    val allRowsBySection = remember(sections, isWordDiffEnabled) {
+        sections.map { section -> flattenRows(section, isWordDiffEnabled) }
+    }
+    val rowsBySection = remember(allRowsBySection, collapsedSections) {
+        sections.mapIndexed { index, section ->
+            if (section.filePath in collapsedSections) emptyList() else allRowsBySection[index]
         }
     }
+    val activeSearchQuery = searchQuery.takeIf { searchVisible }.orEmpty()
+    val searchMatches = remember(allRowsBySection, activeSearchQuery) {
+        findDiffSearchMatches(allRowsBySection, activeSearchQuery)
+    }
+    var selectedSearchMatchIndex by remember(activeSearchQuery) { mutableIntStateOf(0) }
+    LaunchedEffect(searchMatches.size) {
+        selectedSearchMatchIndex = if (searchMatches.isEmpty()) {
+            0
+        } else {
+            selectedSearchMatchIndex.coerceIn(0, searchMatches.lastIndex)
+        }
+    }
+    val currentSearchMatch = searchMatches.getOrNull(selectedSearchMatchIndex)
+    val matchesByRow = remember(searchMatches) {
+        searchMatches.groupBy { it.sectionIndex to it.rowIndex }
+    }
+    val listState = rememberLazyListState()
 
-    BoxWithConstraints(
-        modifier = modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.1f))
-            .transformable(state = transformState)
-    ) {
-        val viewportWidth = maxWidth
-        SelectionContainer(modifier = Modifier.fillMaxSize()) {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .horizontalScroll(horizScrollState)
-            ) {
+    fun moveToSearchMatch(offset: Int) {
+        if (searchMatches.isEmpty()) return
+        selectedSearchMatchIndex =
+            (selectedSearchMatchIndex + offset + searchMatches.size) % searchMatches.size
+    }
+
+    LaunchedEffect(currentSearchMatch, collapsedSections) {
+        if (!searchVisible || currentSearchMatch == null) return@LaunchedEffect
+
+        val section = sections.getOrNull(currentSearchMatch.sectionIndex) ?: return@LaunchedEffect
+        if (section.filePath in collapsedSections) {
+            collapsedSections = collapsedSections - section.filePath
+            return@LaunchedEffect
+        }
+
+        val targetItemIndex = diffRowItemIndex(
+            rowsBySection = rowsBySection,
+            sectionIndex = currentSearchMatch.sectionIndex,
+            rowIndex = currentSearchMatch.rowIndex
+        )
+        listState.animateScrollToItem(targetItemIndex)
+    }
+
+    Column(modifier = modifier.fillMaxSize()) {
+        if (searchVisible) {
+            DiffSearchBar(
+                query = searchQuery,
+                currentMatchIndex = selectedSearchMatchIndex,
+                matchCount = searchMatches.size,
+                onQueryChange = onSearchQueryChange,
+                onPrevious = { moveToSearchMatch(-1) },
+                onNext = { moveToSearchMatch(1) },
+                onClose = onCloseSearch
+            )
+        }
+
+        BoxWithConstraints(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.1f))
+                .transformable(state = transformState)
+        ) {
+            val viewportWidth = maxWidth
+            SelectionContainer(modifier = Modifier.fillMaxSize()) {
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .horizontalScroll(horizScrollState)
+                ) {
                 sections.forEachIndexed { sectionIndex, section ->
                     item(key = "header:$sectionIndex") {
                         DisableSelection {
@@ -1749,6 +1859,13 @@ private fun DiffContent(
                         count = rowsBySection[sectionIndex].size,
                         key = { rowIndex -> "row:$sectionIndex:$rowIndex" }
                     ) { rowIndex ->
+                        val rowMatches = matchesByRow[sectionIndex to rowIndex].orEmpty()
+                        val searchHighlights = rowMatches.map { match ->
+                            DiffSearchHighlight(
+                                range = match.range,
+                                isCurrent = match == currentSearchMatch
+                            )
+                        }
                         DiffRowItem(
                             row = rowsBySection[sectionIndex][rowIndex],
                             dims = dims,
@@ -1756,7 +1873,8 @@ private fun DiffContent(
                             isDark = isDark,
                             fallbackColor = fallbackColor,
                             showLineNumbers = showLineNumbers,
-                            minimumWidth = viewportWidth
+                            minimumWidth = viewportWidth,
+                            searchHighlights = searchHighlights
                         )
                     }
                 }
@@ -1782,6 +1900,204 @@ private fun DiffContent(
             }
         }
     }
+}
+}
+
+@Suppress("LongMethod")
+@Composable
+private fun DiffSearchBar(
+    query: String,
+    currentMatchIndex: Int,
+    matchCount: Int,
+    onQueryChange: (String) -> Unit,
+    onPrevious: () -> Unit,
+    onNext: () -> Unit,
+    onClose: () -> Unit
+) {
+    val focusRequester = remember { FocusRequester() }
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
+
+    LaunchedEffect(Unit) {
+        focusRequester.requestFocus()
+        keyboardController?.show()
+    }
+
+    val matchLabel = when {
+        query.isEmpty() -> null
+        matchCount == 0 -> "No matches"
+        else -> "${currentMatchIndex + 1}/$matchCount"
+    }
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surface,
+        tonalElevation = 2.dp
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            OutlinedTextField(
+                value = query,
+                onValueChange = onQueryChange,
+                modifier = Modifier
+                    .weight(1f)
+                    .focusRequester(focusRequester),
+                placeholder = { Text("Search diff") },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.Search,
+                        contentDescription = "Search diff"
+                    )
+                },
+                trailingIcon = {
+                    if (query.isNotEmpty()) {
+                        IconButton(onClick = { onQueryChange("") }) {
+                            Icon(
+                                imageVector = Icons.Default.Clear,
+                                contentDescription = "Clear search"
+                            )
+                        }
+                    }
+                },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                keyboardActions = KeyboardActions(onSearch = { onNext() })
+            )
+            matchLabel?.let { label ->
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    modifier = Modifier.padding(horizontal = 4.dp)
+                )
+            }
+            IconButton(
+                onClick = onPrevious,
+                enabled = matchCount > 0
+            ) {
+                Icon(
+                    imageVector = Icons.Default.KeyboardArrowUp,
+                    contentDescription = "Previous match"
+                )
+            }
+            IconButton(
+                onClick = onNext,
+                enabled = matchCount > 0
+            ) {
+                Icon(
+                    imageVector = Icons.Default.KeyboardArrowDown,
+                    contentDescription = "Next match"
+                )
+            }
+            IconButton(onClick = {
+                focusManager.clearFocus()
+                keyboardController?.hide()
+                onClose()
+            }) {
+                Icon(
+                    imageVector = Icons.Default.Close,
+                    contentDescription = "Close search"
+                )
+            }
+        }
+    }
+}
+
+private data class DiffSearchMatch(
+    val sectionIndex: Int,
+    val rowIndex: Int,
+    val range: TextMatch
+)
+
+private data class DiffSearchHighlight(
+    val range: TextMatch,
+    val isCurrent: Boolean
+)
+
+private fun findDiffSearchMatches(
+    rowsBySection: List<List<DiffRow>>,
+    query: String
+): List<DiffSearchMatch> {
+    if (query.isEmpty()) return emptyList()
+
+    return buildList {
+        rowsBySection.forEachIndexed { sectionIndex, rows ->
+            rows.forEachIndexed { rowIndex, row ->
+                val (searchableText, prefixLength) = searchableDiffText(row.line)
+                findTextMatches(searchableText, query).forEach { match ->
+                    add(
+                        DiffSearchMatch(
+                            sectionIndex = sectionIndex,
+                            rowIndex = rowIndex,
+                            range = TextMatch(
+                                start = match.start + prefixLength,
+                                endExclusive = match.endExclusive + prefixLength
+                            )
+                        )
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun searchableDiffText(line: ParsedDiffLine): Pair<String, Int> {
+    return when (line.type) {
+        DiffLineType.ADDITION,
+        DiffLineType.DELETION,
+        DiffLineType.CONTEXT -> line.text.drop(1) to 1
+        DiffLineType.METADATA,
+        DiffLineType.HUNK_HEADER -> line.text to 0
+    }
+}
+
+private fun diffRowItemIndex(
+    rowsBySection: List<List<DiffRow>>,
+    sectionIndex: Int,
+    rowIndex: Int
+): Int {
+    if (sectionIndex !in rowsBySection.indices) return 0
+
+    var itemIndex = 0
+    rowsBySection.take(sectionIndex).forEach { rows ->
+        itemIndex += rows.size + 1
+    }
+    return itemIndex + 1 + rowIndex
+}
+
+private fun applySearchHighlights(
+    text: AnnotatedString,
+    highlights: List<DiffSearchHighlight>,
+    isDark: Boolean
+): AnnotatedString {
+    if (highlights.isEmpty()) return text
+
+    return androidx.compose.ui.text.buildAnnotatedString {
+        append(text)
+        highlights.forEach { highlight ->
+            val start = highlight.range.start
+            val endExclusive = highlight.range.endExclusive
+            if (start >= 0 && start < endExclusive && endExclusive <= text.length) {
+                addStyle(
+                    style = androidx.compose.ui.text.SpanStyle(
+                        background = searchMatchBackground(isDark, highlight.isCurrent)
+                    ),
+                    start = start,
+                    end = endExclusive
+                )
+            }
+        }
+    }
+}
+
+private fun searchMatchBackground(isDark: Boolean, isCurrent: Boolean): Color {
+    if (isCurrent) return Color(0xFFFFB300)
+    return if (isDark) Color(0x665E5200) else Color(0xFFFFE082)
 }
 
 /**
@@ -1826,7 +2142,7 @@ private data class ScaledDiffDimensions(
     val lineNumFontSize: androidx.compose.ui.unit.TextUnit
 )
 
-@Suppress("LongMethod")
+@Suppress("LongMethod", "LongParameterList")
 @Composable
 private fun DiffRowItem(
     row: DiffRow,
@@ -1835,12 +2151,13 @@ private fun DiffRowItem(
     isDark: Boolean,
     fallbackColor: Color,
     showLineNumbers: Boolean,
-    minimumWidth: androidx.compose.ui.unit.Dp
+    minimumWidth: androidx.compose.ui.unit.Dp,
+    searchHighlights: List<DiffSearchHighlight> = emptyList()
 ) {
     val line = row.line
     val (bgColor, textColor) = getColors(line.type, isDark, fallbackColor)
-    val annotatedText = remember(row, isDark, textColor) {
-        when (row) {
+    val annotatedText = remember(row, isDark, textColor, searchHighlights) {
+        val baseText = when (row) {
             is DiffRow.Single -> buildDiffLineText(line, isDark, textColor)
             is DiffRow.Grouped -> buildWordDiffLineText(
                 line, row.tokens, row.unchanged, row.ranges,
@@ -1848,6 +2165,7 @@ private fun DiffRowItem(
                 changedWordBackground(line.type, isDark)
             )
         }
+        applySearchHighlights(baseText, searchHighlights, isDark)
     }
     Row(
         modifier = Modifier

@@ -1,8 +1,15 @@
 package com.mrndtvndv.term.ui.workspace
 
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
 import android.os.Debug
+import android.os.Handler
+import android.os.Looper
 import android.os.Process
 import android.os.SystemClock
+import android.view.FrameMetrics
+import android.view.Window
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -10,6 +17,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -22,11 +30,13 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import java.util.Locale
 import kotlin.math.roundToInt
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.withContext
 
 private const val DefaultRefreshRate = 60f
 private const val SampleWindowNanos = 1_000_000_000L
-private const val MaxFrameGapNanos = 2_000_000_000L
 private const val NanosPerSecond = 1_000_000_000.0
 
 @Composable
@@ -36,34 +46,47 @@ fun DebugHud(modifier: Modifier = Modifier) {
         view.display?.refreshRate?.takeIf { it > 0f } ?: DefaultRefreshRate
     }
     var metrics by remember {
-        mutableStateOf(DebugHudMetrics(ramMegabytes = readProcessRamMegabytes()))
+        mutableStateOf(DebugHudMetrics())
     }
 
-    LaunchedEffect(view, refreshRate) {
-        val accumulator = FrameMetricsAccumulator(refreshRate)
-        while (true) {
-            val sample = withFrameNanos { frameTimeNanos ->
-                accumulator.record(frameTimeNanos)
-            }
-            if (sample != null) {
-                metrics = metrics.copy(
-                    framesPerSecond = sample.framesPerSecond,
-                    missedFrames = sample.missedFrames
-                )
-            }
+    val frameTracker = remember(view, refreshRate) { FrameMetricsAccumulator(refreshRate) }
+    LaunchedEffect(frameTracker) {
+        while (isActive) {
+            withFrameNanos { frameTimeNanos -> frameTracker.record(frameTimeNanos) }
         }
+    }
+    val activity = remember(view) { view.context.findActivity() }
+    DisposableEffect(activity, frameTracker) {
+        val window = activity?.window
+            ?: return@DisposableEffect onDispose { }
+        val listener = Window.OnFrameMetricsAvailableListener { _, frameMetrics, _ ->
+            frameTracker.recordPresentedFrame(
+                frameMetrics.getMetric(FrameMetrics.TOTAL_DURATION)
+            )
+        }
+        window.addOnFrameMetricsAvailableListener(listener, Handler(Looper.getMainLooper()))
+        onDispose { window.removeOnFrameMetricsAvailableListener(listener) }
     }
 
     // Resource sampling stays off the frame path: these calls are not free and
     // would perturb the very FPS this HUD measures.
-    LaunchedEffect(Unit) {
+    LaunchedEffect(frameTracker) {
         var previousCpuSample = readProcessCpuSample()
-        while (true) {
+        while (isActive) {
             delay(1_000)
             val currentCpuSample = readProcessCpuSample()
+            val frameSample = frameTracker.snapshot()
+            val processMetrics = withContext(Dispatchers.IO) {
+                DebugHudMetrics(
+                    cpuPercent = calculateProcessCpuPercent(previousCpuSample, currentCpuSample),
+                    ramMegabytes = readProcessRamMegabytes()
+                )
+            }
             metrics = metrics.copy(
-                cpuPercent = calculateProcessCpuPercent(previousCpuSample, currentCpuSample),
-                ramMegabytes = readProcessRamMegabytes()
+                framesPerSecond = frameSample.framesPerSecond,
+                missedFrames = frameSample.missedFrames,
+                cpuPercent = processMetrics.cpuPercent,
+                ramMegabytes = processMetrics.ramMegabytes
             )
             previousCpuSample = currentCpuSample
         }
@@ -108,7 +131,7 @@ private fun DebugHudContent(metrics: DebugHudMetrics) {
     }
 }
 
-private data class DebugHudMetrics(
+internal data class DebugHudMetrics(
     val framesPerSecond: Float = 0f,
     val cpuPercent: Float = 0f,
     val ramMegabytes: Int = 0,
@@ -120,41 +143,41 @@ private data class ProcessCpuSample(
     val elapsedRealtimeMillis: Long
 )
 
-private class FrameMetricsAccumulator(refreshRate: Float) {
-    private val frameIntervalNanos = (NanosPerSecond / refreshRate.coerceAtLeast(1f)).toLong()
-    private var previousFrameNanos = 0L
-    private var sampleStartNanos = 0L
+internal class FrameMetricsAccumulator(refreshRate: Float) {
+    private val frameIntervalNanos =
+        (NanosPerSecond / refreshRate.coerceAtLeast(1f)).roundToInt().toLong().coerceAtLeast(1L)
+    private var previousFrameNanos: Long? = null
+    private var lastSampleNanos: Long? = null
     private var renderedFrames = 0
     private var missedFrames = 0
 
-    fun record(frameTimeNanos: Long): DebugHudMetrics? {
-        if (previousFrameNanos == 0L) {
-            resetSample(frameTimeNanos)
-            return null
-        }
+    fun record(frameTimeNanos: Long) {
+        val previousFrameNanos = previousFrameNanos
+        this.previousFrameNanos = frameTimeNanos
+        if (previousFrameNanos == null) return
 
         val frameGapNanos = frameTimeNanos - previousFrameNanos
-        previousFrameNanos = frameTimeNanos
-        if (frameGapNanos <= 0L || frameGapNanos > MaxFrameGapNanos) {
-            resetSample(frameTimeNanos)
-            return null
-        }
+        if (frameGapNanos <= 0L) return
 
-        return recordFrame(frameTimeNanos, frameGapNanos)
+        renderedFrames++
     }
 
-    private fun recordFrame(frameTimeNanos: Long, frameGapNanos: Long): DebugHudMetrics? {
-        renderedFrames++
-        missedFrames += missedFramesIn(frameGapNanos)
-        val sampleDurationNanos = frameTimeNanos - sampleStartNanos
-        if (sampleDurationNanos < SampleWindowNanos) return null
+    fun recordPresentedFrame(frameDurationNanos: Long) {
+        if (frameDurationNanos <= 0L) return
+        missedFrames += missedFramesIn(frameDurationNanos)
+    }
 
-        val framesPerSecond = renderedFrames * NanosPerSecond / sampleDurationNanos
+    fun snapshot(nowNanos: Long = System.nanoTime()): DebugHudMetrics {
+        val previousSampleNanos = lastSampleNanos
+        lastSampleNanos = nowNanos
+        val sampleDurationNanos = (previousSampleNanos?.let { nowNanos - it } ?: SampleWindowNanos)
+            .coerceAtLeast(1L)
         val sample = DebugHudMetrics(
-            framesPerSecond = framesPerSecond.toFloat(),
+            framesPerSecond = (renderedFrames * NanosPerSecond / sampleDurationNanos).toFloat(),
             missedFrames = missedFrames
         )
-        resetSample(frameTimeNanos)
+        renderedFrames = 0
+        missedFrames = 0
         return sample
     }
 
@@ -162,12 +185,16 @@ private class FrameMetricsAccumulator(refreshRate: Float) {
         val expectedFrames = (frameGapNanos.toDouble() / frameIntervalNanos).roundToInt()
         return (expectedFrames - 1).coerceAtLeast(0)
     }
+}
 
-    private fun resetSample(frameTimeNanos: Long) {
-        previousFrameNanos = frameTimeNanos
-        sampleStartNanos = frameTimeNanos
-        renderedFrames = 0
-        missedFrames = 0
+private fun Context.findActivity(): Activity? {
+    var current: Context = this
+    while (true) {
+        if (current is Activity) return current
+        if (current !is ContextWrapper) return null
+        val baseContext = current.baseContext
+        if (baseContext === current) return null
+        current = baseContext
     }
 }
 

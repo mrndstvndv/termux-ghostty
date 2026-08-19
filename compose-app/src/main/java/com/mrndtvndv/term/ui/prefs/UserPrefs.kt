@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.asStateFlow
 private const val HerdrAgentFabOpacityKey = "herdr_agent_fab_opacity"
 private const val DefaultHerdrAgentFabOpacity = 0.7f
 private const val MinHerdrAgentFabOpacity = 0.25f
+private const val DefaultDebugHudEnabled = true
 
 class UserPrefs {
     private val _customFontName = MutableStateFlow<String?>(null)
@@ -19,7 +20,7 @@ class UserPrefs {
     private val _nativeLogcatLoggingEnabled = MutableStateFlow(false)
     val nativeLogcatLoggingEnabled: StateFlow<Boolean> = _nativeLogcatLoggingEnabled.asStateFlow()
 
-    private val _debugHudEnabled = MutableStateFlow(false)
+    private val _debugHudEnabled = MutableStateFlow(DefaultDebugHudEnabled)
     val debugHudEnabled: StateFlow<Boolean> = _debugHudEnabled.asStateFlow()
 
     private val _hideWorkspaceTabs = MutableStateFlow(false)
@@ -32,7 +33,7 @@ class UserPrefs {
         _customFontName.value = prefs.getString("custom_font_name", null)
         _useCustomFontForWholeUi.value = prefs.getBoolean("use_custom_font_for_whole_ui", false)
         _nativeLogcatLoggingEnabled.value = prefs.getBoolean("native_logcat_logging_enabled", false)
-        _debugHudEnabled.value = prefs.getBoolean("debug_hud_enabled", false)
+        _debugHudEnabled.value = prefs.getBoolean("debug_hud_enabled", DefaultDebugHudEnabled)
         _hideWorkspaceTabs.value = prefs.getBoolean("hide_workspace_tabs", false)
         _herdrAgentFabOpacity.value = prefs.getFloat(
             HerdrAgentFabOpacityKey,

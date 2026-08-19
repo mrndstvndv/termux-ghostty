@@ -324,7 +324,12 @@ final class GhosttySessionWorker extends Thread {
         int appendResult = mContent.append(buffer, offset, length);
         updateCachedState();
         if (mSession.mLastKnownGhosttyTranscriptRows > previousTranscriptRows) {
-            mSession.mScrollCounter.addAndGet(mSession.mLastKnownGhosttyTranscriptRows - previousTranscriptRows);
+            int addedRows = mSession.mLastKnownGhosttyTranscriptRows - previousTranscriptRows;
+            mSession.mScrollCounter.addAndGet(addedRows);
+            if (mCurrentTopRow < 0) {
+                // Keep the viewport over the same history rows while output streams.
+                mCurrentTopRow = Math.max(-mSession.mLastKnownGhosttyTranscriptRows, mCurrentTopRow - addedRows);
+            }
         }
 
         processAppendResult(appendResult);

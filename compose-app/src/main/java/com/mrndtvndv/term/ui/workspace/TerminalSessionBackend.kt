@@ -147,19 +147,16 @@ internal class TerminalSessionBackend(
 
     private fun synchronizeViewport(frameDelta: FrameDelta) {
         val transcriptRows = session.activeTranscriptRows
-        val viewportChanged = frameDelta.reasonFlags and FrameDelta.REASON_VIEWPORT_SCROLL != 0
-        topRow = when {
-            viewportChanged -> frameDelta.topRow
-            session.isAutoScrollDisabled -> shiftedTopRow(transcriptRows, session.scrollCounter)
-            else -> 0
-        }.coerceIn(-transcriptRows, 0)
+        topRow = resolveTopRow(
+            previousTopRow = topRow,
+            viewportChanged = frameDelta.reasonFlags and FrameDelta.REASON_VIEWPORT_SCROLL != 0,
+            frameTopRow = frameDelta.topRow,
+            autoScrollDisabled = session.isAutoScrollDisabled,
+            transcriptRows = transcriptRows,
+            rowShift = session.scrollCounter
+        )
         session.clearScrollCounter()
         session.setGhosttyTopRow(topRow)
-    }
-
-    private fun shiftedTopRow(transcriptRows: Int, rowShift: Int): Int {
-        if (-topRow + rowShift > transcriptRows) return -transcriptRows
-        return topRow - rowShift
     }
 
     private fun updateTopRow(requestedTopRow: Int) {
@@ -190,4 +187,30 @@ internal class TerminalSessionBackend(
     private fun reportError(code: Int, message: String) {
         listener?.onBackendError(TerminalBackendError(code, message))
     }
+}
+
+/**
+ * Resolves the viewport top row for an applied frame.
+ *
+ * Streaming appends must not yank the user back to the bottom while they are
+ * reading scrollback: a viewport above the bottom edge is shifted by the rows
+ * appended since the last applied frame so the visible content stays put. Only
+ * a viewport at the very bottom snaps back to follow new output.
+ */
+internal fun resolveTopRow(
+    previousTopRow: Int,
+    viewportChanged: Boolean,
+    frameTopRow: Int,
+    autoScrollDisabled: Boolean,
+    transcriptRows: Int,
+    rowShift: Int
+): Int = when {
+    viewportChanged -> frameTopRow
+    previousTopRow < 0 || autoScrollDisabled -> shiftedTopRow(previousTopRow, transcriptRows, rowShift)
+    else -> 0
+}.coerceIn(-transcriptRows, 0)
+
+private fun shiftedTopRow(previousTopRow: Int, transcriptRows: Int, rowShift: Int): Int {
+    if (-previousTopRow + rowShift > transcriptRows) return -transcriptRows
+    return previousTopRow - rowShift
 }

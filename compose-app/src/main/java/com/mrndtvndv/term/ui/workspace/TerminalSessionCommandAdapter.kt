@@ -27,6 +27,7 @@ internal class TerminalSessionCommandAdapter(
 
     private fun writeText(text: String): TerminalCommandResult {
         if (text.isEmpty()) return TerminalCommandResult.Success
+        updateTopRow(0)
         session.setCursorBlinkState(true)
         val terminalText = if ('\n' in text) text.replace('\n', '\r') else text
         session.write(terminalText)
@@ -35,6 +36,7 @@ internal class TerminalSessionCommandAdapter(
 
     private fun submitKey(command: TerminalCommand.Key): TerminalCommandResult {
         if (!command.down) return TerminalCommandResult.Success
+        updateTopRow(0)
         if (command.keyCode == 0) {
             writeCodePoint(command.codePoint, command.metaState and KeyEvent.META_ALT_ON != 0)
             return TerminalCommandResult.Success
@@ -54,6 +56,7 @@ internal class TerminalSessionCommandAdapter(
 
     private fun submitCursorMove(delta: Int): TerminalCommandResult {
         if (delta == 0) return TerminalCommandResult.Success
+        updateTopRow(0)
         val keyCode = if (delta < 0) KeyEvent.KEYCODE_DPAD_LEFT else KeyEvent.KEYCODE_DPAD_RIGHT
         val sequence = KeyHandler.getCode(
             keyCode,

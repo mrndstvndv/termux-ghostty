@@ -603,9 +603,9 @@ public class TerminalView extends View {
         int rowsInHistory = mTermSession.getActiveTranscriptRows();
         if (mTopRow < -rowsInHistory) mTopRow = -rowsInHistory;
 
-        if (isSelectingText() || mTermSession.isAutoScrollDisabled()) {
+        if (isSelectingText() || mTermSession.isAutoScrollDisabled() || mTopRow < 0) {
 
-            // Do not scroll when selecting text.
+            // Do not scroll when selecting text or when reading scrollback history.
             int rowShift = mTermSession.getScrollCounter();
             if (-mTopRow + rowShift > rowsInHistory) {
                 // .. unless we're hitting the end of history transcript, in which
@@ -613,7 +613,7 @@ public class TerminalView extends View {
                 if (isSelectingText())
                     stopTextSelectionMode();
 
-                if (mTermSession.isAutoScrollDisabled()) {
+                if (mTermSession.isAutoScrollDisabled() || mTopRow < 0) {
                     mTopRow = -rowsInHistory;
                     skipScrolling = true;
                 }
@@ -1144,6 +1144,7 @@ public class TerminalView extends View {
             return;
         }
 
+        scrollToBottomOnInput();
         mTermSession.paste(text.toString());
     }
 
@@ -1461,6 +1462,8 @@ public class TerminalView extends View {
 
         if (mTermSession == null) return;
 
+        scrollToBottomOnInput();
+
         // Ensure cursor is shown when a key is pressed down like long hold on (arrow) keys
         if (hasActiveTerminalBackend())
             mTermSession.setCursorBlinkState(true);
@@ -1520,6 +1523,8 @@ public class TerminalView extends View {
 
     /** Input the specified keyCode if applicable and return if the input was consumed. */
     public boolean handleKeyCode(int keyCode, int keyMod) {
+        scrollToBottomOnInput();
+
         // Ensure cursor is shown when a key is pressed down like long hold on (arrow) keys
         if (hasActiveTerminalBackend())
             mTermSession.setCursorBlinkState(true);
@@ -1710,6 +1715,14 @@ public class TerminalView extends View {
         mTopRow = topRow;
         if (hasActiveTerminalBackend()) {
             mTermSession.setGhosttyTopRow(topRow);
+        }
+    }
+
+    /** Scroll back to the bottom when the user actively sends input while scrolled up in history. */
+    private void scrollToBottomOnInput() {
+        if (mTopRow != 0 && hasActiveTerminalBackend()) {
+            mTopRow = 0;
+            mTermSession.setGhosttyTopRow(0);
         }
     }
 

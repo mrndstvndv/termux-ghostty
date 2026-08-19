@@ -292,6 +292,7 @@ fun dispatchExtraKey(
     extraKeysController: ExtraKeysController,
     session: TerminalSession
 ) {
+    session.setGhosttyTopRow(0)
     val key = buttonInfo.key
     if ("PASTE" == key) {
         session.onPasteTextFromClipboard()

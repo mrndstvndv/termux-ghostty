@@ -523,6 +523,8 @@ public final class TerminalSession extends TerminalOutput {
             return;
         }
 
+        setGhosttyTopRow(0);
+
         text = text.replaceAll("(\u001B|[\u0080-\u009F])", "");
         text = text.replaceAll("\r?\n", "\r");
 

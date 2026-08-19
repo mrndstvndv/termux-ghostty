@@ -1791,6 +1791,14 @@ pub export fn termux_ghostty_session_append(
     handle.stream.nextSlice(bytes[0..len]);
     handle.markRenderStateDirty();
 
+    const new_transcript_rows = handle.activeTranscriptRows();
+    if (new_transcript_rows > old_transcript_rows and handle.viewport_top_row < 0) {
+        // Keep the scrolled-up viewport over the same history rows while output streams.
+        const added_rows = std.math.cast(i32, new_transcript_rows - old_transcript_rows) orelse std.math.maxInt(i32);
+        const max_history = std.math.cast(i32, new_transcript_rows) orelse std.math.maxInt(i32);
+        handle.viewport_top_row = @max(-max_history, handle.viewport_top_row - added_rows);
+    }
+
     var result: u32 = append_result_screen_changed;
     if (old_cursor_row != handle.cursorRow() or old_cursor_col != handle.cursorCol()) {
         result |= append_result_cursor_changed;
@@ -1798,7 +1806,7 @@ pub export fn termux_ghostty_session_append(
     if (old_mode_bits != handle.modeBits() or old_reverse != handle.reverseVideo() or old_alt != handle.alternateBufferActive()) {
         result |= append_result_cursor_changed;
     }
-    if (old_transcript_rows != handle.activeTranscriptRows()) {
+    if (old_transcript_rows != new_transcript_rows) {
         result |= append_result_screen_changed;
     }
     if (handle.pending_title.items.len > 0) {
@@ -2906,3 +2914,41 @@ test "fill viewport links tracks scrolled viewport rows" {
         },
     });
 }
+
+test "append shifts scrolled-up viewport into history" {
+    const session = termux_ghostty_session_create(10, 5, 100, 10, 20) orelse return error.OutOfMemory;
+    defer termux_ghostty_session_destroy(session);
+
+    _ = appendTestBytes(session, "a\nb\nc\nd\ne\nf\ng\nh\n");
+    try testing.expectEqual(@as(usize, 3), session.activeTranscriptRows());
+    _ = termux_ghostty_session_set_viewport_top_row(session, -2);
+    try testing.expectEqual(@as(i32, -2), session.viewport_top_row);
+
+    _ = appendTestBytes(session, "i\nj\n");
+    try testing.expectEqual(@as(usize, 5), session.activeTranscriptRows());
+    try testing.expectEqual(@as(i32, -4), session.viewport_top_row);
+}
+
+test "append viewport shift tracks growing history" {
+    const session = termux_ghostty_session_create(10, 5, 100, 10, 20) orelse return error.OutOfMemory;
+    defer termux_ghostty_session_destroy(session);
+
+    _ = appendTestBytes(session, "a\nb\nc\nd\ne\nf\n");
+    _ = termux_ghostty_session_set_viewport_top_row(session, -1);
+
+    _ = appendTestBytes(session, "g\nh\ni\n");
+    try testing.expectEqual(@as(usize, 5), session.activeTranscriptRows());
+    try testing.expectEqual(@as(i32, -4), session.viewport_top_row);
+}
+
+test "append while at bottom keeps viewport at bottom" {
+    const session = termux_ghostty_session_create(10, 5, 100, 10, 20) orelse return error.OutOfMemory;
+    defer termux_ghostty_session_destroy(session);
+
+    _ = appendTestBytes(session, "a\nb\nc\nd\ne\nf\ng\nh\n");
+    try testing.expectEqual(@as(i32, 0), session.viewport_top_row);
+
+    _ = appendTestBytes(session, "i\nj\nk\n");
+    try testing.expectEqual(@as(i32, 0), session.viewport_top_row);
+}
+

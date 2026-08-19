@@ -55,7 +55,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -89,7 +88,7 @@ fun GitReviewScreen(
     val errorMessage by viewModel.errorMessage.collectAsState()
     val isCommitInProgress by viewModel.isCommitInProgress.collectAsState()
     val isBranchOperationInProgress by viewModel.isBranchOperationInProgress.collectAsState()
-
+    val keyboardController = LocalSoftwareKeyboardController.current
 
     val reviewBackStack: NavBackStack<NavKey> = rememberNavBackStack(ReviewNavKey.ChangesList)
 
@@ -104,10 +103,25 @@ fun GitReviewScreen(
     var showCreateBranchDialog by remember { mutableStateOf(false) }
     var isDiffSearchVisible by remember { mutableStateOf(false) }
     var diffSearchQuery by remember { mutableStateOf("") }
+    var diffSearchMatchIndex by remember { mutableIntStateOf(0) }
+    var diffSearchMatchCount by remember { mutableIntStateOf(0) }
 
     val closeDiffSearch = {
+        keyboardController?.hide()
         isDiffSearchVisible = false
         diffSearchQuery = ""
+        diffSearchMatchIndex = 0
+        diffSearchMatchCount = 0
+    }
+    val updateDiffSearchQuery: (String) -> Unit = { query ->
+        diffSearchQuery = query
+        diffSearchMatchIndex = 0
+    }
+
+    fun moveDiffSearchMatch(offset: Int) {
+        if (diffSearchMatchCount == 0) return
+        diffSearchMatchIndex =
+            (diffSearchMatchIndex + offset + diffSearchMatchCount) % diffSearchMatchCount
     }
 
     val stagedFileCount = (uiState as? ReviewUiState.Success)?.stagedFiles?.size ?: 0
@@ -449,18 +463,26 @@ fun GitReviewScreen(
                             TopAppBar(
                                 windowInsets = WindowInsets(0, 0, 0, 0),
                                 title = {
-                                    Column {
-                                        Text(
-                                            text = selectedFile?.path ?: navKey.path,
-                                            style = MaterialTheme.typography.titleMedium,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
+                                    if (isDiffSearchVisible) {
+                                        DiffSearchField(
+                                            query = diffSearchQuery,
+                                            onQueryChange = updateDiffSearchQuery,
+                                            onNext = { moveDiffSearchMatch(1) }
                                         )
-                                        Text(
-                                            text = if (navKey.isStaged) "Staged Changes" else "Unstaged Changes",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                                        )
+                                    } else {
+                                        Column {
+                                            Text(
+                                                text = selectedFile?.path ?: navKey.path,
+                                                style = MaterialTheme.typography.titleMedium,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                            Text(
+                                                text = if (navKey.isStaged) "Staged Changes" else "Unstaged Changes",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                            )
+                                        }
                                     }
                                 },
                                 navigationIcon = {
@@ -476,65 +498,74 @@ fun GitReviewScreen(
                                     }
                                 },
                                 actions = {
-                                    Row(
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        modifier = Modifier.padding(end = 8.dp)
-                                    ) {
-                                        IconButton(onClick = {
-                                            if (isDiffSearchVisible) closeDiffSearch() else isDiffSearchVisible = true
-                                        }) {
-                                            Icon(
-                                                imageVector = Icons.Default.Search,
-                                                contentDescription = "Search diff"
-                                            )
-                                        }
-                                        WordDiffToggle(
-                                            isEnabled = isWordDiffEnabled,
-                                            onToggle = { viewModel.toggleWordDiff() }
+                                    if (isDiffSearchVisible) {
+                                        DiffSearchActions(
+                                            query = diffSearchQuery,
+                                            currentMatchIndex = diffSearchMatchIndex,
+                                            matchCount = diffSearchMatchCount,
+                                            onPrevious = { moveDiffSearchMatch(-1) },
+                                            onNext = { moveDiffSearchMatch(1) },
+                                            onClose = closeDiffSearch
                                         )
-                                        TooltipBox(
-                                            positionProvider = TooltipDefaults.rememberTooltipPositionProvider(
-                                                positioning = TooltipAnchorPosition.Above
-                                            ),
-                                            tooltip = { PlainTooltip { Text("Line Numbers") } },
-                                            state = rememberTooltipState()
+                                    } else {
+                                        Row(
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            modifier = Modifier.padding(end = 8.dp)
                                         ) {
-                                            IconToggleButton(
-                                                checked = showLineNumbers,
-                                                onCheckedChange = { viewModel.toggleLineNumbers() }
-                                            ) {
+                                            IconButton(onClick = { isDiffSearchVisible = true }) {
                                                 Icon(
-                                                    imageVector = Icons.Default.FormatListNumbered,
-                                                    contentDescription = "Toggle line numbers",
-                                                    modifier = Modifier.size(16.dp)
+                                                    imageVector = Icons.Default.Search,
+                                                    contentDescription = "Search diff"
                                                 )
                                             }
-                                        }
-                                        TooltipBox(
-                                            positionProvider = TooltipDefaults.rememberTooltipPositionProvider(
-                                                positioning = TooltipAnchorPosition.Above
-                                            ),
-                                            tooltip = {
-                                                PlainTooltip {
-                                                    Text(if (isFullFileMode) "Full File" else "Diff Only")
-                                                }
-                                            },
-                                            state = rememberTooltipState()
-                                        ) {
-                                            IconToggleButton(
-                                                checked = isFullFileMode,
-                                                onCheckedChange = { viewModel.toggleFullFileMode() }
+                                            WordDiffToggle(
+                                                isEnabled = isWordDiffEnabled,
+                                                onToggle = { viewModel.toggleWordDiff() }
+                                            )
+                                            TooltipBox(
+                                                positionProvider = TooltipDefaults.rememberTooltipPositionProvider(
+                                                    positioning = TooltipAnchorPosition.Above
+                                                ),
+                                                tooltip = { PlainTooltip { Text("Line Numbers") } },
+                                                state = rememberTooltipState()
                                             ) {
-                                                Icon(
-                                                    imageVector = if (isFullFileMode) {
-                                                        Icons.Default.Visibility
-                                                    } else {
-                                                        Icons.Default.UnfoldMore
-                                                    },
-                                                    contentDescription = "Toggle full file mode",
-                                                    modifier = Modifier.size(16.dp)
-                                                )
+                                                IconToggleButton(
+                                                    checked = showLineNumbers,
+                                                    onCheckedChange = { viewModel.toggleLineNumbers() }
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.FormatListNumbered,
+                                                        contentDescription = "Toggle line numbers",
+                                                        modifier = Modifier.size(16.dp)
+                                                    )
+                                                }
+                                            }
+                                            TooltipBox(
+                                                positionProvider = TooltipDefaults.rememberTooltipPositionProvider(
+                                                    positioning = TooltipAnchorPosition.Above
+                                                ),
+                                                tooltip = {
+                                                    PlainTooltip {
+                                                        Text(if (isFullFileMode) "Full File" else "Diff Only")
+                                                    }
+                                                },
+                                                state = rememberTooltipState()
+                                            ) {
+                                                IconToggleButton(
+                                                    checked = isFullFileMode,
+                                                    onCheckedChange = { viewModel.toggleFullFileMode() }
+                                                ) {
+                                                    Icon(
+                                                        imageVector = if (isFullFileMode) {
+                                                            Icons.Default.Visibility
+                                                        } else {
+                                                            Icons.Default.UnfoldMore
+                                                        },
+                                                        contentDescription = "Toggle full file mode",
+                                                        modifier = Modifier.size(16.dp)
+                                                    )
+                                                }
                                             }
                                         }
                                     }
@@ -558,8 +589,9 @@ fun GitReviewScreen(
                                 onToggleWordDiff = { viewModel.toggleWordDiff() },
                                 searchVisible = isDiffSearchVisible,
                                 searchQuery = diffSearchQuery,
-                                onSearchQueryChange = { diffSearchQuery = it },
-                                onCloseSearch = closeDiffSearch,
+                                searchMatchIndex = diffSearchMatchIndex,
+                                onSearchMatchCountChange = { diffSearchMatchCount = it },
+                                onSearchMatchIndexChange = { diffSearchMatchIndex = it },
                                 showHeader = false
                             )
                         }
@@ -573,20 +605,28 @@ fun GitReviewScreen(
                             TopAppBar(
                                 windowInsets = WindowInsets(0, 0, 0, 0),
                                 title = {
-                                    Column {
-                                        Text(
-                                            text = selectedCommit?.subject ?: "Commit Details",
-                                            style = MaterialTheme.typography.titleMedium,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
+                                    if (isDiffSearchVisible) {
+                                        DiffSearchField(
+                                            query = diffSearchQuery,
+                                            onQueryChange = updateDiffSearchQuery,
+                                            onNext = { moveDiffSearchMatch(1) }
                                         )
-                                        Text(
-                                            text = selectedCommit?.let {
-                                                "Commit ${it.shortHash} • ${it.relativeDate}"
-                                            } ?: "Commit ${navKey.hash.take(7)}",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                                        )
+                                    } else {
+                                        Column {
+                                            Text(
+                                                text = selectedCommit?.subject ?: "Commit Details",
+                                                style = MaterialTheme.typography.titleMedium,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                            Text(
+                                                text = selectedCommit?.let {
+                                                    "Commit ${it.shortHash} • ${it.relativeDate}"
+                                                } ?: "Commit ${navKey.hash.take(7)}",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                            )
+                                        }
                                     }
                                 },
                                 navigationIcon = {
@@ -602,39 +642,48 @@ fun GitReviewScreen(
                                     }
                                 },
                                 actions = {
-                                    Row(
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        modifier = Modifier.padding(end = 8.dp)
-                                    ) {
-                                        IconButton(onClick = {
-                                            if (isDiffSearchVisible) closeDiffSearch() else isDiffSearchVisible = true
-                                        }) {
-                                            Icon(
-                                                imageVector = Icons.Default.Search,
-                                                contentDescription = "Search diff"
-                                            )
-                                        }
-                                        WordDiffToggle(
-                                            isEnabled = isWordDiffEnabled,
-                                            onToggle = { viewModel.toggleWordDiff() }
+                                    if (isDiffSearchVisible) {
+                                        DiffSearchActions(
+                                            query = diffSearchQuery,
+                                            currentMatchIndex = diffSearchMatchIndex,
+                                            matchCount = diffSearchMatchCount,
+                                            onPrevious = { moveDiffSearchMatch(-1) },
+                                            onNext = { moveDiffSearchMatch(1) },
+                                            onClose = closeDiffSearch
                                         )
-                                        TooltipBox(
-                                            positionProvider = TooltipDefaults.rememberTooltipPositionProvider(
-                                                positioning = TooltipAnchorPosition.Above
-                                            ),
-                                            tooltip = { PlainTooltip { Text("Line Numbers") } },
-                                            state = rememberTooltipState()
+                                    } else {
+                                        Row(
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            modifier = Modifier.padding(end = 8.dp)
                                         ) {
-                                            IconToggleButton(
-                                                checked = showLineNumbers,
-                                                onCheckedChange = { viewModel.toggleLineNumbers() }
-                                            ) {
+                                            IconButton(onClick = { isDiffSearchVisible = true }) {
                                                 Icon(
-                                                    imageVector = Icons.Default.FormatListNumbered,
-                                                    contentDescription = "Toggle line numbers",
-                                                    modifier = Modifier.size(16.dp)
+                                                    imageVector = Icons.Default.Search,
+                                                    contentDescription = "Search diff"
                                                 )
+                                            }
+                                            WordDiffToggle(
+                                                isEnabled = isWordDiffEnabled,
+                                                onToggle = { viewModel.toggleWordDiff() }
+                                            )
+                                            TooltipBox(
+                                                positionProvider = TooltipDefaults.rememberTooltipPositionProvider(
+                                                    positioning = TooltipAnchorPosition.Above
+                                                ),
+                                                tooltip = { PlainTooltip { Text("Line Numbers") } },
+                                                state = rememberTooltipState()
+                                            ) {
+                                                IconToggleButton(
+                                                    checked = showLineNumbers,
+                                                    onCheckedChange = { viewModel.toggleLineNumbers() }
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.FormatListNumbered,
+                                                        contentDescription = "Toggle line numbers",
+                                                        modifier = Modifier.size(16.dp)
+                                                    )
+                                                }
                                             }
                                         }
                                     }
@@ -658,8 +707,9 @@ fun GitReviewScreen(
                                 onToggleWordDiff = { viewModel.toggleWordDiff() },
                                 searchVisible = isDiffSearchVisible,
                                 searchQuery = diffSearchQuery,
-                                onSearchQueryChange = { diffSearchQuery = it },
-                                onCloseSearch = closeDiffSearch,
+                                searchMatchIndex = diffSearchMatchIndex,
+                                onSearchMatchCountChange = { diffSearchMatchCount = it },
+                                onSearchMatchIndexChange = { diffSearchMatchIndex = it },
                                 showHeader = false
                             )
                         }
@@ -1591,8 +1641,9 @@ internal fun DiffViewer(
     onToggleWordDiff: () -> Unit = {},
     searchVisible: Boolean = false,
     searchQuery: String = "",
-    onSearchQueryChange: (String) -> Unit = {},
-    onCloseSearch: () -> Unit = {},
+    searchMatchIndex: Int = 0,
+    onSearchMatchCountChange: (Int) -> Unit = {},
+    onSearchMatchIndexChange: (Int) -> Unit = {},
     showHeader: Boolean = false
 ) {
     if (selectedFile == null && selectedCommit == null) {
@@ -1645,8 +1696,9 @@ internal fun DiffViewer(
                             isWordDiffEnabled = isWordDiffEnabled,
                             searchVisible = searchVisible,
                             searchQuery = searchQuery,
-                            onSearchQueryChange = onSearchQueryChange,
-                            onCloseSearch = onCloseSearch
+                            searchMatchIndex = searchMatchIndex,
+                            onSearchMatchCountChange = onSearchMatchCountChange,
+                            onSearchMatchIndexChange = onSearchMatchIndexChange
                         )
                     }
                 }
@@ -1722,8 +1774,9 @@ private fun DiffContent(
     isWordDiffEnabled: Boolean = true,
     searchVisible: Boolean = false,
     searchQuery: String = "",
-    onSearchQueryChange: (String) -> Unit = {},
-    onCloseSearch: () -> Unit = {},
+    searchMatchIndex: Int = 0,
+    onSearchMatchCountChange: (Int) -> Unit = {},
+    onSearchMatchIndexChange: (Int) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var fontScale by remember { mutableFloatStateOf(1f) }
@@ -1767,25 +1820,22 @@ private fun DiffContent(
     val searchMatches = remember(allRowsBySection, activeSearchQuery) {
         findDiffSearchMatches(allRowsBySection, activeSearchQuery)
     }
-    var selectedSearchMatchIndex by remember(activeSearchQuery) { mutableIntStateOf(0) }
     LaunchedEffect(searchMatches.size) {
-        selectedSearchMatchIndex = if (searchMatches.isEmpty()) {
+        onSearchMatchCountChange(searchMatches.size)
+        val adjustedIndex = if (searchMatches.isEmpty()) {
             0
         } else {
-            selectedSearchMatchIndex.coerceIn(0, searchMatches.lastIndex)
+            searchMatchIndex.coerceIn(0, searchMatches.lastIndex)
+        }
+        if (adjustedIndex != searchMatchIndex) {
+            onSearchMatchIndexChange(adjustedIndex)
         }
     }
-    val currentSearchMatch = searchMatches.getOrNull(selectedSearchMatchIndex)
+    val currentSearchMatch = searchMatches.getOrNull(searchMatchIndex)
     val matchesByRow = remember(searchMatches) {
         searchMatches.groupBy { it.sectionIndex to it.rowIndex }
     }
     val listState = rememberLazyListState()
-
-    fun moveToSearchMatch(offset: Int) {
-        if (searchMatches.isEmpty()) return
-        selectedSearchMatchIndex =
-            (selectedSearchMatchIndex + offset + searchMatches.size) % searchMatches.size
-    }
 
     LaunchedEffect(currentSearchMatch, collapsedSections) {
         if (!searchVisible || currentSearchMatch == null) return@LaunchedEffect
@@ -1805,18 +1855,6 @@ private fun DiffContent(
     }
 
     Column(modifier = modifier.fillMaxSize()) {
-        if (searchVisible) {
-            DiffSearchBar(
-                query = searchQuery,
-                currentMatchIndex = selectedSearchMatchIndex,
-                matchCount = searchMatches.size,
-                onQueryChange = onSearchQueryChange,
-                onPrevious = { moveToSearchMatch(-1) },
-                onNext = { moveToSearchMatch(1) },
-                onClose = onCloseSearch
-            )
-        }
-
         BoxWithConstraints(
             modifier = Modifier
                 .fillMaxWidth()
@@ -1903,19 +1941,13 @@ private fun DiffContent(
 }
 }
 
-@Suppress("LongMethod")
 @Composable
-private fun DiffSearchBar(
+private fun DiffSearchField(
     query: String,
-    currentMatchIndex: Int,
-    matchCount: Int,
     onQueryChange: (String) -> Unit,
-    onPrevious: () -> Unit,
-    onNext: () -> Unit,
-    onClose: () -> Unit
+    onNext: () -> Unit
 ) {
     val focusRequester = remember { FocusRequester() }
-    val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
 
     LaunchedEffect(Unit) {
@@ -1923,87 +1955,86 @@ private fun DiffSearchBar(
         keyboardController?.show()
     }
 
+    OutlinedTextField(
+        value = query,
+        onValueChange = onQueryChange,
+        modifier = Modifier
+            .fillMaxWidth()
+            .focusRequester(focusRequester),
+        placeholder = { Text("Search diff") },
+        leadingIcon = {
+            Icon(
+                imageVector = Icons.Default.Search,
+                contentDescription = "Search diff"
+            )
+        },
+        trailingIcon = {
+            if (query.isNotEmpty()) {
+                IconButton(onClick = { onQueryChange("") }) {
+                    Icon(
+                        imageVector = Icons.Default.Clear,
+                        contentDescription = "Clear search"
+                    )
+                }
+            }
+        },
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+        keyboardActions = KeyboardActions(onSearch = { onNext() })
+    )
+}
+
+@Composable
+private fun DiffSearchActions(
+    query: String,
+    currentMatchIndex: Int,
+    matchCount: Int,
+    onPrevious: () -> Unit,
+    onNext: () -> Unit,
+    onClose: () -> Unit
+) {
     val matchLabel = when {
         query.isEmpty() -> null
         matchCount == 0 -> "No matches"
         else -> "${currentMatchIndex + 1}/$matchCount"
     }
 
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        color = MaterialTheme.colorScheme.surface,
-        tonalElevation = 2.dp
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.padding(end = 8.dp)
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            OutlinedTextField(
-                value = query,
-                onValueChange = onQueryChange,
-                modifier = Modifier
-                    .weight(1f)
-                    .focusRequester(focusRequester),
-                placeholder = { Text("Search diff") },
-                leadingIcon = {
-                    Icon(
-                        imageVector = Icons.Default.Search,
-                        contentDescription = "Search diff"
-                    )
-                },
-                trailingIcon = {
-                    if (query.isNotEmpty()) {
-                        IconButton(onClick = { onQueryChange("") }) {
-                            Icon(
-                                imageVector = Icons.Default.Clear,
-                                contentDescription = "Clear search"
-                            )
-                        }
-                    }
-                },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                keyboardActions = KeyboardActions(onSearch = { onNext() })
+        matchLabel?.let { label ->
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                modifier = Modifier.padding(horizontal = 4.dp)
             )
-            matchLabel?.let { label ->
-                Text(
-                    text = label,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    modifier = Modifier.padding(horizontal = 4.dp)
-                )
-            }
-            IconButton(
-                onClick = onPrevious,
-                enabled = matchCount > 0
-            ) {
-                Icon(
-                    imageVector = Icons.Default.KeyboardArrowUp,
-                    contentDescription = "Previous match"
-                )
-            }
-            IconButton(
-                onClick = onNext,
-                enabled = matchCount > 0
-            ) {
-                Icon(
-                    imageVector = Icons.Default.KeyboardArrowDown,
-                    contentDescription = "Next match"
-                )
-            }
-            IconButton(onClick = {
-                focusManager.clearFocus()
-                keyboardController?.hide()
-                onClose()
-            }) {
-                Icon(
-                    imageVector = Icons.Default.Close,
-                    contentDescription = "Close search"
-                )
-            }
+        }
+        IconButton(
+            onClick = onPrevious,
+            enabled = matchCount > 0
+        ) {
+            Icon(
+                imageVector = Icons.Default.KeyboardArrowUp,
+                contentDescription = "Previous match"
+            )
+        }
+        IconButton(
+            onClick = onNext,
+            enabled = matchCount > 0
+        ) {
+            Icon(
+                imageVector = Icons.Default.KeyboardArrowDown,
+                contentDescription = "Next match"
+            )
+        }
+        IconButton(onClick = onClose) {
+            Icon(
+                imageVector = Icons.Default.Close,
+                contentDescription = "Close search"
+            )
         }
     }
 }

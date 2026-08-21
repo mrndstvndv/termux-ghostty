@@ -159,17 +159,21 @@ jobs:
             exit_on_error "No APKs found in output_apks/ - build may have failed silently"
           fi
           ls -lh output_apks/
-          # Use apksigner from Nix-provided Android SDK if available, else try system
-          if nix develop --command bash -c "command -v apksigner" >/dev/null 2>&1; then
-            nix develop --command bash -c 'for apk in output_apks/*.apk; do echo "Verifying $apk"; apksigner verify --verbose "$apk" || exit 1; done'
-          else
+          # Expanded by the nested Nix shell.
+          # shellcheck disable=SC2016
+          if ! nix develop --command bash -c '
+            set -euo pipefail
+            apksigner="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+            if [ -z "$apksigner" ]; then
+              echo "apksigner not found in Android SDK"
+              exit 1
+            fi
             for apk in output_apks/*.apk; do
-              echo "Verifying $apk via jarsigner"
-              jarsigner -verify -verbose "$apk" | tail -n 20
-              if ! jarsigner -verify "$apk" 2>&1 | grep -q "jar verified"; then
-                exit_on_error "Signature verification failed for $apk (NOT SIGNED - will cause INSTALL_PARSE_FAILED_NO_CERTIFICATES)"
-              fi
+              echo "Verifying $apk"
+              "$apksigner" verify --verbose "$apk"
             done
+          '; then
+            exit_on_error "APK signature verification failed"
           fi
 
       - name: Upload APKs

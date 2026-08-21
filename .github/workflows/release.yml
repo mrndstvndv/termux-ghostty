@@ -85,27 +85,24 @@ jobs:
           fi
 
           echo "Verifying APK signatures (fail if unsigned)"
-          if nix develop --command bash -c "command -v apksigner" >/dev/null 2>&1; then
-            for apk in "$APK_DIR_PATH"/*.apk; do
-              echo "Verifying $apk"
-              nix develop --command apksigner verify --verbose "$apk" || exit_on_error "Signature verification failed for $apk (NOT SIGNED - will cause INSTALL_PARSE_FAILED_NO_CERTIFICATES)"
-            done
-          else
-            for apk in "$APK_DIR_PATH"/*.apk; do
-              echo "Verifying $apk via jarsigner"
-              if ! jarsigner -verify "$apk" 2>&1 | grep -q "jar verified"; then
-                exit_on_error "Signature verification failed for $apk"
-              fi
-            done
-          fi
-          # Also verify compose-app APKs if built via assembleRelease (fat build)
-          for apk in ./compose-app/build/outputs/apk/*/release/*.apk; do
-            [ -f "$apk" ] || continue
-            echo "Verifying compose $apk"
-            if nix develop --command bash -c "command -v apksigner" >/dev/null 2>&1; then
-              nix develop --command apksigner verify --verbose "$apk" || exit_on_error "Signature verification failed for $apk"
+          export APK_DIR_PATH
+          # Expanded by the nested Nix shell.
+          # shellcheck disable=SC2016
+          if ! nix develop --command bash -c '
+            set -euo pipefail
+            apksigner="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+            if [ -z "$apksigner" ]; then
+              echo "apksigner not found in Android SDK"
+              exit 1
             fi
-          done
+            for apk in "$APK_DIR_PATH"/*.apk ./compose-app/build/outputs/apk/*/release/*.apk; do
+              [ -f "$apk" ] || continue
+              echo "Verifying $apk"
+              "$apksigner" verify --verbose "$apk"
+            done
+          '; then
+            exit_on_error "APK signature verification failed"
+          fi
 
           echo "APK_DIR_PATH=$APK_DIR_PATH" >> $GITHUB_ENV
           echo "APK_BASENAME_PREFIX=$APK_BASENAME_PREFIX" >> $GITHUB_ENV

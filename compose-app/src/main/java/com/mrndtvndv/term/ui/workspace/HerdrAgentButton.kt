@@ -419,8 +419,8 @@ private fun AgentIcon(
 
 /**
  * One tab's rows: the display pane row plus any additional pane rows.
- * When the tab is focused with multiple panes, rows are grouped in a bordered
- * box and the currently focused pane is highlighted.
+ * When multiple panes share a tab, rows are grouped in a bordered box and the
+ * currently focused pane is highlighted.
  */
 @Composable
 private fun TabGroupItem(
@@ -431,7 +431,7 @@ private fun TabGroupItem(
     onSelectPane: (HerdrPaneNode) -> Unit,
     onClosePane: (HerdrPaneNode) -> Unit,
 ) {
-    if (!tab.focused || additionalPanes.isEmpty()) {
+    if (additionalPanes.isEmpty()) {
         AgentTabListItem(
             tab = tab,
             pane = displayPane,

@@ -40,6 +40,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.mrndtvndv.term.domain.SftpFile
 import com.mrndtvndv.term.ui.SftpNavKey
+import com.mrndtvndv.term.ui.sftp.transfer.SftpTransfer
+import com.mrndtvndv.term.ui.sftp.transfer.TransferType
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -146,6 +148,7 @@ fun SftpFileBrowser(
     val trailPath by viewModel.trailPath.collectAsState()
     val downloadState by viewModel.downloadState.collectAsState()
     val uploadState by viewModel.uploadState.collectAsState()
+    val transfers by viewModel.transfers.collectAsState()
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
@@ -168,26 +171,46 @@ fun SftpFileBrowser(
         }
     }
 
-    // Show progress dialog when downloading to open
-    downloadState?.let { state ->
-        SftpTransferDialog(
-            title = "Downloading File",
-            fileName = state.fileName,
-            bytesTransferred = state.bytesDownloaded,
-            totalBytes = state.totalBytes,
-            onCancel = { viewModel.cancelDownload() }
-        )
-    }
+    if (transfers.isNotEmpty()) {
+        val activeTransfer = transfers.firstOrNull { it.isRunning && !it.isMinimized }
+        if (activeTransfer != null) {
+            SftpTransferDialog(
+                title = if (activeTransfer.type == TransferType.DOWNLOAD) "Downloading File" else "Uploading File",
+                fileName = activeTransfer.fileName,
+                bytesTransferred = activeTransfer.transferredBytes,
+                totalBytes = activeTransfer.totalBytes,
+                onCancel = { viewModel.cancelTransfer(activeTransfer.id) },
+                onBackground = {
+                    if (activeTransfer.type == TransferType.DOWNLOAD) {
+                        viewModel.backgroundDownload(activeTransfer.id)
+                    } else {
+                        viewModel.backgroundUpload(activeTransfer.id)
+                    }
+                }
+            )
+        }
+    } else {
+        // Show progress dialog when downloading to open (fallback)
+        downloadState?.let { state ->
+            SftpTransferDialog(
+                title = "Downloading File",
+                fileName = state.fileName,
+                bytesTransferred = state.bytesDownloaded,
+                totalBytes = state.totalBytes,
+                onCancel = { viewModel.cancelDownload() }
+            )
+        }
 
-    // Show progress dialog when uploading
-    uploadState?.let { state ->
-        SftpTransferDialog(
-            title = "Uploading File",
-            fileName = state.fileName,
-            bytesTransferred = state.bytesUploaded,
-            totalBytes = state.totalBytes,
-            onCancel = { viewModel.cancelUpload() }
-        )
+        // Show progress dialog when uploading (fallback)
+        uploadState?.let { state ->
+            SftpTransferDialog(
+                title = "Uploading File",
+                fileName = state.fileName,
+                bytesTransferred = state.bytesUploaded,
+                totalBytes = state.totalBytes,
+                onCancel = { viewModel.cancelUpload() }
+            )
+        }
     }
 
     val initialKey = remember(viewModel.currentPath) { SftpNavKey.Folder(viewModel.currentPath) }
@@ -206,6 +229,9 @@ fun SftpFileBrowser(
         },
         entryProvider = entryProvider<NavKey> {
             entry<SftpNavKey.Folder> {
+                val minimizedTransfers = transfers.filter { it.isRunning && it.isMinimized }
+                val latestMinimized = minimizedTransfers.firstOrNull()
+
                 Scaffold(
                     modifier = modifier.fillMaxSize(),
                     containerColor = Color.Transparent,
@@ -216,6 +242,24 @@ fun SftpFileBrowser(
                             Icon(
                                 imageVector = Icons.Default.FileUpload,
                                 contentDescription = "Upload file"
+                            )
+                        }
+                    },
+                    bottomBar = {
+                        if (latestMinimized != null) {
+                            SftpMinimizedTransferBanner(
+                                transfer = latestMinimized,
+                                count = minimizedTransfers.size,
+                                onRestore = {
+                                    if (latestMinimized.type == TransferType.DOWNLOAD) {
+                                        viewModel.restoreDownload(latestMinimized.id)
+                                    } else {
+                                        viewModel.restoreUpload(latestMinimized.id)
+                                    }
+                                },
+                                onCancel = {
+                                    viewModel.cancelTransfer(latestMinimized.id)
+                                }
                             )
                         }
                     }
@@ -406,11 +450,18 @@ private fun SftpTransferDialog(
     fileName: String,
     bytesTransferred: Long,
     totalBytes: Long,
-    onCancel: () -> Unit
+    onCancel: () -> Unit,
+    onBackground: (() -> Unit)? = null
 ) {
     AlertDialog(
         onDismissRequest = onCancel,
-        confirmButton = {},
+        confirmButton = {
+            if (onBackground != null) {
+                TextButton(onClick = onBackground) {
+                    Text("Background")
+                }
+            }
+        },
         dismissButton = {
             TextButton(onClick = onCancel) {
                 Text("Cancel")
@@ -448,6 +499,97 @@ private fun SftpTransferDialog(
             }
         }
     )
+}
+
+@Composable
+private fun SftpMinimizedTransferBanner(
+    transfer: SftpTransfer,
+    count: Int,
+    onRestore: () -> Unit,
+    onCancel: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        tonalElevation = 3.dp
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            SftpBannerHeader(transfer = transfer, count = count)
+            LinearProgressIndicator(
+                progress = { transfer.progress },
+                modifier = Modifier.fillMaxWidth()
+            )
+            SftpBannerActions(onRestore = onRestore, onCancel = onCancel)
+        }
+    }
+}
+
+@Composable
+private fun SftpBannerHeader(
+    transfer: SftpTransfer,
+    count: Int
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        val title = if (count > 1) {
+            "${transfer.fileName} (+${count - 1})"
+        } else {
+            transfer.fileName
+        }
+        Text(
+            text = title,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.Medium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f)
+        )
+        val bytesText = if (transfer.totalBytes > 0L) {
+            "${formatBytes(transfer.transferredBytes)} / ${formatBytes(transfer.totalBytes)}"
+        } else {
+            formatBytes(transfer.transferredBytes)
+        }
+        Text(
+            text = bytesText,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(start = 8.dp)
+        )
+    }
+}
+
+@Composable
+private fun SftpBannerActions(
+    onRestore: () -> Unit,
+    onCancel: () -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.End,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        TextButton(
+            onClick = onCancel,
+            colors = ButtonDefaults.textButtonColors(
+                contentColor = MaterialTheme.colorScheme.error
+            )
+        ) {
+            Text("Cancel")
+        }
+        Spacer(modifier = Modifier.width(8.dp))
+        TextButton(onClick = onRestore) {
+            Text("Restore")
+        }
+    }
 }
 
 @Suppress("TooGenericExceptionCaught", "SwallowedException")

@@ -90,7 +90,11 @@ jobs:
           # shellcheck disable=SC2016
           if ! nix develop --command bash -c '
             set -euo pipefail
-            apksigner="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+            apksigner=""
+            for candidate in "$ANDROID_HOME"/build-tools/*/apksigner; do
+              [ -x "$candidate" ] || continue
+              apksigner="$candidate"
+            done
             if [ -z "$apksigner" ]; then
               echo "apksigner not found in Android SDK"
               exit 1

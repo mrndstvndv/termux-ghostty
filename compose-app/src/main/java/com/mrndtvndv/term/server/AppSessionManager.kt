@@ -11,6 +11,7 @@ import android.os.IBinder
 import androidx.lifecycle.Lifecycle
 import com.mrndtvndv.term.data.prefs.SharedPreferencesWorkspacePersistence
 import com.mrndtvndv.term.service.SshSessionService
+import com.mrndtvndv.term.ui.sftp.transfer.SftpTransferManager
 import com.termux.shared.termux.TermuxConstants
 import com.termux.shared.termux.terminal.TermuxTerminalSessionClientBase
 import com.termux.terminal.TerminalSession
@@ -44,7 +45,13 @@ class AppSessionManager private constructor(context: Context) {
         )
     }
     private val serverManager by lazy { ServerManager(serverFactory) }
-    val coordinator by lazy { ServerCoordinator(serverManager, serverRepository) }
+    val coordinator by lazy {
+        ServerCoordinator(
+            serverManager = serverManager,
+            serverRepository = serverRepository,
+            transferManager = SftpTransferManager.getInstance(appContext),
+        )
+    }
 
     private val finishedSessions = SessionFinishedEvents()
     /** Emits a server id whenever one of its sessions finished on its own. */

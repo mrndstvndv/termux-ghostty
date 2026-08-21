@@ -3,6 +3,7 @@ package com.mrndtvndv.term.server
 import androidx.lifecycle.SavedStateHandle
 import com.mrndtvndv.term.ui.review.ReviewViewModel
 import com.mrndtvndv.term.ui.sftp.SftpViewModel
+import com.mrndtvndv.term.ui.sftp.transfer.SftpTransferManager
 import kotlinx.coroutines.Job
 
 /**
@@ -14,6 +15,7 @@ import kotlinx.coroutines.Job
 class ServerCoordinator(
     private val serverManager: ServerManager,
     private val serverRepository: ServerRepository,
+    private val transferManager: SftpTransferManager? = SftpTransferManager.current,
 ) {
     private val sftpViewModels = mutableMapOf<String, SftpViewModel>()
     private val reviewViewModels = mutableMapOf<String, ReviewViewModel?>()
@@ -115,6 +117,8 @@ class ServerCoordinator(
             savedStateHandle = SavedStateHandle(),
             initialPath = initialDir,
             execCommand = { cmd -> session.execCommand(cmd) },
+            transferManager = transferManager,
+            ownerKey = server.config.id,
         )
         // Wire onPathChanged back into workspace tracking.
         // The serverId is captured from the caller context (map key).

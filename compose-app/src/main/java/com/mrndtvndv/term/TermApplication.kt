@@ -3,12 +3,14 @@ package com.mrndtvndv.term
 import android.app.Application
 import android.util.Log
 import com.mrndtvndv.term.server.AppSessionManager
+import com.mrndtvndv.term.ui.sftp.transfer.SftpTransferManager
 
 class TermApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
         AppSessionManager.init(this)
+        SftpTransferManager.init(this)
 
         val previousHandler = Thread.getDefaultUncaughtExceptionHandler()
         val crashReporter = CrashReporter(this)

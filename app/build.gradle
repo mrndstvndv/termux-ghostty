@@ -84,6 +84,21 @@ android {
             storePassword 'xrj45yWGLbsO7W0v'
             keyPassword 'xrj45yWGLbsO7W0v'
         }
+        release {
+            def keystoreFile = System.getenv("KEYSTORE_FILE")
+            if (keystoreFile) {
+                def ksFile = new File(keystoreFile)
+                if (!ksFile.isAbsolute()) {
+                    ksFile = rootProject.file(keystoreFile)
+                }
+                if (ksFile.exists()) {
+                    storeFile ksFile
+                    storePassword System.getenv("KEYSTORE_PASSWORD")
+                    keyAlias System.getenv("KEY_ALIAS")
+                    keyPassword System.getenv("KEY_PASSWORD")
+                }
+            }
+        }
     }
 
     buildTypes {
@@ -91,6 +106,16 @@ android {
             minifyEnabled true
             shrinkResources false // Reproducible builds
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            def keystoreFile = System.getenv("KEYSTORE_FILE")
+            if (keystoreFile) {
+                def ksFile = new File(keystoreFile)
+                if (!ksFile.isAbsolute()) {
+                    ksFile = rootProject.file(keystoreFile)
+                }
+                if (ksFile.exists()) {
+                    signingConfig signingConfigs.release
+                }
+            }
         }
 
         debug {

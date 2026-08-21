@@ -105,13 +105,19 @@ jobs:
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
         run: |
-          echo "$KEYSTORE_BASE64" | base64 -d > release.keystore
+          echo "$KEYSTORE_BASE64" | base64 -d > "${{ github.workspace }}/release.keystore"
+          ls -lh "${{ github.workspace }}/release.keystore"
+          # Fail fast if keystore is empty or missing (prevents silent unsigned builds)
+          if [ ! -s "${{ github.workspace }}/release.keystore" ]; then
+            echo "ERROR: release.keystore is empty or missing - check KEYSTORE_BASE64 secret"
+            exit 1
+          fi
 
       - name: Build Signed Release APK
         env:
           TERMUX_APP_VERSION_NAME: ${{ needs.changelog.outputs.new_version }} # v prefix stripped below
           TERMUX_SPLIT_APKS_FOR_RELEASE_BUILDS: "1"
-          KEYSTORE_FILE: release.keystore
+          KEYSTORE_FILE: ${{ github.workspace }}/release.keystore
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
@@ -121,6 +127,13 @@ jobs:
           TERMUX_APP_VERSION_NAME="${TERMUX_APP_VERSION_NAME#v}"
           export TERMUX_APP_VERSION_NAME
           export TERMUX_APK_VERSION_TAG="${TERMUX_APP_VERSION_NAME}"
+          # Ensure keystore env is exported into nix shell (nix develop sanitizes env without --keep)
+          export KEYSTORE_FILE
+          export KEYSTORE_PASSWORD
+          export KEY_ALIAS
+          export KEY_PASSWORD
+
+          echo "Keystore file: $KEYSTORE_FILE (exists: $(test -f "$KEYSTORE_FILE" && echo yes || echo no), size: $(stat -c%s "$KEYSTORE_FILE" 2>/dev/null || stat -f%z "$KEYSTORE_FILE" 2>/dev/null || echo unknown))"
 
           mkdir -p output_apks
 
@@ -139,6 +152,24 @@ jobs:
             fi
             cp ./compose-app/build/outputs/apk/universal/release/*.apk output_apks/ 2>/dev/null || true
             cp ./compose-app/build/outputs/apk/arm64/release/*.apk output_apks/ 2>/dev/null || true
+          fi
+
+          echo "Verifying APK signatures (fail if unsigned)"
+          if [ -z "$(ls -A output_apks/*.apk 2>/dev/null)" ]; then
+            exit_on_error "No APKs found in output_apks/ - build may have failed silently"
+          fi
+          ls -lh output_apks/
+          # Use apksigner from Nix-provided Android SDK if available, else try system
+          if nix develop --command bash -c "command -v apksigner" >/dev/null 2>&1; then
+            nix develop --command bash -c 'for apk in output_apks/*.apk; do echo "Verifying $apk"; apksigner verify --verbose "$apk" || exit 1; done'
+          else
+            for apk in output_apks/*.apk; do
+              echo "Verifying $apk via jarsigner"
+              jarsigner -verify -verbose "$apk" | tail -n 20
+              if ! jarsigner -verify "$apk" 2>&1 | grep -q "jar verified"; then
+                exit_on_error "Signature verification failed for $apk (NOT SIGNED - will cause INSTALL_PARSE_FAILED_NO_CERTIFICATES)"
+              fi
+            done
           fi
 
       - name: Upload APKs

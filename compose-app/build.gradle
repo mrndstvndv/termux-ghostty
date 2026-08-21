@@ -85,11 +85,17 @@ android {
     signingConfigs {
         release {
             def keystoreFile = System.getenv("KEYSTORE_FILE")
-            if (keystoreFile && file(keystoreFile).exists()) {
-                storeFile file(keystoreFile)
-                storePassword System.getenv("KEYSTORE_PASSWORD")
-                keyAlias System.getenv("KEY_ALIAS")
-                keyPassword System.getenv("KEY_PASSWORD")
+            if (keystoreFile) {
+                def ksFile = new File(keystoreFile)
+                if (!ksFile.isAbsolute()) {
+                    ksFile = rootProject.file(keystoreFile)
+                }
+                if (ksFile.exists()) {
+                    storeFile ksFile
+                    storePassword System.getenv("KEYSTORE_PASSWORD")
+                    keyAlias System.getenv("KEY_ALIAS")
+                    keyPassword System.getenv("KEY_PASSWORD")
+                }
             }
         }
     }
@@ -108,8 +114,14 @@ android {
             shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
             def keystoreFile = System.getenv("KEYSTORE_FILE")
-            if (keystoreFile && file(keystoreFile).exists()) {
-                signingConfig signingConfigs.release
+            if (keystoreFile) {
+                def ksFile = new File(keystoreFile)
+                if (!ksFile.isAbsolute()) {
+                    ksFile = rootProject.file(keystoreFile)
+                }
+                if (ksFile.exists()) {
+                    signingConfig signingConfigs.release
+                }
             }
         }
     }

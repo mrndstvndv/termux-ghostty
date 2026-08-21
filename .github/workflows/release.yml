@@ -30,13 +30,18 @@ jobs:
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
         run: |
-          echo "$KEYSTORE_BASE64" | base64 -d > release.keystore
+          echo "$KEYSTORE_BASE64" | base64 -d > "${{ github.workspace }}/release.keystore"
+          ls -lh "${{ github.workspace }}/release.keystore"
+          if [ ! -s "${{ github.workspace }}/release.keystore" ]; then
+            echo "ERROR: release.keystore is empty or missing - check KEYSTORE_BASE64 secret"
+            exit 1
+          fi
 
       - name: Build Signed Release APK
         env:
           TERMUX_APP_VERSION_NAME: ${{ github.ref_name }} # v prefix stripped below
           TERMUX_SPLIT_APKS_FOR_RELEASE_BUILDS: "1"
-          KEYSTORE_FILE: release.keystore
+          KEYSTORE_FILE: ${{ github.workspace }}/release.keystore
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
@@ -47,6 +52,11 @@ jobs:
           TERMUX_APP_VERSION_NAME="${TERMUX_APP_VERSION_NAME#v}"
           export TERMUX_APP_VERSION_NAME
           export TERMUX_APK_VERSION_TAG="${TERMUX_APP_VERSION_NAME}"
+          export KEYSTORE_FILE
+          export KEYSTORE_PASSWORD
+          export KEY_ALIAS
+          export KEY_PASSWORD
+          echo "Keystore file: $KEYSTORE_FILE (exists: $(test -f "$KEYSTORE_FILE" && echo yes || echo no), size: $(stat -c%s "$KEYSTORE_FILE" 2>/dev/null || stat -f%z "$KEYSTORE_FILE" 2>/dev/null || echo unknown))"
 
           if ! nix develop --command ./gradlew assembleRelease --no-daemon; then
             exit_on_error "Build failed for release."
@@ -73,6 +83,29 @@ jobs:
             > "${APK_BASENAME_PREFIX}_sha256sums"); then
             exit_on_error "Generate sha25sums failed for release."
           fi
+
+          echo "Verifying APK signatures (fail if unsigned)"
+          if nix develop --command bash -c "command -v apksigner" >/dev/null 2>&1; then
+            for apk in "$APK_DIR_PATH"/*.apk; do
+              echo "Verifying $apk"
+              nix develop --command apksigner verify --verbose "$apk" || exit_on_error "Signature verification failed for $apk (NOT SIGNED - will cause INSTALL_PARSE_FAILED_NO_CERTIFICATES)"
+            done
+          else
+            for apk in "$APK_DIR_PATH"/*.apk; do
+              echo "Verifying $apk via jarsigner"
+              if ! jarsigner -verify "$apk" 2>&1 | grep -q "jar verified"; then
+                exit_on_error "Signature verification failed for $apk"
+              fi
+            done
+          fi
+          # Also verify compose-app APKs if built via assembleRelease (fat build)
+          for apk in ./compose-app/build/outputs/apk/*/release/*.apk; do
+            [ -f "$apk" ] || continue
+            echo "Verifying compose $apk"
+            if nix develop --command bash -c "command -v apksigner" >/dev/null 2>&1; then
+              nix develop --command apksigner verify --verbose "$apk" || exit_on_error "Signature verification failed for $apk"
+            fi
+          done
 
           echo "APK_DIR_PATH=$APK_DIR_PATH" >> $GITHUB_ENV
           echo "APK_BASENAME_PREFIX=$APK_BASENAME_PREFIX" >> $GITHUB_ENV

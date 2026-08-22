@@ -21,6 +21,10 @@ internal class RowRenderHints(
     var reverseVideo: Boolean
 )
 
+/** Copies mutable scan hints before a retained GraphicsLayer callback captures them. */
+internal fun RowRenderHints.snapshotForRetainedLayer(): RowRenderHints =
+    RowRenderHints(selectionStart, selectionEnd, cursorX, cursorStyle, reverseVideo)
+
 /**
  * Draws [TerminalRow] content with platform text primitives.
  *

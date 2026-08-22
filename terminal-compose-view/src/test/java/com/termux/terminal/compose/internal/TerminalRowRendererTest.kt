@@ -212,6 +212,45 @@ class TerminalRowRendererTest {
     }
 
     @Test
+    fun retainedRowHintSnapshotKeepsCursorForDelayedRowDraw() {
+        val renderer = TerminalRowRenderer(Typeface.MONOSPACE, 14f)
+        val row = TerminalRow(
+            columns = 4,
+            text = charArrayOf('a'),
+            charsUsed = 1,
+            styles = LongArray(4),
+            contentHash = 7L,
+            cellLayout = null,
+            isLineWrap = false
+        )
+        val scratch = RowRenderHints(-1, -1, 1, TerminalCursor.STYLE_BAR, false)
+        val retainedHints = scratch.snapshotForRetainedLayer()
+
+        scratch.selectionStart = 2
+        scratch.selectionEnd = 3
+        scratch.cursorX = 3
+        scratch.cursorStyle = TerminalCursor.STYLE_UNDERLINE
+        scratch.reverseVideo = true
+
+        val canvas = RecordingCanvas()
+        renderer.renderRow(
+            canvas = canvas,
+            frame = frame(row),
+            rowIndex = 0,
+            hints = retainedHints
+        )
+
+        assertEquals(-1, retainedHints.selectionStart)
+        assertEquals(-1, retainedHints.selectionEnd)
+        assertEquals(1, retainedHints.cursorX)
+        assertEquals(TerminalCursor.STYLE_BAR, retainedHints.cursorStyle)
+        assertEquals(false, retainedHints.reverseVideo)
+        val cursor = canvas.rects.single()
+        assertEquals(renderer.cellWidthPx, cursor.left, 0f)
+        assertEquals(renderer.cellWidthPx * 1.25f, cursor.right, 0f)
+    }
+
+    @Test
     fun scalesEmojiToItsCellBeforeDrawingFollowingCursor() {
         val renderer = TerminalRowRenderer(Typeface.MONOSPACE, 14f)
         val emoji = "👩‍💻".toCharArray()

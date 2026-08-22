@@ -322,6 +322,9 @@ internal class TerminalRenderNodeRenderer(
         rowHintsScratch.cursorX = hintCursorXs[rowIndex]
         rowHintsScratch.cursorStyle = frame.cursor.style
         rowHintsScratch.reverseVideo = frame.reverseVideo
+        // GraphicsLayer may replay this callback after its display list is discarded during
+        // backgrounding. Capture a row-local copy instead of the shared scan scratch.
+        val recordedHints = rowHintsScratch.snapshotForRetainedLayer()
         val linkContentHash = hintLinkContentHashes[rowIndex]
         rowLayer.layer.record(
             density = drawScope,
@@ -334,7 +337,7 @@ internal class TerminalRenderNodeRenderer(
                         canvas = canvas.nativeCanvas,
                         frame = frame,
                         rowIndex = rowIndex,
-                        hints = rowHintsScratch,
+                        hints = recordedHints,
                         baselineY = lineHeight.toFloat()
                     )
                 }
@@ -343,7 +346,7 @@ internal class TerminalRenderNodeRenderer(
         if (row == null) {
             rowLayer.state.clear()
         } else {
-            rowLayer.state.applyFrame(row, rowHintsScratch, paletteVersion, linkContentHash)
+            rowLayer.state.applyFrame(row, recordedHints, paletteVersion, linkContentHash)
         }
     }
 

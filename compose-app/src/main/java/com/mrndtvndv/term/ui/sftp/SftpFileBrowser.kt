@@ -10,9 +10,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
@@ -24,8 +25,10 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
 import androidx.navigation3.runtime.NavBackStack
 import androidx.navigation3.runtime.NavKey
@@ -139,9 +142,7 @@ fun SftpFileBrowser(
     modifier: Modifier = Modifier,
     isTabActive: Boolean = true,
     onOpenFile: (File) -> Unit,
-    onOpenFileError: (String) -> Unit,
-    onDownloadFile: ((SftpFile) -> Unit)? = null,
-    onDeleteFile: ((SftpFile) -> Unit)? = null
+    onOpenFileError: (String) -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val isRefreshing by viewModel.isRefreshing.collectAsState()
@@ -152,6 +153,83 @@ fun SftpFileBrowser(
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+
+    var menuTargetPath by remember { mutableStateOf<String?>(null) }
+    var renameTarget by remember { mutableStateOf<SftpFile?>(null) }
+    var deleteTarget by remember { mutableStateOf<SftpFile?>(null) }
+
+    fun showError(message: String) {
+        scope.launch { snackbarHostState.showSnackbar(message) }
+    }
+
+    renameTarget?.let { target ->
+        var newName by remember(target.path) { mutableStateOf(target.name) }
+        val isValid = newName.isNotBlank() && !newName.contains('/') && newName.trim() != target.name
+        AlertDialog(
+            onDismissRequest = { renameTarget = null },
+            title = { Text("Rename") },
+            text = {
+                OutlinedTextField(
+                    value = newName,
+                    onValueChange = { newName = it },
+                    singleLine = true,
+                    label = { Text("New name") },
+                    isError = newName.contains('/'),
+                    supportingText = {
+                        if (newName.contains('/')) Text("Name cannot contain '/'")
+                    }
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        renameTarget = null
+                        viewModel.renameFile(
+                            file = target,
+                            newName = newName,
+                            onSuccess = { showError("Renamed to ${newName.trim()}") },
+                            onError = ::showError
+                        )
+                    },
+                    enabled = isValid
+                ) { Text("Rename") }
+            },
+            dismissButton = {
+                TextButton(onClick = { renameTarget = null }) { Text("Cancel") }
+            }
+        )
+    }
+
+    deleteTarget?.let { target ->
+        AlertDialog(
+            onDismissRequest = { deleteTarget = null },
+            title = { Text("Delete \"${target.name}\"?") },
+            text = {
+                Text(
+                    if (target.isDirectory) {
+                        "Empty directories can be deleted. This cannot be undone."
+                    } else {
+                        "This file will be permanently deleted. This cannot be undone."
+                    }
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    deleteTarget = null
+                    viewModel.deleteFile(
+                        file = target,
+                        onSuccess = { showError("Deleted ${target.name}") },
+                        onError = ::showError
+                    )
+                }) {
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleteTarget = null }) { Text("Cancel") }
+            }
+        )
+    }
 
     val uploadPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.GetContent()
@@ -379,23 +457,45 @@ fun SftpFileBrowser(
                                                 )
                                             },
                                             trailingContent = {
-                                                Row {
-                                                    if (!file.isDirectory && onDownloadFile != null) {
-                                                        IconButton(onClick = { onDownloadFile(file) }) {
-                                                            Icon(
-                                                                imageVector = Icons.Default.Download,
-                                                                contentDescription = "Download"
-                                                            )
-                                                        }
+                                                Box {
+                                                    IconButton(onClick = { menuTargetPath = file.path }) {
+                                                        Icon(
+                                                            imageVector = Icons.Default.MoreVert,
+                                                            contentDescription = "More options",
+                                                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                                        )
                                                     }
-                                                    if (onDeleteFile != null) {
-                                                        IconButton(onClick = { onDeleteFile(file) }) {
-                                                            Icon(
-                                                                imageVector = Icons.Default.Delete,
-                                                                contentDescription = "Delete",
-                                                                tint = MaterialTheme.colorScheme.error
-                                                            )
-                                                        }
+                                                    DropdownMenu(
+                                                        expanded = menuTargetPath == file.path,
+                                                        onDismissRequest = { menuTargetPath = null }
+                                                    ) {
+                                                        DropdownMenuItem(
+                                                            text = { Text("Rename") },
+                                                            leadingIcon = {
+                                                                Icon(
+                                                                    imageVector = Icons.Default.Edit,
+                                                                    contentDescription = null
+                                                                )
+                                                            },
+                                                            onClick = {
+                                                                menuTargetPath = null
+                                                                renameTarget = file
+                                                            }
+                                                        )
+                                                        DropdownMenuItem(
+                                                            text = { Text("Delete") },
+                                                            leadingIcon = {
+                                                                Icon(
+                                                                    imageVector = Icons.Default.Delete,
+                                                                    contentDescription = null,
+                                                                    tint = MaterialTheme.colorScheme.error
+                                                                )
+                                                            },
+                                                            onClick = {
+                                                                menuTargetPath = null
+                                                                deleteTarget = file
+                                                            }
+                                                        )
                                                     }
                                                 }
                                             },

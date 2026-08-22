@@ -942,6 +942,26 @@ pub export fn Java_com_termux_terminal_GhosttyNative_nativeSftpDelete(
     return if (session.sftpDelete(handle, std.mem.span(chars))) c.JNI_TRUE else c.JNI_FALSE;
 }
 
+pub export fn Java_com_termux_terminal_GhosttyNative_nativeSftpRename(
+    env: ?*c.JNIEnv,
+    clazz: c.jclass,
+    session_handle: jlong,
+    sftp_handle: jlong,
+    old_path: c.jstring,
+    new_path: c.jstring,
+) jboolean {
+    _ = clazz;
+    const jni = env orelse return c.JNI_FALSE;
+    const session = sshSessionFromHandle(session_handle) orelse return c.JNI_FALSE;
+    if (sftp_handle <= 0 or old_path == null or new_path == null) return c.JNI_FALSE;
+    const old_chars = jni.*.*.GetStringUTFChars.?(jni, old_path, null);
+    defer jni.*.*.ReleaseStringUTFChars.?(jni, old_path, old_chars);
+    const new_chars = jni.*.*.GetStringUTFChars.?(jni, new_path, null);
+    defer jni.*.*.ReleaseStringUTFChars.?(jni, new_path, new_chars);
+    const handle: *anyopaque = @ptrFromInt(@as(usize, @intCast(sftp_handle)));
+    return if (session.sftpRename(handle, std.mem.span(old_chars), std.mem.span(new_chars))) c.JNI_TRUE else c.JNI_FALSE;
+}
+
 pub export fn Java_com_termux_terminal_GhosttyNative_nativeSftpFileOpen(
     env: ?*c.JNIEnv,
     clazz: c.jclass,

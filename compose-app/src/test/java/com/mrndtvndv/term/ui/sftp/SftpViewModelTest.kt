@@ -31,6 +31,8 @@ class SftpViewModelTest {
     class MockSftpClient(private val filesMap: Map<String, List<SftpFile>> = emptyMap()) : SftpClient {
         var createDirCalledPath: String? = null
         var deleteCalledPath: String? = null
+        var renamedOldPath: String? = null
+        var renamedNewPath: String? = null
         var downloadedPath: String? = null
         var uploadedPath: String? = null
         var onDownloadHook: (suspend () -> Unit)? = null
@@ -46,6 +48,11 @@ class SftpViewModelTest {
 
         override suspend fun deleteFile(path: String) {
             deleteCalledPath = path
+        }
+
+        override suspend fun renameFile(oldPath: String, newPath: String) {
+            renamedOldPath = oldPath
+            renamedNewPath = newPath
         }
 
         override suspend fun downloadFile(
@@ -121,6 +128,79 @@ class SftpViewModelTest {
         viewModel.navigateUp()
         advanceUntilIdle()
         assertEquals("/", viewModel.currentPath)
+    }
+
+    @Test
+    fun testDeleteFile() = runTest(testDispatcher) {
+        val client = MockSftpClient()
+        val savedState = SavedStateHandle(mapOf("current_path" to "/"))
+        val viewModel = SftpViewModel(client, savedState, transferManager = null)
+        advanceUntilIdle()
+
+        var succeeded = false
+        viewModel.deleteFile(
+            file = SftpFile("old.txt", "/data/old.txt", false, 0, 0, 0),
+            onSuccess = { succeeded = true },
+            onError = {}
+        )
+        advanceUntilIdle()
+
+        assertTrue(succeeded)
+        assertEquals("/data/old.txt", client.deleteCalledPath)
+    }
+
+    @Test
+    fun testRenameFileBuildsSiblingPath() = runTest(testDispatcher) {
+        val client = MockSftpClient()
+        val savedState = SavedStateHandle(mapOf("current_path" to "/"))
+        val viewModel = SftpViewModel(client, savedState, transferManager = null)
+        advanceUntilIdle()
+
+        var succeeded = false
+        viewModel.renameFile(
+            file = SftpFile("old.txt", "/data/old.txt", false, 0, 0, 0),
+            newName = " new-name.txt ",
+            onSuccess = { succeeded = true },
+            onError = {}
+        )
+        advanceUntilIdle()
+
+        assertTrue(succeeded)
+        assertEquals("/data/old.txt", client.renamedOldPath)
+        assertEquals("/data/new-name.txt", client.renamedNewPath)
+    }
+
+    @Test
+    fun testRenameFileRejectsInvalidName() = runTest(testDispatcher) {
+        val client = MockSftpClient()
+        val savedState = SavedStateHandle(mapOf("current_path" to "/"))
+        val viewModel = SftpViewModel(client, savedState, transferManager = null)
+        advanceUntilIdle()
+
+        var error: String? = null
+        viewModel.renameFile(
+            file = SftpFile("old.txt", "/old.txt", false, 0, 0, 0),
+            newName = "sub/dir.txt",
+            onSuccess = {},
+            onError = { error = it }
+        )
+        advanceUntilIdle()
+
+        assertNotNull(error)
+        assertNull(client.renamedNewPath)
+
+        // Same name is a no-op
+        error = null
+        viewModel.renameFile(
+            file = SftpFile("old.txt", "/old.txt", false, 0, 0, 0),
+            newName = "old.txt",
+            onSuccess = {},
+            onError = { error = it }
+        )
+        advanceUntilIdle()
+
+        assertNull(error)
+        assertNull(client.renamedNewPath)
     }
 
     @Test

@@ -154,6 +154,13 @@ pub const SshNativeSession = struct {
         success: bool = false,
     };
 
+    const SftpRenameContext = struct {
+        handle: *anyopaque,
+        old_path: []const u8,
+        new_path: []const u8,
+        success: bool = false,
+    };
+
     const SftpOpenContext = struct {
         sftp: *anyopaque,
         path: []const u8,
@@ -503,6 +510,11 @@ pub const SshNativeSession = struct {
     pub fn sftpDelete(self: *SshNativeSession, handle: *anyopaque, path: []const u8) bool {
         var context = SftpDeleteContext{ .handle = handle, .path = path };
         return self.dispatchSync(sftpDeleteCallback, &context) and context.success;
+    }
+
+    pub fn sftpRename(self: *SshNativeSession, handle: *anyopaque, old_path: []const u8, new_path: []const u8) bool {
+        var context = SftpRenameContext{ .handle = handle, .old_path = old_path, .new_path = new_path };
+        return self.dispatchSync(sftpRenameCallback, &context) and context.success;
     }
 
     pub fn sftpFileOpen(self: *SshNativeSession, handle: *anyopaque, path: []const u8, flags: c_int, mode: c_int) ?*anyopaque {
@@ -1009,6 +1021,27 @@ pub const SshNativeSession = struct {
                 if (result != c.LIBSSH2_ERROR_EAGAIN) break;
                 waitSocket(self.socket_fd, self.session) catch return;
             }
+        }
+    }
+
+    fn sftpRenameCallback(self: *SshNativeSession, command: *Command) void {
+        const context: *SftpRenameContext = @ptrCast(@alignCast(command.context.?));
+        const sftp: *c.LIBSSH2_SFTP = @ptrCast(@alignCast(context.handle));
+        while (self.running.load(.acquire)) {
+            const result = c.libssh2_sftp_rename_ex(
+                sftp,
+                context.old_path.ptr,
+                @intCast(context.old_path.len),
+                context.new_path.ptr,
+                @intCast(context.new_path.len),
+                c.LIBSSH2_SFTP_RENAME_OVERWRITE | c.LIBSSH2_SFTP_RENAME_ATOMIC | c.LIBSSH2_SFTP_RENAME_NATIVE,
+            );
+            if (result == 0) {
+                context.success = true;
+                return;
+            }
+            if (result != c.LIBSSH2_ERROR_EAGAIN) return;
+            waitSocket(self.socket_fd, self.session) catch return;
         }
     }
 

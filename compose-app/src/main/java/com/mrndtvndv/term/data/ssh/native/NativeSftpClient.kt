@@ -55,6 +55,14 @@ class NativeSftpClient(
         if (!success) throw IOException("Failed to delete $path")
     }
 
+    override suspend fun renameFile(oldPath: String, newPath: String) = withContext(Dispatchers.IO) {
+        val success = synchronized(lock) {
+            if (sessionHandle == 0L || sftpHandle == 0L) throw IOException("SFTP client is closed")
+            GhosttyNative.nativeSftpRename(sessionHandle, sftpHandle, oldPath, newPath)
+        }
+        if (!success) throw IOException("Failed to rename $oldPath")
+    }
+
     override suspend fun downloadFile(
         remotePath: String,
         destination: File,

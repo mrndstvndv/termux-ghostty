@@ -406,6 +406,45 @@ class SftpViewModel(
         navigateTo(currentPath)
     }
 
+    @Suppress("TooGenericExceptionCaught")
+    fun deleteFile(file: SftpFile, onSuccess: () -> Unit = {}, onError: (String) -> Unit = {}) {
+        viewModelScope.launch {
+            try {
+                client.deleteFile(file.path)
+                onSuccess()
+                refresh()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                onError(e.localizedMessage ?: "Failed to delete ${file.name}")
+            }
+        }
+    }
+
+    @Suppress("TooGenericExceptionCaught")
+    fun renameFile(file: SftpFile, newName: String, onSuccess: () -> Unit = {}, onError: (String) -> Unit = {}) {
+        val trimmed = newName.trim()
+        if (trimmed.isEmpty() || trimmed.contains('/')) {
+            onError("Invalid name")
+            return
+        }
+        if (trimmed == file.name) return
+
+        val parent = file.path.substringBeforeLast('/', "")
+        val newPath = if (parent.isEmpty()) "/$trimmed" else "$parent/$trimmed"
+        viewModelScope.launch {
+            try {
+                client.renameFile(file.path, newPath)
+                onSuccess()
+                refresh()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                onError(e.localizedMessage ?: "Failed to rename ${file.name}")
+            }
+        }
+    }
+
     fun navigateUp() {
         val path = currentPath
         if (path == "/" || path.isEmpty()) return

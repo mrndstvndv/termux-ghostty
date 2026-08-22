@@ -34,6 +34,7 @@ class SftpTransferManagerTest {
         override suspend fun listFiles(path: String): List<SftpFile> = emptyList()
         override suspend fun createDirectory(path: String) {}
         override suspend fun deleteFile(path: String) {}
+        override suspend fun renameFile(oldPath: String, newPath: String) {}
 
         override suspend fun downloadFile(
             remotePath: String,

@@ -15,6 +15,7 @@ interface SftpClient {
     suspend fun listFiles(path: String): List<SftpFile>
     suspend fun createDirectory(path: String)
     suspend fun deleteFile(path: String)
+    suspend fun renameFile(oldPath: String, newPath: String)
     suspend fun downloadFile(remotePath: String, destination: File, onProgress: (Long) -> Unit)
     suspend fun uploadFile(source: File, remotePath: String, onProgress: (Long) -> Unit)
     fun close()

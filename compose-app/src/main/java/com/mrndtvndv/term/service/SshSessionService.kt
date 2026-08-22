@@ -25,6 +25,8 @@ class SshSessionService : Service() {
 
     companion object {
         const val ACTION_DISCONNECT = "com.mrndtvndv.term.action.DISCONNECT_SSH"
+        const val ACTION_WAKE_LOCK = "com.mrndtvndv.term.action.WAKE_LOCK"
+        const val ACTION_WAKE_UNLOCK = "com.mrndtvndv.term.action.WAKE_UNLOCK"
         private const val CHANNEL_ID = "ssh_session_channel"
         private const val NOTIFICATION_ID = 1001
         private const val WAKE_LOCK_TAG = "TermuxGhostty:SshSessionService"
@@ -38,17 +40,25 @@ class SshSessionService : Service() {
         super.onCreate()
         createNotificationChannel()
         promoteToForeground()
-        acquireWakeLock()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == ACTION_DISCONNECT) {
-            // Route through the session manager so SSH connections are closed too.
-            AppSessionManager.current?.disconnectAll() ?: disconnectAll()
-            return START_NOT_STICKY
+        when (intent?.action) {
+            ACTION_DISCONNECT -> {
+                // Route through the session manager so SSH connections are closed too.
+                AppSessionManager.current?.disconnectAll() ?: disconnectAll()
+            }
+            ACTION_WAKE_LOCK -> {
+                acquireWakeLock()
+            }
+            ACTION_WAKE_UNLOCK -> {
+                releaseWakeLock()
+            }
+            else -> {
+                promoteToForeground()
+            }
         }
-        promoteToForeground()
-        return START_STICKY
+        return START_NOT_STICKY
     }
 
     override fun onBind(intent: Intent?): IBinder {
@@ -56,7 +66,7 @@ class SshSessionService : Service() {
     }
 
     override fun onDestroy() {
-        releaseWakeLock()
+        releaseWakeLockInternal()
         sessions.values.forEach { it.finishIfRunning() }
         sessions.clear()
         super.onDestroy()
@@ -66,35 +76,71 @@ class SshSessionService : Service() {
 
     fun addSession(session: TerminalSession) {
         sessions[session.mHandle] = session
-        promoteToForeground()
+        updateNotification()
     }
 
     fun removeSession(handle: String) {
         sessions.remove(handle)?.finishIfRunning()
-        if (sessions.isEmpty()) {
-            stopForegroundCompat()
-            stopSelf()
-        } else {
-            promoteToForeground()
-        }
+        updateNotification()
     }
 
     fun disconnectAll() {
         sessions.values.forEach { it.finishIfRunning() }
         sessions.clear()
-        stopForegroundCompat()
-        stopSelf()
+        updateNotification()
+    }
+
+    fun stopIfIdle() {
+        if (!isWakeLockHeld() && sessions.isEmpty()) {
+            stopForegroundCompat()
+            stopSelf()
+        }
+    }
+
+    fun acquireWakeLock() {
+        if (wakeLock?.isHeld == true) return
+        val powerManager = getSystemService(Context.POWER_SERVICE) as? PowerManager ?: return
+        wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, WAKE_LOCK_TAG).apply {
+            setReferenceCounted(false)
+            acquire()
+        }
+        updateNotification()
+    }
+
+    fun releaseWakeLock() {
+        releaseWakeLockInternal()
+        updateNotification()
+    }
+
+    private fun releaseWakeLockInternal() {
+        val lock = wakeLock ?: return
+        if (lock.isHeld) {
+            lock.release()
+        }
+        wakeLock = null
+    }
+
+    fun isWakeLockHeld(): Boolean = wakeLock?.isHeld == true
+
+    private fun updateNotification() {
+        if (!isWakeLockHeld() && sessions.isEmpty()) {
+            stopForegroundCompat()
+            stopSelf()
+            return
+        }
+        promoteToForeground()
     }
 
     private fun promoteToForeground() {
+        val notification = buildNotification()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             startForeground(
                 NOTIFICATION_ID,
-                buildNotification(),
+                notification,
                 android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
             )
         } else {
-            startForeground(NOTIFICATION_ID, buildNotification())
+            startForeground(NOTIFICATION_ID, notification)
         }
     }
 
@@ -105,22 +151,6 @@ class SshSessionService : Service() {
             @Suppress("DEPRECATION")
             stopForeground(true)
         }
-    }
-
-    private fun acquireWakeLock() {
-        val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
-        wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, WAKE_LOCK_TAG).apply {
-            acquire()
-        }
-    }
-
-    private fun releaseWakeLock() {
-        wakeLock?.let {
-            if (it.isHeld) {
-                it.release()
-            }
-        }
-        wakeLock = null
     }
 
     private fun createNotificationChannel() {
@@ -140,27 +170,8 @@ class SshSessionService : Service() {
         val activeSessions = sessions.values
         val sshCount = activeSessions.count { it.sshSessionHandle != 0L }
         val localCount = activeSessions.count { it.sshSessionHandle == 0L }
-
-        val title = when {
-            sshCount > 0 && localCount > 0 -> "Active Terminal Sessions"
-            sshCount > 0 -> "SSH Session Active"
-            else -> "Local Session Active"
-        }
-
-        val text = when {
-            sshCount > 0 && localCount > 0 ->
-                "Maintaining $sshCount SSH and $localCount local terminal sessions"
-            sshCount > 0 -> {
-                if (sshCount > 1) "Maintaining $sshCount active SSH terminal sessions"
-                else "Maintaining active SSH terminal session"
-            }
-            else -> {
-                if (localCount > 1) "Maintaining $localCount active local terminal sessions"
-                else "Maintaining active local terminal session"
-            }
-        }
-
-        return Pair(title, text)
+        val wakeLockHeld = wakeLock?.isHeld == true
+        return SshSessionNotificationFormatter.formatTitleAndText(sshCount, localCount, wakeLockHeld)
     }
 
     private fun buildNotification(): Notification {
@@ -172,28 +183,50 @@ class SshSessionService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
+        val wakeLockHeld = wakeLock?.isHeld == true
+        val wakeAction = if (wakeLockHeld) ACTION_WAKE_UNLOCK else ACTION_WAKE_LOCK
+        val wakeActionTitle = if (wakeLockHeld) "Release wakelock" else "Acquire wakelock"
+        val wakeActionIcon = if (wakeLockHeld) {
+            android.R.drawable.ic_lock_idle_lock
+        } else {
+            android.R.drawable.ic_lock_lock
+        }
+        val wakeIntent = Intent(this, SshSessionService::class.java).apply {
+            action = wakeAction
+        }
+        val wakePendingIntent = PendingIntent.getService(
+            this, 1, wakeIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
         val disconnectIntent = Intent(this, SshSessionService::class.java).apply {
             action = ACTION_DISCONNECT
         }
         val disconnectPendingIntent = PendingIntent.getService(
-            this, 1, disconnectIntent,
+            this, 2, disconnectIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
         val (title, text) = getNotificationTitleAndText()
 
-        return NotificationCompat.Builder(this, CHANNEL_ID)
+        val builder = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle(title)
             .setContentText(text)
             .setSmallIcon(android.R.drawable.stat_notify_chat)
             .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setOngoing(true)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .setContentIntent(openPendingIntent)
-            .addAction(
+            .addAction(wakeActionIcon, wakeActionTitle, wakePendingIntent)
+
+        if (sessions.isNotEmpty()) {
+            builder.addAction(
                 android.R.drawable.ic_menu_close_clear_cancel,
                 "Disconnect All",
                 disconnectPendingIntent
             )
-            .build()
+        }
+
+        return builder.build()
     }
 }

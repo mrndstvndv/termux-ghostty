@@ -454,7 +454,7 @@ private fun TabGroupItem(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 8.dp)
+            .padding(horizontal = 8.dp, vertical = 4.dp)
             .clip(shape)
             .border(
                 width = 1.dp,

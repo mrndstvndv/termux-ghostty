@@ -198,8 +198,8 @@ sealed interface GlesTerminalDiagnostic {
  * Publishing is latest-wins and non-blocking. The class contains no backend,
  * session, JNI, or Compose state and can be fed by the existing controller on
  * the main thread. [release] is idempotent and rejects later publications.
- * This vertical slice rebuilds CPU draw packets per presentation; callers must
- * keep the production renderer switch off until bounded row-packet reuse is added.
+ * The renderer keeps a bounded row-packet cache so sparse frame updates do not
+ * remeasure and rebuild unchanged visible rows.
  */
 class GlesTerminalSurface(
     onDiagnostic: (GlesTerminalDiagnostic) -> Unit = {}

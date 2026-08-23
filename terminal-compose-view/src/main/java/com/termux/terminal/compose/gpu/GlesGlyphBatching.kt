@@ -1,5 +1,8 @@
 package com.termux.terminal.compose.gpu
 
+import java.util.ArrayDeque
+import java.util.IdentityHashMap
+
 internal data class GlesGlyphBatchKey(
     val pageIndex: Int,
     val atlasGeneration: Int
@@ -17,6 +20,36 @@ internal data class GlesGlyphBatch(
     val key: GlesGlyphBatchKey,
     val glyphs: List<GlesResolvedGlyph>
 )
+
+/** Reuses resolved pair objects while bounding references to changed row packets. */
+internal class GlesResolvedGlyphCache(private val maxEntries: Int = 8192) {
+    private val entries = IdentityHashMap<TerminalGlyphPlacement, GlesResolvedGlyph>()
+    private val insertionOrder = ArrayDeque<TerminalGlyphPlacement>()
+
+    init {
+        require(maxEntries >= 1) { "maxEntries must be positive" }
+    }
+
+    fun resolve(placement: TerminalGlyphPlacement, region: GlyphAtlasRegion): GlesResolvedGlyph {
+        val cached = entries[placement]
+        if (cached != null && cached.region == region) return cached
+        if (cached != null) {
+            return GlesResolvedGlyph(placement, region).also { entries[placement] = it }
+        }
+        if (entries.size >= maxEntries) {
+            entries.remove(insertionOrder.removeFirst())
+        }
+        return GlesResolvedGlyph(placement, region).also {
+            entries[placement] = it
+            insertionOrder.addLast(placement)
+        }
+    }
+
+    fun clear() {
+        entries.clear()
+        insertionOrder.clear()
+    }
+}
 
 /**
  * Groups bounded glyph submissions by the texture and atlas generation they

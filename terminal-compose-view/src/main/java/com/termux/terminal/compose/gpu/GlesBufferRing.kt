@@ -83,21 +83,18 @@ internal class GlesBufferRing private constructor(
         val slot = acquireSlot()
         activeSlot = slot
         try {
+            // The renderer checks the completed frame once; per-command glGetError calls
+            // add measurable driver overhead to every batch.
             GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, slot.bufferId)
-            checkGlError("buffer-bind")
             configureAttributes()
-            checkGlError("vertex-attributes")
             GLES30.glBufferSubData(
                 GLES30.GL_ARRAY_BUFFER,
                 0,
                 vertexBuffer.remaining() * Float.SIZE_BYTES,
                 vertexBuffer
             )
-            checkGlError("buffer-upload")
             GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, vertexCount)
-            checkGlError("buffer-draw")
             val fence = GLES30.glFenceSync(GLES30.GL_SYNC_GPU_COMMANDS_COMPLETE, 0)
-            checkGlError("fence-create")
             if (fence == 0L) throw GlesResourceException("buffer-ring: glFenceSync returned 0")
             slot.fence = fence
             activeSlot = null
@@ -201,7 +198,6 @@ internal class GlesBufferRing private constructor(
     private fun waitForFence(slot: Slot): Boolean {
         if (slot.fence == 0L) return true
         var status = GLES30.glClientWaitSync(slot.fence, 0, 0L)
-        checkGlError("fence-check")
         if (status.isSignaled()) {
             deleteFence(slot)
             return true
@@ -215,7 +211,6 @@ internal class GlesBufferRing private constructor(
                 GLES30.GL_SYNC_FLUSH_COMMANDS_BIT,
                 FenceWaitTimeoutNanos
             )
-            checkGlError("fence-wait")
             if (status.isSignaled()) {
                 deleteFence(slot)
                 return true
@@ -229,7 +224,6 @@ internal class GlesBufferRing private constructor(
 
     private fun deleteFence(slot: Slot) {
         GLES30.glDeleteSync(slot.fence)
-        checkGlError("fence-delete")
         slot.fence = 0L
     }
 

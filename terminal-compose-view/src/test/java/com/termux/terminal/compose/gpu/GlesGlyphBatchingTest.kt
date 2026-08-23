@@ -2,10 +2,20 @@ package com.termux.terminal.compose.gpu
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertNull
 import org.junit.Test
 
 class GlesGlyphBatchingTest {
+    @Test
+    fun reusesResolvedGlyphForAnUnchangedPlacement() {
+        val cache = GlesResolvedGlyphCache(maxEntries = 2)
+        val placement = TerminalGlyphPlacement(atlasKey("a"), 0f, 0f)
+        val region = GlyphAtlasRegion(0, 0, 0, 8, 8, 1)
+
+        assertSame(cache.resolve(placement, region), cache.resolve(placement, region))
+    }
+
     @Test
     fun batchesSeparateAtlasPagesAndGenerations() {
         val batcher = GlesGlyphBatchAccumulator(maxQuadsPerBatch = 8, maxActiveBatches = 3)

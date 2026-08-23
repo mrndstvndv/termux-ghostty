@@ -10,6 +10,7 @@ import com.termux.terminal.compose.TerminalRow
 import com.termux.terminal.compose.TerminalSelection
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -17,6 +18,59 @@ import org.robolectric.RobolectricTestRunner
 
 @RunWith(RobolectricTestRunner::class)
 class TerminalRenderPlannerTest {
+    @Test
+    fun reusesPlanAndRowPacketsWhenSnapshotIsUnchanged() {
+        val snapshot = testSnapshot(14L)
+        val planner = TerminalRenderPlanner()
+
+        val first = planner.plan(snapshot)
+        val second = planner.plan(snapshot)
+
+        assertTrue(first === second)
+        assertTrue(first.glyphs[0] === second.glyphs[0])
+        assertTrue(first.cellBackgrounds[0] === second.cellBackgrounds[0])
+    }
+
+    @Test
+    fun reusesUnchangedRowsAcrossFrameSequences() {
+        val firstSnapshot = testSnapshot(15L)
+        val secondFrame = TerminalFrame(
+            sequence = 16L,
+            viewport = firstSnapshot.frame.viewport,
+            cursor = firstSnapshot.frame.cursor,
+            modes = firstSnapshot.frame.modes,
+            palette = firstSnapshot.frame.palette,
+            rows = firstSnapshot.frame.rows,
+            linkLayout = null
+        )
+        val secondSnapshot = GlesTerminalSnapshot(
+            frame = secondFrame,
+            metrics = firstSnapshot.metrics
+        )
+        val planner = TerminalRenderPlanner()
+
+        val first = planner.plan(firstSnapshot)
+        val second = planner.plan(secondSnapshot)
+
+        assertTrue(first !== second)
+        assertTrue(first.glyphs[0] === second.glyphs[0])
+        assertTrue(first.cellBackgrounds[0] === second.cellBackgrounds[0])
+    }
+
+    @Test
+    fun presentationOverlayChangesInvalidateCachedRowPackets() {
+        val snapshot = testSnapshot(17L)
+        val planner = TerminalRenderPlanner()
+
+        val first = planner.plan(snapshot)
+        val second = planner.plan(
+            snapshot.copy(selection = TerminalSelection(0, 0, 0, 0))
+        )
+
+        assertNotSame(first.glyphs[0], second.glyphs[0])
+        assertNotSame(first.cellBackgrounds[0], second.cellBackgrounds[0])
+    }
+
     @Test
     fun plansUnicodeGlyphsBackgroundsSelectionLinksAndWideCursor() {
         val base = testFrame(11L)

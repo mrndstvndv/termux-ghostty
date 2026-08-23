@@ -8,7 +8,7 @@ import android.graphics.Typeface
 import android.opengl.GLES30
 import android.opengl.GLUtils
 import kotlin.math.ceil
-import java.util.LinkedHashMap
+import java.util.HashMap
 
 internal const val GlesItalicTextSkewX = -0.35f
 
@@ -107,10 +107,9 @@ internal class GlyphAtlasAllocator(
     private val limits: GlyphAtlasLimits
 ) {
     private val pages = ArrayList<ShelfPage>(limits.maxPages)
-    private val entries = LinkedHashMap<GlyphAtlasKey, GlyphAtlasRegion>(
+    private val entries = HashMap<GlyphAtlasKey, GlyphAtlasRegion>(
         minOf(limits.maxEntries, 64),
-        0.75f,
-        true
+        0.75f
     )
     private var generation = 1
     private var usedAreaPx = 0

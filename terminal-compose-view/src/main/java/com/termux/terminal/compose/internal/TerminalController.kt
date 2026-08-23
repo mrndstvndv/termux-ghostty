@@ -137,8 +137,8 @@ internal class TerminalController(
      * forever; a transient cursor effect runs for its declared duration plus
      * a small grace so its final frame settles.
      */
-    fun needsFrame(timeSeconds: Float): Boolean {
-        if (hasContinuousShader) return true
+    fun needsFrame(timeSeconds: Float, includeContinuousShader: Boolean = true): Boolean {
+        if (includeContinuousShader && hasContinuousShader) return true
         val effect = config.cursorEffect ?: return false
         val cursorAnimationActive = cursorEffectState.hasPreviousPosition &&
             timeSeconds - cursorEffectState.changeSeconds <

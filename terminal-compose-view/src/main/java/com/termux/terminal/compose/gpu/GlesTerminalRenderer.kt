@@ -57,6 +57,8 @@ internal class GlesTerminalRenderer(
     private var drawCount = 0L
     private var skippedDrawCount = 0L
     private var lastError: String? = null
+    private val renderPlanner = TerminalRenderPlanner()
+    private val resolvedGlyphCache = GlesResolvedGlyphCache()
     private var pendingGlyphFlush: (() -> Unit)? = null
     private var vendor = "unknown"
     private var renderer = "unknown"
@@ -168,8 +170,9 @@ internal class GlesTerminalRenderer(
         val plan = try {
             if (atlasReset) {
                 currentResources.atlas.reset { pendingGlyphFlush?.invoke() }
+                resolvedGlyphCache.clear()
             }
-            TerminalRenderPlanner().plan(snapshot)
+            renderPlanner.plan(snapshot)
         } catch (error: GlesRendererException) {
             presentFallback(snapshot, "plan", error.message ?: "GLES plan failed")
             return
@@ -214,6 +217,7 @@ internal class GlesTerminalRenderer(
         val currentResources = resources
         resources = null
         presentedSnapshot = null
+        resolvedGlyphCache.clear()
         pendingGlyphFlush = null
         try {
             currentResources?.release()
@@ -272,7 +276,7 @@ internal class GlesTerminalRenderer(
             glyphs.forEach { glyph ->
                 val region = resources.atlas.resolve(glyph.key, beforeReset = flushPending)
                     ?: return@forEach
-                val fullBatch = batcher.add(GlesResolvedGlyph(glyph, region))
+                val fullBatch = batcher.add(resolvedGlyphCache.resolve(glyph, region))
                 if (fullBatch != null) drawGlyphBatch(resources, fullBatch)
             }
             flushPending()

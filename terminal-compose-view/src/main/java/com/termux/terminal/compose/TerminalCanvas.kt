@@ -392,9 +392,15 @@ private fun rememberConfiguredController(
     SideEffect {
         controller.configure(config, fontSizeState.intValue)
     }
-    LaunchedEffect(controller, config.shaders, config.cursorEffect, fontSizeState.intValue) {
+    LaunchedEffect(
+        controller,
+        config.shaders,
+        config.cursorEffect,
+        config.renderer,
+        fontSizeState.intValue
+    ) {
         controller.configure(config, fontSizeState.intValue)
-        runFrameLoop(controller, frameTimeState)
+        runFrameLoop(controller, frameTimeState, config.renderer)
     }
     return controller
 }
@@ -482,10 +488,12 @@ private fun rememberCanvasMetrics(
 /** Frame loop: continuous shaders own one display-rate loop; transient effects pulse. */
 private suspend fun runFrameLoop(
     controller: TerminalController,
-    frameTimeState: MutableFloatState
+    frameTimeState: MutableFloatState,
+    renderer: TerminalRenderer
 ) {
     controller.resetCursorTracking()
-    if (controller.isContinuouslyAnimated) {
+    val includeContinuousShader = renderer == TerminalRenderer.COMPOSE
+    if (includeContinuousShader && controller.isContinuouslyAnimated) {
         while (true) {
             withFrameNanos { nanos ->
                 frameTimeState.floatValue = nanos / 1_000_000_000f
@@ -498,7 +506,10 @@ private suspend fun runFrameLoop(
                 withFrameNanos { nanos ->
                     frameTimeState.floatValue = nanos / 1_000_000_000f
                 }
-            } while (controller.needsFrame(frameTimeState.floatValue))
+            } while (controller.needsFrame(
+                frameTimeState.floatValue,
+                includeContinuousShader = includeContinuousShader
+            ))
         }
     }
 }

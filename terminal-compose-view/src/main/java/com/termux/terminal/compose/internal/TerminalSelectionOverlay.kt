@@ -149,7 +149,7 @@ private fun SelectionHandle(
     val currentPosition = rememberUpdatedState(position)
     Canvas(
         modifier = Modifier
-            .offset { IntOffset(position.touchLeft.roundToInt(), position.anchorY.roundToInt()) }
+            .offset { IntOffset(position.touchLeft.roundToInt(), position.touchTop.roundToInt()) }
             .size(touchTargetSize)
             .semantics {
                 contentDescription = if (endpoint == SelectionHandleEndpoint.START) {
@@ -226,15 +226,16 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawSelectionHandle
     val radius = position.visualSizePx / 2f
     val visualLeft = if (position.pointsLeft) size.width - position.visualSizePx else 0f
     val rectangleLeft = if (position.pointsLeft) visualLeft + radius else visualLeft
+    val visualTop = position.visualTopOffset
     drawRect(
         color = color,
-        topLeft = Offset(rectangleLeft, 0f),
+        topLeft = Offset(rectangleLeft, visualTop),
         size = Size(radius, radius)
     )
     drawCircle(
         color = color,
         radius = radius,
-        center = Offset(visualLeft + radius, radius)
+        center = Offset(visualLeft + radius, visualTop + radius)
     )
 }
 
@@ -242,13 +243,15 @@ internal data class SelectionHandlePosition(
     val anchorX: Float,
     val anchorY: Float,
     val touchLeft: Float,
+    val touchTop: Float,
+    val visualTopOffset: Float,
     val visualSizePx: Float,
     val pointsLeft: Boolean,
     val isVisible: Boolean
 )
 
 private fun SelectionHandlePosition.handleOffset(): Offset =
-    Offset(touchLeft.roundToInt().toFloat(), anchorY.roundToInt().toFloat())
+    Offset(touchLeft.roundToInt().toFloat(), touchTop.roundToInt().toFloat())
 
 internal fun selectionHandlePosition(
     selection: TerminalSelection,
@@ -266,8 +269,11 @@ internal fun selectionHandlePosition(
     val row = if (endpoint == SelectionHandleEndpoint.START) selection.startRow else selection.endRow
     val anchorX = metrics.columnToX(column)
     val rawAnchorY = metrics.rowToY(row + 1, frame.topRow)
-    val maxAnchorY = (metrics.viewportHeightPx - touchTargetSizePx).coerceAtLeast(0f)
-    val anchorY = rawAnchorY.coerceIn(0f, maxAnchorY)
+    val maxVisualTop = (metrics.viewportHeightPx - visualSizePx).coerceAtLeast(0f)
+    val anchorY = rawAnchorY.coerceIn(0f, maxVisualTop)
+    val maxTouchTop = (metrics.viewportHeightPx - touchTargetSizePx).coerceAtLeast(0f)
+    val touchTop = anchorY.coerceIn(0f, maxTouchTop)
+    val visualTopOffset = anchorY - touchTop
     val pointsLeft = if (endpoint == SelectionHandleEndpoint.START) {
         anchorX - visualSizePx >= 0f
     } else {
@@ -284,6 +290,8 @@ internal fun selectionHandlePosition(
         anchorX = anchorX,
         anchorY = anchorY,
         touchLeft = touchLeft,
+        touchTop = touchTop,
+        visualTopOffset = visualTopOffset,
         visualSizePx = visualSizePx,
         pointsLeft = pointsLeft,
         isVisible = isVisible

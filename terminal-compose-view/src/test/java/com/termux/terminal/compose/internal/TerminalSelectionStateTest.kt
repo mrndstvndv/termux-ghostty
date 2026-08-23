@@ -69,6 +69,31 @@ class TerminalSelectionStateTest {
     }
 
     @Test
+    fun offscreenBelowHandleKeepsItsVisualAtTheViewportBottom() {
+        val metrics = TerminalMetrics.of(
+            cellWidthPx = 10f,
+            cellHeightPx = 20f,
+            ascentPx = -15f,
+            lineSpacingAndAscentPx = 0f,
+            viewportWidthPx = 100,
+            viewportHeightPx = 100
+        )
+        val position = selectionHandlePosition(
+            selection = TerminalSelection(1, 5, 2, 5),
+            frame = frame(row("word", columns = 10)),
+            metrics = metrics,
+            endpoint = SelectionHandleEndpoint.START,
+            visualSizePx = 20f,
+            touchTargetSizePx = 48f
+        )
+
+        assertEquals(80f, position.anchorY, 0.001f)
+        assertEquals(52f, position.touchTop, 0.001f)
+        assertEquals(28f, position.visualTopOffset, 0.001f)
+        assertEquals(100f, position.anchorY + position.visualSizePx, 0.001f)
+    }
+
+    @Test
     fun startHandleCannotCrossEndHandle() {
         val state = TerminalSelectionState()
         val frame = frame(row("word other", columns = 10))

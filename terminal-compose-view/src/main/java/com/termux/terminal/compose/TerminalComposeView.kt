@@ -84,6 +84,7 @@ class TerminalComposeView @JvmOverloads constructor(
     private var unconditionalKeyboardOnTapState by mutableStateOf(true)
     private var selectionResetKeyState by mutableLongStateOf(0L)
     private var requestFocusKeyState by mutableLongStateOf(0L)
+    private var requestImeKeyState by mutableLongStateOf(0L)
     private var listenerState by mutableStateOf<Listener?>(null)
     private var selectedTextState by mutableStateOf<String?>(null)
     private var storedSelectedTextState by mutableStateOf<String?>(null)
@@ -173,6 +174,7 @@ class TerminalComposeView @JvmOverloads constructor(
                 ),
                 requestFocus = requestFocusKeyState != 0L,
                 requestFocusKey = requestFocusKeyState,
+                requestImeKey = requestImeKeyState,
                 modifier = Modifier.fillMaxSize()
             )
         }
@@ -221,6 +223,12 @@ class TerminalComposeView @JvmOverloads constructor(
 
     fun requestTerminalFocus() {
         requestFocus()
+    }
+
+    /** Requests the Compose-owned platform input session and shows the soft keyboard. */
+    fun showSoftKeyboard() {
+        requestFocus()
+        requestImeKeyState++
     }
 
     override fun requestFocus(direction: Int, previouslyFocusedRect: Rect?): Boolean {

@@ -4,10 +4,13 @@ This is the canonical architecture reference for the Compose Ghostty terminal pa
 
 ## Scope
 
-The active Compose path spans three Gradle modules:
+The active Compose path spans four Gradle modules:
 
 ```text
 compose-app
+  depends on terminal-compose-view + terminal-compose-session + terminal-emulator
+
+terminal-compose-session
   depends on terminal-compose-view + terminal-emulator
 
 terminal-compose-view
@@ -17,7 +20,10 @@ terminal-emulator
   owns PTY lifecycle, Ghostty JNI, native VT state, frame transport, and worker scheduling
 ```
 
-The legacy `app` + `terminal-view` path still exists. Do not infer Compose behavior from `TerminalView`; `compose-app` does not route core rendering or input through a hidden Android View.
+The legacy `terminal-view` module has been removed. The XML hosts in `app` and the
+Compose workspace use `TerminalComposeView`; session construction remains in the
+app/session-adapter layer. Do not infer current behavior from historical
+`TerminalView` descriptions.
 
 ## Deep modules and seams
 
@@ -43,7 +49,7 @@ Responsibilities:
 
 It must not know `TerminalSession`, `GhosttySessionWorker`, JNI handles, PTY queues, or native snapshot buffers.
 
-### `compose-app`: session adapter
+### `terminal-compose-session`: session adapter
 
 Main seam:
 
@@ -222,7 +228,7 @@ They are forbidden as the authoritative source for:
 4. full selected-text extraction synchronously enters native content from the main thread.
 5. `TerminalSessionIOBridge.pendingOperations` is unbounded when an SSH channel stalls.
 6. Synchronized-output mode is not exposed to the worker, so publication is not yet deferred across application-controlled atomic redraws.
-7. The legacy `app`/`terminal-view` path has separate input and viewport policy; fixes in the Compose path do not automatically fix it.
+7. The XML host still exposes Java activity callbacks for lifecycle and context-menu policy; these are app integration seams, not terminal rendering or session ownership.
 
 When touching one of these paths, deepen the worker-owned semantic-input interface instead of refreshing caches or adding another fallback.
 
@@ -256,9 +262,9 @@ Read in this order for cross-module changes:
 1. `terminal-compose-view/src/main/java/com/termux/terminal/compose/TerminalBackend.kt`
 2. `terminal-compose-view/src/main/java/com/termux/terminal/compose/TerminalCommand.kt`
 3. `terminal-compose-view/src/main/java/com/termux/terminal/compose/TerminalFrame.kt`
-4. `compose-app/src/main/java/com/mrndtvndv/term/ui/workspace/TerminalSessionBackend.kt`
-5. `compose-app/src/main/java/com/mrndtvndv/term/ui/workspace/TerminalSessionCommandAdapter.kt`
-6. `compose-app/src/main/java/com/mrndtvndv/term/ui/workspace/TerminalSessionFrameAdapter.kt`
+4. `terminal-compose-session/src/main/java/com/termux/terminal/compose/session/TerminalSessionBackend.kt`
+5. `terminal-compose-session/src/main/java/com/termux/terminal/compose/session/TerminalSessionCommandAdapter.kt`
+6. `terminal-compose-session/src/main/java/com/termux/terminal/compose/session/TerminalSessionFrameAdapter.kt`
 7. `terminal-emulator/src/main/java/com/termux/terminal/TerminalSession.java`
 8. `terminal-emulator/src/main/java/com/termux/terminal/GhosttySessionWorker.java`
 9. `terminal-emulator/src/main/java/com/termux/terminal/GhosttyTerminalContent.java`

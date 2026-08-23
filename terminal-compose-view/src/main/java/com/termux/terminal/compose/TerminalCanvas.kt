@@ -77,6 +77,7 @@ fun TerminalCanvas(
     config: TerminalCanvasConfig,
     requestFocus: Boolean = false,
     requestFocusKey: Long = 0L,
+    requestImeKey: Long = 0L,
     modifier: Modifier = Modifier
 ) {
     val graphicsContext = LocalGraphicsContext.current
@@ -110,8 +111,9 @@ fun TerminalCanvas(
         onImeSessionClosed = config.onImeSessionClosed
     )
     val metrics = rememberCanvasMetrics(fontSizeState, config, viewportSizePx)
-    LaunchedEffect(requestFocus, requestFocusKey) {
-        if (requestFocus) focusRequester.requestFocus()
+    LaunchedEffect(requestFocus, requestFocusKey, requestImeKey) {
+        if (requestFocus || requestImeKey != 0L) focusRequester.requestFocus()
+        if (requestImeKey != 0L) imeHost.open()
     }
     LaunchedEffect(config.selectionResetKey) {
         selectionState.clear()

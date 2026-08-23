@@ -748,7 +748,7 @@ public class TermuxTerminalViewClient extends TermuxTerminalClientBase {
                     return;
                 }
 
-                KeyboardUtils.showSoftKeyboard(mActivity, mActivity.getTerminalView());
+                mActivity.getTerminalView().showSoftKeyboard();
                 rememberSoftKeyboardState(TERMUX_APP.VALUE_LAST_SOFT_KEYBOARD_STATE_VISIBLE);
             };
         }

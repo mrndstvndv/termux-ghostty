@@ -9,7 +9,7 @@ import com.termux.app.terminal.io.TermuxTerminalExtraKeys;
 import com.termux.shared.termux.extrakeys.ExtraKeysInfo;
 import com.termux.shared.termux.terminal.io.TerminalExtraKeys;
 import com.termux.terminal.TerminalSession;
-import com.termux.view.TerminalView;
+import com.termux.terminal.compose.TerminalComposeView;
 
 public final class BubbleTerminalExtraKeys extends TerminalExtraKeys {
 
@@ -17,7 +17,7 @@ public final class BubbleTerminalExtraKeys extends TerminalExtraKeys {
     private final BubbleTerminalViewClient mTerminalViewClient;
     private final ExtraKeysInfo mExtraKeysInfo;
 
-    public BubbleTerminalExtraKeys(@NonNull BubbleSessionActivity activity, @NonNull TerminalView terminalView,
+    public BubbleTerminalExtraKeys(@NonNull BubbleSessionActivity activity, @NonNull TerminalComposeView terminalView,
                                    @NonNull BubbleTerminalViewClient terminalViewClient) {
         super(terminalView);
         mActivity = activity;

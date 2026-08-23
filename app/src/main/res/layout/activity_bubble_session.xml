@@ -10,7 +10,7 @@
     android:paddingStart="12dp"
     android:paddingEnd="12dp">
 
-    <com.termux.view.TerminalView
+    <com.termux.terminal.compose.TerminalComposeView
         android:id="@+id/bubble_terminal_view"
         android:layout_width="match_parent"
         android:layout_height="0dp"

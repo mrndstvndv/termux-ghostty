@@ -1,4 +1,4 @@
-package com.mrndtvndv.term.ui.workspace
+package com.termux.terminal.compose.session
 
 import android.os.Handler
 import android.os.Looper
@@ -19,12 +19,12 @@ private const val DefaultResizeDebounceMillis = 0L
 /**
  * Session-native adapter for the backend-neutral compose terminal API.
  *
- * The backend applies worker deltas directly into an immutable frame store. It
+ * The adapter applies worker deltas directly into an immutable frame store. It
  * owns viewport navigation and resize translation, so no Android View or
  * legacy renderer participates in publication, caching, or input.
  */
-internal class TerminalSessionBackend(
-    private val session: TerminalSession,
+class TerminalSessionBackend @JvmOverloads constructor(
+    val session: TerminalSession,
     resizeDebounceMillis: Long = DefaultResizeDebounceMillis
 ) : TerminalBackend {
 
@@ -197,7 +197,7 @@ internal class TerminalSessionBackend(
  * appended since the last applied frame so the visible content stays put. Only
  * a viewport at the very bottom snaps back to follow new output.
  */
-internal fun resolveTopRow(
+fun resolveTopRow(
     previousTopRow: Int,
     viewportChanged: Boolean,
     frameTopRow: Int,

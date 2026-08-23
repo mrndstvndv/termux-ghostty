@@ -38,11 +38,11 @@ public final class BubbleTerminalSessionClient extends TermuxTerminalSessionClie
 
     public void onResume() {
         updateBackgroundColor();
-        mActivity.getTerminalView().setTerminalCursorBlinkerState(true, true);
+        mActivity.setTerminalCursorBlinkerState(true, true);
     }
 
     public void onStop() {
-        mActivity.getTerminalView().setTerminalCursorBlinkerState(false, true);
+        mActivity.setTerminalCursorBlinkerState(false, true);
     }
 
     @Override
@@ -96,7 +96,7 @@ public final class BubbleTerminalSessionClient extends TermuxTerminalSessionClie
     @Override
     public void onTerminalCursorStateChange(boolean enabled) {
         if (enabled && !mActivity.isVisible()) return;
-        mActivity.getTerminalView().setTerminalCursorBlinkerState(enabled, false);
+        mActivity.setTerminalCursorBlinkerState(enabled, false);
     }
 
     @Override

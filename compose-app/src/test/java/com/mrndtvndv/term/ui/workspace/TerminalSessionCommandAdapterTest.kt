@@ -7,6 +7,7 @@ import com.termux.terminal.TerminalSessionIO
 import com.termux.terminal.compose.TerminalCommand
 import com.termux.terminal.compose.TerminalCommandResult
 import com.termux.terminal.compose.TerminalPointerGeometry
+import com.termux.terminal.compose.session.TerminalSessionCommandAdapter
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull

@@ -1,4 +1,4 @@
-package com.mrndtvndv.term.ui.workspace
+package com.termux.terminal.compose.session
 
 import com.termux.terminal.RenderFrameCache
 import com.termux.terminal.ScreenSnapshot
@@ -15,14 +15,14 @@ import com.termux.terminal.compose.TerminalRow
 import com.termux.terminal.compose.TerminalViewport
 
 /** Session values that are not encoded in the visible frame transport. */
-internal data class TerminalFrameSessionState(
+data class TerminalFrameSessionState(
     val transcriptRows: Int,
     val cursorBlinkingEnabled: Boolean,
     val cursorBlinkState: Boolean
 )
 
 /** Applies session deltas and publishes immutable frames without a View intermediary. */
-internal class TerminalSessionFrameStore {
+class TerminalSessionFrameStore {
     enum class ApplyResult {
         UPDATED,
         IGNORED,
@@ -62,7 +62,7 @@ internal class TerminalSessionFrameStore {
 }
 
 /** Converts a complete render-cache snapshot into a compose-owned immutable frame. */
-internal class TerminalSessionFrameAdapter {
+class TerminalSessionFrameAdapter {
     private val contentCache = TerminalFrameContentCache()
     private val linkLayoutCache = TerminalFrameLinkLayoutCache()
 
@@ -180,13 +180,13 @@ private class TerminalFrameLinkLayoutCache {
     )
 }
 
-internal data class TerminalFrameContent(
+data class TerminalFrameContent(
     val palette: TerminalPalette,
     val rows: List<TerminalRow>
 )
 
 /** Reuses immutable palette and row objects while applying a complete render-cache snapshot. */
-internal class TerminalFrameContentCache {
+class TerminalFrameContentCache {
     private var content: TerminalFrameContent? = null
     private var frameSequence = Long.MIN_VALUE
     private var paletteColors: IntArray? = null
@@ -335,9 +335,7 @@ private class TerminalFrameLinkLayoutBuilder {
                 if (row < previous.size) previous[row] else ArrayList()
             }
         }
-        for (row in 0 until rows) {
-            segments[row].clear()
-        }
+        for (row in 0 until rows) segments[row].clear()
         if (claimedCells.size < cellCount) {
             claimedCells = BooleanArray(cellCount)
         } else {
@@ -427,13 +425,7 @@ private class TerminalFrameLinkLayoutBuilder {
         }
     }
 
-    private fun appendSpan(
-        row: Int,
-        startColumn: Int,
-        endColumn: Int,
-        textStart: Int,
-        textEnd: Int
-    ) {
+    private fun appendSpan(row: Int, startColumn: Int, endColumn: Int, textStart: Int, textEnd: Int) {
         if (spanCount == spanRows.size) {
             val nextSize = if (spanRows.isEmpty()) 64 else spanRows.size * 2
             spanRows = spanRows.copyOf(nextSize)
@@ -490,7 +482,7 @@ private class TerminalFrameLinkLayoutBuilder {
         var result = end
         while (result > start) {
             val trailing = text[result - 1]
-            if (trailing in ".,:;!?'\">" || hasUnmatchedClosingBracket(text, start, result, trailing)) {
+            if (trailing in ".,:;!?\'\">" || hasUnmatchedClosingBracket(text, start, result, trailing)) {
                 result--
             } else {
                 break
@@ -499,12 +491,7 @@ private class TerminalFrameLinkLayoutBuilder {
         return result
     }
 
-    private fun hasUnmatchedClosingBracket(
-        text: CharSequence,
-        start: Int,
-        end: Int,
-        closing: Char
-    ): Boolean {
+    private fun hasUnmatchedClosingBracket(text: CharSequence, start: Int, end: Int, closing: Char): Boolean {
         val opening = when (closing) {
             ')' -> '('
             ']' -> '['
@@ -530,9 +517,7 @@ private class TerminalFrameLinkLayoutBuilder {
         private var activeEnd = -1
 
         fun append(row: Int, startColumn: Int, endColumn: Int) {
-            for (column in startColumn until endColumn) {
-                appendCell(row, column)
-            }
+            for (column in startColumn until endColumn) appendCell(row, column)
         }
 
         fun flush() {

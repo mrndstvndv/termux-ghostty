@@ -25,7 +25,7 @@ import com.termux.shared.interact.MessageDialogUtils;
 import com.termux.shared.interact.ShareUtils;
 import com.termux.shared.shell.ShellUtils;
 import com.termux.shared.termux.TermuxBootstrap;
-import com.termux.shared.termux.terminal.TermuxTerminalViewClientBase;
+import com.termux.shared.termux.terminal.TermuxTerminalClientBase;
 import com.termux.shared.termux.extrakeys.SpecialButton;
 import com.termux.shared.android.AndroidUtils;
 import com.termux.shared.termux.TermuxConstants;
@@ -55,7 +55,7 @@ import java.util.Map;
 import androidx.annotation.Nullable;
 import androidx.drawerlayout.widget.DrawerLayout;
 
-public class TermuxTerminalViewClient extends TermuxTerminalViewClientBase {
+public class TermuxTerminalViewClient extends TermuxTerminalClientBase {
 
     final TermuxActivity mActivity;
 
@@ -90,7 +90,7 @@ public class TermuxTerminalViewClient extends TermuxTerminalViewClientBase {
     public void onCreate() {
         onReloadProperties();
 
-        mActivity.getTerminalView().setTextSize(mActivity.getPreferences().getFontSize());
+        mActivity.getTerminalView().setFontSize(mActivity.getPreferences().getFontSize());
         mActivity.getTerminalView().setKeepScreenOn(mActivity.getPreferences().shouldKeepScreenOn());
     }
 
@@ -98,10 +98,9 @@ public class TermuxTerminalViewClient extends TermuxTerminalViewClientBase {
      * Should be called when mActivity.onStart() is called
      */
     public void onStart() {
-        // Set {@link TerminalView#TERMINAL_VIEW_KEY_LOGGING_ENABLED} value
-        // Also required if user changed the preference from {@link TermuxSettings} activity and returns
+        // Apply the terminal key-logging preference. This is also required if the user changed it
+        // from the settings activity and returns.
         boolean isTerminalViewKeyLoggingEnabled = mActivity.getPreferences().isTerminalViewKeyLoggingEnabled();
-        mActivity.getTerminalView().setIsTerminalViewKeyLoggingEnabled(isTerminalViewKeyLoggingEnabled);
 
         // Piggyback on the terminal view key logging toggle for now, should add a separate toggle in future
         mActivity.getTermuxActivityRootView().setIsRootViewLoggingEnabled(isTerminalViewKeyLoggingEnabled);
@@ -182,15 +181,17 @@ public class TermuxTerminalViewClient extends TermuxTerminalViewClientBase {
 
 
     @Override
-    public void onSingleTapUp(MotionEvent e) {
+    public boolean onSingleTapUp(MotionEvent e) {
         TerminalSession session = mActivity.getCurrentSession();
-        if (session == null || !session.hasActiveTerminalBackend()) return;
+        if (session == null || !session.hasActiveTerminalBackend()) return true;
 
         String url = getTerminalTranscriptUrlOnTap(e);
         if (url != null) {
             ShareUtils.openUrl(mActivity, url);
-            return;
+            return true;
         }
+
+        if (session.isMouseTrackingActive() && !e.isFromSource(InputDevice.SOURCE_MOUSE)) return false;
 
         boolean isUnconditionalKeyboard = mActivity.getProperties().isUnconditionalSoftKeyboardOnTapEnabled();
         if ((isUnconditionalKeyboard || !session.isMouseTrackingActive()) && !e.isFromSource(InputDevice.SOURCE_MOUSE)) {
@@ -198,7 +199,9 @@ public class TermuxTerminalViewClient extends TermuxTerminalViewClientBase {
                 showSoftKeyboardAndRemember();
             else
                 Logger.logVerbose(LOG_TAG, "Not showing soft keyboard onSingleTapUp since its disabled");
+            return true;
         }
+        return false;
     }
 
     @Override
@@ -534,7 +537,7 @@ public class TermuxTerminalViewClient extends TermuxTerminalViewClientBase {
 
     public void changeFontSize(boolean increase) {
         mActivity.getPreferences().changeFontSize(increase);
-        mActivity.getTerminalView().setTextSize(mActivity.getPreferences().getFontSize());
+        mActivity.getTerminalView().setFontSize(mActivity.getPreferences().getFontSize());
     }
 
 
@@ -756,14 +759,10 @@ public class TermuxTerminalViewClient extends TermuxTerminalViewClientBase {
 
     public void setTerminalCursorBlinkerState(boolean start) {
         if (start) {
-            // If set/update the cursor blinking rate is successful, then enable cursor blinker
-            if (mActivity.getTerminalView().setTerminalCursorBlinkerRate(mActivity.getProperties().getTerminalCursorBlinkRate()))
-                mActivity.getTerminalView().setTerminalCursorBlinkerState(true, true);
-            else
-                Logger.logError(LOG_TAG,"Failed to start cursor blinker");
+            mActivity.setTerminalCursorBlinkerState(true, true);
         } else {
             // Disable cursor blinker
-            mActivity.getTerminalView().setTerminalCursorBlinkerState(false, true);
+            mActivity.setTerminalCursorBlinkerState(false, true);
         }
     }
 

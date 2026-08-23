@@ -10,6 +10,7 @@ import android.os.Bundle;
 import android.os.IBinder;
 import android.text.TextUtils;
 import android.util.TypedValue;
+import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
 
@@ -37,13 +38,17 @@ import com.termux.shared.termux.settings.properties.TermuxPropertyConstants;
 import com.termux.shared.termux.theme.TermuxThemeUtils;
 import com.termux.shared.view.KeyboardUtils;
 import com.termux.terminal.TerminalSession;
-import com.termux.view.TerminalView;
+import com.termux.terminal.compose.ModifierKeyReader;
+import com.termux.terminal.compose.TerminalComposeView;
+import com.termux.terminal.compose.session.TerminalSessionBackend;
 
 public final class BubbleSessionActivity extends AppCompatActivity implements ServiceConnection {
 
     private TermuxService mTermuxService;
     private View mRootView;
-    private TerminalView mTerminalView;
+    private TerminalComposeView mTerminalView;
+    private TerminalSession mCurrentSession;
+    private TerminalCursorBlinker mTerminalCursorBlinker;
     private ExtraKeysView mExtraKeysView;
     private BubbleTerminalViewClient mTerminalViewClient;
     private BubbleTerminalSessionClient mTerminalSessionClient;
@@ -121,10 +126,78 @@ public final class BubbleSessionActivity extends AppCompatActivity implements Se
         mExtraKeysView = findViewById(R.id.bubble_extra_keys_view);
         mTerminalViewClient = new BubbleTerminalViewClient(this);
         mTerminalSessionClient = new BubbleTerminalSessionClient(this);
-        mTerminalExtraKeys = new BubbleTerminalExtraKeys(this, mTerminalView, mTerminalViewClient);
+        mTerminalView.setListener(new TerminalComposeView.Listener() {
+            @Override
+            public void onCopyRequest(String selectedText) {
+                TerminalSession session = getCurrentSession();
+                if (session != null)
+                    mTerminalSessionClient.onCopyTextToClipboard(session, selectedText);
+            }
 
-        mTerminalView.setTerminalViewClient(mTerminalViewClient);
-        mTerminalView.setTextSize(mPreferences.getFontSize());
+            @Override
+            public boolean onSingleTap(android.view.MotionEvent event) {
+                return mTerminalViewClient.onSingleTapUp(event);
+            }
+
+            @Override
+            public void onPasteRequest() {
+                mTerminalSessionClient.onPasteTextFromClipboard(getCurrentSession());
+            }
+
+            @Override
+            public void onFontSizeChanged(int fontSize) {
+                mPreferences.setFontSize(fontSize);
+            }
+
+            @Override
+            public boolean onKeyDown(KeyEvent event) {
+                TerminalSession session = getCurrentSession();
+                if (session == null || !session.hasActiveTerminalBackend()) return true;
+                if (mTerminalViewClient.onKeyDown(event.getKeyCode(), event, session)) return true;
+                if (event.getKeyCode() == KeyEvent.KEYCODE_BACK &&
+                    mTerminalViewClient.shouldBackButtonBeMappedToEscape()) {
+                    return mTerminalView.submitText("\u001b");
+                }
+                return false;
+            }
+
+            @Override
+            public boolean onKeyUp(KeyEvent event) {
+                return mTerminalViewClient.onKeyUp(event.getKeyCode(), event);
+            }
+
+            @Override
+            public void onImeSessionClosed() {
+                mTerminalViewClient.onSoftKeyboardDismissed();
+            }
+        });
+        mTerminalView.setModifierKeyReader(new ModifierKeyReader() {
+            @Override
+            public boolean readControl() {
+                return mTerminalViewClient.readControlKey();
+            }
+
+            @Override
+            public boolean readAlt() {
+                return mTerminalViewClient.readAltKey();
+            }
+
+            @Override
+            public boolean readShift() {
+                return mTerminalViewClient.readShiftKey();
+            }
+
+            @Override
+            public boolean readFn() {
+                return mTerminalViewClient.readFnKey();
+            }
+        });
+        mTerminalView.setUnconditionalKeyboardOnTap(
+            mProperties.isUnconditionalSoftKeyboardOnTapEnabled());
+        mTerminalExtraKeys = new BubbleTerminalExtraKeys(this, mTerminalView, mTerminalViewClient);
+        mTerminalCursorBlinker = new TerminalCursorBlinker(mTerminalView::onFrameAvailable);
+
+        mTerminalView.setFontSize(mPreferences.getFontSize());
         mTerminalView.setKeepScreenOn(mPreferences.shouldKeepScreenOn());
         mTerminalSessionClient.onCreate();
         setupExtraKeysView();
@@ -233,11 +306,12 @@ public final class BubbleSessionActivity extends AppCompatActivity implements Se
             return;
         }
 
-        mTerminalView.attachSession(session);
+        mTerminalView.setBackend(new TerminalSessionBackend(session));
+        setCurrentSession(session);
         mTerminalSessionClient.applyTerminalStyling();
         updateSessionTitle();
         markCurrentSessionBubbleConversationRead();
-        mTerminalView.requestFocus();
+        mTerminalView.requestTerminalFocus();
         mTerminalViewClient.setSoftKeyboardState();
     }
 
@@ -438,14 +512,24 @@ public final class BubbleSessionActivity extends AppCompatActivity implements Se
         return mTerminalSessionClient;
     }
 
-    public TerminalView getTerminalView() {
+    public TerminalComposeView getTerminalView() {
         return mTerminalView;
     }
 
     @Nullable
     public TerminalSession getCurrentSession() {
-        if (mTerminalView == null) return null;
-        return mTerminalView.getCurrentSession();
+        return mCurrentSession;
+    }
+
+    void setCurrentSession(@Nullable TerminalSession session) {
+        mCurrentSession = session;
+        if (mTerminalCursorBlinker != null) mTerminalCursorBlinker.setSession(session);
+    }
+
+    public void setTerminalCursorBlinkerState(boolean start, boolean startOnlyIfCursorEnabled) {
+        if (mTerminalCursorBlinker == null) return;
+        if (start) mTerminalCursorBlinker.setRate(mProperties.getTerminalCursorBlinkRate());
+        mTerminalCursorBlinker.setState(start, startOnlyIfCursorEnabled);
     }
 
     @Nullable

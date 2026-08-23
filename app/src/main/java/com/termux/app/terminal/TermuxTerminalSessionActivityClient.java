@@ -32,6 +32,7 @@ import com.termux.terminal.TerminalColors;
 import com.termux.terminal.TerminalSession;
 import com.termux.terminal.TerminalSessionClient;
 import com.termux.terminal.TextStyle;
+import com.termux.terminal.compose.session.TerminalSessionBackend;
 import com.termux.shared.termux.extrakeys.ExtraKeysView;
 import androidx.viewpager.widget.ViewPager;
 
@@ -241,7 +242,7 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
 
         // If cursor is to enabled now, then start cursor blinking if blinking is enabled
         // otherwise stop cursor blinking
-        mActivity.getTerminalView().setTerminalCursorBlinkerState(enabled, false);
+        mActivity.setTerminalCursorBlinkerState(enabled, false);
     }
 
     @Override
@@ -261,7 +262,7 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
     public void onResetTerminalSession() {
         // Ensure blinker starts again after reset if cursor blinking was disabled before reset like
         // with "tput civis" which would have called onTerminalCursorStateChange()
-        mActivity.getTerminalView().setTerminalCursorBlinkerState(true, true);
+        mActivity.setTerminalCursorBlinkerState(true, true);
     }
 
 
@@ -313,7 +314,9 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
     public void setCurrentSession(TerminalSession session) {
         if (session == null) return;
 
-        if (mActivity.getTerminalView().attachSession(session)) {
+        if (mActivity.getCurrentSession() != session) {
+            mActivity.getTerminalView().setBackend(new TerminalSessionBackend(session));
+            mActivity.setCurrentSession(session);
             // notify about switched session if not already displaying the session
             notifyOfSessionChange();
         }

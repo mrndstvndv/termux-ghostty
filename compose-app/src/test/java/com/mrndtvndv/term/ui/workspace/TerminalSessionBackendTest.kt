@@ -1,5 +1,6 @@
 package com.mrndtvndv.term.ui.workspace
 
+import com.termux.terminal.compose.session.resolveTopRow
 import org.junit.Assert.assertEquals
 import org.junit.Test
 

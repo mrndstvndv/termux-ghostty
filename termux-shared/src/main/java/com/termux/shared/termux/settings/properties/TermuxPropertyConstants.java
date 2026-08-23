@@ -9,7 +9,6 @@ import com.termux.shared.settings.properties.SharedProperties;
 import com.termux.shared.termux.TermuxConstants;
 import com.termux.shared.logger.Logger;
 import com.termux.terminal.TerminalConstants;
-import com.termux.view.TerminalView;
 
 import java.io.File;
 import java.util.Arrays;
@@ -243,8 +242,8 @@ public final class TermuxPropertyConstants {
 
     /** Defines the key for the terminal cursor blink rate */
     public static final String KEY_TERMINAL_CURSOR_BLINK_RATE =  "terminal-cursor-blink-rate"; // Default: "terminal-cursor-blink-rate"
-    public static final int IVALUE_TERMINAL_CURSOR_BLINK_RATE_MIN = TerminalView.TERMINAL_CURSOR_BLINK_RATE_MIN;
-    public static final int IVALUE_TERMINAL_CURSOR_BLINK_RATE_MAX = TerminalView.TERMINAL_CURSOR_BLINK_RATE_MAX;
+    public static final int IVALUE_TERMINAL_CURSOR_BLINK_RATE_MIN = TerminalConstants.TERMINAL_CURSOR_BLINK_RATE_MIN;
+    public static final int IVALUE_TERMINAL_CURSOR_BLINK_RATE_MAX = TerminalConstants.TERMINAL_CURSOR_BLINK_RATE_MAX;
     public static final int DEFAULT_IVALUE_TERMINAL_CURSOR_BLINK_RATE = 0;
 
 

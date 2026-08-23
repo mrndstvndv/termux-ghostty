@@ -1525,7 +1525,7 @@ pub export fn termux_ghostty_session_create(
     // primary and alternate screens. This makes us answer the `CSI ? u` query
     // with non-zero flags so remote programs (tmux, vim, etc.) enable extended
     // keys and stop waiting `escape-time` / `timeoutlen` on a lone ESC. The
-    // input layer then encodes ESC as `CSI 27u` (see TerminalView.handleKeyCode).
+    // input layer then encodes ESC as `CSI 27u` for the terminal input path.
     session.terminal.screens.get(.primary).?.kitty_keyboard.push(.{
         .disambiguate = true,
         .report_events = true,
@@ -2951,4 +2951,3 @@ test "append while at bottom keeps viewport at bottom" {
     _ = appendTestBytes(session, "i\nj\nk\n");
     try testing.expectEqual(@as(i32, 0), session.viewport_top_row);
 }
-

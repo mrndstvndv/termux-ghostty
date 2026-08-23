@@ -17,6 +17,7 @@ import com.termux.terminal.compose.TerminalCommandResult
  */
 internal class TerminalInputTranslator(
     private val modifierKeys: ModifierKeyReader,
+    private val onCodePoint: ((Int, Boolean, Boolean) -> Boolean)? = null,
     val submit: (TerminalCommand) -> TerminalCommandResult
 ) {
     private var combiningAccent = 0
@@ -56,14 +57,7 @@ internal class TerminalInputTranslator(
     /** Sends one code point (IME or resolved key) through the backend. */
     fun sendCodePoint(codePoint: Int, alt: Boolean, controlHeld: Boolean = modifierKeys.readControl()) {
         try {
-            submit(
-                TerminalCommand.Key(
-                    keyCode = 0,
-                    metaState = if (alt) KeyEvent.META_ALT_ON else 0,
-                    down = true,
-                    codePoint = applyControlMapping(codePoint, controlHeld)
-                )
-            )
+            submitCodePoint(applyStickyShift(codePoint), alt, controlHeld)
         } finally {
             modifierKeys.clearConsumedModifiers()
         }
@@ -72,31 +66,37 @@ internal class TerminalInputTranslator(
     fun sendText(text: String, controlHeld: Boolean? = null) {
         if (text.isEmpty()) return
         val effectiveControlHeld = controlHeld ?: modifierKeys.readControl()
-        if (!effectiveControlHeld) {
-            val firstCodePoint = text.codePointAt(0)
-            if (Character.charCount(firstCodePoint) == text.length) {
-                sendCodePoint(firstCodePoint, alt = false, controlHeld = false)
-                return
+        val codePointCount = text.codePointCount(0, text.length)
+        when {
+            !effectiveControlHeld && codePointCount == 1 -> {
+                sendCodePoint(text.codePointAt(0), alt = false, controlHeld = false)
             }
-            try {
-                submit(TerminalCommand.Text(text))
-            } finally {
-                modifierKeys.clearConsumedModifiers()
+            !effectiveControlHeld && onCodePoint == null -> {
+                submitText(text)
             }
-            return
+            else -> {
+                sendCodePointSequence(text, effectiveControlHeld)
+            }
         }
+    }
 
+    private fun submitText(text: String) {
+        try {
+            submit(TerminalCommand.Text(text))
+        } finally {
+            modifierKeys.clearConsumedModifiers()
+        }
+    }
+
+    private fun sendCodePointSequence(text: String, controlHeld: Boolean) {
         try {
             var index = 0
             while (index < text.length) {
                 val codePoint = text.codePointAt(index)
-                submit(
-                    TerminalCommand.Key(
-                        keyCode = 0,
-                        metaState = 0,
-                        down = true,
-                        codePoint = applyControlMapping(codePoint, controlHeld = true)
-                    )
+                submitCodePoint(
+                    applyStickyShift(codePoint),
+                    alt = false,
+                    controlHeld = controlHeld
                 )
                 index += Character.charCount(codePoint)
             }
@@ -104,6 +104,23 @@ internal class TerminalInputTranslator(
             modifierKeys.clearConsumedModifiers()
         }
     }
+
+    private fun submitCodePoint(codePoint: Int, alt: Boolean, controlHeld: Boolean) {
+        val effectiveAlt = alt || modifierKeys.readAlt()
+        if (onCodePoint?.invoke(codePoint, controlHeld, effectiveAlt) == true) return
+
+        submit(
+            TerminalCommand.Key(
+                keyCode = 0,
+                metaState = if (effectiveAlt) KeyEvent.META_ALT_ON else 0,
+                down = true,
+                codePoint = applyControlMapping(codePoint, controlHeld)
+            )
+        )
+    }
+
+    private fun applyStickyShift(codePoint: Int): Int =
+        if (modifierKeys.readShift()) Character.toUpperCase(codePoint) else codePoint
 
     private fun submitUnicodeChar(
         nativeEvent: KeyEvent,
@@ -143,32 +160,24 @@ internal class TerminalInputTranslator(
             }
             combiningAccent = 0
         }
-        val mapped = applyControlMapping(finalResult, ctrl)
-        submit(
-            TerminalCommand.Key(
-                keyCode = 0,
-                metaState = if (alt) KeyEvent.META_ALT_ON else 0,
-                down = true,
-                codePoint = mapped
-            )
-        )
+        submitCodePoint(finalResult, alt, ctrl)
         return true
     }
+}
 
-    /** Port of the emulator's control-key translation for character input. */
-    private fun applyControlMapping(codePoint: Int, controlHeld: Boolean): Int {
-        if (!controlHeld) return codePoint
-        return when (codePoint) {
-            in 'a'.code..'z'.code -> codePoint - 'a'.code + 1
-            in 'A'.code..'Z'.code -> codePoint - 'A'.code + 1
-            ' '.code, '2'.code -> 0
-            '['.code, '3'.code -> 27
-            '\\'.code, '4'.code -> 28
-            ']'.code, '5'.code -> 29
-            '^'.code, '6'.code -> 30
-            '_'.code, '7'.code, '/'.code -> 31
-            '8'.code -> 127
-            else -> codePoint
-        }
+/** Port of the emulator's control-key translation for character input. */
+internal fun applyControlMapping(codePoint: Int, controlHeld: Boolean): Int {
+    if (!controlHeld) return codePoint
+    return when (codePoint) {
+        in 'a'.code..'z'.code -> codePoint - 'a'.code + 1
+        in 'A'.code..'Z'.code -> codePoint - 'A'.code + 1
+        ' '.code, '2'.code -> 0
+        '['.code, '3'.code -> 27
+        '\\'.code, '4'.code -> 28
+        ']'.code, '5'.code -> 29
+        '^'.code, '6'.code -> 30
+        '_'.code, '7'.code, '/'.code -> 31
+        '8'.code -> 127
+        else -> codePoint
     }
 }

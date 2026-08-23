@@ -90,6 +90,58 @@ class ImeInputPipelineTest {
     }
 
     @Test
+    fun hostCodePointPolicySeesRawInputBeforeControlMapping() {
+        val commands = mutableListOf<TerminalCommand>()
+        var observedCodePoint = 0
+        var observedControl = false
+        var observedAlt = false
+        val translator = TerminalInputTranslator(
+            modifierKeys = ModifierKeyReader.NONE,
+            onCodePoint = { codePoint, controlDown, altDown ->
+                observedCodePoint = codePoint
+                observedControl = controlDown
+                observedAlt = altDown
+                false
+            }
+        ) { command ->
+            commands += command
+            TerminalCommandResult.Success
+        }
+
+        translator.sendCodePoint('a'.code, alt = false, controlHeld = true)
+
+        assertEquals('a'.code, observedCodePoint)
+        assertEquals(true, observedControl)
+        assertEquals(false, observedAlt)
+        assertEquals(
+            listOf(TerminalCommand.Key(keyCode = 0, metaState = 0, down = true, codePoint = 1)),
+            commands
+        )
+    }
+
+    @Test
+    fun imeTextHonorsStickyShiftModifier() {
+        val commands = mutableListOf<TerminalCommand>()
+        val modifiers = object : ModifierKeyReader {
+            override fun readControl() = false
+            override fun readAlt() = false
+            override fun readShift() = true
+            override fun readFn() = false
+        }
+        val translator = TerminalInputTranslator(modifiers) { command ->
+            commands += command
+            TerminalCommandResult.Success
+        }
+
+        translator.sendText("a")
+
+        assertEquals(
+            listOf(TerminalCommand.Key(keyCode = 0, metaState = 0, down = true, codePoint = 'A'.code)),
+            commands
+        )
+    }
+
+    @Test
     fun imeDispatchClearsOneShotModifiersAfterSubmission() {
         var clearCount = 0
         val modifiers = object : ModifierKeyReader {

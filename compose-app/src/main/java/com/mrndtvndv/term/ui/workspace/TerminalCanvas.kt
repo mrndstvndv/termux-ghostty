@@ -24,6 +24,7 @@ import com.termux.terminal.compose.ShaderDefinition as ComposeShaderDefinition
 import com.termux.terminal.compose.TerminalCanvas as ComposeTerminalCanvas
 import com.termux.terminal.compose.TerminalCanvasConfig
 import com.termux.terminal.compose.TerminalBackend
+import com.termux.terminal.compose.session.TerminalSessionBackend
 
 /** Default soft-keyboard resize debounce in milliseconds (0 = immediate). */
 const val DefaultKeyboardResizeDebounceMillis = 0

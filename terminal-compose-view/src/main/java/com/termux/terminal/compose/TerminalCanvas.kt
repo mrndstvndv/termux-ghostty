@@ -76,6 +76,7 @@ fun TerminalCanvas(
     modifierKeys: ModifierKeyReader,
     config: TerminalCanvasConfig,
     requestFocus: Boolean = false,
+    requestFocusKey: Long = 0L,
     modifier: Modifier = Modifier
 ) {
     val graphicsContext = LocalGraphicsContext.current
@@ -102,9 +103,14 @@ fun TerminalCanvas(
         controller.refresh()
         contentVersionState.intValue++
     }
-    val (translator, imeHost) = rememberInputPipeline(controller, modifierKeys)
+    val (translator, imeHost) = rememberInputPipeline(
+        controller = controller,
+        modifierKeys = modifierKeys,
+        onCodePoint = config.onCodePoint,
+        onImeSessionClosed = config.onImeSessionClosed
+    )
     val metrics = rememberCanvasMetrics(fontSizeState, config, viewportSizePx)
-    LaunchedEffect(requestFocus) {
+    LaunchedEffect(requestFocus, requestFocusKey) {
         if (requestFocus) focusRequester.requestFocus()
     }
     LaunchedEffect(config.selectionResetKey) {
@@ -172,7 +178,7 @@ private fun TerminalCanvasLayout(
             .terminalImeHost(state.imeHost)
             .focusRequester(state.focusRequester)
             .focusTarget()
-            .terminalKeyHandling(state.translator, state.selectionState)
+            .terminalKeyHandling(state.translator, state.selectionState, state.config)
             .terminalSelectionMagnifier(
                 visible = magnifierEndpoint != null && !selection.isEmpty &&
                     state.controller.currentFrame() != null
@@ -203,7 +209,7 @@ private fun TerminalCanvasLayout(
                     state.fontSizeState,
                     onFontSizeChange = state.config.onFontSizeChange
                 )
-                .terminalTaps(
+            .terminalTaps(
                     state.controller,
                     state.metrics,
                     state.config,
@@ -338,10 +344,15 @@ private fun rememberTerminalController(
 @Composable
 private fun rememberInputPipeline(
     controller: TerminalController,
-    modifierKeys: ModifierKeyReader
+    modifierKeys: ModifierKeyReader,
+    onCodePoint: ((Int, Boolean, Boolean) -> Boolean)?,
+    onImeSessionClosed: () -> Unit
 ): Pair<TerminalInputTranslator, ImeHost> {
-    val translator = remember(controller, modifierKeys) {
-        TerminalInputTranslator(modifierKeys) { command -> controller.submit(command) }
+    val translator = remember(controller, modifierKeys, onCodePoint) {
+        TerminalInputTranslator(
+            modifierKeys = modifierKeys,
+            onCodePoint = onCodePoint
+        ) { command -> controller.submit(command) }
     }
     val imeProcessor = remember(translator) {
         ImeEditCommandProcessor(CommandTerminalInput(translator))
@@ -349,7 +360,10 @@ private fun rememberInputPipeline(
     val imeHost = rememberImeHost(
         onEditCommands = imeProcessor::process,
         onSessionStarted = imeProcessor::reset,
-        onSessionClosed = imeProcessor::reset
+        onSessionClosed = {
+            imeProcessor.reset()
+            onImeSessionClosed()
+        }
     )
     DisposableEffect(imeHost) {
         onDispose { imeHost.close() }
@@ -464,9 +478,14 @@ private fun Modifier.preferredFrameRateOrNone(config: TerminalCanvasConfig): Mod
 
 private fun Modifier.terminalKeyHandling(
     translator: TerminalInputTranslator,
-    selectionState: TerminalSelectionState
+    selectionState: TerminalSelectionState,
+    config: TerminalCanvasConfig
 ): Modifier = onPreviewKeyEvent { keyEvent ->
+    if (keyEvent.type == KeyEventType.KeyUp) {
+        return@onPreviewKeyEvent config.onKeyUp(keyEvent.nativeKeyEvent)
+    }
     if (keyEvent.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+    if (config.onKeyDown(keyEvent.nativeKeyEvent)) return@onPreviewKeyEvent true
     if (keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_BACK) {
         if (!selectionState.isSelecting) return@onPreviewKeyEvent false
         selectionState.clear()

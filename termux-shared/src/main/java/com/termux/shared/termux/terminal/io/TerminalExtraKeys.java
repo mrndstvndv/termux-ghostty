@@ -1,6 +1,5 @@
 package com.termux.shared.termux.terminal.io;
 
-import android.os.Build;
 import android.view.KeyEvent;
 import android.view.View;
 
@@ -10,18 +9,17 @@ import com.google.android.material.button.MaterialButton;
 import com.termux.shared.termux.extrakeys.ExtraKeyButton;
 import com.termux.shared.termux.extrakeys.ExtraKeysView;
 import com.termux.shared.termux.extrakeys.SpecialButton;
-import com.termux.terminal.TerminalSession;
-import com.termux.view.TerminalView;
+import com.termux.terminal.compose.TerminalInputSink;
 
 import static com.termux.shared.termux.extrakeys.ExtraKeysConstants.PRIMARY_KEY_CODES_FOR_STRINGS;
 
 
 public class TerminalExtraKeys implements ExtraKeysView.IExtraKeysView {
 
-    private final TerminalView mTerminalView;
+    private final TerminalInputSink mTerminalInputSink;
 
-    public TerminalExtraKeys(@NonNull TerminalView terminalView) {
-        mTerminalView = terminalView;
+    public TerminalExtraKeys(@NonNull TerminalInputSink terminalInputSink) {
+        mTerminalInputSink = terminalInputSink;
     }
 
     @Override
@@ -104,8 +102,7 @@ public class TerminalExtraKeys implements ExtraKeysView.IExtraKeysView {
             if (shiftDown) metaState |= KeyEvent.META_SHIFT_ON | KeyEvent.META_SHIFT_LEFT_ON;
             if (fnDown) metaState |= KeyEvent.META_FUNCTION_ON;
 
-            KeyEvent keyEvent = new KeyEvent(0, 0, KeyEvent.ACTION_UP, keyCode, 0, metaState);
-            mTerminalView.onKeyDown(keyCode, keyEvent);
+            mTerminalInputSink.submitKey(keyCode, metaState);
         } else {
             int codePoint = key.length() == 1 ? key.codePointAt(0) : -1;
             if (codePoint != -1) {
@@ -119,53 +116,17 @@ public class TerminalExtraKeys implements ExtraKeysView.IExtraKeysView {
                     }
                 }
 
-                TerminalSession session = mTerminalView.getCurrentSession();
-
                 if (ctrlDown && isUpperCase && shiftDown) {
                     // Kitty Keyboard Protocol for Ctrl+Shift+Letter
                     int modifier = altDown ? 14 : 6;
                     String sequence = "\u001b[" + finalCodePoint + ";" + modifier + "u";
-                    if (session != null) {
-                        session.write(sequence);
-                    }
+                    mTerminalInputSink.submitText(sequence);
                     return;
                 }
 
-                if (ctrlDown) {
-                    if (finalCodePoint >= 'a' && finalCodePoint <= 'z') {
-                        finalCodePoint = finalCodePoint - 'a' + 1;
-                    } else if (finalCodePoint >= 'A' && finalCodePoint <= 'Z') {
-                        finalCodePoint = finalCodePoint - 'A' + 1;
-                    } else if (finalCodePoint == ' ' || finalCodePoint == '2') {
-                        finalCodePoint = 0;
-                    } else if (finalCodePoint == '[' || finalCodePoint == '3') {
-                        finalCodePoint = 27;
-                    } else if (finalCodePoint == '\\' || finalCodePoint == '4') {
-                        finalCodePoint = 28;
-                    } else if (finalCodePoint == ']' || finalCodePoint == '5') {
-                        finalCodePoint = 29;
-                    } else if (finalCodePoint == '^' || finalCodePoint == '6') {
-                        finalCodePoint = 30;
-                    } else if (finalCodePoint == '_' || finalCodePoint == '7' || finalCodePoint == '/') {
-                        finalCodePoint = 31;
-                    } else if (finalCodePoint == '8') {
-                        finalCodePoint = 127;
-                    }
-                }
-
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                    // Pass false for controlDownFromEvent because finalCodePoint is already converted
-                    mTerminalView.inputCodePoint(TerminalView.KEY_EVENT_SOURCE_VIRTUAL_KEYBOARD, finalCodePoint, false, altDown);
-                } else {
-                    if (session != null) {
-                        session.writeCodePoint(altDown, finalCodePoint);
-                    }
-                }
+                mTerminalInputSink.submitCodePoint(finalCodePoint, ctrlDown, altDown);
             } else {
-                TerminalSession session = mTerminalView.getCurrentSession();
-                if (session != null && key.length() > 0) {
-                    session.write(key);
-                }
+                if (key.length() > 0) mTerminalInputSink.submitText(key);
             }
         }
     }

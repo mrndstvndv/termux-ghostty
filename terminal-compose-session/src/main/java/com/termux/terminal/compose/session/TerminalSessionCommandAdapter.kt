@@ -1,4 +1,4 @@
-package com.mrndtvndv.term.ui.workspace
+package com.termux.terminal.compose.session
 
 import android.view.KeyEvent
 import com.termux.terminal.GhosttyMouseEvent
@@ -11,7 +11,7 @@ import com.termux.terminal.compose.TerminalPointerEvent
 import kotlin.math.roundToInt
 
 /** Translates neutral canvas commands to the existing Ghostty session API. */
-internal class TerminalSessionCommandAdapter(
+class TerminalSessionCommandAdapter(
     private val session: TerminalSession,
     private val updateTopRow: (Int) -> Unit,
     private val submitScrollEvent: (GhosttyScrollEvent) -> Unit = session::sendGhosttyScrollEvent

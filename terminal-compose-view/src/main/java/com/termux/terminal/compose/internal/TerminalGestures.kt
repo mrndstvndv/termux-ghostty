@@ -1,5 +1,7 @@
 package com.termux.terminal.compose.internal
 
+import android.view.InputDevice
+import android.view.MotionEvent
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.calculateCentroid
@@ -15,6 +17,7 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.AwaitPointerEventScope
 import androidx.compose.ui.input.pointer.PointerEvent
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.pointerInteropFilter
 import androidx.compose.ui.input.pointer.positionChanged
 import com.termux.terminal.compose.TerminalCanvasConfig
 import com.termux.terminal.compose.TerminalCommand
@@ -56,6 +59,50 @@ private class ScrollGestureState {
         }
     }
 }
+
+/** Captures tap source metadata without retaining framework MotionEvent instances. */
+private class TerminalTapMotionEventState {
+    private var hasUpEvent = false
+    private var source = InputDevice.SOURCE_TOUCHSCREEN
+    private var x = 0f
+    private var y = 0f
+
+    fun record(event: MotionEvent): Boolean {
+        when (event.actionMasked) {
+            MotionEvent.ACTION_UP -> {
+                hasUpEvent = true
+                source = event.source
+                x = event.x
+                y = event.y
+            }
+            MotionEvent.ACTION_CANCEL -> hasUpEvent = false
+        }
+        return false
+    }
+
+    fun take(offset: Offset): MotionEvent {
+        val event = MotionEvent.obtain(
+            0L,
+            0L,
+            MotionEvent.ACTION_UP,
+            if (hasUpEvent) x else offset.x,
+            if (hasUpEvent) y else offset.y,
+            0
+        )
+        event.source = if (hasUpEvent) source else InputDevice.SOURCE_TOUCHSCREEN
+        hasUpEvent = false
+        return event
+    }
+}
+
+private data class TapContext(
+    val controller: TerminalController,
+    val metrics: TerminalMetrics,
+    val config: TerminalCanvasConfig,
+    val selectionState: TerminalSelectionState,
+    val imeHost: ImeHost,
+    val focusRequester: FocusRequester
+)
 
 /** Attaches the scroll/zoom/drag gesture handling to the terminal canvas. */
 internal fun Modifier.terminalGestures(
@@ -181,44 +228,73 @@ internal fun Modifier.terminalTaps(
     imeHost: ImeHost,
     focusRequester: FocusRequester,
     hapticFeedback: HapticFeedback
-): Modifier = pointerInput(controller, metrics, config, selectionState, imeHost, focusRequester) {
-    detectTapGestures(
-        onTap = { offset ->
-            handleTap(offset, controller, metrics, config, selectionState, imeHost, focusRequester)
-        },
-        onLongPress = { offset ->
-            handleLongPress(offset, metrics, controller, selectionState, hapticFeedback)
+): Modifier {
+    val motionEventState = TerminalTapMotionEventState()
+    return pointerInteropFilter(onTouchEvent = motionEventState::record)
+        .pointerInput(controller, metrics, config, selectionState, imeHost, focusRequester) {
+            detectTapGestures(
+                onTap = { offset ->
+                    handleTap(
+                        offset,
+                        motionEventState.take(offset),
+                        TapContext(
+                            controller = controller,
+                            metrics = metrics,
+                            config = config,
+                            selectionState = selectionState,
+                            imeHost = imeHost,
+                            focusRequester = focusRequester
+                        )
+                    )
+                },
+                onLongPress = { offset ->
+                    handleLongPress(offset, metrics, controller, selectionState, hapticFeedback)
+                }
+            )
         }
-    )
 }
 
 private fun handleTap(
     offset: Offset,
-    controller: TerminalController,
-    metrics: TerminalMetrics,
-    config: TerminalCanvasConfig,
-    selectionState: TerminalSelectionState,
-    imeHost: ImeHost,
-    focusRequester: FocusRequester
+    event: MotionEvent,
+    context: TapContext
 ) {
-    if (selectionState.isSelecting) {
-        selectionState.clear()
-        return
+    try {
+        if (context.selectionState.isSelecting) {
+            context.selectionState.clear()
+            return
+        }
+        if (context.config.onSingleTap(event)) return
+
+        val frame = context.controller.currentFrame()
+        // The frame is a rendered snapshot and may lag the live terminal mode.
+        // Ghostty's encoder ignores mouse events when tracking is disabled, so
+        // forwarding the pair unconditionally avoids dropping taps during a mode
+        // transition.
+        sendTapAsMouseClick(offset.x, offset.y, context.metrics, context.controller)
+        if (shouldOpenKeyboard(context.config, frame, event)) {
+            context.focusRequester.requestFocus()
+            context.imeHost.open()
+        }
+        val link = linkAt(frame, offset.x, offset.y, context.metrics)
+        if (link != null) {
+            context.config.onOpenUrl(link)
+        }
+    } finally {
+        event.recycle()
     }
-    val frame = controller.currentFrame()
-    // The frame is a rendered snapshot and may lag the live terminal mode.
-    // Ghostty's encoder ignores mouse events when tracking is disabled, so
-    // forwarding the pair unconditionally avoids dropping taps during a mode
-    // transition.
-    sendTapAsMouseClick(offset.x, offset.y, metrics, controller)
-    if (config.unconditionalKeyboardOnTap || frame == null || !frame.mouseTrackingActive) {
-        focusRequester.requestFocus()
-        imeHost.open()
-    }
-    val link = linkAt(frame, offset.x, offset.y, metrics)
-    if (link != null) {
-        config.onOpenUrl(link)
-    }
+}
+
+private fun shouldOpenKeyboard(
+    config: TerminalCanvasConfig,
+    frame: TerminalFrame?,
+    event: MotionEvent
+): Boolean {
+    if (event.isFromSource(InputDevice.SOURCE_MOUSE)) return false
+    val keyboardAllowedByMode = config.unconditionalKeyboardOnTap ||
+        frame == null ||
+        !frame.mouseTrackingActive
+    return keyboardAllowedByMode
 }
 
 private fun handleLongPress(

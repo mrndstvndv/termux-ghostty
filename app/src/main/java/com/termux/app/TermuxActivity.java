@@ -62,8 +62,8 @@ import com.termux.shared.termux.theme.TermuxThemeUtils;
 import com.termux.shared.view.ViewUtils;
 import com.termux.terminal.TerminalSession;
 import com.termux.terminal.TerminalSessionClient;
-import com.termux.view.TerminalView;
-import com.termux.view.TerminalViewClient;
+import com.termux.terminal.compose.ModifierKeyReader;
+import com.termux.terminal.compose.TerminalComposeView;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -93,15 +93,17 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
     TermuxService mTermuxService;
 
     /**
-     * The {@link TerminalView} shown in  {@link TermuxActivity} that displays the terminal.
+     * The Compose-backed terminal shown in {@link TermuxActivity}.
      */
-    TerminalView mTerminalView;
+    TerminalComposeView mTerminalView;
 
     /**
-     *  The {@link TerminalViewClient} interface implementation to allow for communication between
-     *  {@link TerminalView} and {@link TermuxActivity}.
+     * The app policy object for the Compose-backed terminal.
      */
     TermuxTerminalViewClient mTermuxTerminalViewClient;
+
+    private TerminalSession mCurrentSession;
+    private TerminalCursorBlinker mTerminalCursorBlinker;
 
     /**
      *  The {@link TerminalSessionClient} interface implementation to allow for communication between
@@ -568,7 +570,104 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
 
         // Set termux terminal view
         mTerminalView = findViewById(R.id.terminal_view);
-        mTerminalView.setTerminalViewClient(mTermuxTerminalViewClient);
+        mTerminalView.setListener(new TerminalComposeView.Listener() {
+            @Override
+            public void onSelectionChanged(String selectedText, boolean selecting) {
+                mTermuxTerminalViewClient.copyModeChanged(selecting);
+            }
+
+            @Override
+            public boolean onSingleTap(android.view.MotionEvent event) {
+                return mTermuxTerminalViewClient.onSingleTapUp(event);
+            }
+
+            @Override
+            public void onCopyRequest(String selectedText) {
+                TerminalSession session = getCurrentSession();
+                if (mTermuxTerminalSessionActivityClient != null && session != null)
+                    mTermuxTerminalSessionActivityClient.onCopyTextToClipboard(session, selectedText);
+            }
+
+            @Override
+            public void onPasteRequest() {
+                if (mTermuxTerminalSessionActivityClient != null)
+                    mTermuxTerminalSessionActivityClient.onPasteTextFromClipboard(getCurrentSession());
+            }
+
+            @Override
+            public void onMoreSelectionRequest(String selectedText) {
+                mTerminalView.showContextMenu();
+            }
+
+            @Override
+            public boolean shouldShowMoreSelectionAction() {
+                return true;
+            }
+
+            @Override
+            public void onFontSizeChanged(int fontSize) {
+                mPreferences.setFontSize(fontSize);
+            }
+
+            @Override
+            public boolean onKeyDown(android.view.KeyEvent event) {
+                TerminalSession session = getCurrentSession();
+                if (session == null || !session.hasActiveTerminalBackend()) return true;
+                if (mTermuxTerminalViewClient.onKeyDown(event.getKeyCode(), event, session)) return true;
+                if (event.getKeyCode() == android.view.KeyEvent.KEYCODE_BACK &&
+                    mTermuxTerminalViewClient.shouldBackButtonBeMappedToEscape()) {
+                    return mTerminalView.submitText("\u001b");
+                }
+                return false;
+            }
+
+            @Override
+            public boolean onKeyUp(android.view.KeyEvent event) {
+                return mTermuxTerminalViewClient.onKeyUp(event.getKeyCode(), event);
+            }
+
+            @Override
+            public boolean onCodePoint(int codePoint, boolean controlDown, boolean altDown) {
+                TerminalSession session = getCurrentSession();
+                return session != null && session.hasActiveTerminalBackend() &&
+                    mTermuxTerminalViewClient.onCodePoint(codePoint, controlDown, session);
+            }
+
+            @Override
+            public void onImeSessionClosed() {
+                mTermuxTerminalViewClient.onSoftKeyboardDismissed();
+            }
+
+            @Override
+            public void onDiagnostics(com.termux.terminal.compose.TerminalDiagnostic diagnostic) {
+                Logger.logWarn(LOG_TAG, "Terminal Compose diagnostic: " + diagnostic);
+            }
+        });
+        mTerminalView.setModifierKeyReader(new ModifierKeyReader() {
+            @Override
+            public boolean readControl() {
+                return mTermuxTerminalViewClient.readControlKey();
+            }
+
+            @Override
+            public boolean readAlt() {
+                return mTermuxTerminalViewClient.readAltKey();
+            }
+
+            @Override
+            public boolean readShift() {
+                return mTermuxTerminalViewClient.readShiftKey();
+            }
+
+            @Override
+            public boolean readFn() {
+                return mTermuxTerminalViewClient.readFnKey();
+            }
+        });
+        mTerminalView.setUnconditionalKeyboardOnTap(
+            mProperties.isUnconditionalSoftKeyboardOnTapEnabled());
+        mTerminalCursorBlinker = new TerminalCursorBlinker(mTerminalView::onFrameAvailable);
+        mTerminalView.setFontSize(mPreferences.getFontSize());
 
         if (mTermuxTerminalViewClient != null)
             mTermuxTerminalViewClient.onCreate();
@@ -844,8 +943,8 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
     @Override
     public void onContextMenuClosed(Menu menu) {
         super.onContextMenuClosed(menu);
-        // onContextMenuClosed() is triggered twice if back button is pressed to dismiss instead of tap for some reason
-        mTerminalView.onContextMenuClosed(menu);
+        if (mTerminalView != null)
+            mTerminalView.unsetStoredSelectedText();
     }
 
     private void showKillSessionDialog(TerminalSession session) {
@@ -1029,7 +1128,21 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         return mTermuxService;
     }
 
-    public TerminalView getTerminalView() {
+    public void setCurrentSession(@Nullable TerminalSession session) {
+        mCurrentSession = session;
+        if (mTerminalCursorBlinker != null) mTerminalCursorBlinker.setSession(session);
+    }
+
+    public void setTerminalCursorBlinkerState(boolean start, boolean startOnlyIfCursorEnabled) {
+        if (mTerminalCursorBlinker == null) return;
+        if (start && !mTerminalCursorBlinker.setRate(mProperties.getTerminalCursorBlinkRate())) {
+            Logger.logError(LOG_TAG, "Failed to set terminal cursor blink rate");
+            return;
+        }
+        mTerminalCursorBlinker.setState(start, startOnlyIfCursorEnabled);
+    }
+
+    public TerminalComposeView getTerminalView() {
         return mTerminalView;
     }
 
@@ -1043,10 +1156,7 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
 
     @Nullable
     public TerminalSession getCurrentSession() {
-        if (mTerminalView != null)
-            return mTerminalView.getCurrentSession();
-        else
-            return null;
+        return mCurrentSession;
     }
 
     public void markCurrentSessionBubbleConversationRead() {

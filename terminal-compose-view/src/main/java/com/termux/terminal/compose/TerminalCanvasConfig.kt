@@ -1,13 +1,15 @@
 package com.termux.terminal.compose
 
 import android.graphics.Typeface
+import android.view.KeyEvent
+import android.view.MotionEvent
 import androidx.compose.ui.graphics.Color
 
 /**
  * Consumer-controlled rendering and input policy for [TerminalCanvas].
  *
  * The canvas never reads preferences, storage, or settings here; the consumer
- * owns persistence and policy. [onFontSizeChange], [onOpenUrl],
+ * owns persistence and policy. [onFontSizeChange], [onSingleTap], [onOpenUrl],
  * [onCopyRequest], [onPasteRequest], [onMoreSelectionRequest], and
  * [onDiagnostics] are callbacks so
  * clipboard, URL handling, and diagnostics policy stay app-owned.
@@ -28,10 +30,20 @@ data class TerminalCanvasConfig(
     /** Increment to clear the current selection after a consumer action. */
     val selectionResetKey: Long = 0L,
     val onFontSizeChange: (Int) -> Unit = {},
+    /** Gives a host first chance to apply app-specific tap and keyboard policy. */
+    val onSingleTap: (MotionEvent) -> Boolean = { false },
     val onOpenUrl: (String) -> Unit = {},
     val onSelectionChanged: (TerminalSelectionInfo?) -> Unit = {},
     val onCopyRequest: (String) -> Unit = {},
     val onPasteRequest: () -> Unit = {},
+    /** Gives a host a chance to consume a hardware key before generic translation. */
+    val onKeyDown: (KeyEvent) -> Boolean = { false },
+    /** Gives a host a chance to consume a hardware key release. */
+    val onKeyUp: (KeyEvent) -> Boolean = { false },
+    /** Gives a host a chance to handle an unencoded Unicode code point. */
+    val onCodePoint: ((codePoint: Int, controlDown: Boolean, altDown: Boolean) -> Boolean)? = null,
+    /** Notifies a host that the platform IME session has closed. */
+    val onImeSessionClosed: () -> Unit = {},
     /** Adds the platform's optional More action to the floating toolbar. */
     val onMoreSelectionRequest: ((String) -> Unit)? = null,
     val onDiagnostics: (TerminalDiagnostic) -> Unit = {}

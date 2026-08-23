@@ -11,12 +11,12 @@ import com.termux.app.BubbleSessionActivity;
 import com.termux.shared.interact.ShareUtils;
 import com.termux.shared.logger.Logger;
 import com.termux.shared.termux.extrakeys.SpecialButton;
-import com.termux.shared.termux.terminal.TermuxTerminalViewClientBase;
+import com.termux.shared.termux.terminal.TermuxTerminalClientBase;
 import com.termux.shared.termux.settings.preferences.TermuxPreferenceConstants.TERMUX_APP;
 import com.termux.shared.view.KeyboardUtils;
 import com.termux.terminal.TerminalSession;
 
-public final class BubbleTerminalViewClient extends TermuxTerminalViewClientBase {
+public final class BubbleTerminalViewClient extends TermuxTerminalClientBase {
 
     private final BubbleSessionActivity mActivity;
 
@@ -40,21 +40,21 @@ public final class BubbleTerminalViewClient extends TermuxTerminalViewClientBase
     }
 
     @Override
-    public void onSingleTapUp(MotionEvent e) {
+    public boolean onSingleTapUp(MotionEvent e) {
         TerminalSession session = mActivity.getCurrentSession();
-        if (session == null) return;
-        if (!session.hasActiveTerminalBackend()) return;
+        if (session == null || !session.hasActiveTerminalBackend()) return true;
 
         String url = getTerminalTranscriptUrlOnTap(e);
         if (url != null) {
             ShareUtils.openUrl(mActivity, url);
-            return;
+            return true;
         }
 
-        if (KeyboardUtils.areDisableSoftKeyboardFlagsSet(mActivity)) return;
+        if (KeyboardUtils.areDisableSoftKeyboardFlagsSet(mActivity)) return true;
 
         mActivity.getTerminalView().requestFocus();
         showSoftKeyboardAndRemember();
+        return true;
     }
 
     @Override
@@ -156,12 +156,12 @@ public final class BubbleTerminalViewClient extends TermuxTerminalViewClientBase
             return;
         }
 
-        mActivity.getTerminalView().setTerminalCursorBlinkerState(true, true);
+        mActivity.setTerminalCursorBlinkerState(true, true);
     }
 
     private void changeFontSize(boolean increase) {
         mActivity.getPreferences().changeFontSize(increase);
-        mActivity.getTerminalView().setTextSize(mActivity.getPreferences().getFontSize());
+        mActivity.getTerminalView().setFontSize(mActivity.getPreferences().getFontSize());
     }
 
     private boolean readExtraKeysSpecialButton(@NonNull SpecialButton specialButton) {

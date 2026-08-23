@@ -1,8 +1,8 @@
 package com.termux.terminal
 
-import com.mrndtvndv.term.ui.workspace.TerminalFrameContentCache
-import com.mrndtvndv.term.ui.workspace.TerminalFrameSessionState
-import com.mrndtvndv.term.ui.workspace.TerminalSessionFrameStore
+import com.termux.terminal.compose.session.TerminalFrameContentCache
+import com.termux.terminal.compose.session.TerminalFrameSessionState
+import com.termux.terminal.compose.session.TerminalSessionFrameStore
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import org.junit.Assert.assertEquals

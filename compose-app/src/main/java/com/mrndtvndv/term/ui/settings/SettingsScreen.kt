@@ -72,6 +72,8 @@ fun SettingsScreen(
     onNativeLogcatLoggingEnabledChange: (Boolean) -> Unit = {},
     debugHudEnabled: Boolean = false,
     onDebugHudEnabledChange: (Boolean) -> Unit = {},
+    gpuRenderingEnabled: Boolean = false,
+    onGpuRenderingEnabledChange: (Boolean) -> Unit = {},
     terminalEffects: List<String> = listOf("none"),
     onTerminalEffectsChange: (List<String>) -> Unit = {},
     shaderDefinitions: List<ShaderDefinition> = emptyList(),
@@ -282,6 +284,29 @@ fun SettingsScreen(
                     }
                     val minFontSize = sizes[1]
                     val maxFontSize = sizes[2]
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("OpenGL ES Rendering", style = MaterialTheme.typography.bodyLarge)
+                            Text(
+                                text = "Experimental GPU terminal renderer. " +
+                                    "AGSL terminal shaders are not applied in this mode. " +
+                                    "Turn it off if rendering is incomplete on this device.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = gpuRenderingEnabled,
+                            onCheckedChange = onGpuRenderingEnabledChange
+                        )
+                    }
+
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),

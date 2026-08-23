@@ -21,6 +21,8 @@ data class TerminalCanvasConfig(
     val typeface: Typeface? = null,
     val shaders: List<ShaderDefinition> = emptyList(),
     val cursorEffect: CursorEffect? = null,
+    /** Selects only the terminal pixel renderer; input and overlays remain Compose-owned. */
+    val renderer: TerminalRenderer = TerminalRenderer.COMPOSE,
     /** Neutral frame-rate request in frames per second; null means display rate. */
     val preferredFrameRate: Float? = null,
     val unconditionalKeyboardOnTap: Boolean = true,
@@ -58,6 +60,12 @@ data class TerminalCanvasConfig(
 
     /** Clamps a requested font size to the configured bounds. */
     fun clampedFontSize(requested: Int): Int = requested.coerceIn(minimumFontSize, maximumFontSize)
+}
+
+/** Pixel renderer used beneath the shared Compose input, selection, and accessibility layers. */
+enum class TerminalRenderer {
+    COMPOSE,
+    OPENGL_ES
 }
 
 /**

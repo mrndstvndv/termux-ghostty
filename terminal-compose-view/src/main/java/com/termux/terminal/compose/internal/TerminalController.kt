@@ -174,8 +174,7 @@ internal class TerminalController(
         // Keep terminal column sizing on the raw measured width. Rounded
         // cellWidthPx remains the visual placement and session metadata size.
         val columns = terminalColumnsForMeasuredCellWidth(width, metrics.measuredCellWidthPx)
-        val rows = ((height - metrics.lineSpacingAndAscentPx) / metrics.cellHeightPx).toInt()
-            .coerceAtLeast(MinGridDimension)
+        val rows = terminalRowsForMetrics(metrics)
         val cellWidth = metrics.cellWidthPx.toInt().coerceAtLeast(1)
         val cellHeight = metrics.cellHeightPx.toInt().coerceAtLeast(1)
         val contentTop = metrics.lineSpacingAndAscentPx.toInt().coerceAtLeast(0)
@@ -218,6 +217,24 @@ internal class TerminalController(
 
     /** Latest backend frame, or null before the first invalidation. */
     fun currentFrame(): TerminalFrame? = backend.currentFrame()
+
+    /**
+     * Returns a complete frame whose grid matches the current measured canvas.
+     * A resize command can be asynchronous, so publishing the old grid with
+     * new pixel metrics would misalign glyphs, selection, and pointer geometry.
+     */
+    internal fun currentFrameForMetrics(metrics: TerminalMetrics): TerminalFrame? {
+        val frame = backend.currentFrame() ?: return null
+        val expectedColumns = terminalColumnsForMeasuredCellWidth(
+            metrics.viewportWidthPx,
+            metrics.measuredCellWidthPx
+        )
+        val matchesMetrics = frame.columns == expectedColumns &&
+            frame.rowsVisible == terminalRowsForMetrics(metrics) &&
+            frame.rows.size == frame.rowsVisible &&
+            frame.rows.all { it.columns == frame.columns }
+        return frame.takeIf { matchesMetrics }
+    }
 
     /** Extracts selection text through the backend's full-content seam. */
     fun selectedText(selection: TerminalSelection): String = backend.selectedText(selection)
@@ -343,3 +360,8 @@ internal class TerminalController(
         const val CURSOR_EFFECT_GRACE_SECONDS = 0.05f
     }
 }
+
+internal fun terminalRowsForMetrics(metrics: TerminalMetrics): Int =
+    ((metrics.viewportHeightPx - metrics.lineSpacingAndAscentPx) / metrics.cellHeightPx)
+        .toInt()
+        .coerceAtLeast(MinGridDimension)

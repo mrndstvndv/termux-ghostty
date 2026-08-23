@@ -11,10 +11,12 @@ import com.termux.terminal.compose.TerminalBackend
  * now owned by the reusable terminal canvas.
  */
 @Composable
+@Suppress("LongParameterList")
 fun TerminalFocusWrapper(
     session: TerminalSession,
     extraKeysController: ExtraKeysController,
     isTerminalActive: Boolean,
+    gpuRenderingEnabled: Boolean = false,
     onBackendCreated: (TerminalSession, TerminalBackend) -> Unit,
     onBackendReleased: (TerminalSession, TerminalBackend) -> Unit,
     onOpenUrl: (String) -> Unit,
@@ -27,6 +29,7 @@ fun TerminalFocusWrapper(
         onBackendReleased = onBackendReleased,
         onOpenUrl = onOpenUrl,
         isTerminalActive = isTerminalActive,
+        gpuRenderingEnabled = gpuRenderingEnabled,
         modifier = modifier
     )
 }

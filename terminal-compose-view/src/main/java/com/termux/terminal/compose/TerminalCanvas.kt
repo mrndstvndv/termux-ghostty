@@ -36,6 +36,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.text
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.zIndex
 import com.termux.terminal.compose.internal.CommandTerminalInput
 import com.termux.terminal.compose.internal.ImeEditCommandProcessor
 import com.termux.terminal.compose.internal.ImeHost
@@ -60,6 +61,10 @@ import com.termux.terminal.compose.internal.updateSelectionHandle
  * enough that the repaint is imperceptible.
  */
 private const val AttachSettleMillis = 64L
+private const val PixelLayerZIndex = 0f
+private const val InputLayerZIndex = 1f
+private const val CursorEffectZIndex = 2f
+private const val SelectionLayerZIndex = 3f
 
 /**
  * Compose terminal canvas.
@@ -199,41 +204,60 @@ private fun TerminalCanvasLayout(
                 }
             }
     ) {
-        Canvas(
-            modifier = Modifier
-                .fillMaxSize()
-                .terminalSemantics(state.visibleText, state.config.accessibilityEnabled)
-                .terminalGestures(
-                    state.controller,
-                    state.metrics,
-                    state.config,
-                    state.selectionState,
-                    state.fontSizeState,
-                    onFontSizeChange = state.config.onFontSizeChange
-                )
+        val inputModifier = Modifier
+            .fillMaxSize()
+            .terminalSemantics(state.visibleText, state.config.accessibilityEnabled)
+            .terminalGestures(
+                state.controller,
+                state.metrics,
+                state.config,
+                state.selectionState,
+                state.fontSizeState,
+                onFontSizeChange = state.config.onFontSizeChange
+            )
             .terminalTaps(
-                    state.controller,
-                    state.metrics,
-                    state.config,
-                    state.selectionState,
-                    state.imeHost,
-                    state.focusRequester,
-                    state.hapticFeedback
-                )
-        ) {
-            state.controller.draw(
-                drawScope = this,
+                state.controller,
+                state.metrics,
+                state.config,
+                state.selectionState,
+                state.imeHost,
+                state.focusRequester,
+                state.hapticFeedback
+            )
+
+        if (state.config.renderer == TerminalRenderer.OPENGL_ES) {
+            GlesTerminalCanvasContent(
+                controller = state.controller,
+                metrics = state.metrics,
                 selection = state.selectionState.selection,
                 contentVersion = state.contentVersionState.intValue,
-                timeSeconds = if (state.controller.isContinuouslyAnimated) {
-                    state.frameTimeState.floatValue
-                } else {
-                    0f
-                }
+                fontSizePx = state.fontSizeState.intValue.toFloat(),
+                config = state.config,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .zIndex(PixelLayerZIndex)
             )
+            Canvas(modifier = inputModifier.zIndex(InputLayerZIndex)) {}
+        } else {
+            Canvas(modifier = inputModifier.zIndex(InputLayerZIndex)) {
+                state.controller.draw(
+                    drawScope = this,
+                    selection = state.selectionState.selection,
+                    contentVersion = state.contentVersionState.intValue,
+                    timeSeconds = if (state.controller.isContinuouslyAnimated) {
+                        state.frameTimeState.floatValue
+                    } else {
+                        0f
+                    }
+                )
+            }
         }
         if (state.config.cursorEffect != null) {
-            Canvas(modifier = Modifier.fillMaxSize()) {
+            Canvas(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .zIndex(CursorEffectZIndex)
+            ) {
                 state.controller.drawCursorEffect(
                     drawScope = this,
                     metrics = state.metrics,
@@ -241,10 +265,16 @@ private fun TerminalCanvasLayout(
                 )
             }
         }
-        TerminalSelectionUi(
-            state = state,
-            onMagnifierEndpointChanged = { magnifierEndpoint = it }
-        )
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .zIndex(SelectionLayerZIndex)
+        ) {
+            TerminalSelectionUi(
+                state = state,
+                onMagnifierEndpointChanged = { magnifierEndpoint = it }
+            )
+        }
     }
 }
 

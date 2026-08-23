@@ -76,6 +76,8 @@ dependencies {
     api 'androidx.compose.ui:ui-graphics'
     api 'androidx.compose.foundation:foundation'
 
+    implementation 'androidx.lifecycle:lifecycle-runtime-compose:2.11.0'
+
     // Internal implementation detail: character-width tables and text-style
     // encoding from the emulator core. No terminal-emulator type appears in the
     // public API of this library.

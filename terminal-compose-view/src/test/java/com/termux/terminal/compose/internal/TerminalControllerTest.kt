@@ -15,9 +15,11 @@ import com.termux.terminal.compose.TerminalCommandResult
 import com.termux.terminal.compose.TerminalFrame
 import com.termux.terminal.compose.TerminalModes
 import com.termux.terminal.compose.TerminalPalette
+import com.termux.terminal.compose.TerminalRow
 import com.termux.terminal.compose.TerminalSize
 import com.termux.terminal.compose.TerminalViewport
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -201,6 +203,31 @@ class TerminalControllerTest {
         assertEquals(5, terminalColumnsForMeasuredCellWidth(38, measuredCellWidthPx))
         assertEquals(5, terminalColumnsForMeasuredCellWidth(39, measuredCellWidthPx))
     }
+
+    @Test
+    fun frameForMetricsRejectsTheOldGridDuringAnAsynchronousResize() {
+        val backend = RecordingBackend(completeFrame(columns = 80, rows = 24))
+        val controller = testController(backend)
+        val oldMetrics = TerminalMetrics.of(
+            cellWidthPx = 8f,
+            cellHeightPx = 16f,
+            ascentPx = -12f,
+            lineSpacingAndAscentPx = 4f,
+            viewportWidthPx = 640,
+            viewportHeightPx = 388
+        )
+        val resizedMetrics = TerminalMetrics.of(
+            cellWidthPx = 8f,
+            cellHeightPx = 16f,
+            ascentPx = -12f,
+            lineSpacingAndAscentPx = 4f,
+            viewportWidthPx = 320,
+            viewportHeightPx = 388
+        )
+
+        assertTrue(controller.currentFrameForMetrics(oldMetrics) != null)
+        assertNull(controller.currentFrameForMetrics(resizedMetrics))
+    }
 }
 
 private object TestCursorEffect : CursorEffect {
@@ -238,13 +265,35 @@ private fun testController(backend: TerminalBackend): TerminalController =
         )
     }
 
+private fun completeFrame(columns: Int, rows: Int): TerminalFrame = TerminalFrame(
+    sequence = 1L,
+    viewport = TerminalViewport(0, rows, columns, rows),
+    cursor = TerminalCursor(0, 0, false, TerminalCursor.STYLE_BLOCK),
+    modes = TerminalModes(false, false, false, false, false),
+    palette = TerminalPalette.of(IntArray(259)),
+    rows = List(rows) {
+        TerminalRow(
+            columns = columns,
+            text = CharArray(0),
+            charsUsed = 0,
+            styles = LongArray(columns),
+            contentHash = 0L,
+            cellLayout = null,
+            isLineWrap = false
+        )
+    },
+    linkLayout = null
+)
+
 private object UnusedGraphicsContext : GraphicsContext {
     override fun createGraphicsLayer(): GraphicsLayer = error("Not used by this test")
 
     override fun releaseGraphicsLayer(layer: GraphicsLayer) = Unit
 }
 
-private class RecordingBackend : TerminalBackend {
+private class RecordingBackend(
+    private val publishedFrame: TerminalFrame? = null
+) : TerminalBackend {
     val resizes = mutableListOf<TerminalSize>()
     val lifecycle = mutableListOf<String>()
     var attachedListener: TerminalBackendListener? = null
@@ -270,7 +319,7 @@ private class RecordingBackend : TerminalBackend {
     override fun submit(command: TerminalCommand): TerminalCommandResult =
         TerminalCommandResult.Unsupported("Not used by this test")
 
-    override fun currentFrame(): TerminalFrame? = null
+    override fun currentFrame(): TerminalFrame? = publishedFrame
 
     override fun release() {
         lifecycle += "release"

@@ -1,3 +1,5 @@
+@file:Suppress("TooManyFunctions")
+
 package com.termux.terminal.compose
 
 import androidx.compose.foundation.Canvas
@@ -37,6 +39,7 @@ import androidx.compose.ui.semantics.text
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.zIndex
+import com.termux.terminal.compose.gpu.GlesTerminalSurface
 import com.termux.terminal.compose.internal.CommandTerminalInput
 import com.termux.terminal.compose.internal.ImeEditCommandProcessor
 import com.termux.terminal.compose.internal.ImeHost
@@ -188,6 +191,7 @@ private fun TerminalCanvasLayout(
             .terminalKeyHandling(state.translator, state.selectionState, state.config)
             .terminalSelectionMagnifier(
                 visible = magnifierEndpoint != null && !selection.isEmpty &&
+                    state.config.renderer != TerminalRenderer.OPENGL_ES &&
                     state.controller.currentFrame() != null
             ) {
                 val endpoint = magnifierEndpoint
@@ -225,8 +229,8 @@ private fun TerminalCanvasLayout(
                 state.hapticFeedback
             )
 
-        if (state.config.renderer == TerminalRenderer.OPENGL_ES) {
-            GlesTerminalCanvasContent(
+        val glesSurface = if (state.config.renderer == TerminalRenderer.OPENGL_ES) {
+            val surface = glesTerminalCanvasContent(
                 controller = state.controller,
                 metrics = state.metrics,
                 selection = state.selectionState.selection,
@@ -238,6 +242,7 @@ private fun TerminalCanvasLayout(
                     .zIndex(PixelLayerZIndex)
             )
             Canvas(modifier = inputModifier.zIndex(InputLayerZIndex)) {}
+            surface
         } else {
             Canvas(modifier = inputModifier.zIndex(InputLayerZIndex)) {
                 state.controller.draw(
@@ -251,6 +256,7 @@ private fun TerminalCanvasLayout(
                     }
                 )
             }
+            null
         }
         if (state.config.cursorEffect != null) {
             Canvas(
@@ -272,6 +278,8 @@ private fun TerminalCanvasLayout(
         ) {
             TerminalSelectionUi(
                 state = state,
+                magnifierEndpoint = magnifierEndpoint,
+                gpuSurface = glesSurface,
                 onMagnifierEndpointChanged = { magnifierEndpoint = it }
             )
         }
@@ -281,10 +289,20 @@ private fun TerminalCanvasLayout(
 @Composable
 private fun TerminalSelectionUi(
     state: TerminalCanvasState,
+    magnifierEndpoint: SelectionHandleEndpoint?,
+    gpuSurface: GlesTerminalSurface?,
     onMagnifierEndpointChanged: (SelectionHandleEndpoint?) -> Unit
 ) {
     val hostView = LocalView.current
     val selection = state.selectionState.selection
+    GlesSelectionMagnifierEffect(
+        endpoint = magnifierEndpoint,
+        gpuSurface = gpuSurface,
+        selection = selection,
+        controller = state.controller,
+        contentVersion = state.contentVersionState.intValue,
+        metrics = state.metrics
+    )
     val selectionActionMode = remember(hostView) { TerminalSelectionActionMode(hostView) }
     val selectionHandleColor = rememberSelectionHandleColor(state.config.selectionHandleColor)
     DisposableEffect(selectionActionMode) {
@@ -312,6 +330,7 @@ private fun TerminalSelectionUi(
         },
         onHandleDragEnd = {
             onMagnifierEndpointChanged(null)
+            gpuSurface?.dismissSelectionMagnifier()
             selectionActionMode.showAfterHandleDrag()
         },
         onHandleDrag = { endpoint, x, y ->
@@ -325,6 +344,35 @@ private fun TerminalSelectionUi(
             )
         }
     )
+}
+
+@Composable
+private fun GlesSelectionMagnifierEffect(
+    endpoint: SelectionHandleEndpoint?,
+    gpuSurface: GlesTerminalSurface?,
+    selection: TerminalSelection,
+    controller: TerminalController,
+    contentVersion: Int,
+    metrics: TerminalMetrics
+) {
+    LaunchedEffect(gpuSurface, endpoint, selection, contentVersion, metrics) {
+        if (gpuSurface == null || endpoint == null || selection.isEmpty) {
+            gpuSurface?.dismissSelectionMagnifier()
+            return@LaunchedEffect
+        }
+        val frame = controller.currentFrame()
+        if (frame == null) {
+            gpuSurface.dismissSelectionMagnifier()
+            return@LaunchedEffect
+        }
+        val source = selectionMagnifierSourceForSelection(
+            endpoint = endpoint,
+            selection = selection,
+            topRow = frame.topRow,
+            metrics = metrics
+        )
+        gpuSurface.showSelectionMagnifier(source.x, source.y)
+    }
 }
 
 @Composable

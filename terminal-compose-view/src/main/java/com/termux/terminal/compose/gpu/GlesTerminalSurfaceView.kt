@@ -12,6 +12,7 @@ internal class GlesTerminalSurfaceView(
     private val surface: GlesTerminalSurface
 ) : GLSurfaceView(context) {
     private val terminalRenderer = GlesTerminalRenderer(surface, ::requestRender)
+    private val selectionMagnifier = GlesSelectionMagnifier(this)
     private var resumed = false
     private var disposed = false
     private var attachedToWindow = false
@@ -40,6 +41,7 @@ internal class GlesTerminalSurfaceView(
         if (disposed || surface.isReleased()) return
         attachedToWindow = true
         surface.attachView(
+            view = this,
             request = ::requestRender,
             releaseResources = ::queueGlRelease,
             lifecycleActive = ::setLifecycleActive
@@ -48,7 +50,7 @@ internal class GlesTerminalSurfaceView(
 
     override fun onDetachedFromWindow() {
         attachedToWindow = false
-        surface.detachView()
+        surface.detachView(this)
         setLifecycleActive(false)
         super.onDetachedFromWindow()
     }
@@ -57,7 +59,7 @@ internal class GlesTerminalSurfaceView(
         if (disposed) return
         disposed = true
         attachedToWindow = false
-        surface.detachView()
+        surface.detachView(this)
         // Queue while the GLSurfaceView still owns this renderer, before pause.
         queueGlRelease()
         surface.release()
@@ -85,6 +87,18 @@ internal class GlesTerminalSurfaceView(
         if (!resumed) return
         resumed = false
         onPause()
+    }
+
+    internal fun showSelectionMagnifier(sourceCenterX: Float, sourceCenterY: Float) {
+        selectionMagnifier.show(sourceCenterX, sourceCenterY)
+    }
+
+    internal fun updateSelectionMagnifierContent() {
+        selectionMagnifier.updateContent()
+    }
+
+    internal fun dismissSelectionMagnifier() {
+        selectionMagnifier.dismiss()
     }
 
     private fun queueGlRelease() {

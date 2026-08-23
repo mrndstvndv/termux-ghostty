@@ -216,6 +216,9 @@ class GlesTerminalSurface(
     private val mainHandler = Handler(Looper.getMainLooper())
     private val pendingDiagnostic = AtomicReference<GlesTerminalDiagnostic?>(null)
     private val diagnosticPosted = AtomicBoolean(false)
+    private val selectionMagnifierView = AtomicReference<GlesTerminalSurfaceView?>(null)
+    private val selectionMagnifierRequest = AtomicReference<SelectionMagnifierRequest?>(null)
+    private val magnifierUpdatePosted = AtomicBoolean(false)
 
     /** Publishes one complete frame without blocking the caller. */
     fun publish(snapshot: GlesTerminalSnapshot): Boolean {
@@ -291,6 +294,11 @@ class GlesTerminalSurface(
         } catch (_: RuntimeException) {
             // The AndroidView release path performs an idempotent pause as well.
         }
+        selectionMagnifierRequest.set(null)
+        val magnifierView = selectionMagnifierView.getAndSet(null)
+        if (magnifierView != null) {
+            mainHandler.post(magnifierView::dismissSelectionMagnifier)
+        }
         pendingDiagnostic.set(null)
     }
 
@@ -302,20 +310,65 @@ class GlesTerminalSurface(
 
     internal fun consumeAtlasReset(): Boolean = atlasResetRequested.compareAndSet(true, false)
 
+    internal fun showSelectionMagnifier(sourceCenterX: Float, sourceCenterY: Float) {
+        if (released.get()) return
+        val request = SelectionMagnifierRequest(sourceCenterX, sourceCenterY)
+        selectionMagnifierRequest.set(request)
+        selectionMagnifierView.get()?.showSelectionMagnifier(sourceCenterX, sourceCenterY)
+    }
+
+    internal fun dismissSelectionMagnifier() {
+        selectionMagnifierRequest.set(null)
+        selectionMagnifierView.get()?.dismissSelectionMagnifier()
+    }
+
+    /** Schedules a main-thread content refresh after a complete GL frame is presented. */
+    internal fun notifyFramePresented() {
+        if (released.get() || selectionMagnifierRequest.get() == null) return
+        if (!magnifierUpdatePosted.compareAndSet(false, true)) return
+        mainHandler.post {
+            if (released.get() || selectionMagnifierRequest.get() == null) {
+                magnifierUpdatePosted.set(false)
+                return@post
+            }
+            val view = selectionMagnifierView.get()
+            if (view == null) {
+                magnifierUpdatePosted.set(false)
+                return@post
+            }
+            // GLSurfaceView swaps after onDrawFrame returns. Wait for the next UI frame so
+            // Magnifier.update() copies the newly swapped buffer rather than the previous one.
+            view.postOnAnimation {
+                magnifierUpdatePosted.set(false)
+                if (released.get() || selectionMagnifierRequest.get() == null) return@postOnAnimation
+                if (selectionMagnifierView.get() === view) {
+                    view.updateSelectionMagnifierContent()
+                }
+            }
+        }
+    }
+
     internal fun attachView(
+        view: GlesTerminalSurfaceView,
         request: () -> Unit,
         releaseResources: () -> Unit,
         lifecycleActive: (Boolean) -> Unit
     ) {
         if (released.get()) return
+        selectionMagnifierView.set(view)
         requestRender.set(request)
         releaseGlResources.set(releaseResources)
         lifecycleDecision.set(lifecycleActive)
         lifecycleActive(this.lifecycleActive.get())
+        selectionMagnifierRequest.get()?.let { pending ->
+            view.showSelectionMagnifier(pending.sourceCenterX, pending.sourceCenterY)
+        }
         if (handoff.hasPending()) request()
     }
 
-    internal fun detachView() {
+    internal fun detachView(view: GlesTerminalSurfaceView) {
+        if (!selectionMagnifierView.compareAndSet(view, null)) return
+        view.dismissSelectionMagnifier()
         requestRender.set(null)
         releaseGlResources.set(null)
         lifecycleDecision.set(null)
@@ -347,6 +400,11 @@ class GlesTerminalSurface(
         }
     }
 }
+
+private data class SelectionMagnifierRequest(
+    val sourceCenterX: Float,
+    val sourceCenterY: Float
+)
 
 /** Creates and owns a GLES surface controller for a composable host. */
 @Composable

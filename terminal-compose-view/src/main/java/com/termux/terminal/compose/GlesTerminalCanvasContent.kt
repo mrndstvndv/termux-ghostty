@@ -12,7 +12,7 @@ import java.util.concurrent.atomic.AtomicLong
 
 /** Publishes complete immutable frames to GLES while Compose continues to own interaction. */
 @Composable
-internal fun GlesTerminalCanvasContent(
+internal fun glesTerminalCanvasContent(
     controller: TerminalController,
     metrics: TerminalMetrics,
     selection: TerminalSelection,
@@ -20,7 +20,7 @@ internal fun GlesTerminalCanvasContent(
     fontSizePx: Float,
     config: TerminalCanvasConfig,
     modifier: Modifier = Modifier
-) {
+): GlesTerminalSurface {
     // A controller owns one session/frame sequence. Recreate the surface when
     // that owner changes so a restarted sequence cannot inherit old watermarks.
     val surface = rememberGlesTerminalSurface(surfaceKey = controller)
@@ -61,4 +61,5 @@ internal fun GlesTerminalCanvasContent(
         surface = surface,
         modifier = modifier
     )
+    return surface
 }

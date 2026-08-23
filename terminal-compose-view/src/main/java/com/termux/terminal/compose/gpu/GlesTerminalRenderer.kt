@@ -200,6 +200,7 @@ internal class GlesTerminalRenderer(
         drawCount++
         presentedSnapshot = snapshot
         lastAnimationTime = animationTime
+        surface.notifyFramePresented()
         reportState(
             force = atlasReset || drawCount == 1L || drawCount % DiagnosticFrameInterval == 0L
         )

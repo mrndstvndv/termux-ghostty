@@ -1,6 +1,5 @@
 package com.termux.terminal.compose.gpu
 
-import android.graphics.Rect
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -82,7 +81,7 @@ class GlyphAtlasTest {
     @Test
     fun rasterGeometryKeepsSkewedInkInsideTheAtlasAndPreservesItsBearing() {
         val geometry = glyphRasterGeometry(
-            bounds = Rect(-2, -12, 10, 2),
+            bounds = GlyphPaintBounds(-2, -12, 10, 2),
             measuredWidth = 9f,
             cellHeightPx = 16f,
             fontAscentPx = -12f,
@@ -93,7 +92,7 @@ class GlyphAtlasTest {
         assertEquals(16, geometry.height)
         assertEquals(-3f, geometry.drawOffsetX, 0f)
         assertEquals(-1f, geometry.drawOffsetY, 0f)
-        assertEquals(3, geometry.drawOriginX)
-        assertEquals(13, geometry.drawBaselineY)
+        assertEquals(3f, geometry.drawOriginX, 0f)
+        assertEquals(13f, geometry.drawBaselineY, 0f)
     }
 }

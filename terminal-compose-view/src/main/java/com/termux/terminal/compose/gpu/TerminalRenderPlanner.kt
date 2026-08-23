@@ -40,9 +40,7 @@ internal class TerminalRenderPlan(
  * The planner owns no backend or Compose state. Its lists belong to one draw
  * and are never retained by the GL thread after the snapshot is replaced.
  */
-internal class TerminalRenderPlanner(
-    private val atlasPaddingPx: Int
-) {
+internal class TerminalRenderPlanner {
     private val measurePaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.SUBPIXEL_TEXT_FLAG)
 
     fun plan(snapshot: GlesTerminalSnapshot): TerminalRenderPlan {
@@ -175,8 +173,8 @@ internal class TerminalRenderPlanner(
                             underline = effect and TextStyle.CHARACTER_ATTRIBUTE_UNDERLINE != 0,
                             strikeThrough = effect and TextStyle.CHARACTER_ATTRIBUTE_STRIKETHROUGH != 0
                         ),
-                        left = left - atlasPaddingPx,
-                        top = rowTop - atlasPaddingPx
+                        left = left,
+                        top = rowTop
                     )
                 }
             }
@@ -279,7 +277,11 @@ internal class TerminalRenderPlanner(
         measurePaint.isFakeBoldText = effect and (
             TextStyle.CHARACTER_ATTRIBUTE_BOLD or TextStyle.CHARACTER_ATTRIBUTE_BLINK
         ) != 0
-        measurePaint.textSkewX = if (effect and TextStyle.CHARACTER_ATTRIBUTE_ITALIC != 0) -0.35f else 0f
+        measurePaint.textSkewX = if (effect and TextStyle.CHARACTER_ATTRIBUTE_ITALIC != 0) {
+            GlesItalicTextSkewX
+        } else {
+            0f
+        }
         val measuredWidth = measurePaint.measureText(text)
         if (measuredWidth <= 0f) return metrics.textScaleX
         return (metrics.textScaleX * targetWidth / measuredWidth).coerceIn(0.05f, 20f)

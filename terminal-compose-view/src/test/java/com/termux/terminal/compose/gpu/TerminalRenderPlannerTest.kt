@@ -1,11 +1,15 @@
 package com.termux.terminal.compose.gpu
 
+import com.termux.terminal.TextStyle
+import com.termux.terminal.compose.TerminalCellLayout
 import com.termux.terminal.compose.TerminalCursor
 import com.termux.terminal.compose.TerminalFrame
 import com.termux.terminal.compose.TerminalLinkLayout
 import com.termux.terminal.compose.TerminalLinkSegment
+import com.termux.terminal.compose.TerminalRow
 import com.termux.terminal.compose.TerminalSelection
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -33,7 +37,7 @@ class TerminalRenderPlannerTest {
             selection = TerminalSelection(0, 0, 0, 0)
         )
 
-        val plan = TerminalRenderPlanner(atlasPaddingPx = 1).plan(snapshot)
+        val plan = TerminalRenderPlanner().plan(snapshot)
 
         assertEquals(2, plan.glyphs.size)
         assertEquals("🧠", plan.glyphs[1].key.text)
@@ -50,6 +54,42 @@ class TerminalRenderPlannerTest {
     }
 
     @Test
+    fun keepsItalicAtlasVariantScopedToItalicCells() {
+        val base = testFrame(13L)
+        val italicStyle = indexedStyle(3, 0, TextStyle.CHARACTER_ATTRIBUTE_ITALIC)
+        val row = TerminalRow(
+            columns = 2,
+            text = "AB".toCharArray(),
+            charsUsed = 2,
+            styles = longArrayOf(indexedStyle(3, 0), italicStyle),
+            contentHash = 13L,
+            cellLayout = TerminalCellLayout(
+                start = intArrayOf(0, 1),
+                length = intArrayOf(1, 1),
+                displayWidth = intArrayOf(1, 1)
+            ),
+            isLineWrap = false
+        )
+        val frame = TerminalFrame(
+            sequence = base.sequence,
+            viewport = base.viewport.copy(columns = 2),
+            cursor = base.cursor,
+            modes = base.modes,
+            palette = base.palette,
+            rows = listOf(row),
+            linkLayout = null
+        )
+
+        val plan = TerminalRenderPlanner().plan(
+            GlesTerminalSnapshot(frame, testSnapshot(13L).metrics)
+        )
+
+        assertEquals(2, plan.glyphs.size)
+        assertFalse(plan.glyphs[0].key.italic)
+        assertTrue(plan.glyphs[1].key.italic)
+    }
+
+    @Test
     fun plansAllCursorShapesWithoutChangingTheSnapshot() {
         val base = testFrame(12L)
         val metrics = testSnapshot(12L).metrics
@@ -61,7 +101,7 @@ class TerminalRenderPlannerTest {
 
         expectedRight.forEach { (style, right) ->
             val frame = frameWith(base, style, null)
-            val plan = TerminalRenderPlanner(1).plan(GlesTerminalSnapshot(frame, metrics))
+            val plan = TerminalRenderPlanner().plan(GlesTerminalSnapshot(frame, metrics))
             assertEquals(right, plan.cursorQuads.single().right, 0f)
         }
         assertEquals(12L, base.sequence)

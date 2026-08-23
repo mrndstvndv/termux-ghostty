@@ -169,7 +169,7 @@ internal class GlesTerminalRenderer(
             if (atlasReset) {
                 currentResources.atlas.reset { pendingGlyphFlush?.invoke() }
             }
-            TerminalRenderPlanner(currentResources.atlasPaddingPx).plan(snapshot)
+            TerminalRenderPlanner().plan(snapshot)
         } catch (error: GlesRendererException) {
             presentFallback(snapshot, "plan", error.message ?: "GLES plan failed")
             return
@@ -228,8 +228,7 @@ internal class GlesTerminalRenderer(
             GlesResources(
                 program = program,
                 bufferRing = GlesBufferRing.create(VertexBufferBytes),
-                atlas = GlesGlyphAtlas(limits),
-                atlasPaddingPx = limits.paddingPx
+                atlas = GlesGlyphAtlas(limits)
             )
         } catch (error: GlesRendererException) {
             program.release()
@@ -300,10 +299,10 @@ internal class GlesTerminalRenderer(
             appendQuad(
                 buffer = vertexBuffer,
                 quad = TerminalQuad(
-                    left = glyph.placement.left,
-                    top = glyph.placement.top,
-                    right = glyph.placement.left + region.width,
-                    bottom = glyph.placement.top + region.height,
+                    left = glyph.placement.left + region.drawOffsetX,
+                    top = glyph.placement.top + region.drawOffsetY,
+                    right = glyph.placement.left + region.drawOffsetX + region.width,
+                    bottom = glyph.placement.top + region.drawOffsetY + region.height,
                     argb = 0xFFFFFFFF.toInt()
                 ),
                 u0 = region.left / pageSize,
@@ -478,8 +477,7 @@ internal class GlesTerminalRenderer(
     private class GlesResources(
         val program: GlesProgram,
         val bufferRing: GlesBufferRing,
-        val atlas: GlesGlyphAtlas,
-        val atlasPaddingPx: Int
+        val atlas: GlesGlyphAtlas
     ) {
         fun release() {
             try {

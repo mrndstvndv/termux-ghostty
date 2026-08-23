@@ -3,11 +3,14 @@ package com.termux.terminal.compose.gpu
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
+import android.graphics.Rect
 import android.graphics.Typeface
 import android.opengl.GLES30
 import android.opengl.GLUtils
 import kotlin.math.ceil
 import java.util.LinkedHashMap
+
+internal const val GlesItalicTextSkewX = -0.35f
 
 /** Hard bounds for one RGBA glyph atlas. */
 data class GlyphAtlasLimits(
@@ -79,7 +82,10 @@ data class GlyphAtlasRegion(
     val top: Int,
     val width: Int,
     val height: Int,
-    val atlasGeneration: Int
+    val atlasGeneration: Int,
+    /** Screen offset from the terminal cell origin to the atlas quad origin. */
+    val drawOffsetX: Float = 0f,
+    val drawOffsetY: Float = 0f
 ) {
     val right: Int
         get() = left + width
@@ -126,7 +132,9 @@ internal class GlyphAtlasAllocator(
     fun allocateNew(
         key: GlyphAtlasKey,
         width: Int,
-        height: Int
+        height: Int,
+        drawOffsetX: Float = 0f,
+        drawOffsetY: Float = 0f
     ): GlyphAtlasAllocation? {
         require(width > 0) { "width must be positive" }
         require(height > 0) { "height must be positive" }
@@ -156,7 +164,9 @@ internal class GlyphAtlasAllocator(
             top = placement.top,
             width = width,
             height = height,
-            atlasGeneration = generation
+            atlasGeneration = generation,
+            drawOffsetX = drawOffsetX,
+            drawOffsetY = drawOffsetY
         )
         entries[key] = region
         usedAreaPx += width * height
@@ -229,7 +239,76 @@ internal class GlyphAtlasAllocator(
     }
 }
 
-internal data class RasterizedGlyph(val bitmap: Bitmap)
+internal data class GlyphRasterGeometry(
+    val width: Int,
+    val height: Int,
+    val drawOffsetX: Float,
+    val drawOffsetY: Float,
+    val drawOriginX: Float,
+    val drawBaselineY: Float
+)
+
+internal data class GlyphPaintBounds(
+    val left: Int,
+    val top: Int,
+    val right: Int,
+    val bottom: Int
+) {
+    val width: Int
+        get() = right - left
+    val height: Int
+        get() = bottom - top
+}
+
+/**
+ * Computes a bitmap rectangle and its bearing from Android's painted bounds.
+ * The atlas quad is positioned at the terminal cell origin, not at the bitmap
+ * origin, so skewed glyph overhangs cannot be clipped at cell boundaries.
+ */
+internal fun glyphRasterGeometry(
+    bounds: GlyphPaintBounds,
+    measuredWidth: Float,
+    cellHeightPx: Float,
+    fontAscentPx: Float,
+    paddingPx: Int
+): GlyphRasterGeometry {
+    val fallbackWidth = ceil(measuredWidth.coerceAtLeast(1f)).toInt()
+    val boundsWidth = bounds.width
+    val boundsHeight = bounds.height
+    if (boundsWidth <= 0 || boundsHeight <= 0) {
+        val width = fallbackWidth + paddingPx * 2
+        val height = ceil(cellHeightPx).toInt() + paddingPx * 2
+        val drawOriginX = paddingPx.toFloat()
+        val drawBaselineY = paddingPx.toFloat() - fontAscentPx
+        return GlyphRasterGeometry(
+            width = width,
+            height = height,
+            drawOffsetX = -drawOriginX,
+            drawOffsetY = -paddingPx.toFloat(),
+            drawOriginX = drawOriginX,
+            drawBaselineY = drawBaselineY
+        )
+    }
+
+    val width = maxOf(boundsWidth, fallbackWidth) + paddingPx * 2
+    val height = boundsHeight + paddingPx * 2
+    val drawOriginX = paddingPx - bounds.left.toFloat()
+    val drawBaselineY = paddingPx - bounds.top.toFloat()
+    return GlyphRasterGeometry(
+        width = width,
+        height = height,
+        drawOffsetX = -drawOriginX,
+        drawOffsetY = -fontAscentPx - drawBaselineY,
+        drawOriginX = drawOriginX,
+        drawBaselineY = drawBaselineY
+    )
+}
+
+internal data class RasterizedGlyph(
+    val bitmap: Bitmap,
+    val drawOffsetX: Float,
+    val drawOffsetY: Float
+)
 
 /** Android Paint/Canvas rasterizer; it is called only by the GL renderer thread. */
 internal class AndroidGlyphRasterizer {
@@ -243,7 +322,7 @@ internal class AndroidGlyphRasterizer {
         paint.color = key.foregroundArgb
         paint.textScaleX = key.textScaleX
         paint.isFakeBoldText = key.bold
-        paint.textSkewX = if (key.italic) -0.35f else 0f
+        paint.textSkewX = if (key.italic) GlesItalicTextSkewX else 0f
         paint.isUnderlineText = key.underline
         paint.isStrikeThruText = key.strikeThrough
 
@@ -253,27 +332,39 @@ internal class AndroidGlyphRasterizer {
         if (measuredWidth > availableWidth) {
             paint.textScaleX *= availableWidth / measuredWidth
         }
-        val width = ceil(paint.measureText(key.text).coerceAtLeast(1f)).toInt() +
-            limits.paddingPx * 2
-        val height = ceil(key.cellHeightPx).toInt() + limits.paddingPx * 2
-        if (width > limits.maxGlyphWidthPx || height > limits.maxGlyphHeightPx) return null
+        val paintedBounds = Rect()
+        paint.getTextBounds(key.text, 0, key.text.length, paintedBounds)
+        val geometry = glyphRasterGeometry(
+            bounds = GlyphPaintBounds(
+                left = paintedBounds.left,
+                top = paintedBounds.top,
+                right = paintedBounds.right,
+                bottom = paintedBounds.bottom
+            ),
+            measuredWidth = paint.measureText(key.text),
+            cellHeightPx = key.cellHeightPx,
+            fontAscentPx = key.fontAscentPx,
+            paddingPx = limits.paddingPx
+        )
+        if (geometry.width > limits.maxGlyphWidthPx || geometry.height > limits.maxGlyphHeightPx) {
+            return null
+        }
 
-        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val bitmap = Bitmap.createBitmap(geometry.width, geometry.height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
         val chars = key.text.toCharArray()
-        val baseline = limits.paddingPx.toFloat() - key.fontAscentPx
         canvas.drawTextRun(
             chars,
             0,
             chars.size,
             0,
             chars.size,
-            limits.paddingPx.toFloat(),
-            baseline,
+            geometry.drawOriginX,
+            geometry.drawBaselineY,
             false,
             paint
         )
-        return RasterizedGlyph(bitmap)
+        return RasterizedGlyph(bitmap, geometry.drawOffsetX, geometry.drawOffsetY)
     }
 }
 
@@ -300,7 +391,13 @@ internal class GlesGlyphAtlas(
         if (existing != null) return existing
 
         val rasterized = rasterizer.rasterize(key, limits) ?: return null
-        val allocation = allocator.allocateNew(key, rasterized.bitmap.width, rasterized.bitmap.height)
+        val allocation = allocator.allocateNew(
+            key = key,
+            width = rasterized.bitmap.width,
+            height = rasterized.bitmap.height,
+            drawOffsetX = rasterized.drawOffsetX,
+            drawOffsetY = rasterized.drawOffsetY
+        )
         if (allocation == null) {
             if (!rasterized.bitmap.isRecycled) rasterized.bitmap.recycle()
             return null

@@ -9,6 +9,7 @@ import com.termux.terminal.compose.TerminalMetrics
 import com.termux.terminal.compose.TerminalPalette
 import com.termux.terminal.compose.TerminalSelection
 import com.termux.terminal.compose.internal.resolveEffectiveForegroundColor
+import java.util.IdentityHashMap
 import kotlin.math.abs
 
 internal const val GlesStyleFlagOverlayReverse = 1
@@ -50,7 +51,6 @@ internal class TerminalRenderPlan(
 }
 
 internal class TerminalRenderRowPlan(
-    val rowIndex: Int,
     val cellBackgrounds: List<TerminalQuad>,
     val cursorQuads: List<TerminalQuad>,
     val glyphs: List<TerminalGlyphPlacement>,
@@ -81,8 +81,6 @@ internal class TerminalRenderPlanner {
             return cachedPlan ?: error("cached GLES plan is missing")
         }
 
-        val frame = snapshot.frame
-        ensureRowPlanCapacity(frame.rowsVisible)
         return TerminalRenderPlan(planRows(snapshot)).also { nextPlan ->
             cachedSnapshot = snapshot
             cachedPlan = nextPlan
@@ -91,19 +89,28 @@ internal class TerminalRenderPlanner {
 
     private fun planRows(snapshot: GlesTerminalSnapshot): List<TerminalRenderRowPlan?> {
         val frame = snapshot.frame
+        val previousPlansByRow = IdentityHashMap<com.termux.terminal.compose.TerminalRow, CachedRowPlan>()
+        rowPlans.filterNotNull().forEach { cached ->
+            previousPlansByRow[cached.row] = cached
+        }
         val plannedRows = arrayOfNulls<TerminalRenderRowPlan>(frame.rowsVisible)
+        val nextRowPlans = arrayOfNulls<CachedRowPlan>(frame.rowsVisible)
         for (rowIndex in 0 until frame.rowsVisible) {
             val row = frame.row(rowIndex) ?: continue
-            plannedRows[rowIndex] = planRowFor(snapshot, rowIndex, row)
+            val result = planRowFor(snapshot, rowIndex, row, previousPlansByRow[row])
+            plannedRows[rowIndex] = result.plan
+            nextRowPlans[rowIndex] = result
         }
+        rowPlans = nextRowPlans
         return plannedRows.toList()
     }
 
     private fun planRowFor(
         snapshot: GlesTerminalSnapshot,
         rowIndex: Int,
-        row: com.termux.terminal.compose.TerminalRow
-    ): TerminalRenderRowPlan {
+        row: com.termux.terminal.compose.TerminalRow,
+        cached: CachedRowPlan?
+    ): CachedRowPlan {
         val frame = snapshot.frame
         val absoluteRow = frame.topRow + rowIndex
         val selection = selectionRange(snapshot.selection, absoluteRow, frame.columns)
@@ -113,18 +120,16 @@ internal class TerminalRenderPlanner {
             ?.takeIf { it.frameSequence == frame.sequence }
             ?.rowSegments(rowIndex)
             ?.takeIf { it.isNotEmpty() }
-        val cached = rowPlans[rowIndex]
         if (cached != null && cached.matches(
                 snapshot = snapshot,
                 row = row,
-                rowIndex = rowIndex,
                 absoluteRow = absoluteRow,
                 selectionStart = selectionStart,
                 selectionEnd = selectionEnd,
                 linkSegments = linkSegments
             )
         ) {
-            return cached.plan
+            return cached
         }
 
         val nextPlan = planRow(
@@ -136,13 +141,11 @@ internal class TerminalRenderPlanner {
             selectionEnd = selectionEnd,
             linkSegments = linkSegments
         )
-        rowPlans[rowIndex] = CachedRowPlan(
+        return CachedRowPlan(
             row = row,
-            rowIndex = rowIndex,
-            absoluteRow = absoluteRow,
             selectionStart = selectionStart,
             selectionEnd = selectionEnd,
-            cursor = frame.cursor,
+            cursor = frame.cursor.takeIf { it.visible && it.row == absoluteRow },
             reverseVideo = frame.reverseVideo,
             palette = frame.palette,
             columns = frame.columns,
@@ -152,7 +155,6 @@ internal class TerminalRenderPlanner {
             linkSegments = linkSegments,
             plan = nextPlan
         )
-        return nextPlan
     }
 
     private fun canReuseWholePlan(
@@ -166,19 +168,12 @@ internal class TerminalRenderPlanner {
         previous.visual.typeface == next.visual.typeface &&
         previous.visual.fontSizePx == next.visual.fontSizePx
 
-    private fun ensureRowPlanCapacity(requiredRows: Int) {
-        if (requiredRows <= rowPlans.size) return
-        rowPlans = rowPlans.copyOf(requiredRows)
-    }
-
     @Suppress("LongParameterList")
     private class CachedRowPlan(
-        private val row: com.termux.terminal.compose.TerminalRow,
-        private val rowIndex: Int,
-        private val absoluteRow: Int,
+        val row: com.termux.terminal.compose.TerminalRow,
         private val selectionStart: Int,
         private val selectionEnd: Int,
-        private val cursor: TerminalCursor,
+        private val cursor: TerminalCursor?,
         private val reverseVideo: Boolean,
         private val palette: TerminalPalette,
         private val columns: Int,
@@ -192,7 +187,6 @@ internal class TerminalRenderPlanner {
         fun matches(
             snapshot: GlesTerminalSnapshot,
             row: com.termux.terminal.compose.TerminalRow,
-            rowIndex: Int,
             absoluteRow: Int,
             selectionStart: Int,
             selectionEnd: Int,
@@ -202,19 +196,22 @@ internal class TerminalRenderPlanner {
             val paletteMatches = this.palette === frame.palette ||
                 (plan.cursorQuads.isEmpty() &&
                     plan.glyphs.none { it.key.rasterMode == GlyphAtlasKey.RASTER_MODE_RGBA })
+            val cursor = frame.cursor.takeIf { it.visible && it.row == absoluteRow }
+            val linkSegmentsMatch = this.linkSegments === linkSegments ||
+                (this.linkSegments != null &&
+                    linkSegments != null &&
+                    this.linkSegments.contentEquals(linkSegments))
             return this.row === row &&
-                this.rowIndex == rowIndex &&
-                this.absoluteRow == absoluteRow &&
                 this.selectionStart == selectionStart &&
                 this.selectionEnd == selectionEnd &&
-                this.cursor == frame.cursor &&
+                this.cursor == cursor &&
                 this.reverseVideo == frame.reverseVideo &&
                 paletteMatches &&
                 this.columns == frame.columns &&
                 this.metrics === snapshot.metrics &&
                 this.typeface == snapshot.visual.typeface &&
                 this.fontSizePx == snapshot.visual.fontSizePx &&
-                this.linkSegments === linkSegments
+                linkSegmentsMatch
         }
     }
 
@@ -235,7 +232,7 @@ internal class TerminalRenderPlanner {
     ): TerminalRenderRowPlan {
         val metrics = snapshot.metrics
         val absoluteRow = frame.topRow + rowIndex
-        val rowTop = rowIndex * metrics.cellHeightPx
+        val rowTop = 0f
         val selection = if (selectionStart >= 0 && selectionEnd >= selectionStart) {
             selectionStart..selectionEnd
         } else {
@@ -356,7 +353,6 @@ internal class TerminalRenderPlanner {
             decorations = decorations
         )
         return TerminalRenderRowPlan(
-            rowIndex = rowIndex,
             cellBackgrounds = cellBackgrounds.toList(),
             cursorQuads = cursorQuads.toList(),
             glyphs = glyphs.toList(),
@@ -377,7 +373,7 @@ internal class TerminalRenderPlanner {
     ) {
         val segments = linkSegments ?: return
         val metrics = snapshot.metrics
-        val baseline = rowIndex * metrics.cellHeightPx + metrics.cellHeightPx
+        val baseline = metrics.cellHeightPx
         val thickness = maxOf(1f, (snapshot.visual.fontSizePx / 14f).toInt().toFloat())
         val underlineBottom = baseline - maxOf(1f, thickness * 0.5f)
         val underlineTop = underlineBottom - thickness

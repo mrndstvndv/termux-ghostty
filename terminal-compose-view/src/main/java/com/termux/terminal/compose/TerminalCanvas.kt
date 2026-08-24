@@ -16,6 +16,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
@@ -69,6 +70,13 @@ private const val InputLayerZIndex = 1f
 private const val CursorEffectZIndex = 2f
 private const val SelectionLayerZIndex = 3f
 
+internal fun requiresComposeFrameUpdate(
+    renderer: TerminalRenderer,
+    accessibilityEnabled: Boolean,
+    selectionActive: Boolean
+): Boolean = renderer != TerminalRenderer.OPENGL_ES ||
+    accessibilityEnabled || selectionActive
+
 /**
  * Compose terminal canvas.
  *
@@ -101,7 +109,9 @@ fun TerminalCanvas(
 
     val controller = rememberConfiguredController(
         backend, graphicsContext, frameTimeState, fontSizeState, config,
-        onInvalidated = { contentVersionState.intValue++ }
+        onInvalidated = {
+            requestComposeFrameIfRequired(config, selectionState, contentVersionState)
+        }
     )
     // Initial-frame safety net: a frame published before the canvas attached
     // (or while the backend was still wiring itself to the session) never
@@ -150,6 +160,22 @@ fun TerminalCanvas(
         onViewportSizeChanged = { viewportSizePx = it },
         onCanvasPositionChanged = { canvasPositionInWindow = it }
     )
+}
+
+private fun requestComposeFrameIfRequired(
+    config: TerminalCanvasConfig,
+    selectionState: TerminalSelectionState,
+    contentVersionState: MutableIntState
+) {
+    if (!requiresComposeFrameUpdate(
+            renderer = config.renderer,
+            accessibilityEnabled = config.accessibilityEnabled,
+            selectionActive = !selectionState.selection.isEmpty
+        )
+    ) {
+        return
+    }
+    contentVersionState.intValue++
 }
 
 private data class TerminalCanvasState(
@@ -234,7 +260,6 @@ private fun TerminalCanvasLayout(
                 controller = state.controller,
                 metrics = state.metrics,
                 selection = state.selectionState.selection,
-                contentVersion = state.contentVersionState.intValue,
                 fontSizePx = state.fontSizeState.intValue.toFloat(),
                 config = state.config,
                 modifier = Modifier
@@ -258,7 +283,7 @@ private fun TerminalCanvasLayout(
             }
             null
         }
-        if (state.config.cursorEffect != null) {
+        if (state.config.cursorEffect != null && state.config.renderer != TerminalRenderer.OPENGL_ES) {
             Canvas(
                 modifier = Modifier
                     .fillMaxSize()
@@ -400,7 +425,9 @@ private fun rememberConfiguredController(
         fontSizeState.intValue
     ) {
         controller.configure(config, fontSizeState.intValue)
-        runFrameLoop(controller, frameTimeState, config.renderer)
+        if (config.renderer != TerminalRenderer.OPENGL_ES) {
+            runFrameLoop(controller, frameTimeState, config.renderer)
+        }
     }
     return controller
 }
@@ -412,12 +439,14 @@ private fun rememberTerminalController(
     onInvalidated: () -> Unit
 ): TerminalController {
     val controller = remember(backend, graphicsContext) { TerminalController(backend, graphicsContext) }
-    // Wire the invalidation callback BEFORE attach: attach() replays the
-    // latest published frame synchronously, and onFrameInvalidated() during
-    // that replay must reach the canvas or the initial paint stays stale.
+    // Wire the callback before attach and keep it current as renderer policy changes.
+    val currentOnInvalidated by rememberUpdatedState(onInvalidated)
     DisposableEffect(controller) {
-        controller.onInvalidated = onInvalidated
-        onDispose { controller.onInvalidated = null }
+        val callback = { currentOnInvalidated() }
+        controller.onInvalidated = callback
+        onDispose {
+            if (controller.onInvalidated === callback) controller.onInvalidated = null
+        }
     }
     DisposableEffect(controller) {
         controller.attach()

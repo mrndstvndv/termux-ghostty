@@ -15,13 +15,14 @@ class DebugHudTest {
     }
 
     @Test
-    fun ignoresIdleFrameClockGapsInsteadOfReportingMissedFrames() {
+    fun countsPresentedFramesWithoutDrivingTheComposeFrameClock() {
         val tracker = FrameMetricsAccumulator(refreshRate = 60f)
 
-        tracker.record(1_000_000_000L)
-        tracker.record(1_900_000_000L)
-        val sample = tracker.snapshot(nowNanos = 2_000_000_000L)
+        tracker.recordPresentedFrame(8_000_000L)
+        tracker.recordPresentedFrame(8_000_000L)
+        val sample = tracker.snapshot(nowNanos = 1_000_000_000L)
 
+        assertEquals(2f, sample.framesPerSecond)
         assertEquals(0, sample.missedFrames)
     }
 }

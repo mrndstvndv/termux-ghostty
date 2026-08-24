@@ -21,6 +21,7 @@ internal object GlesShaderSources {
         uniform int uReverseVideo;
         uniform int uFixedRows;
         uniform int uRowStride;
+        uniform float uRowHeight;
 
         out vec2 vTexCoord;
         out vec4 vColor;
@@ -85,10 +86,11 @@ internal object GlesShaderSources {
         }
 
         void main() {
+            int fixedRow = 0;
             if (uFixedRows != 0) {
-                int row = gl_InstanceID / uRowStride;
-                int slot = gl_InstanceID - row * uRowStride;
-                vInstanceValid = uint(slot) < rowInstanceCount(row) ? 1u : 0u;
+                fixedRow = gl_InstanceID / uRowStride;
+                int slot = gl_InstanceID - fixedRow * uRowStride;
+                vInstanceValid = uint(slot) < rowInstanceCount(fixedRow) ? 1u : 0u;
             } else {
                 vInstanceValid = 1u;
             }
@@ -102,6 +104,7 @@ internal object GlesShaderSources {
             }
             vec2 unit = QUAD_VERTICES[gl_VertexID];
             vec2 position = mix(aRect.xy, aRect.zw, unit);
+            position.y += float(fixedRow) * uRowHeight;
             vec2 ndc = vec2(
                 (position.x / uViewport.x) * 2.0 - 1.0,
                 1.0 - (position.y / uViewport.y) * 2.0

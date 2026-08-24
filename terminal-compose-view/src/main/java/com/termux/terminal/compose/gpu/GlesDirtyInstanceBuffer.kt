@@ -246,7 +246,7 @@ internal class GlesDirtyInstanceBuffer {
 }
 
 /** Small RGBA texture containing one exact 32-bit instance count per row. */
-private class GlesRowCountTexture {
+internal class GlesRowCountTexture {
     private var textureId = 0
     private var lastCounts = IntArray(0)
     private var pixels = ByteBuffer.allocateDirect(0).order(ByteOrder.nativeOrder())

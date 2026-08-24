@@ -8,9 +8,11 @@ import com.termux.terminal.compose.TerminalLinkLayout
 import com.termux.terminal.compose.TerminalLinkSegment
 import com.termux.terminal.compose.TerminalRow
 import com.termux.terminal.compose.TerminalSelection
+import com.termux.terminal.compose.TerminalViewport
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotSame
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -55,6 +57,33 @@ class TerminalRenderPlannerTest {
         assertTrue(first !== second)
         assertTrue(first.glyphs[0] === second.glyphs[0])
         assertTrue(first.cellBackgrounds[0] === second.cellBackgrounds[0])
+    }
+
+    @Test
+    fun reusesRowPacketsWhenScrollingMovesRowsToNewViewportSlots() {
+        val rows = listOf(
+            scrollRow("A", 1L),
+            scrollRow("B", 2L),
+            scrollRow("C", 3L),
+            scrollRow("D", 4L)
+        )
+        val palette = testPalette()
+        val firstSnapshot = GlesTerminalSnapshot(
+            frame = scrollFrame(20L, topRow = 0, rows = rows.take(3), palette = palette),
+            metrics = testSnapshot(20L).metrics
+        )
+        val secondSnapshot = GlesTerminalSnapshot(
+            frame = scrollFrame(21L, topRow = 1, rows = rows.drop(1), palette = palette),
+            metrics = firstSnapshot.metrics
+        )
+        val planner = TerminalRenderPlanner()
+
+        val first = planner.plan(firstSnapshot)
+        val second = planner.plan(secondSnapshot)
+
+        assertSame(first.rows[1], second.rows[0])
+        assertSame(first.rows[2], second.rows[1])
+        assertNotSame(first.rows[0], second.rows[2])
     }
 
     @Test
@@ -162,6 +191,35 @@ class TerminalRenderPlannerTest {
         }
         assertEquals(12L, base.sequence)
     }
+
+    private fun scrollFrame(
+        sequence: Long,
+        topRow: Int,
+        rows: List<TerminalRow>,
+        palette: com.termux.terminal.compose.TerminalPalette
+    ): TerminalFrame = TerminalFrame(
+        sequence = sequence,
+        viewport = TerminalViewport(topRow, rows.size, 3, 4),
+        cursor = TerminalCursor(0, -1, false, TerminalCursor.STYLE_BLOCK),
+        modes = com.termux.terminal.compose.TerminalModes(false, false, false, false, false),
+        palette = palette,
+        rows = rows,
+        linkLayout = null
+    )
+
+    private fun scrollRow(text: String, contentHash: Long): TerminalRow = TerminalRow(
+        columns = 3,
+        text = text.toCharArray(),
+        charsUsed = text.length,
+        styles = LongArray(3) { indexedStyle(3, 0) },
+        contentHash = contentHash,
+        cellLayout = TerminalCellLayout(
+            start = intArrayOf(0, -1, -1),
+            length = intArrayOf(1, 0, 0),
+            displayWidth = intArrayOf(1, 1, 1)
+        ),
+        isLineWrap = false
+    )
 
     private fun frameWith(
         base: TerminalFrame,

@@ -23,7 +23,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalView
@@ -50,11 +49,6 @@ fun DebugHud(modifier: Modifier = Modifier) {
     }
 
     val frameTracker = remember(view, refreshRate) { FrameMetricsAccumulator(refreshRate) }
-    LaunchedEffect(frameTracker) {
-        while (isActive) {
-            withFrameNanos { frameTimeNanos -> frameTracker.record(frameTimeNanos) }
-        }
-    }
     val activity = remember(view) { view.context.findActivity() }
     DisposableEffect(activity, frameTracker) {
         val window = activity?.window
@@ -146,24 +140,13 @@ private data class ProcessCpuSample(
 internal class FrameMetricsAccumulator(refreshRate: Float) {
     private val frameIntervalNanos =
         (NanosPerSecond / refreshRate.coerceAtLeast(1f)).roundToInt().toLong().coerceAtLeast(1L)
-    private var previousFrameNanos: Long? = null
     private var lastSampleNanos: Long? = null
     private var renderedFrames = 0
     private var missedFrames = 0
 
-    fun record(frameTimeNanos: Long) {
-        val previousFrameNanos = previousFrameNanos
-        this.previousFrameNanos = frameTimeNanos
-        if (previousFrameNanos == null) return
-
-        val frameGapNanos = frameTimeNanos - previousFrameNanos
-        if (frameGapNanos <= 0L) return
-
-        renderedFrames++
-    }
-
     fun recordPresentedFrame(frameDurationNanos: Long) {
         if (frameDurationNanos <= 0L) return
+        renderedFrames++
         missedFrames += missedFramesIn(frameDurationNanos)
     }
 

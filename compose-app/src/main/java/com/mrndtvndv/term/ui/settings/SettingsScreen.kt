@@ -294,7 +294,7 @@ fun SettingsScreen(
                             Text("OpenGL ES Rendering", style = MaterialTheme.typography.bodyLarge)
                             Text(
                                 text = "Experimental GPU terminal renderer. " +
-                                    "AGSL terminal shaders are not applied in this mode. " +
+                                    "AGSL shaders and cursor effects are not applied in this mode. " +
                                     "Turn it off if rendering is incomplete on this device.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant

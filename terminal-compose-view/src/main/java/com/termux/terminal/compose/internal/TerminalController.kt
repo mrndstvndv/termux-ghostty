@@ -48,8 +48,11 @@ internal class TerminalController(
         }
 ) : TerminalBackendListener {
 
-    /** Invoked by the composable when backend invalidation arrives. */
+    /** Invoked when Compose-owned overlays need a frame-driven state update. */
     var onInvalidated: (() -> Unit)? = null
+
+    /** Publishes complete frames to non-Compose renderers without recomposition. */
+    var onFrameAvailable: (() -> Unit)? = null
 
     private val invalidations = Channel<Unit>(CONFLATED)
     private var contentVersion = 0
@@ -97,6 +100,8 @@ internal class TerminalController(
         renderer = null
         rowRenderer = null
         compiledShaders = emptyList()
+        onInvalidated = null
+        onFrameAvailable = null
         backend.release()
     }
 
@@ -291,6 +296,7 @@ internal class TerminalController(
         contentVersion++
         cursorFramePending = true
         invalidations.trySend(Unit)
+        onFrameAvailable?.invoke()
         onInvalidated?.invoke()
     }
 

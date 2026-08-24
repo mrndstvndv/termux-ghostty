@@ -230,6 +230,8 @@ internal class GlyphAtlasAllocator(
         resetCount++
     }
 
+    fun currentGeneration(): Int = generation
+
     fun diagnostics(): GlesAtlasDiagnostics = GlesAtlasDiagnostics(
         generation = generation,
         pageCount = pages.size,
@@ -458,6 +460,9 @@ internal class GlesGlyphAtlas(
 
     val maxPages: Int
         get() = limits.maxPages
+
+    val generation: Int
+        get() = allocator.currentGeneration()
 
     @Suppress("ReturnCount", "TooGenericExceptionCaught")
     fun resolve(

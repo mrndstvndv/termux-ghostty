@@ -48,6 +48,7 @@ terminal-emulator/src/main/zig/zig-pkg/
 
 # Local emulator runtime state and tools
 .android/
+trace_processor
 
 # direnv
 .direnv/

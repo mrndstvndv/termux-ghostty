@@ -1,8 +1,11 @@
 package com.termux.terminal.compose
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import com.termux.terminal.compose.gpu.GlesTerminalSurface
 import com.termux.terminal.compose.gpu.GlesTerminalVisualConfig
@@ -16,7 +19,6 @@ internal fun glesTerminalCanvasContent(
     controller: TerminalController,
     metrics: TerminalMetrics,
     selection: TerminalSelection,
-    contentVersion: Int,
     fontSizePx: Float,
     config: TerminalCanvasConfig,
     modifier: Modifier = Modifier
@@ -25,36 +27,43 @@ internal fun glesTerminalCanvasContent(
     // that owner changes so a restarted sequence cannot inherit old watermarks.
     val surface = rememberGlesTerminalSurface(surfaceKey = controller)
     val presentationRevision = remember(surface) { AtomicLong(0L) }
-    val observedFrame = controller.currentFrame()
+    val publishLatestFrame = {
+        if (metrics.viewportWidthPx > 0 && metrics.viewportHeightPx > 0) {
+            controller.resizeIfNeeded(metrics.viewportWidthPx, metrics.viewportHeightPx)
+            controller.currentFrameForMetrics(metrics)?.let { completeFrame ->
+                surface.publish(
+                    frame = completeFrame,
+                    metrics = metrics,
+                    selection = selection,
+                    contentRevision = completeFrame.sequence,
+                    presentationRevision = presentationRevision.incrementAndGet(),
+                    visual = GlesTerminalVisualConfig(
+                        typeface = config.typeface,
+                        fontSizePx = fontSizePx,
+                        agslShaders = config.shaders
+                    )
+                )
+            }
+        }
+    }
+    val currentPublisher by rememberUpdatedState(publishLatestFrame)
 
+    DisposableEffect(surface, controller) {
+        val callback = { currentPublisher() }
+        controller.onFrameAvailable = callback
+        onDispose {
+            if (controller.onFrameAvailable === callback) controller.onFrameAvailable = null
+        }
+    }
     LaunchedEffect(
         surface,
-        observedFrame,
-        contentVersion,
         selection,
         metrics,
         fontSizePx,
         config.typeface,
         config.shaders
     ) {
-        if (metrics.viewportWidthPx <= 0 || metrics.viewportHeightPx <= 0) {
-            return@LaunchedEffect
-        }
-        controller.resizeIfNeeded(metrics.viewportWidthPx, metrics.viewportHeightPx)
-        val completeFrame = controller.currentFrameForMetrics(metrics)
-            ?: return@LaunchedEffect
-        surface.publish(
-            frame = completeFrame,
-            metrics = metrics,
-            selection = selection,
-            contentRevision = completeFrame.sequence,
-            presentationRevision = presentationRevision.incrementAndGet(),
-            visual = GlesTerminalVisualConfig(
-                typeface = config.typeface,
-                fontSizePx = fontSizePx,
-                agslShaders = config.shaders
-            )
-        )
+        currentPublisher()
     }
 
     GlesTerminalSurface(

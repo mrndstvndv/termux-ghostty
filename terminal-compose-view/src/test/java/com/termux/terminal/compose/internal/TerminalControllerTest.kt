@@ -36,6 +36,18 @@ class TerminalControllerTest {
 
 
     @Test
+    fun frameInvalidationPublishesBeforeRequestingComposeState() {
+        val callbacks = ArrayList<String>()
+        val controller = TerminalController(RecordingBackend(), UnusedGraphicsContext)
+        controller.onFrameAvailable = { callbacks += "frame" }
+        controller.onInvalidated = { callbacks += "compose" }
+
+        controller.onFrameInvalidated()
+
+        assertEquals(listOf("frame", "compose"), callbacks)
+    }
+
+    @Test
     fun initialFrameRecoveryRefreshesBackendBeforeRepaint() {
         val backend = RecordingBackend()
         val controller = TerminalController(backend, UnusedGraphicsContext)

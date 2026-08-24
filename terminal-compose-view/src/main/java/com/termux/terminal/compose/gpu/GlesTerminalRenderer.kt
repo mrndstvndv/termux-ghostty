@@ -8,10 +8,10 @@ import java.nio.FloatBuffer
 import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10
 
-private const val MaxQuadsPerBatch = 4096
-private const val VerticesPerQuad = 6
-private const val VertexStrideBytes = 8 * Float.SIZE_BYTES
-private const val VertexBufferBytes = MaxQuadsPerBatch * VerticesPerQuad * VertexStrideBytes
+private const val MaxInstancesPerBatch = 4096
+private const val InstanceStrideFloats = 12
+private const val InstanceStrideBytes = InstanceStrideFloats * Float.SIZE_BYTES
+private const val InstanceBufferBytes = MaxInstancesPerBatch * InstanceStrideBytes
 private const val DiagnosticFrameInterval = 16L
 
 /** Redundant callbacks remain complete framebuffer presentations. */
@@ -42,8 +42,8 @@ internal class GlesTerminalRenderer(
     private val surface: GlesTerminalSurface,
     private val requestRender: () -> Unit
 ) : GLSurfaceView.Renderer {
-    private val vertexBuffer: FloatBuffer = ByteBuffer
-        .allocateDirect(MaxQuadsPerBatch * VerticesPerQuad * VertexStrideBytes)
+    private val instanceBuffer: FloatBuffer = ByteBuffer
+        .allocateDirect(InstanceBufferBytes)
         .order(ByteOrder.nativeOrder())
         .asFloatBuffer()
 
@@ -232,7 +232,7 @@ internal class GlesTerminalRenderer(
         return try {
             GlesResources(
                 program = program,
-                bufferRing = GlesBufferRing.create(VertexBufferBytes),
+                bufferRing = GlesBufferRing.create(InstanceBufferBytes),
                 atlas = GlesGlyphAtlas(limits)
             )
         } catch (error: GlesRendererException) {
@@ -249,10 +249,18 @@ internal class GlesTerminalRenderer(
         resources.program.bind(viewportWidth, viewportHeight, textured = false)
         var offset = 0
         while (offset < quads.size) {
-            val end = minOf(offset + MaxQuadsPerBatch, quads.size)
-            vertexBuffer.clear()
+            val end = minOf(offset + MaxInstancesPerBatch, quads.size)
+            instanceBuffer.clear()
             for (index in offset until end) {
-                appendQuad(vertexBuffer, quads[index], 0f, 0f, 0f, 0f, quads[index].argb)
+                appendInstance(
+                    buffer = instanceBuffer,
+                    quad = quads[index],
+                    u0 = 0f,
+                    v0 = 0f,
+                    u1 = 0f,
+                    v1 = 0f,
+                    color = quads[index].argb
+                )
             }
             uploadAndDraw(resources, end - offset)
             offset = end
@@ -265,8 +273,8 @@ internal class GlesTerminalRenderer(
     ) {
         if (glyphs.isEmpty()) return
         val batcher = GlesGlyphBatchAccumulator(
-            maxQuadsPerBatch = MaxQuadsPerBatch,
-            maxActiveBatches = resources.atlas.maxPages
+            maxQuadsPerBatch = MaxInstancesPerBatch,
+            maxActiveBatches = resources.atlas.maxPages * 2
         )
         val flushPending = {
             batcher.flush().forEach { batch -> drawGlyphBatch(resources, batch) }
@@ -291,18 +299,24 @@ internal class GlesTerminalRenderer(
         if (texture == 0) {
             throw GlesResourceException("atlas texture: page ${batch.key.pageIndex} has id 0")
         }
-        resources.program.bind(viewportWidth, viewportHeight, textured = true)
+        val maskGlyph = batch.key.rasterMode == GlyphAtlasKey.RASTER_MODE_MASK
+        resources.program.bind(
+            viewportWidth,
+            viewportHeight,
+            textured = true,
+            maskGlyph = maskGlyph
+        )
         GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
         GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, texture)
-        vertexBuffer.clear()
+        instanceBuffer.clear()
         val pageSize = resources.atlas.pageSizePx.toFloat()
         batch.glyphs.forEach { glyph ->
             if (glyph.batchKey != batch.key) {
                 throw GlesResourceException("atlas batch contains a stale generation reference")
             }
             val region = glyph.region
-            appendQuad(
-                buffer = vertexBuffer,
+            appendInstance(
+                buffer = instanceBuffer,
                 quad = TerminalQuad(
                     left = glyph.placement.left + region.drawOffsetX,
                     top = glyph.placement.top + region.drawOffsetY,
@@ -314,31 +328,52 @@ internal class GlesTerminalRenderer(
                 v0 = region.top / pageSize,
                 u1 = region.right / pageSize,
                 v1 = region.bottom / pageSize,
-                color = 0xFFFFFFFF.toInt()
+                color = if (maskGlyph) {
+                    glyph.placement.key.foregroundArgb
+                } else {
+                    0xFFFFFFFF.toInt()
+                }
             )
         }
         uploadAndDraw(resources, batch.glyphs.size)
     }
 
-    private fun bindVertexAttributes() {
+    private fun bindInstanceAttributes() {
         GLES30.glEnableVertexAttribArray(0)
         GLES30.glEnableVertexAttribArray(1)
         GLES30.glEnableVertexAttribArray(2)
-        GLES30.glVertexAttribPointer(0, 2, GLES30.GL_FLOAT, false, VertexStrideBytes, 0)
-        GLES30.glVertexAttribPointer(1, 2, GLES30.GL_FLOAT, false, VertexStrideBytes, 2 * Float.SIZE_BYTES)
-        GLES30.glVertexAttribPointer(2, 4, GLES30.GL_FLOAT, false, VertexStrideBytes, 4 * Float.SIZE_BYTES)
+        GLES30.glVertexAttribPointer(0, 4, GLES30.GL_FLOAT, false, InstanceStrideBytes, 0)
+        GLES30.glVertexAttribPointer(
+            1,
+            4,
+            GLES30.GL_FLOAT,
+            false,
+            InstanceStrideBytes,
+            4 * Float.SIZE_BYTES
+        )
+        GLES30.glVertexAttribPointer(
+            2,
+            4,
+            GLES30.GL_FLOAT,
+            false,
+            InstanceStrideBytes,
+            8 * Float.SIZE_BYTES
+        )
+        GLES30.glVertexAttribDivisor(0, 1)
+        GLES30.glVertexAttribDivisor(1, 1)
+        GLES30.glVertexAttribDivisor(2, 1)
     }
 
-    private fun uploadAndDraw(resources: GlesResources, quadCount: Int) {
-        vertexBuffer.flip()
+    private fun uploadAndDraw(resources: GlesResources, instanceCount: Int) {
+        instanceBuffer.flip()
         resources.bufferRing.uploadAndDraw(
-            vertexBuffer = vertexBuffer,
-            vertexCount = quadCount * VerticesPerQuad,
-            configureAttributes = ::bindVertexAttributes
+            instanceBuffer = instanceBuffer,
+            instanceCount = instanceCount,
+            configureAttributes = ::bindInstanceAttributes
         )
     }
 
-    private fun appendQuad(
+    private fun appendInstance(
         buffer: FloatBuffer,
         quad: TerminalQuad,
         u0: Float,
@@ -347,30 +382,18 @@ internal class GlesTerminalRenderer(
         v1: Float,
         color: Int
     ) {
-        appendVertex(buffer, quad.left, quad.top, u0, v0, color)
-        appendVertex(buffer, quad.left, quad.bottom, u0, v1, color)
-        appendVertex(buffer, quad.right, quad.bottom, u1, v1, color)
-        appendVertex(buffer, quad.left, quad.top, u0, v0, color)
-        appendVertex(buffer, quad.right, quad.bottom, u1, v1, color)
-        appendVertex(buffer, quad.right, quad.top, u1, v0, color)
-    }
-
-    private fun appendVertex(
-        buffer: FloatBuffer,
-        x: Float,
-        y: Float,
-        u: Float,
-        v: Float,
-        argb: Int
-    ) {
-        val alpha = ((argb ushr 24) and 0xFF) / 255f
-        buffer.put(x)
-        buffer.put(y)
-        buffer.put(u)
-        buffer.put(v)
-        buffer.put(((argb ushr 16) and 0xFF) / 255f * alpha)
-        buffer.put(((argb ushr 8) and 0xFF) / 255f * alpha)
-        buffer.put((argb and 0xFF) / 255f * alpha)
+        buffer.put(quad.left)
+        buffer.put(quad.top)
+        buffer.put(quad.right)
+        buffer.put(quad.bottom)
+        buffer.put(u0)
+        buffer.put(v0)
+        buffer.put(u1)
+        buffer.put(v1)
+        val alpha = ((color ushr 24) and 0xFF) / 255f
+        buffer.put(((color ushr 16) and 0xFF) / 255f * alpha)
+        buffer.put(((color ushr 8) and 0xFF) / 255f * alpha)
+        buffer.put((color and 0xFF) / 255f * alpha)
         buffer.put(alpha)
     }
 
@@ -514,13 +537,15 @@ private class GlesProgram private constructor(
     private val programId: Int,
     private val viewportUniform: Int,
     private val texturedUniform: Int,
-    private val atlasUniform: Int
+    private val atlasUniform: Int,
+    private val maskGlyphUniform: Int
 ) {
-    fun bind(width: Int, height: Int, textured: Boolean) {
+    fun bind(width: Int, height: Int, textured: Boolean, maskGlyph: Boolean = false) {
         GLES30.glUseProgram(programId)
         GLES30.glUniform2f(viewportUniform, width.toFloat(), height.toFloat())
         GLES30.glUniform1i(texturedUniform, if (textured) 1 else 0)
         GLES30.glUniform1i(atlasUniform, 0)
+        GLES30.glUniform1i(maskGlyphUniform, if (maskGlyph) 1 else 0)
     }
 
     fun release() {
@@ -558,10 +583,12 @@ private class GlesProgram private constructor(
                 val viewport = GLES30.glGetUniformLocation(program, "uViewport")
                 val textured = GLES30.glGetUniformLocation(program, "uTextured")
                 val atlas = GLES30.glGetUniformLocation(program, "uAtlas")
-                if (viewport < 0 || textured < 0 || atlas < 0) {
-                    throw GlesProgramException("GLES program uniforms are incomplete")
-                }
-                return GlesProgram(program, viewport, textured, atlas)
+                val maskGlyph = GLES30.glGetUniformLocation(program, "uMaskGlyph")
+                requireUniform(viewport, "uViewport")
+                requireUniform(textured, "uTextured")
+                requireUniform(atlas, "uAtlas")
+                requireUniform(maskGlyph, "uMaskGlyph")
+                return GlesProgram(program, viewport, textured, atlas, maskGlyph)
             } catch (error: GlesProgramException) {
                 GLES30.glDeleteProgram(program)
                 throw error
@@ -569,6 +596,10 @@ private class GlesProgram private constructor(
                 GLES30.glDeleteShader(vertexShader)
                 GLES30.glDeleteShader(fragmentShader)
             }
+        }
+
+        private fun requireUniform(location: Int, name: String) {
+            if (location < 0) throw GlesProgramException("GLES uniform is incomplete: $name")
         }
 
         private fun compile(sourceTag: String, type: Int, source: String): Int {

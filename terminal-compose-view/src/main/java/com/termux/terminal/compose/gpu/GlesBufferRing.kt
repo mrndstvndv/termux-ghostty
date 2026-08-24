@@ -4,6 +4,7 @@ import android.opengl.GLES30
 import java.nio.FloatBuffer
 
 private const val DefaultRingSlotCount = 3
+private const val QuadVertexCount = 6
 private const val MaxFenceWaitAttempts = 4
 private const val FenceWaitTimeoutNanos = 1_000_000L
 
@@ -72,13 +73,13 @@ internal class GlesBufferRing private constructor(
     }
 
     fun uploadAndDraw(
-        vertexBuffer: FloatBuffer,
-        vertexCount: Int,
+        instanceBuffer: FloatBuffer,
+        instanceCount: Int,
         configureAttributes: () -> Unit
     ) {
-        check(vertexCount > 0) { "vertexCount must be positive" }
-        check(vertexBuffer.remaining() * Float.SIZE_BYTES <= capacityBytes) {
-            "vertex data exceeds the bounded ring slot"
+        check(instanceCount > 0) { "instanceCount must be positive" }
+        check(instanceBuffer.remaining() * Float.SIZE_BYTES <= capacityBytes) {
+            "instance data exceeds the bounded ring slot"
         }
         val slot = acquireSlot()
         activeSlot = slot
@@ -90,10 +91,15 @@ internal class GlesBufferRing private constructor(
             GLES30.glBufferSubData(
                 GLES30.GL_ARRAY_BUFFER,
                 0,
-                vertexBuffer.remaining() * Float.SIZE_BYTES,
-                vertexBuffer
+                instanceBuffer.remaining() * Float.SIZE_BYTES,
+                instanceBuffer
             )
-            GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, vertexCount)
+            GLES30.glDrawArraysInstanced(
+                GLES30.GL_TRIANGLES,
+                0,
+                QuadVertexCount,
+                instanceCount
+            )
             val fence = GLES30.glFenceSync(GLES30.GL_SYNC_GPU_COMMANDS_COMPLETE, 0)
             if (fence == 0L) throw GlesResourceException("buffer-ring: glFenceSync returned 0")
             slot.fence = fence

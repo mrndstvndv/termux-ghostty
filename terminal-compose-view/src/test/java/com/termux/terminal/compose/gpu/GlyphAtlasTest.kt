@@ -10,6 +10,21 @@ import org.junit.Test
 
 class GlyphAtlasTest {
     @Test
+    fun maskGlyphsShareOneAtlasEntryAcrossForegroundColors() {
+        val allocator = GlyphAtlasAllocator(GlyphAtlasLimits(pageSizePx = 64, maxPages = 1))
+        val red = atlasKey("A").copy(
+            foregroundArgb = 0xFFFF0000.toInt(),
+            rasterMode = GlyphAtlasKey.RASTER_MODE_MASK
+        )
+        val blue = red.copy(foregroundArgb = 0xFF0000FF.toInt())
+
+        val first = allocator.allocateNew(red, 8, 8)!!.region
+
+        assertEquals(first, allocator.find(blue))
+        assertEquals(1, allocator.diagnostics().entryCount)
+    }
+
+    @Test
     fun unicodeTextIsPartOfTheAtlasKeyWithoutCodeUnitCollapse() {
         val allocator = GlyphAtlasAllocator(GlyphAtlasLimits(pageSizePx = 64, maxPages = 1))
         val ascii = atlasKey("A")

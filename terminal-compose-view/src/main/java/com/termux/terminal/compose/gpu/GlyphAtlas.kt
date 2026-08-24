@@ -68,12 +68,51 @@ data class GlyphAtlasKey(
         require(cellWidthPx > 0f) { "cellWidthPx must be positive" }
         require(cellHeightPx > 0f) { "cellHeightPx must be positive" }
         require(textScaleX > 0f) { "textScaleX must be positive" }
+        require(rasterMode == RASTER_MODE_RGBA || rasterMode == RASTER_MODE_MASK) {
+            "unsupported raster mode: $rasterMode"
+        }
     }
 
     companion object {
         const val RASTER_MODE_RGBA = 0
+        const val RASTER_MODE_MASK = 1
     }
 }
+
+/** Atlas lookup data omits foreground for mask glyphs shared by all colors. */
+private data class GlyphAtlasLookupKey(
+    val text: String,
+    val typeface: Typeface?,
+    val fontSizePx: Float,
+    val cellWidthPx: Float,
+    val cellHeightPx: Float,
+    val fontAscentPx: Float,
+    val cellSpan: Int,
+    val textScaleX: Float,
+    val bold: Boolean,
+    val italic: Boolean,
+    val underline: Boolean,
+    val strikeThrough: Boolean,
+    val rasterMode: Int,
+    val foregroundArgb: Int?
+)
+
+private fun GlyphAtlasKey.lookupKey(): GlyphAtlasLookupKey = GlyphAtlasLookupKey(
+    text = text,
+    typeface = typeface,
+    fontSizePx = fontSizePx,
+    cellWidthPx = cellWidthPx,
+    cellHeightPx = cellHeightPx,
+    fontAscentPx = fontAscentPx,
+    cellSpan = cellSpan,
+    textScaleX = textScaleX,
+    bold = bold,
+    italic = italic,
+    underline = underline,
+    strikeThrough = strikeThrough,
+    rasterMode = rasterMode,
+    foregroundArgb = foregroundArgb.takeIf { rasterMode == GlyphAtlasKey.RASTER_MODE_RGBA }
+)
 
 /** Atlas coordinates include transparent padding and are valid only for their generation. */
 data class GlyphAtlasRegion(
@@ -83,6 +122,8 @@ data class GlyphAtlasRegion(
     val width: Int,
     val height: Int,
     val atlasGeneration: Int,
+    /** How the fragment shader should interpret this RGBA atlas region. */
+    val rasterMode: Int = GlyphAtlasKey.RASTER_MODE_RGBA,
     /** Screen offset from the terminal cell origin to the atlas quad origin. */
     val drawOffsetX: Float = 0f,
     val drawOffsetY: Float = 0f
@@ -107,7 +148,7 @@ internal class GlyphAtlasAllocator(
     private val limits: GlyphAtlasLimits
 ) {
     private val pages = ArrayList<ShelfPage>(limits.maxPages)
-    private val entries = HashMap<GlyphAtlasKey, GlyphAtlasRegion>(
+    private val entries = HashMap<GlyphAtlasLookupKey, GlyphAtlasRegion>(
         minOf(limits.maxEntries, 64),
         0.75f
     )
@@ -119,7 +160,7 @@ internal class GlyphAtlasAllocator(
     private var largestAllocationPx = 0
 
     fun find(key: GlyphAtlasKey): GlyphAtlasRegion? {
-        val region = entries[key]
+        val region = entries[key.lookupKey()]
         if (region == null) {
             cacheMisses++
         } else {
@@ -133,7 +174,8 @@ internal class GlyphAtlasAllocator(
         width: Int,
         height: Int,
         drawOffsetX: Float = 0f,
-        drawOffsetY: Float = 0f
+        drawOffsetY: Float = 0f,
+        rasterMode: Int = key.rasterMode
     ): GlyphAtlasAllocation? {
         require(width > 0) { "width must be positive" }
         require(height > 0) { "height must be positive" }
@@ -164,10 +206,11 @@ internal class GlyphAtlasAllocator(
             width = width,
             height = height,
             atlasGeneration = generation,
+            rasterMode = rasterMode,
             drawOffsetX = drawOffsetX,
             drawOffsetY = drawOffsetY
         )
-        entries[key] = region
+        entries[key.lookupKey()] = region
         usedAreaPx += width * height
         largestAllocationPx = maxOf(largestAllocationPx, width * height)
         return GlyphAtlasAllocation(region, didReset)
@@ -306,19 +349,23 @@ internal fun glyphRasterGeometry(
 internal data class RasterizedGlyph(
     val bitmap: Bitmap,
     val drawOffsetX: Float,
-    val drawOffsetY: Float
+    val drawOffsetY: Float,
+    val rasterMode: Int
 )
 
 /** Android Paint/Canvas rasterizer; it is called only by the GL renderer thread. */
 internal class AndroidGlyphRasterizer {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.SUBPIXEL_TEXT_FLAG)
+    private var pixelScratch = IntArray(0)
 
+    @Suppress("LongMethod")
     fun rasterize(key: GlyphAtlasKey, limits: GlyphAtlasLimits): RasterizedGlyph? {
         paint.reset()
         paint.flags = Paint.ANTI_ALIAS_FLAG or Paint.SUBPIXEL_TEXT_FLAG
         paint.typeface = key.typeface ?: Typeface.MONOSPACE
         paint.textSize = key.fontSizePx
-        paint.color = key.foregroundArgb
+        val maskRequested = key.rasterMode == GlyphAtlasKey.RASTER_MODE_MASK
+        paint.color = if (maskRequested) 0xFFFFFFFF.toInt() else key.foregroundArgb
         paint.textScaleX = key.textScaleX
         paint.isFakeBoldText = key.bold
         paint.textSkewX = if (key.italic) GlesItalicTextSkewX else 0f
@@ -363,7 +410,33 @@ internal class AndroidGlyphRasterizer {
             false,
             paint
         )
-        return RasterizedGlyph(bitmap, geometry.drawOffsetX, geometry.drawOffsetY)
+        val rasterMode = if (maskRequested && bitmapContainsColor(bitmap)) {
+            GlyphAtlasKey.RASTER_MODE_RGBA
+        } else {
+            key.rasterMode
+        }
+        return RasterizedGlyph(
+            bitmap = bitmap,
+            drawOffsetX = geometry.drawOffsetX,
+            drawOffsetY = geometry.drawOffsetY,
+            rasterMode = rasterMode
+        )
+    }
+
+    private fun bitmapContainsColor(bitmap: Bitmap): Boolean {
+        val pixelCount = bitmap.width * bitmap.height
+        if (pixelScratch.size < pixelCount) pixelScratch = IntArray(pixelCount)
+        bitmap.getPixels(pixelScratch, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
+        repeat(pixelCount) { index ->
+            val pixel = pixelScratch[index]
+            if (((pixel ushr 24) and 0xFF) != 0) {
+                val red = (pixel ushr 16) and 0xFF
+                val green = (pixel ushr 8) and 0xFF
+                val blue = pixel and 0xFF
+                if (red != green || green != blue) return true
+            }
+        }
+        return false
     }
 }
 
@@ -395,7 +468,8 @@ internal class GlesGlyphAtlas(
             width = rasterized.bitmap.width,
             height = rasterized.bitmap.height,
             drawOffsetX = rasterized.drawOffsetX,
-            drawOffsetY = rasterized.drawOffsetY
+            drawOffsetY = rasterized.drawOffsetY,
+            rasterMode = rasterized.rasterMode
         )
         if (allocation == null) {
             if (!rasterized.bitmap.isRecycled) rasterized.bitmap.recycle()

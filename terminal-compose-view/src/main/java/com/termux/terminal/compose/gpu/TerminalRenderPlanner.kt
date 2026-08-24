@@ -329,7 +329,8 @@ internal class TerminalRenderPlanner {
                                 ) != 0,
                             italic = effect and TextStyle.CHARACTER_ATTRIBUTE_ITALIC != 0,
                             underline = effect and TextStyle.CHARACTER_ATTRIBUTE_UNDERLINE != 0,
-                            strikeThrough = effect and TextStyle.CHARACTER_ATTRIBUTE_STRIKETHROUGH != 0
+                            strikeThrough = effect and TextStyle.CHARACTER_ATTRIBUTE_STRIKETHROUGH != 0,
+                            rasterMode = rasterModeForText(text)
                         ),
                         left = left,
                         top = rowTop
@@ -467,6 +468,24 @@ internal class TerminalRenderPlanner {
         val end = (range.last + 1).coerceIn(start, row.charsUsed)
         if (end <= start) return ""
         return String(row.text(), start, end - start)
+    }
+
+    private fun rasterModeForText(text: String): Int {
+        var index = 0
+        while (index < text.length) {
+            val codePoint = Character.codePointAt(text, index)
+            if (isPotentialColorCodePoint(codePoint)) return GlyphAtlasKey.RASTER_MODE_RGBA
+            index += Character.charCount(codePoint)
+        }
+        return GlyphAtlasKey.RASTER_MODE_MASK
+    }
+
+    private fun isPotentialColorCodePoint(codePoint: Int): Boolean = when {
+        codePoint in 0x1F000..0x1FAFF -> true
+        codePoint in 0x2300..0x23FF -> true
+        codePoint in 0x2600..0x27BF -> true
+        codePoint == 0xFE0F -> true
+        else -> false
     }
 
     @Suppress("ReturnCount")

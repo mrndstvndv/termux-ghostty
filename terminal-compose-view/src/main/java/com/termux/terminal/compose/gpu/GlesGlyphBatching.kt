@@ -5,7 +5,8 @@ import java.util.IdentityHashMap
 
 internal data class GlesGlyphBatchKey(
     val pageIndex: Int,
-    val atlasGeneration: Int
+    val atlasGeneration: Int,
+    val rasterMode: Int = GlyphAtlasKey.RASTER_MODE_RGBA
 )
 
 internal data class GlesResolvedGlyph(
@@ -13,7 +14,11 @@ internal data class GlesResolvedGlyph(
     val region: GlyphAtlasRegion
 ) {
     val batchKey: GlesGlyphBatchKey
-        get() = GlesGlyphBatchKey(region.pageIndex, region.atlasGeneration)
+        get() = GlesGlyphBatchKey(
+            pageIndex = region.pageIndex,
+            atlasGeneration = region.atlasGeneration,
+            rasterMode = region.rasterMode
+        )
 }
 
 internal data class GlesGlyphBatch(

@@ -100,8 +100,8 @@ class TerminalRenderPlannerTest {
         // TerminalRowRenderer paints the block cursor before text and swaps the
         // cell colors, so the wide glyph uses its original background as ink.
         assertEquals(0xFF101010.toInt(), plan.glyphs[1].key.foregroundArgb)
-        assertTrue(plan.cellBackgrounds.any { it.left == 0f && it.argb == 0xFFFF0000.toInt() })
-        assertTrue(plan.cellBackgrounds.any { it.left == 10f })
+        assertTrue(plan.cellBackgrounds.any { it.left == 0f && it.style != null })
+        assertTrue(plan.cellBackgrounds.any { it.left == 10f && it.style != null })
         assertEquals(1, plan.cursorQuads.size)
         assertEquals(10f, plan.cursorQuads.single().left, 0f)
         assertEquals(30f, plan.cursorQuads.single().right, 0f)

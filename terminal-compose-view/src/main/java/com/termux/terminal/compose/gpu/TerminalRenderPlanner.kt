@@ -8,26 +8,30 @@ import com.termux.terminal.compose.TerminalLinkSegment
 import com.termux.terminal.compose.TerminalMetrics
 import com.termux.terminal.compose.TerminalPalette
 import com.termux.terminal.compose.TerminalSelection
-import com.termux.terminal.compose.internal.resolveEffectiveColors
 import com.termux.terminal.compose.internal.resolveEffectiveForegroundColor
 import kotlin.math.abs
+
+internal const val GlesStyleFlagOverlayReverse = 1
 
 internal data class TerminalQuad(
     val left: Float,
     val top: Float,
     val right: Float,
     val bottom: Float,
-    val argb: Int
+    val argb: Int,
+    val style: Long? = null,
+    val styleFlags: Int = 0
 )
 
 internal data class TerminalGlyphPlacement(
     val key: GlyphAtlasKey,
     val left: Float,
-    val top: Float
+    val top: Float,
+    val style: Long = 0L,
+    val styleFlags: Int = 0
 )
 
 internal class TerminalRenderPlan(
-    val terminalBackgroundArgb: Int,
     val cellBackgrounds: List<TerminalQuad>,
     val cursorQuads: List<TerminalQuad>,
     val glyphs: List<TerminalGlyphPlacement>,
@@ -56,17 +60,9 @@ internal class TerminalRenderPlanner {
         }
 
         val frame = snapshot.frame
-        val terminalBackgroundArgb = frame.palette.color(
-            if (frame.reverseVideo) {
-                TerminalPalette.COLOR_INDEX_FOREGROUND
-            } else {
-                TerminalPalette.COLOR_INDEX_BACKGROUND
-            }
-        )
         ensureRowPlanCapacity(frame.rowsVisible)
-        val rows = planRows(snapshot, terminalBackgroundArgb)
+        val rows = planRows(snapshot)
         return TerminalRenderPlan(
-            terminalBackgroundArgb = terminalBackgroundArgb,
             cellBackgrounds = rows.cellBackgrounds.toList(),
             cursorQuads = rows.cursorQuads.toList(),
             glyphs = rows.glyphs.toList(),
@@ -77,10 +73,7 @@ internal class TerminalRenderPlanner {
         }
     }
 
-    private fun planRows(
-        snapshot: GlesTerminalSnapshot,
-        terminalBackgroundArgb: Int
-    ): PlannedRows {
+    private fun planRows(snapshot: GlesTerminalSnapshot): PlannedRows {
         val frame = snapshot.frame
         val cellBackgrounds = ArrayList<TerminalQuad>()
         val cursorQuads = ArrayList<TerminalQuad>()
@@ -92,7 +85,7 @@ internal class TerminalRenderPlanner {
                 rowPlans[rowIndex] = null
                 continue
             }
-            val rowPlan = planRowFor(snapshot, rowIndex, row, terminalBackgroundArgb)
+            val rowPlan = planRowFor(snapshot, rowIndex, row)
             cellBackgrounds.addAll(rowPlan.cellBackgrounds)
             cursorQuads.addAll(rowPlan.cursorQuads)
             glyphs.addAll(rowPlan.glyphs)
@@ -104,8 +97,7 @@ internal class TerminalRenderPlanner {
     private fun planRowFor(
         snapshot: GlesTerminalSnapshot,
         rowIndex: Int,
-        row: com.termux.terminal.compose.TerminalRow,
-        terminalBackgroundArgb: Int
+        row: com.termux.terminal.compose.TerminalRow
     ): TerminalRowPlan {
         val frame = snapshot.frame
         val absoluteRow = frame.topRow + rowIndex
@@ -124,7 +116,6 @@ internal class TerminalRenderPlanner {
                 absoluteRow = absoluteRow,
                 selectionStart = selectionStart,
                 selectionEnd = selectionEnd,
-                terminalBackgroundArgb = terminalBackgroundArgb,
                 linkSegments = linkSegments
             )
         ) {
@@ -136,7 +127,6 @@ internal class TerminalRenderPlanner {
             snapshot = snapshot,
             rowIndex = rowIndex,
             row = row,
-            terminalBackgroundArgb = terminalBackgroundArgb,
             selectionStart = selectionStart,
             selectionEnd = selectionEnd,
             linkSegments = linkSegments
@@ -150,7 +140,6 @@ internal class TerminalRenderPlanner {
             cursor = frame.cursor,
             reverseVideo = frame.reverseVideo,
             palette = frame.palette,
-            terminalBackgroundArgb = terminalBackgroundArgb,
             columns = frame.columns,
             metrics = snapshot.metrics,
             typeface = snapshot.visual.typeface,
@@ -187,7 +176,6 @@ internal class TerminalRenderPlanner {
         private val cursor: TerminalCursor,
         private val reverseVideo: Boolean,
         private val palette: TerminalPalette,
-        private val terminalBackgroundArgb: Int,
         private val columns: Int,
         private val metrics: TerminalMetrics,
         private val typeface: android.graphics.Typeface?,
@@ -203,10 +191,12 @@ internal class TerminalRenderPlanner {
             absoluteRow: Int,
             selectionStart: Int,
             selectionEnd: Int,
-            terminalBackgroundArgb: Int,
             linkSegments: Array<TerminalLinkSegment>?
         ): Boolean {
             val frame = snapshot.frame
+            val paletteMatches = this.palette === frame.palette ||
+                (plan.cursorQuads.isEmpty() &&
+                    plan.glyphs.none { it.key.rasterMode == GlyphAtlasKey.RASTER_MODE_RGBA })
             return this.row === row &&
                 this.rowIndex == rowIndex &&
                 this.absoluteRow == absoluteRow &&
@@ -214,8 +204,7 @@ internal class TerminalRenderPlanner {
                 this.selectionEnd == selectionEnd &&
                 this.cursor == frame.cursor &&
                 this.reverseVideo == frame.reverseVideo &&
-                this.palette === frame.palette &&
-                this.terminalBackgroundArgb == terminalBackgroundArgb &&
+                paletteMatches &&
                 this.columns == frame.columns &&
                 this.metrics === snapshot.metrics &&
                 this.typeface == snapshot.visual.typeface &&
@@ -238,13 +227,17 @@ internal class TerminalRenderPlanner {
         val decorations: List<TerminalQuad>
     )
 
-    @Suppress("LongParameterList", "LongMethod")
+    @Suppress(
+        "LongParameterList",
+        "LongMethod",
+        "CyclomaticComplexMethod",
+        "NestedBlockDepth"
+    )
     private fun planRow(
         frame: TerminalFrame,
         snapshot: GlesTerminalSnapshot,
         rowIndex: Int,
         row: com.termux.terminal.compose.TerminalRow,
-        terminalBackgroundArgb: Int,
         selectionStart: Int,
         selectionEnd: Int,
         linkSegments: Array<TerminalLinkSegment>?
@@ -278,17 +271,28 @@ internal class TerminalRenderPlanner {
                 cursor.column in column until cellEnd
             val blockCursor = cursorInCell && cursor.style == TerminalCursor.STYLE_BLOCK
             val style = row.style(column)
-            val packedColors = resolveEffectiveColors(
-                frame.palette,
-                style,
-                frame.reverseVideo || insideSelection || blockCursor
-            )
-            val foregroundArgb = (packedColors ushr 32).toInt()
-            val backgroundArgb = packedColors.toInt()
+            val effect = TextStyle.decodeEffect(style)
+            val styleFlags = if (insideSelection || blockCursor) {
+                GlesStyleFlagOverlayReverse
+            } else {
+                0
+            }
             val left = column * metrics.cellWidthPx
             val right = cellEnd * metrics.cellWidthPx
-            if (backgroundArgb != terminalBackgroundArgb) {
-                cellBackgrounds += TerminalQuad(left, rowTop, right, rowTop + metrics.cellHeightPx, backgroundArgb)
+            val backgroundNeedsDraw = frame.reverseVideo ||
+                styleFlags != 0 ||
+                effect and TextStyle.CHARACTER_ATTRIBUTE_INVERSE != 0 ||
+                TextStyle.decodeBackColor(style) != TextStyle.COLOR_INDEX_BACKGROUND
+            if (backgroundNeedsDraw) {
+                cellBackgrounds += TerminalQuad(
+                    left = left,
+                    top = rowTop,
+                    right = right,
+                    bottom = rowTop + metrics.cellHeightPx,
+                    argb = 0,
+                    style = style,
+                    styleFlags = styleFlags
+                )
             }
             if (cursorInCell) {
                 cursorQuads += cursorQuad(
@@ -301,11 +305,20 @@ internal class TerminalRenderPlanner {
                 )
             }
 
-            val effect = TextStyle.decodeEffect(style)
             val range = row.cellTextRange(column)
             if (range != null && effect and TextStyle.CHARACTER_ATTRIBUTE_INVISIBLE == 0) {
                 val text = textForRange(row, range)
                 if (text.isNotEmpty()) {
+                    val rasterMode = rasterModeForText(text)
+                    val foregroundArgb = if (rasterMode == GlyphAtlasKey.RASTER_MODE_RGBA) {
+                        resolveEffectiveForegroundColor(
+                            frame.palette,
+                            style,
+                            frame.reverseVideo || insideSelection || blockCursor
+                        )
+                    } else {
+                        0xFFFFFFFF.toInt()
+                    }
                     glyphs += TerminalGlyphPlacement(
                         key = GlyphAtlasKey(
                             text = text,
@@ -330,10 +343,12 @@ internal class TerminalRenderPlanner {
                             italic = effect and TextStyle.CHARACTER_ATTRIBUTE_ITALIC != 0,
                             underline = effect and TextStyle.CHARACTER_ATTRIBUTE_UNDERLINE != 0,
                             strikeThrough = effect and TextStyle.CHARACTER_ATTRIBUTE_STRIKETHROUGH != 0,
-                            rasterMode = rasterModeForText(text)
+                            rasterMode = rasterMode
                         ),
                         left = left,
-                        top = rowTop
+                        top = rowTop,
+                        style = style,
+                        styleFlags = styleFlags
                     )
                 }
             }
@@ -419,15 +434,16 @@ internal class TerminalRenderPlanner {
                     column <= selection.last && cellEnd - 1 >= selection.first
                 val cursorInCell = cursor.visible && frame.topRow + rowIndex == cursor.row &&
                     cursor.column in column until cellEnd
-                val reverse = frame.reverseVideo || insideSelection ||
+                val overlayReverse = insideSelection ||
                     (cursorInCell && cursor.style == TerminalCursor.STYLE_BLOCK)
-                val color = resolveEffectiveForegroundColor(frame.palette, style, reverse)
                 decorations += TerminalQuad(
                     left = column * metrics.cellWidthPx,
                     top = underlineTop,
                     right = cellEnd * metrics.cellWidthPx,
                     bottom = underlineBottom,
-                    argb = color
+                    argb = 0,
+                    style = style,
+                    styleFlags = if (overlayReverse) GlesStyleFlagOverlayReverse else 0
                 )
             }
             column = cellEnd

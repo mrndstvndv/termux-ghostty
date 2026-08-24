@@ -4,15 +4,23 @@ internal object GlesShaderSources {
     val VERTEX = """
         #version 300 es
         precision highp float;
+        precision highp int;
 
         layout(location = 0) in vec4 aRect;
         layout(location = 1) in vec4 aTexRect;
         layout(location = 2) in vec4 aColor;
+        layout(location = 3) in uint aStyleLow;
+        layout(location = 4) in uint aStyleHigh;
+        layout(location = 5) in uint aStyleFlags;
 
         uniform vec2 uViewport;
+        uniform sampler2D uPalette;
+        uniform int uResolveStyle;
+        uniform int uReverseVideo;
 
         out vec2 vTexCoord;
         out vec4 vColor;
+        out vec4 vBackground;
 
         const vec2 QUAD_VERTICES[6] = vec2[6](
             vec2(0.0, 0.0),
@@ -23,6 +31,47 @@ internal object GlesShaderSources {
             vec2(1.0, 0.0)
         );
 
+        vec4 decodeColor(uint payload, bool trueColor) {
+            if (trueColor) {
+                return vec4(
+                    float((payload >> 16u) & 255u) / 255.0,
+                    float((payload >> 8u) & 255u) / 255.0,
+                    float(payload & 255u) / 255.0,
+                    1.0
+                );
+            }
+            return texelFetch(uPalette, ivec2(int(payload & 511u), 0), 0);
+        }
+
+        void resolveStyle(out vec4 foreground, out vec4 background) {
+            uint effects = aStyleLow & 2047u;
+            uint foregroundPayload = aStyleHigh >> 8u;
+            uint backgroundPayload = (aStyleLow >> 16u) | ((aStyleHigh & 255u) << 16u);
+            bool trueForeground = (effects & 512u) != 0u;
+            bool trueBackground = (effects & 1024u) != 0u;
+            bool bold = (effects & 9u) != 0u;
+            uint foregroundIndex = foregroundPayload & 511u;
+            if (!trueForeground && bold && foregroundIndex <= 7u) {
+                foregroundIndex += 8u;
+            }
+            foreground = trueForeground
+                ? decodeColor(foregroundPayload, true)
+                : texelFetch(uPalette, ivec2(int(foregroundIndex), 0), 0);
+            background = decodeColor(backgroundPayload, trueBackground);
+
+            bool inverse = (effects & 16u) != 0u;
+            bool overlayReverse = (aStyleFlags & 1u) != 0u;
+            bool reverse = (uReverseVideo != 0 || overlayReverse) != inverse;
+            if (reverse) {
+                vec4 swapped = foreground;
+                foreground = background;
+                background = swapped;
+            }
+            if ((effects & 256u) != 0u) {
+                foreground.rgb = floor(foreground.rgb * 255.0 * 2.0 / 3.0) / 255.0;
+            }
+        }
+
         void main() {
             vec2 unit = QUAD_VERTICES[gl_VertexID];
             vec2 position = mix(aRect.xy, aRect.zw, unit);
@@ -32,7 +81,12 @@ internal object GlesShaderSources {
             );
             gl_Position = vec4(ndc, 0.0, 1.0);
             vTexCoord = mix(aTexRect.xy, aTexRect.zw, unit);
-            vColor = aColor;
+            if (uResolveStyle != 0) {
+                resolveStyle(vColor, vBackground);
+            } else {
+                vColor = aColor;
+                vBackground = aColor;
+            }
         }
     """.trimIndent()
 
@@ -43,12 +97,18 @@ internal object GlesShaderSources {
         uniform sampler2D uAtlas;
         uniform int uTextured;
         uniform int uMaskGlyph;
+        uniform int uStyleBackground;
 
         in vec2 vTexCoord;
         in vec4 vColor;
+        in vec4 vBackground;
         out vec4 fragColor;
 
         void main() {
+            if (uStyleBackground != 0) {
+                fragColor = vBackground;
+                return;
+            }
             if (uTextured == 0) {
                 fragColor = vColor;
                 return;

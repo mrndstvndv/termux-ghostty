@@ -32,6 +32,24 @@ internal data class TerminalGlyphPlacement(
 )
 
 internal class TerminalRenderPlan(
+    val rows: List<TerminalRenderRowPlan?>
+) {
+    val cellBackgrounds: List<TerminalQuad> by lazy(LazyThreadSafetyMode.NONE) {
+        rows.filterNotNull().flatMap { it.cellBackgrounds }
+    }
+    val cursorQuads: List<TerminalQuad> by lazy(LazyThreadSafetyMode.NONE) {
+        rows.filterNotNull().flatMap { it.cursorQuads }
+    }
+    val glyphs: List<TerminalGlyphPlacement> by lazy(LazyThreadSafetyMode.NONE) {
+        rows.filterNotNull().flatMap { it.glyphs }
+    }
+    val decorations: List<TerminalQuad> by lazy(LazyThreadSafetyMode.NONE) {
+        rows.filterNotNull().flatMap { it.decorations }
+    }
+}
+
+internal class TerminalRenderRowPlan(
+    val rowIndex: Int,
     val cellBackgrounds: List<TerminalQuad>,
     val cursorQuads: List<TerminalQuad>,
     val glyphs: List<TerminalGlyphPlacement>,
@@ -42,7 +60,7 @@ internal class TerminalRenderPlan(
  * CPU-only conversion from an immutable frame to GLES draw packets.
  *
  * The planner owns no backend or Compose state. It retains only bounded,
- * immutable packets for the visible rows; the flattened plan belongs to one draw.
+ * immutable row packets for the visible rows; each plan belongs to one draw.
  */
 internal class TerminalRenderPlanner {
     private val measurePaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.SUBPIXEL_TEXT_FLAG)
@@ -61,44 +79,27 @@ internal class TerminalRenderPlanner {
 
         val frame = snapshot.frame
         ensureRowPlanCapacity(frame.rowsVisible)
-        val rows = planRows(snapshot)
-        return TerminalRenderPlan(
-            cellBackgrounds = rows.cellBackgrounds.toList(),
-            cursorQuads = rows.cursorQuads.toList(),
-            glyphs = rows.glyphs.toList(),
-            decorations = rows.decorations.toList()
-        ).also { nextPlan ->
+        return TerminalRenderPlan(planRows(snapshot)).also { nextPlan ->
             cachedSnapshot = snapshot
             cachedPlan = nextPlan
         }
     }
 
-    private fun planRows(snapshot: GlesTerminalSnapshot): PlannedRows {
+    private fun planRows(snapshot: GlesTerminalSnapshot): List<TerminalRenderRowPlan?> {
         val frame = snapshot.frame
-        val cellBackgrounds = ArrayList<TerminalQuad>()
-        val cursorQuads = ArrayList<TerminalQuad>()
-        val glyphs = ArrayList<TerminalGlyphPlacement>()
-        val decorations = ArrayList<TerminalQuad>()
+        val plannedRows = arrayOfNulls<TerminalRenderRowPlan>(frame.rowsVisible)
         for (rowIndex in 0 until frame.rowsVisible) {
-            val row = frame.row(rowIndex)
-            if (row == null) {
-                rowPlans[rowIndex] = null
-                continue
-            }
-            val rowPlan = planRowFor(snapshot, rowIndex, row)
-            cellBackgrounds.addAll(rowPlan.cellBackgrounds)
-            cursorQuads.addAll(rowPlan.cursorQuads)
-            glyphs.addAll(rowPlan.glyphs)
-            decorations.addAll(rowPlan.decorations)
+            val row = frame.row(rowIndex) ?: continue
+            plannedRows[rowIndex] = planRowFor(snapshot, rowIndex, row)
         }
-        return PlannedRows(cellBackgrounds, cursorQuads, glyphs, decorations)
+        return plannedRows.toList()
     }
 
     private fun planRowFor(
         snapshot: GlesTerminalSnapshot,
         rowIndex: Int,
         row: com.termux.terminal.compose.TerminalRow
-    ): TerminalRowPlan {
+    ): TerminalRenderRowPlan {
         val frame = snapshot.frame
         val absoluteRow = frame.topRow + rowIndex
         val selection = selectionRange(snapshot.selection, absoluteRow, frame.columns)
@@ -181,7 +182,7 @@ internal class TerminalRenderPlanner {
         private val typeface: android.graphics.Typeface?,
         private val fontSizePx: Float,
         private val linkSegments: Array<TerminalLinkSegment>?,
-        val plan: TerminalRowPlan
+        val plan: TerminalRenderRowPlan
     ) {
         @Suppress("LongParameterList")
         fun matches(
@@ -213,20 +214,6 @@ internal class TerminalRenderPlanner {
         }
     }
 
-    private class PlannedRows(
-        val cellBackgrounds: List<TerminalQuad>,
-        val cursorQuads: List<TerminalQuad>,
-        val glyphs: List<TerminalGlyphPlacement>,
-        val decorations: List<TerminalQuad>
-    )
-
-    private class TerminalRowPlan(
-        val cellBackgrounds: List<TerminalQuad>,
-        val cursorQuads: List<TerminalQuad>,
-        val glyphs: List<TerminalGlyphPlacement>,
-        val decorations: List<TerminalQuad>
-    )
-
     @Suppress(
         "LongParameterList",
         "LongMethod",
@@ -241,7 +228,7 @@ internal class TerminalRenderPlanner {
         selectionStart: Int,
         selectionEnd: Int,
         linkSegments: Array<TerminalLinkSegment>?
-    ): TerminalRowPlan {
+    ): TerminalRenderRowPlan {
         val metrics = snapshot.metrics
         val absoluteRow = frame.topRow + rowIndex
         val rowTop = rowIndex * metrics.cellHeightPx
@@ -364,7 +351,8 @@ internal class TerminalRenderPlanner {
             linkSegments = linkSegments,
             decorations = decorations
         )
-        return TerminalRowPlan(
+        return TerminalRenderRowPlan(
+            rowIndex = rowIndex,
             cellBackgrounds = cellBackgrounds.toList(),
             cursorQuads = cursorQuads.toList(),
             glyphs = glyphs.toList(),

@@ -15,12 +15,16 @@ internal object GlesShaderSources {
 
         uniform vec2 uViewport;
         uniform sampler2D uPalette;
+        uniform sampler2D uRowCounts;
         uniform int uResolveStyle;
         uniform int uReverseVideo;
+        uniform int uFixedRows;
+        uniform int uRowStride;
 
         out vec2 vTexCoord;
         out vec4 vColor;
         out vec4 vBackground;
+        flat out uint vInstanceValid;
 
         const vec2 QUAD_VERTICES[6] = vec2[6](
             vec2(0.0, 0.0),
@@ -72,7 +76,29 @@ internal object GlesShaderSources {
             }
         }
 
+        uint rowInstanceCount(int row) {
+            vec4 encoded = texelFetch(uRowCounts, ivec2(row, 0), 0);
+            return uint(round(encoded.r * 255.0)) |
+                (uint(round(encoded.g * 255.0)) << 8u) |
+                (uint(round(encoded.b * 255.0)) << 16u) |
+                (uint(round(encoded.a * 255.0)) << 24u);
+        }
+
         void main() {
+            if (uFixedRows != 0) {
+                int row = gl_InstanceID / uRowStride;
+                int slot = gl_InstanceID - row * uRowStride;
+                vInstanceValid = uint(slot) < rowInstanceCount(row) ? 1u : 0u;
+            } else {
+                vInstanceValid = 1u;
+            }
+            if (vInstanceValid == 0u) {
+                gl_Position = vec4(2.0, 2.0, 0.0, 1.0);
+                vTexCoord = vec2(0.0);
+                vColor = vec4(0.0);
+                vBackground = vec4(0.0);
+                return;
+            }
             vec2 unit = QUAD_VERTICES[gl_VertexID];
             vec2 position = mix(aRect.xy, aRect.zw, unit);
             vec2 ndc = vec2(
@@ -102,9 +128,11 @@ internal object GlesShaderSources {
         in vec2 vTexCoord;
         in vec4 vColor;
         in vec4 vBackground;
+        flat in uint vInstanceValid;
         out vec4 fragColor;
 
         void main() {
+            if (vInstanceValid == 0u) discard;
             if (uStyleBackground != 0) {
                 fragColor = vBackground;
                 return;

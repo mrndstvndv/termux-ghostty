@@ -21,6 +21,7 @@ private val InstanceBufferBytes = MaxInstancesPerBatch * maxOf(
     StyledInstanceStrideBytes
 )
 private const val DiagnosticFrameInterval = 16L
+private val EmptyTerminalQuads = emptyList<TerminalQuad>()
 
 /** Redundant callbacks remain complete framebuffer presentations. */
 internal data class GlesPresentationDecision(
@@ -45,7 +46,7 @@ internal fun glesPresentationDecision(
 }
 
 /** All GLES calls and mutable GL resources are confined to this renderer thread. */
-@Suppress("TooManyFunctions")
+@Suppress("TooManyFunctions", "LargeClass")
 internal class GlesTerminalRenderer(
     private val surface: GlesTerminalSurface,
     private val requestRender: () -> Unit
@@ -196,21 +197,25 @@ internal class GlesTerminalRenderer(
         try {
             clear(backgroundColor(snapshot))
             currentResources.palette.bind(snapshot.frame.palette)
-            drawStyledQuads(
+            drawStyledRows(
                 resources = currentResources,
-                quads = plan.cellBackgrounds,
-                slot = 0,
+                rows = plan.rows,
+                rowStride = snapshot.frame.columns,
                 styleBackground = true,
                 reverseVideo = snapshot.frame.reverseVideo
             )
-            drawColoredQuads(currentResources, plan.cursorQuads, slot = 1)
+            drawCursorRows(
+                resources = currentResources,
+                rows = plan.rows,
+                rowStride = snapshot.frame.columns
+            )
             // Glyph batches are keyed by atlas page and generation; reset callbacks flush old
             // batches before their textures are deleted.
             drawGlyphs(currentResources, plan.glyphs, snapshot.frame.reverseVideo)
-            drawStyledQuads(
+            drawStyledRows(
                 resources = currentResources,
-                quads = plan.decorations,
-                slot = 2,
+                rows = plan.rows,
+                rowStride = snapshot.frame.columns,
                 styleBackground = false,
                 reverseVideo = snapshot.frame.reverseVideo
             )
@@ -262,6 +267,7 @@ internal class GlesTerminalRenderer(
                 staticBuffers = GlesStaticInstanceStore(
                     maxSlots = ColoredBatchCount + limits.maxPages * GlyphBatchesPerPage
                 ),
+                dirtyBuffers = GlesDirtyInstanceStore(),
                 atlas = GlesGlyphAtlas(limits),
                 palette = GlesPaletteTexture()
             )
@@ -274,23 +280,27 @@ internal class GlesTerminalRenderer(
         }
     }
 
-    private fun drawColoredQuads(
+    private fun drawCursorRows(
         resources: GlesResources,
-        quads: List<TerminalQuad>,
-        slot: Int
+        rows: List<TerminalRenderRowPlan?>,
+        rowStride: Int
     ) {
-        if (quads.isEmpty()) return
-        resources.program.bind(viewportWidth, viewportHeight, textured = false)
-        resources.staticBuffers.draw(
-            slot = slot,
-            source = quads,
+        val buffer = resources.dirtyBuffers.cursor
+        val itemsForRow: (TerminalRenderRowPlan?) -> List<TerminalQuad> = { row ->
+            row?.cursorQuads ?: EmptyTerminalQuads
+        }
+        buffer.update(
+            rowCount = rows.size,
+            rowStride = rowStride,
+            strideBytes = InstanceStrideBytes,
+            strideFloats = InstanceStrideFloats,
             scratch = instanceBuffer,
-            requiredFloats = quads.size * InstanceStrideFloats,
-            instanceCount = quads.size,
-            fill = { buffer ->
-                quads.forEach { quad ->
+            sourceFor = { index -> itemsForRow(rows[index]) },
+            countFor = { index -> itemsForRow(rows[index]).size },
+            fillRow = { index, rowBuffer ->
+                itemsForRow(rows[index]).forEach { quad ->
                     appendInstance(
-                        buffer = buffer,
+                        buffer = rowBuffer,
                         quad = quad,
                         u0 = 0f,
                         v0 = 0f,
@@ -299,47 +309,70 @@ internal class GlesTerminalRenderer(
                         color = quad.argb
                     )
                 }
-            },
-            configureAttributes = ::bindInstanceAttributes
+            }
         )
+        if (!buffer.hasInstances()) return
+        resources.program.bind(
+            viewportWidth,
+            viewportHeight,
+            textured = false,
+            fixedRows = true,
+            rowStride = rowStride
+        )
+        buffer.bindRowCounts()
+        buffer.draw(::bindInstanceAttributes)
     }
 
-    private fun drawStyledQuads(
+    private fun drawStyledRows(
         resources: GlesResources,
-        quads: List<TerminalQuad>,
-        slot: Int,
+        rows: List<TerminalRenderRowPlan?>,
+        rowStride: Int,
         styleBackground: Boolean,
         reverseVideo: Boolean
     ) {
-        if (quads.isEmpty()) return
+        val buffer = if (styleBackground) {
+            resources.dirtyBuffers.backgrounds
+        } else {
+            resources.dirtyBuffers.decorations
+        }
+        val itemsForRow: (TerminalRenderRowPlan?) -> List<TerminalQuad> = { row ->
+            if (styleBackground) row?.cellBackgrounds ?: EmptyTerminalQuads
+            else row?.decorations ?: EmptyTerminalQuads
+        }
+        buffer.update(
+            rowCount = rows.size,
+            rowStride = rowStride,
+            strideBytes = StyledInstanceStrideBytes,
+            strideFloats = StyledInstanceStrideFloats,
+            scratch = instanceBuffer,
+            sourceFor = { index -> itemsForRow(rows[index]) },
+            countFor = { index -> itemsForRow(rows[index]).size },
+            fillRow = { index, rowBuffer ->
+                itemsForRow(rows[index]).forEach { quad ->
+                    val style = quad.style
+                        ?: throw GlesResourceException("styled quad has no text style")
+                    appendStyledInstance(
+                        buffer = rowBuffer,
+                        quad = quad,
+                        style = style,
+                        styleFlags = quad.styleFlags
+                    )
+                }
+            }
+        )
+        if (!buffer.hasInstances()) return
         resources.program.bind(
             viewportWidth,
             viewportHeight,
             textured = false,
             resolveStyle = true,
             styleBackground = styleBackground,
-            reverseVideo = reverseVideo
+            reverseVideo = reverseVideo,
+            fixedRows = true,
+            rowStride = rowStride
         )
-        resources.staticBuffers.draw(
-            slot = slot,
-            source = quads,
-            scratch = instanceBuffer,
-            requiredFloats = quads.size * StyledInstanceStrideFloats,
-            instanceCount = quads.size,
-            fill = { buffer ->
-                quads.forEach { quad ->
-                    val style = quad.style
-                        ?: throw GlesResourceException("styled quad has no text style")
-                    appendStyledInstance(
-                        buffer = buffer,
-                        quad = quad,
-                        style = style,
-                        styleFlags = quad.styleFlags
-                    )
-                }
-            },
-            configureAttributes = ::bindStyledInstanceAttributes
-        )
+        buffer.bindRowCounts()
+        buffer.draw(::bindStyledInstanceAttributes)
     }
 
     private fun drawGlyphs(
@@ -679,9 +712,11 @@ internal class GlesTerminalRenderer(
         )
     }
 
+    @Suppress("NestedBlockDepth")
     private class GlesResources(
         val program: GlesProgram,
         val staticBuffers: GlesStaticInstanceStore,
+        val dirtyBuffers: GlesDirtyInstanceStore,
         val atlas: GlesGlyphAtlas,
         val palette: GlesPaletteTexture
     ) {
@@ -695,7 +730,11 @@ internal class GlesTerminalRenderer(
                     try {
                         staticBuffers.release()
                     } finally {
-                        program.release()
+                        try {
+                            dirtyBuffers.release()
+                        } finally {
+                            program.release()
+                        }
                     }
                 }
             }
@@ -773,10 +812,13 @@ private class GlesProgram private constructor(
     private val texturedUniform: Int,
     private val atlasUniform: Int,
     private val paletteUniform: Int,
+    private val rowCountsUniform: Int,
     private val maskGlyphUniform: Int,
     private val resolveStyleUniform: Int,
     private val styleBackgroundUniform: Int,
-    private val reverseVideoUniform: Int
+    private val reverseVideoUniform: Int,
+    private val fixedRowsUniform: Int,
+    private val rowStrideUniform: Int
 ) {
     fun bind(
         width: Int,
@@ -785,17 +827,22 @@ private class GlesProgram private constructor(
         maskGlyph: Boolean = false,
         resolveStyle: Boolean = false,
         styleBackground: Boolean = false,
-        reverseVideo: Boolean = false
+        reverseVideo: Boolean = false,
+        fixedRows: Boolean = false,
+        rowStride: Int = 1
     ) {
         GLES30.glUseProgram(programId)
         GLES30.glUniform2f(viewportUniform, width.toFloat(), height.toFloat())
         GLES30.glUniform1i(texturedUniform, if (textured) 1 else 0)
         GLES30.glUniform1i(atlasUniform, 0)
         GLES30.glUniform1i(paletteUniform, 1)
+        GLES30.glUniform1i(rowCountsUniform, 2)
         GLES30.glUniform1i(maskGlyphUniform, if (maskGlyph) 1 else 0)
         GLES30.glUniform1i(resolveStyleUniform, if (resolveStyle) 1 else 0)
         GLES30.glUniform1i(styleBackgroundUniform, if (styleBackground) 1 else 0)
         GLES30.glUniform1i(reverseVideoUniform, if (reverseVideo) 1 else 0)
+        GLES30.glUniform1i(fixedRowsUniform, if (fixedRows) 1 else 0)
+        GLES30.glUniform1i(rowStrideUniform, rowStride.coerceAtLeast(1))
     }
 
     fun release() {
@@ -834,28 +881,37 @@ private class GlesProgram private constructor(
                 val textured = GLES30.glGetUniformLocation(program, "uTextured")
                 val atlas = GLES30.glGetUniformLocation(program, "uAtlas")
                 val palette = GLES30.glGetUniformLocation(program, "uPalette")
+                val rowCounts = GLES30.glGetUniformLocation(program, "uRowCounts")
                 val maskGlyph = GLES30.glGetUniformLocation(program, "uMaskGlyph")
                 val resolveStyle = GLES30.glGetUniformLocation(program, "uResolveStyle")
                 val styleBackground = GLES30.glGetUniformLocation(program, "uStyleBackground")
                 val reverseVideo = GLES30.glGetUniformLocation(program, "uReverseVideo")
+                val fixedRows = GLES30.glGetUniformLocation(program, "uFixedRows")
+                val rowStride = GLES30.glGetUniformLocation(program, "uRowStride")
                 requireUniform(viewport, "uViewport")
                 requireUniform(textured, "uTextured")
                 requireUniform(atlas, "uAtlas")
                 requireUniform(palette, "uPalette")
+                requireUniform(rowCounts, "uRowCounts")
                 requireUniform(maskGlyph, "uMaskGlyph")
                 requireUniform(resolveStyle, "uResolveStyle")
                 requireUniform(styleBackground, "uStyleBackground")
                 requireUniform(reverseVideo, "uReverseVideo")
+                requireUniform(fixedRows, "uFixedRows")
+                requireUniform(rowStride, "uRowStride")
                 return GlesProgram(
                     program,
                     viewport,
                     textured,
                     atlas,
                     palette,
+                    rowCounts,
                     maskGlyph,
                     resolveStyle,
                     styleBackground,
-                    reverseVideo
+                    reverseVideo,
+                    fixedRows,
+                    rowStride
                 )
             } catch (error: GlesProgramException) {
                 GLES30.glDeleteProgram(program)

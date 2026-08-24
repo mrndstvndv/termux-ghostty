@@ -1,8 +1,13 @@
 package com.termux.terminal.compose.internal
 
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.GraphicsContext
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import com.termux.terminal.compose.CursorEffectState
+import com.termux.terminal.compose.CursorEffectSnapshot
 import com.termux.terminal.compose.TerminalBackend
 import com.termux.terminal.compose.TerminalBackendError
 import com.termux.terminal.compose.TerminalBackendListener
@@ -76,6 +81,8 @@ internal class TerminalController(
 
     private val cursorEffectState = CursorEffectState()
     private var cursorFramePending = false
+    private val cursorEffectPlan = CursorEffectRenderPlan()
+    private val cursorEffectPath = Path()
 
     private var renderKey = RenderKey(0, null, emptyList())
 
@@ -116,8 +123,10 @@ internal class TerminalController(
         val fontGeometryChanged = fontSize != effectiveFontSize ||
             newConfig.typeface != config.typeface
         val shadersChanged = newConfig.shaders != config.shaders
+        val cursorEffectChanged = newConfig.cursorEffect != config.cursorEffect
         config = newConfig
         effectiveFontSize = fontSize
+        if (cursorEffectChanged) resetCursorTracking()
         if (fontGeometryChanged) invalidateViewportMeasurement()
         if (shadersChanged) {
             shaderCompiler = TerminalShaderCompiler(newConfig.onDiagnostics)
@@ -277,18 +286,52 @@ internal class TerminalController(
         )
     }
 
-    /** Draws cursor effects in a separate overlay using the frame it observes. */
+    /** Captures cursor movement from one complete frame for a renderer thread. */
+    internal fun captureCursorEffectSnapshot(
+        frame: TerminalFrame,
+        timeSeconds: Float
+    ): CursorEffectSnapshot? {
+        val effect = config.cursorEffect ?: return null
+        cursorEffectState.observe(frame, timeSeconds)
+        cursorFramePending = false
+        return cursorEffectState.snapshot(effect)
+    }
+
+    /** Draws the shared cursor-effect geometry through the Compose adapter. */
     fun drawCursorEffect(
         drawScope: DrawScope,
         metrics: TerminalMetrics,
         timeSeconds: Float
     ) {
         if (released) return
-        val effect = config.cursorEffect ?: return
         val frame = backend.currentFrame() ?: return
-        cursorEffectState.observe(frame, timeSeconds)
-        cursorFramePending = false
-        effect.draw(drawScope, frame, metrics, cursorEffectState, timeSeconds)
+        val effectSnapshot = captureCursorEffectSnapshot(frame, timeSeconds) ?: return
+        if (planCursorEffect(effectSnapshot, frame, metrics, timeSeconds, cursorEffectPlan)) {
+            drawCursorEffectPlan(drawScope)
+        }
+    }
+
+    private fun drawCursorEffectPlan(drawScope: DrawScope) {
+        cursorEffectPath.reset()
+        cursorEffectPath.fillType = PathFillType.EvenOdd
+        cursorEffectPath.moveTo(cursorEffectPlan.vertices[0], cursorEffectPlan.vertices[1])
+        for (index in 1 until cursorEffectPlan.vertexCount) {
+            val offset = index * 2
+            cursorEffectPath.lineTo(
+                cursorEffectPlan.vertices[offset],
+                cursorEffectPlan.vertices[offset + 1]
+            )
+        }
+        cursorEffectPath.close()
+        cursorEffectPath.addRect(
+            Rect(
+                cursorEffectPlan.cutoutLeft,
+                cursorEffectPlan.cutoutTop,
+                cursorEffectPlan.cutoutRight,
+                cursorEffectPlan.cutoutBottom
+            )
+        )
+        drawScope.drawPath(cursorEffectPath, Color(cursorEffectPlan.argb))
     }
 
     override fun onFrameInvalidated() {

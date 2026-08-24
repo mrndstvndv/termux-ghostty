@@ -17,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 import com.termux.terminal.compose.ShaderDefinition
+import com.termux.terminal.compose.CursorEffectSnapshot
 import com.termux.terminal.compose.TerminalFrame
 import com.termux.terminal.compose.TerminalMetrics
 import com.termux.terminal.compose.TerminalSelection
@@ -67,6 +68,7 @@ data class GlesTerminalSnapshot(
     val frame: TerminalFrame,
     val metrics: TerminalMetrics,
     val selection: TerminalSelection = TerminalSelection.EMPTY,
+    val cursorEffect: CursorEffectSnapshot? = null,
     val viewportWidthPx: Int = metrics.viewportWidthPx,
     val viewportHeightPx: Int = metrics.viewportHeightPx,
     val contentRevision: Long = frame.sequence,
@@ -212,6 +214,7 @@ class GlesTerminalSurface(
     private val lifecycleDecision = AtomicReference<((Boolean) -> Unit)?>(null)
     private val lifecycleActive = AtomicBoolean(false)
     private val animationTimeSeconds = AtomicReference(0f)
+    private val cursorAnimationDeadlineSeconds = AtomicReference(Float.NEGATIVE_INFINITY)
     private val atlasResetRequested = AtomicBoolean(false)
     private val mainHandler = Handler(Looper.getMainLooper())
     private val pendingDiagnostic = AtomicReference<GlesTerminalDiagnostic?>(null)
@@ -223,6 +226,14 @@ class GlesTerminalSurface(
     /** Publishes one complete frame without blocking the caller. */
     fun publish(snapshot: GlesTerminalSnapshot): Boolean {
         if (!handoff.publish(snapshot)) return false
+        val cursorEffect = snapshot.cursorEffect
+        val cursorDeadline = cursorEffect?.let {
+            it.changeSeconds + it.effect.maxDurationSeconds
+        } ?: Float.NEGATIVE_INFINITY
+        val previousDeadline = cursorAnimationDeadlineSeconds.getAndSet(cursorDeadline)
+        if (cursorDeadline > previousDeadline) {
+            animationTimeSeconds.set(cursorEffect?.changeSeconds ?: 0f)
+        }
         requestRender.get()?.invoke()
         return true
     }
@@ -232,6 +243,7 @@ class GlesTerminalSurface(
         frame: TerminalFrame,
         metrics: TerminalMetrics,
         selection: TerminalSelection = TerminalSelection.EMPTY,
+        cursorEffect: CursorEffectSnapshot? = null,
         contentRevision: Long = frame.sequence,
         presentationRevision: Long = contentRevision,
         visual: GlesTerminalVisualConfig = GlesTerminalVisualConfig(
@@ -241,6 +253,7 @@ class GlesTerminalSurface(
         GlesTerminalSnapshot(
             frame = frame,
             metrics = metrics,
+            cursorEffect = cursorEffect,
             selection = selection,
             contentRevision = contentRevision,
             presentationRevision = presentationRevision,
@@ -307,6 +320,9 @@ class GlesTerminalSurface(
     internal fun acquireSnapshot(): GlesTerminalSnapshot? = handoff.acquire()
 
     internal fun animationTimeSeconds(): Float = animationTimeSeconds.get()
+
+    internal fun needsCursorAnimationFrame(timeSeconds: Float): Boolean =
+        timeSeconds <= cursorAnimationDeadlineSeconds.get()
 
     internal fun consumeAtlasReset(): Boolean = atlasResetRequested.compareAndSet(true, false)
 

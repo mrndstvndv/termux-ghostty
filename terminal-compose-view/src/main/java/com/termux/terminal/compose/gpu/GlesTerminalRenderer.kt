@@ -3,6 +3,8 @@ package com.termux.terminal.compose.gpu
 import android.opengl.GLES30
 import android.opengl.GLSurfaceView
 import android.os.Trace
+import com.termux.terminal.compose.internal.CursorEffectRenderPlan
+import com.termux.terminal.compose.internal.planCursorEffect
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.FloatBuffer
@@ -63,6 +65,7 @@ internal class GlesTerminalRenderer(
     private var skippedDrawCount = 0L
     private var lastError: String? = null
     private val renderPlanner = TerminalRenderPlanner()
+    private val cursorEffectPlan = CursorEffectRenderPlan()
     private var vendor = "unknown"
     private var renderer = "unknown"
     private var version = "unknown"
@@ -216,6 +219,22 @@ internal class GlesTerminalRenderer(
                     reverseVideo = snapshot.frame.reverseVideo
                 )
             }
+            traceSection("EctoGles.cursor-effect") {
+                if (planCursorEffect(
+                        effectSnapshot = snapshot.cursorEffect,
+                        frame = snapshot.frame,
+                        metrics = snapshot.metrics,
+                        timeSeconds = animationTime,
+                        output = cursorEffectPlan
+                    )
+                ) {
+                    currentResources.cursorEffects.draw(
+                        plan = cursorEffectPlan,
+                        viewportWidth = viewportWidth,
+                        viewportHeight = viewportHeight
+                    )
+                }
+            }
             if (checkGlError("frame")) {
                 throw GlesResourceException("frame reported a GLES error")
             }
@@ -254,18 +273,27 @@ internal class GlesTerminalRenderer(
     @Suppress("ThrowsCount", "TooGenericExceptionCaught")
     private fun createResources(limits: GlyphAtlasLimits): GlesResources {
         val program = GlesProgram.create()
+        val cursorEffects = try {
+            GlesCursorEffectRenderer.create()
+        } catch (error: RuntimeException) {
+            program.release()
+            throw error
+        }
         return try {
             GlesResources(
                 program = program,
+                cursorEffects = cursorEffects,
                 dirtyBuffers = GlesDirtyInstanceStore(),
                 glyphRows = GlesGlyphRowBuffer(),
                 atlas = GlesGlyphAtlas(limits),
                 palette = GlesPaletteTexture()
             )
         } catch (error: GlesRendererException) {
+            cursorEffects.release()
             program.release()
             throw error
         } catch (error: RuntimeException) {
+            cursorEffects.release()
             program.release()
             throw GlesResourceException("GLES resource setup failed", error)
         }
@@ -658,6 +686,7 @@ internal class GlesTerminalRenderer(
     @Suppress("NestedBlockDepth")
     private class GlesResources(
         val program: GlesProgram,
+        val cursorEffects: GlesCursorEffectRenderer,
         val dirtyBuffers: GlesDirtyInstanceStore,
         val glyphRows: GlesGlyphRowBuffer,
         val atlas: GlesGlyphAtlas,
@@ -676,7 +705,11 @@ internal class GlesTerminalRenderer(
                         try {
                             glyphRows.release()
                         } finally {
-                            program.release()
+                            try {
+                                cursorEffects.release()
+                            } finally {
+                                program.release()
+                            }
                         }
                     }
                 }

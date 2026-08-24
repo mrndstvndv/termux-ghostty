@@ -38,5 +38,9 @@ enum class CursorTrailEffect(val key: String, val label: String) {
     }
 }
 
-internal fun CursorTrailEffect.toCursorEffect(): CursorEffect? =
-    if (this == CursorTrailEffect.NONE) null else AppCursorEffect(this)
+internal fun CursorTrailEffect.toCursorEffect(): CursorEffect? = when (this) {
+    CursorTrailEffect.NONE -> null
+    CursorTrailEffect.WARP -> CursorEffect.WARP
+    CursorTrailEffect.SWEEP -> CursorEffect.SWEEP
+    CursorTrailEffect.TAIL -> CursorEffect.TAIL
+}

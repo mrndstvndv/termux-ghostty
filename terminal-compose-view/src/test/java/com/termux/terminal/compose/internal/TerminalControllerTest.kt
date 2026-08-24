@@ -2,7 +2,6 @@ package com.termux.terminal.compose.internal
 
 import androidx.compose.ui.graphics.GraphicsContext
 import androidx.compose.ui.graphics.layer.GraphicsLayer
-import androidx.compose.ui.graphics.drawscope.DrawScope
 import com.termux.terminal.compose.CursorEffect
 import com.termux.terminal.compose.CursorEffectState
 import com.termux.terminal.compose.TerminalBackend
@@ -27,7 +26,7 @@ class TerminalControllerTest {
     @Test
     fun frameInvalidationSchedulesCursorAnimationBeforeFirstRenderedFrame() {
         val controller = TerminalController(RecordingBackend(), UnusedGraphicsContext)
-        controller.configure(TerminalCanvasConfig(cursorEffect = TestCursorEffect))
+        controller.configure(TerminalCanvasConfig(cursorEffect = CursorEffect.SWEEP))
 
         controller.onFrameInvalidated()
 
@@ -242,17 +241,6 @@ class TerminalControllerTest {
     }
 }
 
-private object TestCursorEffect : CursorEffect {
-    override val maxDurationSeconds: Float = 0.2f
-
-    override fun draw(
-        drawScope: DrawScope,
-        frame: TerminalFrame,
-        metrics: TerminalMetrics,
-        state: CursorEffectState,
-        timeSeconds: Float
-    ) = Unit
-}
 
 private fun cursorFrame(sequence: Long, column: Int, row: Int): TerminalFrame =
     TerminalFrame(

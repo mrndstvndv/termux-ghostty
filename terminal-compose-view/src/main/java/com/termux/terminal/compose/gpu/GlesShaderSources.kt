@@ -156,4 +156,40 @@ internal object GlesShaderSources {
             fragColor = sampled;
         }
     """.trimIndent()
+
+    val CURSOR_VERTEX = """
+        #version 300 es
+        precision highp float;
+
+        layout(location = 0) in vec2 aPosition;
+        uniform vec2 uViewport;
+        out vec2 vPosition;
+
+        void main() {
+            vec2 ndc = vec2(
+                (aPosition.x / uViewport.x) * 2.0 - 1.0,
+                1.0 - (aPosition.y / uViewport.y) * 2.0
+            );
+            gl_Position = vec4(ndc, 0.0, 1.0);
+            vPosition = aPosition;
+        }
+    """.trimIndent()
+
+    val CURSOR_FRAGMENT = """
+        #version 300 es
+        precision mediump float;
+
+        uniform vec4 uColor;
+        uniform vec4 uCutout;
+        in vec2 vPosition;
+        out vec4 fragColor;
+
+        void main() {
+            if (vPosition.x >= uCutout.x && vPosition.x <= uCutout.z &&
+                vPosition.y >= uCutout.y && vPosition.y <= uCutout.w) {
+                discard;
+            }
+            fragColor = uColor;
+        }
+    """.trimIndent()
 }

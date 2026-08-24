@@ -1,40 +1,33 @@
 package com.termux.terminal.compose
 
-import androidx.compose.ui.graphics.drawscope.DrawScope
-
 /**
- * Consumer-implemented cursor visual effect (e.g. a warp/sweep/tail trail).
+ * Renderer-neutral cursor trail preset.
  *
- * The consumer owns all colors, geometry, easing, and duration. The library
- * owns previous/current cursor tracking, move timestamps, first-observation
- * behavior, and reset when the backend identity or the effect instance
- * changes. A bounded [maxDurationSeconds] lets the canvas stop scheduling
- * frames once a transient effect has finished.
+ * Cursor movement is captured from complete immutable [TerminalFrame] publications. Both the
+ * Compose and OpenGL ES renderers consume the same geometry planner, so selecting a renderer does
+ * not change trail timing, color, or shape.
  */
-interface CursorEffect {
-
-    /** Declared animation duration in seconds; must be positive. */
+enum class CursorEffect(
     val maxDurationSeconds: Float
-
-    /**
-     * Draws the effect over the terminal frame. [metrics] is the same cell
-     * geometry used by the renderer. [state] reflects the tracked cursor
-     * positions; [timeSeconds] is the canvas animation clock. The effect must
-     * tolerate its first frame, cursor visibility changes, backend replacement,
-     * resize, and stale/empty frames.
-     */
-    fun draw(
-        drawScope: DrawScope,
-        frame: TerminalFrame,
-        metrics: TerminalMetrics,
-        state: CursorEffectState,
-        timeSeconds: Float
-    )
+) {
+    WARP(0.2f),
+    SWEEP(0.2f),
+    TAIL(0.09f)
 }
 
+/** Immutable cursor movement publication safe to consume on a renderer thread. */
+data class CursorEffectSnapshot(
+    val effect: CursorEffect,
+    val previousColumn: Int,
+    val previousRow: Int,
+    val currentColumn: Int,
+    val currentRow: Int,
+    val changeSeconds: Float
+)
+
 /**
- * Cursor movement state tracked by the canvas and handed to [CursorEffect].
- * Reset whenever the backend identity, effect instance, frame sequence, or viewport geometry changes.
+ * Cursor movement state tracked from complete canvas frames and published to the active renderer.
+ * Reset whenever the effect, frame sequence, or viewport geometry changes.
  */
 class CursorEffectState {
     var hasPreviousPosition: Boolean = false
@@ -93,6 +86,27 @@ class CursorEffectState {
         changeSeconds = timeSeconds
         hasPreviousPosition = true
     }
+
+    /** Captures one immutable movement after both endpoints have been observed. */
+    internal fun snapshot(effect: CursorEffect): CursorEffectSnapshot? {
+        if (!hasPreviousPosition || !hasCompleteMovement()) {
+            return null
+        }
+        return CursorEffectSnapshot(
+            effect = effect,
+            previousColumn = previousColumn,
+            previousRow = previousRow,
+            currentColumn = currentColumn,
+            currentRow = currentRow,
+            changeSeconds = changeSeconds
+        )
+    }
+
+    private fun hasCompleteMovement(): Boolean =
+        previousColumn >= 0 &&
+            previousRow >= 0 &&
+            currentColumn >= 0 &&
+            currentRow >= 0
 
     internal fun reset() {
         hasPreviousPosition = false

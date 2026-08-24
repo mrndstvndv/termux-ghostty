@@ -21,7 +21,7 @@ data class TerminalCanvasConfig(
     val typeface: Typeface? = null,
     val shaders: List<ShaderDefinition> = emptyList(),
     val cursorEffect: CursorEffect? = null,
-    /** Selects only the terminal pixel renderer; input and overlays remain Compose-owned. */
+    /** Selects terminal pixels; GLES also owns cursor-effect pixels while input stays in Compose. */
     val renderer: TerminalRenderer = TerminalRenderer.COMPOSE,
     /** Neutral frame-rate request in frames per second; null means display rate. */
     val preferredFrameRate: Float? = null,

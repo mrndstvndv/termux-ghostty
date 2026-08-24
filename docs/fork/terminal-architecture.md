@@ -144,6 +144,8 @@ Transport snapshots are not UI frames. Partial snapshots may omit unchanged rows
 - `RowRunCache` reuse requires matching content, overlays, cell-layout kind, and column geometry.
 - Animated shader rendering uses the bitmap path; non-animated rendering uses retained row layers.
 
+- GLES cursor trails are immutable frame-adjacent publications; shared geometry is drawn by a dedicated GL pass without backend or Compose-state access.
+
 A published `TerminalFrame`, its rows, palette, cell layout, and link layout must remain immutable for the lifetime of every consumer holding it.
 
 ## Input pipeline

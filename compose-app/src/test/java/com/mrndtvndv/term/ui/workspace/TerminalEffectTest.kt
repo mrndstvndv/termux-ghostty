@@ -1,4 +1,5 @@
 package com.mrndtvndv.term.ui.workspace
+import com.termux.terminal.compose.CursorEffect
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -85,8 +86,10 @@ class TerminalEffectTest {
     }
 
     @Test
-    fun cursorTrailRejectsViewportSpanningMoves() {
-        assertTrue(isRenderableCursorTrailDistance(4f))
-        assertFalse(isRenderableCursorTrailDistance(40f))
+    fun cursorTrailPreferencesMapToRendererNeutralPresets() {
+        assertEquals(CursorEffect.WARP, CursorTrailEffect.WARP.toCursorEffect())
+        assertEquals(CursorEffect.SWEEP, CursorTrailEffect.SWEEP.toCursorEffect())
+        assertEquals(CursorEffect.TAIL, CursorTrailEffect.TAIL.toCursorEffect())
+        assertEquals(null, CursorTrailEffect.NONE.toCursorEffect())
     }
 }

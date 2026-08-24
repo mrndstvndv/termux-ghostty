@@ -6,6 +6,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import com.termux.terminal.compose.gpu.GlesTerminalSurface
 import com.termux.terminal.compose.gpu.GlesTerminalVisualConfig
@@ -31,10 +32,15 @@ internal fun glesTerminalCanvasContent(
         if (metrics.viewportWidthPx > 0 && metrics.viewportHeightPx > 0) {
             controller.resizeIfNeeded(metrics.viewportWidthPx, metrics.viewportHeightPx)
             controller.currentFrameForMetrics(metrics)?.let { completeFrame ->
+                val timeSeconds = System.nanoTime() / 1_000_000_000f
                 surface.publish(
                     frame = completeFrame,
                     metrics = metrics,
                     selection = selection,
+                    cursorEffect = controller.captureCursorEffectSnapshot(
+                        frame = completeFrame,
+                        timeSeconds = timeSeconds
+                    ),
                     contentRevision = completeFrame.sequence,
                     presentationRevision = presentationRevision.incrementAndGet(),
                     visual = GlesTerminalVisualConfig(
@@ -61,9 +67,15 @@ internal fun glesTerminalCanvasContent(
         metrics,
         fontSizePx,
         config.typeface,
-        config.shaders
+        config.shaders,
+        config.cursorEffect
     ) {
         currentPublisher()
+    }
+    LaunchedEffect(surface, controller, config.cursorEffect) {
+        if (config.cursorEffect != null) {
+            runGlesCursorEffectFrameLoop(controller, surface)
+        }
     }
 
     GlesTerminalSurface(
@@ -71,4 +83,19 @@ internal fun glesTerminalCanvasContent(
         modifier = modifier
     )
     return surface
+}
+
+/** Pulses the dirty GLES surface only for the published trail's bounded lifetime. */
+private suspend fun runGlesCursorEffectFrameLoop(
+    controller: TerminalController,
+    surface: GlesTerminalSurface
+) {
+    while (true) {
+        controller.awaitInvalidation()
+        var timeSeconds: Float
+        do {
+            timeSeconds = withFrameNanos { nanos -> nanos / 1_000_000_000f }
+            surface.requestAnimationFrame(timeSeconds)
+        } while (surface.needsCursorAnimationFrame(timeSeconds))
+    }
 }

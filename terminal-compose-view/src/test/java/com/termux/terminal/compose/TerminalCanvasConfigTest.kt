@@ -7,8 +7,8 @@ import org.junit.Test
 
 class TerminalCanvasConfigTest {
     @Test
-    fun `compose renderer remains the default`() {
-        assertEquals(TerminalRenderer.COMPOSE, TerminalCanvasConfig().renderer)
+    fun `OpenGL ES renderer is the default`() {
+        assertEquals(TerminalRenderer.OPENGL_ES, TerminalCanvasConfig().renderer)
     }
 
     @Test
@@ -52,9 +52,9 @@ class TerminalCanvasConfigTest {
     }
 
     @Test
-    fun `OpenGL ES renderer is an explicit policy choice`() {
-        val config = TerminalCanvasConfig(renderer = TerminalRenderer.OPENGL_ES)
+    fun `Compose renderer remains an explicit fallback`() {
+        val config = TerminalCanvasConfig(renderer = TerminalRenderer.COMPOSE)
 
-        assertEquals(TerminalRenderer.OPENGL_ES, config.renderer)
+        assertEquals(TerminalRenderer.COMPOSE, config.renderer)
     }
 }

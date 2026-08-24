@@ -70,7 +70,6 @@ internal class GlesTerminalRenderer(
     private var renderer = "unknown"
     private var version = "unknown"
     private var shadingLanguageVersion = "unknown"
-    private var unsupportedAgslGeneration = Long.MIN_VALUE
     private var releasedOnGlThread = false
 
     @Suppress("TooGenericExceptionCaught")
@@ -83,7 +82,6 @@ internal class GlesTerminalRenderer(
         renderer = GLES30.glGetString(GL10.GL_RENDERER) ?: "unknown"
         version = GLES30.glGetString(GL10.GL_VERSION) ?: "unknown"
         shadingLanguageVersion = GLES30.glGetString(GLES30.GL_SHADING_LANGUAGE_VERSION) ?: "unknown"
-        unsupportedAgslGeneration = Long.MIN_VALUE
         presentedSnapshot = null
         lastError = null
 
@@ -160,17 +158,6 @@ internal class GlesTerminalRenderer(
             )
         if (presentationDecision.redundant) {
             skippedDrawCount++
-        }
-        val unsupportedShaders = snapshot.visual.agslShaders
-        if (unsupportedShaders.isNotEmpty() && unsupportedAgslGeneration != generation) {
-            unsupportedAgslGeneration = generation
-            surface.reportDiagnostic(
-                GlesTerminalDiagnostic.UnsupportedAgsl(
-                    state = diagnosticState(),
-                    shaderIds = unsupportedShaders.map { it.id }.take(8),
-                    reason = "AGSL ShaderDefinition sources are not GLSL ES 3.00"
-                )
-            )
         }
 
         val plan = try {

@@ -1,9 +1,7 @@
 package com.termux.terminal.compose.internal
 
-import android.graphics.RenderEffect as AndroidRenderEffect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.GraphicsContext
-import androidx.compose.ui.graphics.asComposeRenderEffect
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.layer.GraphicsLayer
@@ -27,11 +25,8 @@ import com.termux.terminal.compose.TerminalSelection
  */
 internal class TerminalRenderNodeRenderer(
     private val graphicsContext: GraphicsContext,
-    private val rowRenderer: TerminalRowRenderer,
-    private val shaders: List<CompiledShader>
+    private val rowRenderer: TerminalRowRenderer
 ) {
-    private val hasAnimatedShader = shaders.any { it.definition.usesTimeUniform }
-    private val animatedBitmapRenderer = AnimatedTerminalBitmapRenderer(shaders, rowRenderer)
 
     private var parentLayer = graphicsContext.createGraphicsLayer()
     private var rowLayers: Array<TerminalRowLayerState> = emptyArray()
@@ -60,9 +55,6 @@ internal class TerminalRenderNodeRenderer(
     private var lastLinkLayout: TerminalLinkLayout? = null
     private var lastPaletteVersion = Int.MIN_VALUE
     private var paletteVersion = 0
-    private var boundShaders: List<CompiledShader> = emptyList()
-    private var shaderResolutionWidth = Float.NaN
-    private var shaderResolutionHeight = Float.NaN
     private var forceFullTileRecord = true
 
     private var lastTopRow = Int.MIN_VALUE
@@ -70,19 +62,8 @@ internal class TerminalRenderNodeRenderer(
         drawScope: DrawScope,
         frame: TerminalFrame,
         contentVersion: Int,
-        selection: TerminalSelection,
-        timeSeconds: Float
+        selection: TerminalSelection
     ) {
-        if (hasAnimatedShader) {
-            animatedBitmapRenderer.draw(
-                drawScope = drawScope,
-                frame = frame,
-                contentVersion = contentVersion,
-                selection = selection,
-                timeSeconds = timeSeconds
-            )
-            return
-        }
 
         val targetWidth = drawScope.size.width.toInt().coerceAtLeast(1)
         val targetHeight = drawScope.size.height.toInt().coerceAtLeast(1)
@@ -90,13 +71,10 @@ internal class TerminalRenderNodeRenderer(
         updateRowsIfNeeded(drawScope, frame, contentVersion, selection)
         updateBackground(frame)
         updateParentDisplayList(drawScope)
-        if (shaders.isNotEmpty()) updateShaders(timeSeconds)
         drawScope.drawLayer(parentLayer)
     }
 
     fun release() {
-        animatedBitmapRenderer.release()
-        parentLayer.renderEffect = null
         releaseRowLayers()
         rowLayers = emptyArray()
         dirtyRows = BooleanArray(0)
@@ -117,7 +95,6 @@ internal class TerminalRenderNodeRenderer(
         // every render resource. Pixel-only size changes retain row layers;
         // backend grid coalescing decides when reflow actually changes rows.
         if (nextLineHeight != lineHeight) {
-            parentLayer.renderEffect = null
             releaseRowLayers()
             graphicsContext.releaseGraphicsLayer(parentLayer)
             width = targetWidth
@@ -128,9 +105,6 @@ internal class TerminalRenderNodeRenderer(
             dirtyRows = BooleanArray(frame.rowsVisible)
             visibleRowCount = frame.rowsVisible
             ensureHintScratch(frame.rowsVisible)
-            boundShaders = emptyList()
-            shaderResolutionWidth = Float.NaN
-            shaderResolutionHeight = Float.NaN
             parentDisplayListDirty = true
             forceFullTileRecord = true
             invalidateProcessedFrame()
@@ -379,38 +353,6 @@ internal class TerminalRenderNodeRenderer(
         parentDisplayListDirty = false
     }
 
-    private fun updateShaders(timeSeconds: Float) {
-        val shadersChanged = shaders.size != boundShaders.size ||
-            shaders.indices.any { index -> shaders[index].shader !== boundShaders[index].shader }
-        if (shadersChanged) {
-            shaderResolutionWidth = Float.NaN
-            shaderResolutionHeight = Float.NaN
-        }
-
-        val resolutionChanged = shaders.any { it.definition.usesResolutionUniform } &&
-            (shaderResolutionWidth != width.toFloat() || shaderResolutionHeight != height.toFloat())
-        shaders.forEach { compiledShader ->
-            compiledShader.updateUniforms(
-                timeSeconds = timeSeconds,
-                width = width.toFloat(),
-                height = height.toFloat(),
-                updateResolution = resolutionChanged
-            )
-        }
-        if (resolutionChanged) {
-            shaderResolutionWidth = width.toFloat()
-            shaderResolutionHeight = height.toFloat()
-        }
-        if (!shadersChanged && !resolutionChanged) return
-
-        var renderEffect = AndroidRenderEffect.createRuntimeShaderEffect(shaders.first().shader, "content")
-        shaders.drop(1).forEach { compiledShader ->
-            val outerEffect = AndroidRenderEffect.createRuntimeShaderEffect(compiledShader.shader, "content")
-            renderEffect = AndroidRenderEffect.createChainEffect(outerEffect, renderEffect)
-        }
-        parentLayer.renderEffect = renderEffect.asComposeRenderEffect()
-        boundShaders = shaders
-    }
 
     private fun invalidateProcessedFrame() {
         lastProcessedContentVersion = Int.MIN_VALUE

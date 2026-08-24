@@ -45,8 +45,7 @@ internal fun glesTerminalCanvasContent(
                     presentationRevision = presentationRevision.incrementAndGet(),
                     visual = GlesTerminalVisualConfig(
                         typeface = config.typeface,
-                        fontSizePx = fontSizePx,
-                        agslShaders = config.shaders
+                        fontSizePx = fontSizePx
                     )
                 )
             }
@@ -67,7 +66,6 @@ internal fun glesTerminalCanvasContent(
         metrics,
         fontSizePx,
         config.typeface,
-        config.shaders,
         config.cursorEffect
     ) {
         currentPublisher()

@@ -27,17 +27,17 @@ A vibe coding companion for Android — an SSH client with Herdr integration and
 | Local & SSH | Herdr Workspaces | Git Review |
 | :---: | :---: | :---: |
 | ![Local & SSH](compose-app/screenshots/local-and-ssh.png) | ![Herdr Workspaces](compose-app/screenshots/herdr-workspaces-integration.png) | ![Git Review](compose-app/screenshots/git-tab.png) |
-| **Diff Viewer** | **SFTP Browser** | **Cursor Trail Shaders** |
-| ![Diff Viewer](compose-app/screenshots/diff.png) | ![SFTP Browser](compose-app/screenshots/sftp.png) | ![Cursor Trail Shaders](compose-app/screenshots/shaders.png) |
+| **Diff Viewer** | **SFTP Browser** | **Cursor Effects** |
+| ![Diff Viewer](compose-app/screenshots/diff.png) | ![SFTP Browser](compose-app/screenshots/sftp.png) | ![Cursor Effects](compose-app/screenshots/shaders.png) |
 
 ### Features
 
-- **Ghostty terminal backend** — Native VT parsing and terminal state via `libghostty-vt`, rendered with Compose Canvas.
+- **Ghostty terminal backend** — Native VT parsing and terminal state via `libghostty-vt`, rendered with hardware-accelerated OpenGL ES by default.
 - **SSH client** — Native SSH sessions with a server manager (add/edit servers, one-tap connect).
 - **Herdr integration** — Queries `herdr workspace list` / `herdr pane list` and tracks navigation state per workspace.
 - **Git review tab** — Review, stage, and commit changes, edit commit messages, and reset to commits from the app.
 - **SFTP tab** — Browse and transfer files on the connected server, synced to the active workspace's directory.
-- **Cursor trail shaders** — Warp, Sweep, and Tail cursor effects (adapted from ghostty-cursor-shaders).
+- **Cursor effects** — Warp, Sweep, and Tail cursor trails (adapted from ghostty-cursor-shaders).
 - **Local terminal sessions** — Drop into a local shell when you don't need SSH.
 - **Split & tabbed workspaces** — Multiple terminals per workspace.
 - **Material You theming** — Dynamic wallpaper-derived colors.

@@ -20,7 +20,6 @@ import com.mrndtvndv.term.ui.keyboard.ExtraKeysController
 import com.termux.shared.termux.settings.preferences.TermuxAppSharedPreferences
 import com.termux.terminal.TerminalSession
 import com.termux.terminal.compose.ModifierKeyReader
-import com.termux.terminal.compose.ShaderDefinition as ComposeShaderDefinition
 import com.termux.terminal.compose.TerminalCanvas as ComposeTerminalCanvas
 import com.termux.terminal.compose.TerminalCanvasConfig
 import com.termux.terminal.compose.TerminalBackend
@@ -36,8 +35,8 @@ const val MaxKeyboardResizeDebounceMillis = 100
 /**
  * App integration for the reusable compose terminal library.
  *
- * Preferences, app shaders, cursor effects, and the Ghostty session adapter
- * stay in this module. Rendering, input, IME, selection, and frame scheduling
+ * Preferences, cursor effects, and the Ghostty session adapter stay in this
+ * module. Rendering, input, IME, selection, and frame scheduling
  * are provided by [ComposeTerminalCanvas].
  */
 @Composable
@@ -49,7 +48,7 @@ fun TerminalCanvas(
     onBackendCreated: (TerminalSession, TerminalBackend) -> Unit,
     onBackendReleased: (TerminalSession, TerminalBackend) -> Unit,
     isTerminalActive: Boolean,
-    gpuRenderingEnabled: Boolean = false,
+    gpuRenderingEnabled: Boolean = true,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -75,7 +74,6 @@ fun TerminalCanvas(
         onBackendCreated = onBackendCreated,
         onBackendReleased = onBackendReleased
     )
-    val shaderDefinitions = rememberShaderDefinitions(context, preferences)
     val cursorTrail = CursorTrailEffect.fromPref(preferences.getString("cursor_trail_effect", null))
     val cursorEffect = remember(cursorTrail) { cursorTrail.toCursorEffect() }
     val frameRate = VisualEffectFrameRate.fromPref(
@@ -90,7 +88,6 @@ fun TerminalCanvas(
             minimumFontSize = minimumFontSize,
             maximumFontSize = maximumFontSize,
             typeface = typeface,
-            shaderDefinitions = shaderDefinitions,
             cursorEffect = cursorEffect,
             frameRate = frameRate,
             accessibilityEnabled = accessibilityEnabled,
@@ -150,32 +147,6 @@ private fun rememberTerminalBackend(
     return backend
 }
 
-@Composable
-private fun rememberShaderDefinitions(
-    context: Context,
-    preferences: SharedPreferences
-): List<ComposeShaderDefinition> {
-    val repository = remember(context) { ShaderRepository(context) }
-    var shaderIds by remember(preferences) {
-        mutableStateOf(loadSelectedShaderIds(preferences))
-    }
-    DisposableEffect(preferences) {
-        val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-            if (key == "terminal_effects" || key == "terminal_effect") {
-                shaderIds = loadSelectedShaderIds(preferences)
-            }
-        }
-        preferences.registerOnSharedPreferenceChangeListener(listener)
-        onDispose { preferences.unregisterOnSharedPreferenceChangeListener(listener) }
-    }
-
-    val appDefinitions = remember(repository, shaderIds) {
-        shaderIds.mapNotNull(repository::find).filter { it.id != "none" }
-    }
-    return remember(appDefinitions) {
-        appDefinitions.map(ShaderDefinition::toComposeDefinition)
-    }
-}
 
 @Composable
 private fun rememberModifierKeys(controller: ExtraKeysController): ModifierKeyReader =
@@ -199,7 +170,6 @@ private data class TerminalCanvasConfigInput(
     val minimumFontSize: Int,
     val maximumFontSize: Int,
     val typeface: Typeface,
-    val shaderDefinitions: List<ComposeShaderDefinition>,
     val cursorEffect: com.termux.terminal.compose.CursorEffect?,
     val frameRate: VisualEffectFrameRate,
     val accessibilityEnabled: Boolean,
@@ -214,7 +184,6 @@ private fun createTerminalCanvasConfig(input: TerminalCanvasConfigInput): Termin
         minimumFontSize = input.minimumFontSize,
         maximumFontSize = input.maximumFontSize,
         typeface = input.typeface,
-        shaders = input.shaderDefinitions,
         cursorEffect = input.cursorEffect,
         preferredFrameRate = input.frameRate.framesPerSecond,
         unconditionalKeyboardOnTap = input.preferences.getBoolean(
@@ -237,13 +206,6 @@ private fun createTerminalCanvasConfig(input: TerminalCanvasConfigInput): Termin
         onPasteRequest = input.session::onPasteTextFromClipboard
     )
 
-private fun ShaderDefinition.toComposeDefinition(): ComposeShaderDefinition =
-    ComposeShaderDefinition(
-        id = id,
-        source = source,
-        usesTimeUniform = usesTimeUniform,
-        usesResolutionUniform = usesResolutionUniform
-    )
 
 private fun loadTerminalTypeface(context: Context): Typeface {
     val customFontFile = context.getFileStreamPath("font.ttf")

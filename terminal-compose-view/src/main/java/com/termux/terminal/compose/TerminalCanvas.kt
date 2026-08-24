@@ -273,12 +273,7 @@ private fun TerminalCanvasLayout(
                 state.controller.draw(
                     drawScope = this,
                     selection = state.selectionState.selection,
-                    contentVersion = state.contentVersionState.intValue,
-                    timeSeconds = if (state.controller.isContinuouslyAnimated) {
-                        state.frameTimeState.floatValue
-                    } else {
-                        0f
-                    }
+                    contentVersion = state.contentVersionState.intValue
                 )
             }
             null
@@ -419,14 +414,13 @@ private fun rememberConfiguredController(
     }
     LaunchedEffect(
         controller,
-        config.shaders,
         config.cursorEffect,
         config.renderer,
         fontSizeState.intValue
     ) {
         controller.configure(config, fontSizeState.intValue)
         if (config.renderer != TerminalRenderer.OPENGL_ES) {
-            runFrameLoop(controller, frameTimeState, config.renderer)
+            runFrameLoop(controller, frameTimeState)
         }
     }
     return controller
@@ -514,32 +508,19 @@ private fun rememberCanvasMetrics(
     )
 }
 
-/** Frame loop: continuous shaders own one display-rate loop; transient effects pulse. */
+/** Frame loop for invalidations and transient cursor effects. */
 private suspend fun runFrameLoop(
     controller: TerminalController,
-    frameTimeState: MutableFloatState,
-    renderer: TerminalRenderer
+    frameTimeState: MutableFloatState
 ) {
     controller.resetCursorTracking()
-    val includeContinuousShader = renderer == TerminalRenderer.COMPOSE
-    if (includeContinuousShader && controller.isContinuouslyAnimated) {
-        while (true) {
+    while (true) {
+        controller.awaitInvalidation()
+        do {
             withFrameNanos { nanos ->
                 frameTimeState.floatValue = nanos / 1_000_000_000f
             }
-        }
-    } else {
-        while (true) {
-            controller.awaitInvalidation()
-            do {
-                withFrameNanos { nanos ->
-                    frameTimeState.floatValue = nanos / 1_000_000_000f
-                }
-            } while (controller.needsFrame(
-                frameTimeState.floatValue,
-                includeContinuousShader = includeContinuousShader
-            ))
-        }
+        } while (controller.needsFrame(frameTimeState.floatValue))
     }
 }
 

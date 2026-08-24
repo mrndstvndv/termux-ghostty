@@ -37,11 +37,8 @@ import com.mrndtvndv.term.ui.workspace.CursorTrailEffect
 import com.mrndtvndv.term.ui.workspace.DebugHud
 import com.mrndtvndv.term.ui.workspace.DefaultKeyboardResizeDebounceMillis
 import com.mrndtvndv.term.ui.workspace.MaxKeyboardResizeDebounceMillis
-import com.mrndtvndv.term.ui.workspace.ShaderRepository
 import com.mrndtvndv.term.ui.workspace.TerminalWorkspaceScreen
 import com.mrndtvndv.term.ui.workspace.WorkspaceTab
-import com.mrndtvndv.term.ui.workspace.loadSelectedShaderIds
-import com.mrndtvndv.term.ui.workspace.saveSelectedShaderIds
 import com.mrndtvndv.term.ui.workspace.VisualEffectFrameRate
 import com.termux.terminal.compose.TerminalBackend
 import com.termux.terminal.TerminalSession
@@ -79,10 +76,6 @@ fun MainContent(
     val hideWorkspaceTabs by viewModel.userPrefs.hideWorkspaceTabs.collectAsState()
     val herdrAgentFabOpacity by viewModel.userPrefs.herdrAgentFabOpacity.collectAsState()
     val context = LocalContext.current
-    val shaderRepository = remember(context) { ShaderRepository(context) }
-    var shaderDefinitions by remember(shaderRepository) {
-        mutableStateOf(shaderRepository.definitions())
-    }
     val notification by viewModel.notificationState.notification.collectAsState()
     val navigator = rememberAppNavigator(
         activeTab = { uiState.activeTab },
@@ -102,14 +95,13 @@ fun MainContent(
         "keyboard_resize_debounce_ms",
         DefaultKeyboardResizeDebounceMillis
     )
-    val savedTerminalEffects = loadSelectedShaderIds(sharedPreferences)
     val savedCursorTrail = CursorTrailEffect.fromPref(
         sharedPreferences.getString("cursor_trail_effect", null)
     ).key
     val savedVisualEffectFrameRate = VisualEffectFrameRate.fromPref(
         sharedPreferences.getString("visual_effect_frame_rate", null)
     ).key
-    val savedGpuRenderingEnabled = sharedPreferences.getBoolean(GpuRenderingPreference, false)
+    val savedGpuRenderingEnabled = sharedPreferences.getBoolean(GpuRenderingPreference, true)
 
     var appTheme by remember { mutableStateOf(savedTheme) }
 
@@ -139,7 +131,6 @@ fun MainContent(
             var fontSize by remember { mutableStateOf(savedFontSize) }
             var keyboardResizeDebounceMs by remember { mutableStateOf(savedKeyboardResizeDebounceMs) }
             var unconditionalSoftKeyboardOnTap by remember { mutableStateOf(savedUnconditionalSoftKeyboardOnTap) }
-            var terminalEffects by remember { mutableStateOf(savedTerminalEffects) }
             var cursorTrail by remember { mutableStateOf(savedCursorTrail) }
             var visualEffectFrameRate by remember { mutableStateOf(savedVisualEffectFrameRate) }
             var gpuRenderingEnabled by remember { mutableStateOf(savedGpuRenderingEnabled) }
@@ -148,25 +139,6 @@ fun MainContent(
                 contract = ActivityResultContracts.GetContent()
             ) { uri: Uri? ->
                 uri?.let { copyFontFile(it) }
-            }
-            val pickShaderLauncher = rememberLauncherForActivityResult(
-                contract = ActivityResultContracts.OpenDocument()
-            ) { uri: Uri? ->
-                if (uri == null) return@rememberLauncherForActivityResult
-                runCatching {
-                    context.contentResolver.openInputStream(uri)?.use { input ->
-                        shaderRepository.import(getFileName(uri), input)
-                    } ?: error("Could not read shader file")
-                }.onSuccess { shader ->
-                    shaderDefinitions = shaderRepository.definitions()
-                    terminalEffects = (terminalEffects.filter { it != "none" } + shader.id).distinct()
-                    saveSelectedShaderIds(sharedPreferences, terminalEffects)
-                }.onFailure { error ->
-                    viewModel.notificationState.post(
-                        "Shader import failed",
-                        error.message ?: "Invalid AGSL shader"
-                    )
-                }
             }
 
             val onClearFontInternal: () -> Unit = {
@@ -312,25 +284,6 @@ fun MainContent(
                                     sharedPreferences.edit()
                                         .putBoolean(GpuRenderingPreference, enabled)
                                         .apply()
-                                },
-                                terminalEffects = terminalEffects,
-                                onTerminalEffectsChange = { effects ->
-                                    terminalEffects = effects
-                                    saveSelectedShaderIds(sharedPreferences, effects)
-                                },
-                                shaderDefinitions = shaderDefinitions,
-                                onImportShader = {
-                                    pickShaderLauncher.launch(
-                                        arrayOf("text/plain", "application/octet-stream", "*/*")
-                                    )
-                                },
-                                onDeleteShader = { shaderId ->
-                                    shaderRepository.delete(shaderId)
-                                    shaderDefinitions = shaderRepository.definitions()
-                                    terminalEffects = terminalEffects
-                                        .filter { it != shaderId }
-                                        .ifEmpty { listOf("none") }
-                                    saveSelectedShaderIds(sharedPreferences, terminalEffects)
                                 },
                                 cursorTrail = cursorTrail,
                                 onCursorTrailChange = { effect ->

@@ -95,8 +95,6 @@ private fun formatDiagnostics(diagnostic: GlesTerminalDiagnostic): String {
     val frame = state.frame
     val kind = when (diagnostic) {
         is GlesTerminalDiagnostic.State -> "state"
-        is GlesTerminalDiagnostic.UnsupportedAgsl ->
-            "unsupported AGSL=${diagnostic.shaderIds.joinToString()} (${diagnostic.reason})"
         is GlesTerminalDiagnostic.Error -> "error=${diagnostic.stage}: ${diagnostic.message}"
     }
     return buildString {

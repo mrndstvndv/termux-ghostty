@@ -16,7 +16,6 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
-import com.termux.terminal.compose.ShaderDefinition
 import com.termux.terminal.compose.CursorEffectSnapshot
 import com.termux.terminal.compose.TerminalFrame
 import com.termux.terminal.compose.TerminalMetrics
@@ -24,35 +23,13 @@ import com.termux.terminal.compose.TerminalSelection
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
-/**
- * Immutable visual inputs that are not part of a terminal frame.
- *
- * The shader list is intentionally named AGSL: the existing Compose shader
- * contract is not a GLSL ES contract and is therefore reported as unsupported
- * by the GLES surface rather than being compiled accidentally.
- */
-class GlesTerminalVisualConfig(
+/** Immutable visual inputs that are not part of a terminal frame. */
+data class GlesTerminalVisualConfig(
     val typeface: android.graphics.Typeface? = null,
-    val fontSizePx: Float = 14f,
-    agslShaders: List<ShaderDefinition> = emptyList()
+    val fontSizePx: Float = 14f
 ) {
-    val agslShaders: List<ShaderDefinition> = agslShaders.toList()
-
     init {
         require(fontSizePx > 0f) { "fontSizePx must be positive" }
-    }
-
-    override fun equals(other: Any?): Boolean =
-        other is GlesTerminalVisualConfig &&
-            typeface == other.typeface &&
-            fontSizePx == other.fontSizePx &&
-            agslShaders == other.agslShaders
-
-    override fun hashCode(): Int {
-        var result = typeface?.hashCode() ?: 0
-        result = 31 * result + fontSizePx.hashCode()
-        result = 31 * result + agslShaders.hashCode()
-        return result
     }
 }
 
@@ -177,15 +154,6 @@ sealed interface GlesTerminalDiagnostic {
 
     data class State(override val state: GlesDiagnosticState) : GlesTerminalDiagnostic
 
-    data class UnsupportedAgsl(
-        override val state: GlesDiagnosticState,
-        val shaderIds: List<String>,
-        val reason: String
-    ) : GlesTerminalDiagnostic {
-        init {
-            require(shaderIds.isNotEmpty()) { "shaderIds must not be empty" }
-        }
-    }
 
     data class Error(
         override val state: GlesDiagnosticState,

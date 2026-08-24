@@ -95,10 +95,8 @@ internal class TerminalRowRenderer(
     }
 
     /**
-     * Draws one viewport row into [canvas] at the row-local baseline
-     * [baselineY]. The render-node path passes [lineSpacingPx] (matching the
-     * emulator's single-row `renderRow` convention); the bitmap path passes
-     * the full-loop convention `lineSpacingAndAscent + lineSpacing * (k + 1)`.
+     * Renders one row. The retained render-node path passes [lineSpacingPx] as
+     * [baselineY], matching the emulator's single-row rendering convention.
      */
     fun renderRow(
         canvas: Canvas,
@@ -119,44 +117,6 @@ internal class TerminalRowRenderer(
         )
     }
 
-    /**
-     * Draws every viewport row into [canvas] (used by the animated shader
-     * bitmap path). Matches the emulator's snapshot render: background fill
-     * first, then each row with its cursor and selection overlays.
-     */
-    fun renderAll(
-        canvas: Canvas,
-        frame: TerminalFrame,
-        selectionStartRow: Int,
-        selectionEndRow: Int,
-        selectionStartCol: Int,
-        selectionEndCol: Int,
-        reverseVideo: Boolean
-    ) {
-        val hints = RowRenderHints(-1, -1, -1, frame.cursor.style, reverseVideo)
-        for (rowIndex in 0 until frame.rowsVisible) {
-            val absoluteRow = frame.topRow + rowIndex
-            hints.selectionStart = if (absoluteRow == selectionStartRow) selectionStartCol else -1
-            hints.selectionEnd = when {
-                absoluteRow < selectionStartRow || absoluteRow > selectionEndRow -> -1
-                absoluteRow == selectionEndRow -> selectionEndCol
-                else -> frame.columns
-            }
-            hints.cursorX = if (frame.cursor.visible && absoluteRow == frame.cursor.row) {
-                frame.cursor.column
-            } else {
-                -1
-            }
-            val baselineY = (lineSpacingAndAscentPx + lineSpacingPx * (rowIndex + 1)).toFloat()
-            renderRow(
-                canvas = canvas,
-                frame = frame,
-                rowIndex = rowIndex,
-                hints = hints,
-                baselineY = baselineY
-            )
-        }
-    }
 
     private fun obtainRowRunCache(
         row: TerminalRow,

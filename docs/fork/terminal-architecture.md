@@ -142,7 +142,7 @@ Transport snapshots are not UI frames. Partial snapshots may omit unchanged rows
 - Row layers rotate only when absolute-row identity proves scroll reuse is valid.
 - A replacement `TerminalRow`, changed link hash, selection, cursor, palette, reverse-video state, or geometry invalidates the affected row.
 - `RowRunCache` reuse requires matching content, overlays, cell-layout kind, and column geometry.
-- Animated shader rendering uses the bitmap path; non-animated rendering uses retained row layers.
+- OpenGL ES is the default pixel renderer; the retained Compose row-layer path remains an explicit fallback.
 
 - GLES cursor trails are immutable frame-adjacent publications; shared geometry is drawn by a dedicated GL pass without backend or Compose-state access.
 

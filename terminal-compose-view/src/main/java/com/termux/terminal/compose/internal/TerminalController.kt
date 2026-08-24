@@ -32,11 +32,11 @@ internal fun terminalColumnsForMeasuredCellWidth(widthPx: Int, measuredCellWidth
     (widthPx / measuredCellWidthPx).toInt().coerceAtLeast(MinGridDimension)
 
 /**
- * Owns the backend lifecycle, the retained renderer, shader compilation, and
- * frame scheduling decisions for one [TerminalCanvas].
+ * Owns the backend lifecycle, retained renderer, cursor effects, and frame scheduling
+ * decisions for one [TerminalCanvas].
  *
  * The controller is main-thread confined. [release] is idempotent and releases
- * every row layer, parent layer, bitmap, shader, and backend resource.
+ * every row layer, parent layer, and backend resource.
  */
 @Suppress("TooManyFunctions") // lifecycle and rendering responsibilities share one backend owner
 internal class TerminalController(
@@ -68,8 +68,6 @@ internal class TerminalController(
 
     private var rowRenderer: TerminalRowRenderer? = null
     private var renderer: TerminalRenderNodeRenderer? = null
-    private var compiledShaders: List<CompiledShader> = emptyList()
-    private var shaderCompiler: TerminalShaderCompiler? = null
 
     private var lastResizeWidth = -1
     private var lastResizeHeight = -1
@@ -84,7 +82,7 @@ internal class TerminalController(
     private val cursorEffectPlan = CursorEffectRenderPlan()
     private val cursorEffectPath = Path()
 
-    private var renderKey = RenderKey(0, null, emptyList())
+    private var renderKey = RenderKey(0, null)
 
     fun attach() {
         if (attached || released) return
@@ -106,7 +104,6 @@ internal class TerminalController(
         renderer?.release()
         renderer = null
         rowRenderer = null
-        compiledShaders = emptyList()
         onInvalidated = null
         onFrameAvailable = null
         backend.release()
@@ -122,16 +119,11 @@ internal class TerminalController(
     fun configure(newConfig: TerminalCanvasConfig, fontSize: Int = newConfig.fontSize) {
         val fontGeometryChanged = fontSize != effectiveFontSize ||
             newConfig.typeface != config.typeface
-        val shadersChanged = newConfig.shaders != config.shaders
         val cursorEffectChanged = newConfig.cursorEffect != config.cursorEffect
         config = newConfig
         effectiveFontSize = fontSize
         if (cursorEffectChanged) resetCursorTracking()
         if (fontGeometryChanged) invalidateViewportMeasurement()
-        if (shadersChanged) {
-            shaderCompiler = TerminalShaderCompiler(newConfig.onDiagnostics)
-            compiledShaders = shaderCompiler!!.compile(newConfig.shaders)
-        }
     }
 
     /** Resets cursor-effect tracking (backend or effect instance change). */
@@ -147,12 +139,9 @@ internal class TerminalController(
     }
 
     /**
-     * Whether the frame loop must keep ticking: a continuous shader runs
-     * forever; a transient cursor effect runs for its declared duration plus
-     * a small grace so its final frame settles.
+     * Whether the frame loop must keep ticking for a transient cursor effect.
      */
-    fun needsFrame(timeSeconds: Float, includeContinuousShader: Boolean = true): Boolean {
-        if (includeContinuousShader && hasContinuousShader) return true
+    fun needsFrame(timeSeconds: Float): Boolean {
         val effect = config.cursorEffect ?: return false
         val cursorAnimationActive = cursorEffectState.hasPreviousPosition &&
             timeSeconds - cursorEffectState.changeSeconds <
@@ -160,9 +149,6 @@ internal class TerminalController(
         return cursorFramePending || cursorAnimationActive
     }
 
-    /** True when the compiled shader chain animates continuously. */
-    val isContinuouslyAnimated: Boolean
-        get() = hasContinuousShader
 
     /** Number of frames published since attach (monotonic). */
     fun version(): Int = contentVersion
@@ -258,15 +244,14 @@ internal class TerminalController(
 
     /**
      * Draws the current frame. Resizes the backend when the draw size
-     * changed, re-creates the retained renderer on font/typeface/shader
-     * changes. [contentVersion] is the composable's snapshot-state invalidation
-     * counter: reading it here redraws the canvas when content changes.
+     * changed and re-creates the retained renderer on font/typeface changes.
+     * [contentVersion] is the composable's snapshot-state invalidation counter:
+     * reading it here redraws the canvas when content changes.
      */
     fun draw(
         drawScope: DrawScope,
         selection: TerminalSelection,
-        contentVersion: Int,
-        timeSeconds: Float
+        contentVersion: Int
     ) {
         if (released) return
         val cfg = config
@@ -281,8 +266,7 @@ internal class TerminalController(
             drawScope = drawScope,
             frame = frame,
             contentVersion = contentVersion,
-            selection = selection,
-            timeSeconds = timeSeconds
+            selection = selection
         )
     }
 
@@ -349,18 +333,14 @@ internal class TerminalController(
     }
 
     private fun onDiagnosticsError(error: TerminalBackendError) {
-        // Backend errors are surfaced through the same diagnostics channel as
-        // shader issues; the consumer owns policy for both.
         config.onDiagnostics(
             TerminalDiagnostic.BackendError(error.code, error.message)
         )
     }
 
-    private val hasContinuousShader: Boolean
-        get() = compiledShaders.any { it.definition.usesTimeUniform }
 
     private fun ensureRenderer(cfg: TerminalCanvasConfig): TerminalRenderNodeRenderer? {
-        val newKey = RenderKey(effectiveFontSize, cfg.typeface, cfg.shaders)
+        val newKey = RenderKey(effectiveFontSize, cfg.typeface)
         if (renderKey == newKey) {
             return renderer
         }
@@ -371,15 +351,9 @@ internal class TerminalController(
             typeface = cfg.typeface,
             fontSizePx = effectiveFontSize.toFloat()
         )
-        val shaders = compiledShaders.ifEmpty {
-            val compiler = TerminalShaderCompiler(cfg.onDiagnostics)
-            shaderCompiler = compiler
-            compiler.compile(cfg.shaders).also { compiledShaders = it }
-        }
         val next = TerminalRenderNodeRenderer(
             graphicsContext = graphicsContext,
-            rowRenderer = rowRenderer!!,
-            shaders = shaders
+            rowRenderer = rowRenderer!!
         )
         renderer = next
         return next
@@ -387,21 +361,15 @@ internal class TerminalController(
 
     private class RenderKey(
         val fontSize: Int,
-        val typeface: android.graphics.Typeface?,
-        val shaders: List<com.termux.terminal.compose.ShaderDefinition>
+        val typeface: android.graphics.Typeface?
     ) {
         override fun equals(other: Any?): Boolean =
             other is RenderKey &&
                 fontSize == other.fontSize &&
-                typeface == other.typeface &&
-                shaders == other.shaders
+                typeface == other.typeface
 
-        override fun hashCode(): Int {
-            var result = fontSize
-            result = 31 * result + (typeface?.hashCode() ?: 0)
-            result = 31 * result + shaders.hashCode()
-            return result
-        }
+        override fun hashCode(): Int =
+            31 * fontSize + (typeface?.hashCode() ?: 0)
     }
 
     private companion object {

@@ -8,7 +8,11 @@ import androidx.compose.foundation.gestures.calculateCentroid
 import androidx.compose.foundation.gestures.calculatePan
 import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.MutableIntState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.geometry.Offset
@@ -29,13 +33,17 @@ import kotlin.math.abs
 import kotlin.math.sqrt
 
 /** Everything a gesture handler needs besides the per-gesture scroll state. */
-private data class GestureContext(
+private class GestureContext(
     val controller: TerminalController,
-    val metrics: TerminalMetrics,
-    val config: TerminalCanvasConfig,
+    private val metricsProvider: () -> TerminalMetrics,
+    private val configProvider: () -> TerminalCanvasConfig,
     val fontSizeState: MutableIntState,
-    val onFontSizeChange: (Int) -> Unit
-)
+    private val onFontSizeChangeProvider: () -> (Int) -> Unit
+) {
+    val metrics: TerminalMetrics get() = metricsProvider()
+    val config: TerminalCanvasConfig get() = configProvider()
+    val onFontSizeChange: (Int) -> Unit get() = onFontSizeChangeProvider()
+}
 
 /** Per-gesture scroll, pan, and zoom state. */
 private class ScrollGestureState {
@@ -105,6 +113,7 @@ private data class TapContext(
 )
 
 /** Attaches the scroll/zoom/drag gesture handling to the terminal canvas. */
+@Composable
 internal fun Modifier.terminalGestures(
     controller: TerminalController,
     metrics: TerminalMetrics,
@@ -112,10 +121,21 @@ internal fun Modifier.terminalGestures(
     selectionState: TerminalSelectionState,
     fontSizeState: MutableIntState,
     onFontSizeChange: (Int) -> Unit
-): Modifier = pointerInput(controller, metrics, config, selectionState, fontSizeState) {
-    val context = GestureContext(controller, metrics, config, fontSizeState, onFontSizeChange)
-    awaitEachGesture {
-        handleTerminalGesture(selectionState, context)
+): Modifier {
+    val currentMetrics by rememberUpdatedState(metrics)
+    val currentConfig by rememberUpdatedState(config)
+    val currentOnFontSizeChange by rememberUpdatedState(onFontSizeChange)
+    return pointerInput(controller, selectionState) {
+        val context = GestureContext(
+            controller = controller,
+            metricsProvider = { currentMetrics },
+            configProvider = { currentConfig },
+            fontSizeState = fontSizeState,
+            onFontSizeChangeProvider = { currentOnFontSizeChange }
+        )
+        awaitEachGesture {
+            handleTerminalGesture(selectionState, context)
+        }
     }
 }
 
@@ -162,6 +182,27 @@ private fun handleGestureEvent(
 }
 
 /** Applies pinch-zoom font stepping; returns the next scale accumulator. */
+internal fun applyPinchZoomStep(
+    zoomChange: Float,
+    scaleAccumulator: Float,
+    currentFontSize: Int,
+    minFontSize: Int,
+    maxFontSize: Int,
+    onFontSizeChange: (Int) -> Unit
+): Float {
+    if (zoomChange == 1f) return scaleAccumulator
+    val accumulated = scaleAccumulator * zoomChange
+    if (accumulated >= 0.9f && accumulated <= 1.1f) return accumulated
+
+    val increase = accumulated > 1f
+    val newSize = currentFontSize + (if (increase) 1 else -1) * 2
+    val clampedSize = newSize.coerceIn(minFontSize, maxFontSize)
+    if (clampedSize != currentFontSize) {
+        onFontSizeChange(clampedSize)
+    }
+    return 1f
+}
+
 private fun handlePinchZoom(
     event: PointerEvent,
     scaleAccumulator: Float,
@@ -169,18 +210,17 @@ private fun handlePinchZoom(
 ): Float {
     event.changes.forEach { if (it.positionChanged()) it.consume() }
     val zoomChange = event.calculateZoom()
-    if (zoomChange == 1f) return scaleAccumulator
-    val accumulated = scaleAccumulator * zoomChange
-    if (accumulated >= 0.9f && accumulated <= 1.1f) return accumulated
-
-    val increase = accumulated > 1f
-    val newSize = context.fontSizeState.intValue + (if (increase) 1 else -1) * 2
-    val clampedSize = newSize.coerceIn(context.config.minimumFontSize, context.config.maximumFontSize)
-    if (clampedSize != context.fontSizeState.intValue) {
-        context.fontSizeState.intValue = clampedSize
-        context.onFontSizeChange(clampedSize)
-    }
-    return 1f
+    return applyPinchZoomStep(
+        zoomChange = zoomChange,
+        scaleAccumulator = scaleAccumulator,
+        currentFontSize = context.fontSizeState.intValue,
+        minFontSize = context.config.minimumFontSize,
+        maxFontSize = context.config.maximumFontSize,
+        onFontSizeChange = { newSize ->
+            context.fontSizeState.intValue = newSize
+            context.onFontSizeChange(newSize)
+        }
+    )
 }
 
 /** Applies vertical scroll through backend-routed incremental deltas. */
@@ -220,6 +260,7 @@ internal fun scrollCommandForGesture(
     )
 
 /** Attaches tap and long-press handling to the terminal canvas. */
+@Composable
 internal fun Modifier.terminalTaps(
     controller: TerminalController,
     metrics: TerminalMetrics,
@@ -229,9 +270,11 @@ internal fun Modifier.terminalTaps(
     focusRequester: FocusRequester,
     hapticFeedback: HapticFeedback
 ): Modifier {
-    val motionEventState = TerminalTapMotionEventState()
+    val currentMetrics by rememberUpdatedState(metrics)
+    val currentConfig by rememberUpdatedState(config)
+    val motionEventState = remember { TerminalTapMotionEventState() }
     return pointerInteropFilter(onTouchEvent = motionEventState::record)
-        .pointerInput(controller, metrics, config, selectionState, imeHost, focusRequester) {
+        .pointerInput(controller, selectionState, imeHost, focusRequester) {
             detectTapGestures(
                 onTap = { offset ->
                     handleTap(
@@ -239,8 +282,8 @@ internal fun Modifier.terminalTaps(
                         motionEventState.take(offset),
                         TapContext(
                             controller = controller,
-                            metrics = metrics,
-                            config = config,
+                            metrics = currentMetrics,
+                            config = currentConfig,
                             selectionState = selectionState,
                             imeHost = imeHost,
                             focusRequester = focusRequester
@@ -248,7 +291,7 @@ internal fun Modifier.terminalTaps(
                     )
                 },
                 onLongPress = { offset ->
-                    handleLongPress(offset, metrics, controller, selectionState, hapticFeedback)
+                    handleLongPress(offset, currentMetrics, controller, selectionState, hapticFeedback)
                 }
             )
         }
@@ -319,27 +362,10 @@ private fun sendTapAsMouseClick(
     metrics: TerminalMetrics,
     controller: TerminalController
 ) {
-    val press = tapMousePressForPosition(x, y, metrics)
-    controller.submit(TerminalCommand.Mouse(press))
-    controller.submit(TerminalCommand.Mouse(press.copy(action = TerminalPointerEvent.Action.RELEASE)))
+    for (event in tapMouseEventsForPosition(x, y, metrics)) {
+        controller.submit(TerminalCommand.Mouse(event))
+    }
 }
-
-/** Builds the left-button press event used by terminal taps. */
-private fun tapMousePressForPosition(
-    x: Float,
-    y: Float,
-    metrics: TerminalMetrics
-): TerminalPointerEvent = TerminalPointerEvent(
-    action = TerminalPointerEvent.Action.PRESS,
-    button = TerminalPointerEvent.BUTTON_LEFT,
-    xPx = x,
-    yPx = y,
-    cellWidthPx = metrics.cellWidthPx,
-    cellHeightPx = metrics.cellHeightPx,
-    lineSpacingAndAscentPx = metrics.lineSpacingAndAscentPx,
-    viewportWidthPx = metrics.viewportWidthPx,
-    viewportHeightPx = metrics.viewportHeightPx
-)
 
 /** Keeps tap transport independent from the lagging rendered mode snapshot. */
 internal fun tapMouseEventsForPosition(
@@ -347,7 +373,17 @@ internal fun tapMouseEventsForPosition(
     y: Float,
     metrics: TerminalMetrics
 ): List<TerminalPointerEvent> {
-    val press = tapMousePressForPosition(x, y, metrics)
+    val press = TerminalPointerEvent(
+        action = TerminalPointerEvent.Action.PRESS,
+        button = TerminalPointerEvent.BUTTON_LEFT,
+        xPx = x,
+        yPx = y,
+        cellWidthPx = metrics.cellWidthPx,
+        cellHeightPx = metrics.cellHeightPx,
+        lineSpacingAndAscentPx = metrics.lineSpacingAndAscentPx,
+        viewportWidthPx = metrics.viewportWidthPx,
+        viewportHeightPx = metrics.viewportHeightPx
+    )
     return listOf(press, press.copy(action = TerminalPointerEvent.Action.RELEASE))
 }
 

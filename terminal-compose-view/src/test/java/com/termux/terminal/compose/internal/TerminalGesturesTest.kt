@@ -34,6 +34,112 @@ class TerminalGesturesTest {
         assertTrue(events.all { it.xPx == 120f && it.yPx == 640f })
     }
 
+    @Test
+    fun pinchZoomAccumulatesBelowThresholdWithoutChangingFontSize() {
+        var changedSize = 0
+        val nextScale = applyPinchZoomStep(
+            zoomChange = 1.05f,
+            scaleAccumulator = 1.0f,
+            currentFontSize = 14,
+            minFontSize = 8,
+            maxFontSize = 32,
+            onFontSizeChange = { changedSize = it }
+        )
+
+        assertEquals(1.05f, nextScale, 0.001f)
+        assertEquals(0, changedSize)
+    }
+
+    @Test
+    fun pinchZoomStepsContinuouslyAcrossMultipleThresholdCrossings() {
+        var currentSize = 14
+        val fontSizes = mutableListOf<Int>()
+
+        // First step crossing threshold (> 1.1)
+        var scale = applyPinchZoomStep(
+            zoomChange = 1.06f,
+            scaleAccumulator = 1.05f, // 1.05 * 1.06 = 1.113
+            currentFontSize = currentSize,
+            minFontSize = 8,
+            maxFontSize = 32,
+            onFontSizeChange = {
+                currentSize = it
+                fontSizes.add(it)
+            }
+        )
+
+        assertEquals(1.0f, scale, 0.001f)
+        assertEquals(listOf(16), fontSizes)
+
+        // Continuous pinch in the same gesture: scale accumulates from 1.0 again
+        scale = applyPinchZoomStep(
+            zoomChange = 1.05f,
+            scaleAccumulator = scale,
+            currentFontSize = currentSize,
+            minFontSize = 8,
+            maxFontSize = 32,
+            onFontSizeChange = {
+                currentSize = it
+                fontSizes.add(it)
+            }
+        )
+        assertEquals(1.05f, scale, 0.001f)
+        assertEquals(listOf(16), fontSizes)
+
+        // Second step crossing threshold (> 1.1) during the same ongoing pinch
+        scale = applyPinchZoomStep(
+            zoomChange = 1.06f,
+            scaleAccumulator = scale,
+            currentFontSize = currentSize,
+            minFontSize = 8,
+            maxFontSize = 32,
+            onFontSizeChange = {
+                currentSize = it
+                fontSizes.add(it)
+            }
+        )
+        assertEquals(1.0f, scale, 0.001f)
+        assertEquals(listOf(16, 18), fontSizes)
+    }
+
+    @Test
+    fun pinchZoomOutStepsContinuouslyAndClampsToMinimum() {
+        var currentSize = 10
+        val fontSizes = mutableListOf<Int>()
+
+        // Zoom out crossing threshold (< 0.9)
+        var scale = applyPinchZoomStep(
+            zoomChange = 0.88f,
+            scaleAccumulator = 1.0f,
+            currentFontSize = currentSize,
+            minFontSize = 8,
+            maxFontSize = 32,
+            onFontSizeChange = {
+                currentSize = it
+                fontSizes.add(it)
+            }
+        )
+
+        assertEquals(1.0f, scale, 0.001f)
+        assertEquals(listOf(8), fontSizes)
+
+        // Further zoom out hits minimum and does not change below minFontSize
+        scale = applyPinchZoomStep(
+            zoomChange = 0.88f,
+            scaleAccumulator = scale,
+            currentFontSize = currentSize,
+            minFontSize = 8,
+            maxFontSize = 32,
+            onFontSizeChange = {
+                currentSize = it
+                fontSizes.add(it)
+            }
+        )
+
+        assertEquals(1.0f, scale, 0.001f)
+        assertEquals(listOf(8), fontSizes)
+    }
+
     private fun metrics() = TerminalMetrics.of(
         cellWidthPx = 10f,
         cellHeightPx = 20f,
@@ -43,3 +149,4 @@ class TerminalGesturesTest {
         viewportHeightPx = 800
     )
 }
+

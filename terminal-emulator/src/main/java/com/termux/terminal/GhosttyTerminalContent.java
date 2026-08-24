@@ -125,6 +125,43 @@ public final class GhosttyTerminalContent implements TerminalContent, AutoClosea
         return GhosttyNative.nativeAppend(mNativeHandle, data, offset, length);
     }
 
+    public synchronized long getCompressionActivity() {
+        if (mNativeHandle == 0) {
+            return 0L;
+        }
+        return GhosttyNative.nativeGetCompressionActivity(mNativeHandle);
+    }
+
+    public synchronized int compressScrollback() {
+        if (mNativeHandle == 0) {
+            return GhosttyNative.COMPRESSION_RESULT_UNSUPPORTED;
+        }
+        return GhosttyNative.nativeCompressScrollback(mNativeHandle);
+    }
+
+    public synchronized byte[] captureStateSnapshot() {
+        if (mNativeHandle == 0) {
+            throw new IllegalStateException("Cannot capture a closed terminal");
+        }
+        byte[] snapshot = GhosttyNative.nativeCaptureStateSnapshot(mNativeHandle);
+        if (snapshot == null) {
+            throw new IllegalStateException("Could not capture terminal state snapshot");
+        }
+        return snapshot;
+    }
+
+    public synchronized void restoreStateSnapshot(byte[] snapshot) {
+        if (snapshot == null || snapshot.length == 0) {
+            throw new IllegalArgumentException("snapshot must not be empty");
+        }
+        if (mNativeHandle == 0) {
+            throw new IllegalStateException("Cannot restore a closed terminal");
+        }
+        if (GhosttyNative.nativeRestoreStateSnapshot(mNativeHandle, snapshot) != 0) {
+            throw new IllegalArgumentException("Invalid terminal state snapshot");
+        }
+    }
+
     public synchronized int queueMouseEvent(GhosttyMouseEvent event) {
         if (mNativeHandle == 0) {
             GhosttyLog.warn("queueMouseEvent called on a closed terminal content");

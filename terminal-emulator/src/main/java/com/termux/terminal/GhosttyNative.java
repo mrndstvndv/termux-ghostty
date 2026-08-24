@@ -32,6 +32,10 @@ public final class GhosttyNative {
     static final int TRANSCRIPT_FLAG_JOIN_LINES = 1;
     static final int TRANSCRIPT_FLAG_TRIM = 1 << 1;
 
+    static final int COMPRESSION_RESULT_UNSUPPORTED = 0;
+    static final int COMPRESSION_RESULT_PENDING = 1;
+    static final int COMPRESSION_RESULT_COMPLETE = 2;
+
     private static final boolean LIBRARY_LOADED;
 
     static {
@@ -85,6 +89,15 @@ public final class GhosttyNative {
     static native int nativeSetFocus(long nativeHandle, boolean focused);
 
     static native int nativeAppend(long nativeHandle, byte[] data, int offset, int length);
+
+    static native long nativeGetCompressionActivity(long nativeHandle);
+
+    static native int nativeCompressScrollback(long nativeHandle);
+
+    @Nullable
+    static native byte[] nativeCaptureStateSnapshot(long nativeHandle);
+
+    static native int nativeRestoreStateSnapshot(long nativeHandle, byte[] snapshot);
 
     static native int nativeDrainPendingOutput(long nativeHandle, byte[] buffer, int offset, int length);
 

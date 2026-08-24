@@ -9,6 +9,7 @@ import android.view.KeyEvent;
 
 import androidx.annotation.NonNull;
 
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -43,6 +44,9 @@ final class GhosttySessionWorker extends Thread {
     private static final int MSG_SET_CURSOR_BLINKING_ENABLED = 13;
     private static final int MSG_SET_CURSOR_BLINK_STATE = 14;
     private static final int MSG_SCROLL_EVENT = 15;
+    private static final int MSG_COMPRESS_SCROLLBACK = 16;
+    private static final int MSG_CAPTURE_STATE_SNAPSHOT = 17;
+    private static final int MSG_RESTORE_STATE_SNAPSHOT = 18;
     static final int SCROLL_ROUTE_VIEWPORT = 0;
     static final int SCROLL_ROUTE_KEYS = 1;
     static final int SCROLL_ROUTE_MOUSE = 2;
@@ -52,6 +56,8 @@ final class GhosttySessionWorker extends Thread {
     private static final int PERF_LOG_INTERVAL_FRAMES = 120;
     private static final long SLOW_SNAPSHOT_BUILD_NANOS = 8_000_000L;
     private static final long PROGRESS_TIMEOUT_MILLIS = 15_000L;
+    private static final long COMPRESSION_IDLE_MILLIS = 250L;
+    private static final long COMPRESSION_STEP_MILLIS = 1L;
 
     private final TerminalSession mSession;
     private final GhosttyTerminalContent mContent;
@@ -89,6 +95,8 @@ final class GhosttySessionWorker extends Thread {
     private long mSnapshotBuildTotalNanos;
     private long mCoalescedBuildRequestCount;
     private long mCoalescedUiWakeupCount;
+    private long mCompressionActivity;
+    private boolean mCompressionSupported = true;
 
     GhosttySessionWorker(
         TerminalSession session,
@@ -145,6 +153,7 @@ final class GhosttySessionWorker extends Thread {
         Looper.prepare();
         synchronized (this) {
             mWorkerHandler = new WorkerHandler(Looper.myLooper());
+            mCompressionActivity = mContent.getCompressionActivity();
             initializeWorkerStartup(
                 mSshSessionHandle != 0L,
                 () -> mWorkerHandler.sendEmptyMessage(MSG_REQUEST_FULL_SNAPSHOT_REFRESH),
@@ -270,6 +279,25 @@ final class GhosttySessionWorker extends Thread {
             return;
         }
         handler.sendEmptyMessage(MSG_REQUEST_FULL_SNAPSHOT_REFRESH);
+    }
+
+    CompletableFuture<byte[]> captureStateSnapshot() {
+        CompletableFuture<byte[]> future = new CompletableFuture<>();
+        getWorkerHandler().obtainMessage(MSG_CAPTURE_STATE_SNAPSHOT, future).sendToTarget();
+        return future;
+    }
+
+    CompletableFuture<Void> restoreStateSnapshot(byte[] snapshot) {
+        CompletableFuture<Void> future = new CompletableFuture<>();
+        if (snapshot == null || snapshot.length == 0) {
+            future.completeExceptionally(new IllegalArgumentException("snapshot must not be empty"));
+            return future;
+        }
+        getWorkerHandler().obtainMessage(
+            MSG_RESTORE_STATE_SNAPSHOT,
+            new StateSnapshotRestore(snapshot.clone(), future)
+        ).sendToTarget();
+        return future;
     }
 
     void applyColorScheme(int[] colors) {
@@ -598,6 +626,70 @@ final class GhosttySessionWorker extends Thread {
         buildAndPublishSnapshot();
     }
 
+    private void noteCompressionActivity() {
+        if (!mCompressionSupported) {
+            return;
+        }
+        long activity = mContent.getCompressionActivity();
+        if (activity == mCompressionActivity) {
+            return;
+        }
+        mCompressionActivity = activity;
+        Handler handler = getWorkerHandler();
+        handler.removeMessages(MSG_COMPRESS_SCROLLBACK);
+        handler.sendEmptyMessageDelayed(MSG_COMPRESS_SCROLLBACK, COMPRESSION_IDLE_MILLIS);
+    }
+
+    private void handleCompressScrollback() {
+        if (!mCompressionSupported) {
+            return;
+        }
+        long activity = mContent.getCompressionActivity();
+        if (activity != mCompressionActivity) {
+            mCompressionActivity = activity;
+            getWorkerHandler().sendEmptyMessageDelayed(MSG_COMPRESS_SCROLLBACK, COMPRESSION_IDLE_MILLIS);
+            return;
+        }
+
+        int result = mContent.compressScrollback();
+        if (result == GhosttyNative.COMPRESSION_RESULT_PENDING) {
+            getWorkerHandler().sendEmptyMessageDelayed(MSG_COMPRESS_SCROLLBACK, COMPRESSION_STEP_MILLIS);
+            return;
+        }
+        if (result == GhosttyNative.COMPRESSION_RESULT_UNSUPPORTED) {
+            mCompressionSupported = false;
+        }
+    }
+
+    private void handleCaptureStateSnapshot(CompletableFuture<byte[]> future) {
+        boolean appendedOutput = appendQueuedOutputBeforeInput();
+        try {
+            byte[] snapshot = mContent.captureStateSnapshot();
+            mMainThreadHandler.post(() -> future.complete(snapshot));
+        } catch (RuntimeException error) {
+            mMainThreadHandler.post(() -> future.completeExceptionally(error));
+        }
+        publishPredrainedOutput(appendedOutput);
+    }
+
+    private void handleRestoreStateSnapshot(StateSnapshotRestore request) {
+        try {
+            appendQueuedOutputBeforeInput();
+            mContent.restoreStateSnapshot(request.snapshot);
+            mCurrentTopRow = 0;
+            mSession.mScrollCounter.set(0);
+            updateCachedState();
+            mPendingFrameReasonFlags.set(0);
+            addPendingFrameReason(FrameDelta.REASON_STATE_RESTORE);
+            mContent.requestFullSnapshotRefresh();
+            mFramePublicationGate.markSnapshotDirty();
+            buildAndPublishSnapshot();
+            mMainThreadHandler.post(() -> request.future.complete(null));
+        } catch (RuntimeException error) {
+            mMainThreadHandler.post(() -> request.future.completeExceptionally(error));
+        }
+    }
+
     private void drainPendingOutput() {
         while (true) {
             int written = mContent.drainPendingOutput(mDrainBuffer, 0, mDrainBuffer.length);
@@ -743,6 +835,16 @@ final class GhosttySessionWorker extends Thread {
         return Double.toString(durationNanos / 1_000_000.0d);
     }
 
+    private static final class StateSnapshotRestore {
+        final byte[] snapshot;
+        final CompletableFuture<Void> future;
+
+        StateSnapshotRestore(byte[] snapshot, CompletableFuture<Void> future) {
+            this.snapshot = snapshot;
+            this.future = future;
+        }
+    }
+
     private class WorkerHandler extends Handler {
         WorkerHandler(Looper looper) {
             super(looper);
@@ -799,11 +901,22 @@ final class GhosttySessionWorker extends Thread {
                 case MSG_SCROLL_EVENT:
                     handleScrollEvent((GhosttyScrollEvent) msg.obj);
                     break;
+                case MSG_COMPRESS_SCROLLBACK:
+                    handleCompressScrollback();
+                    return;
+                case MSG_CAPTURE_STATE_SNAPSHOT:
+                    handleCaptureStateSnapshot((CompletableFuture<byte[]>) msg.obj);
+                    break;
+                case MSG_RESTORE_STATE_SNAPSHOT:
+                    handleRestoreStateSnapshot((StateSnapshotRestore) msg.obj);
+                    break;
                 case MSG_SHUTDOWN:
                     cancelProgressTimeout();
+                    removeMessages(MSG_COMPRESS_SCROLLBACK);
                     getLooper().quit();
-                    break;
+                    return;
             }
+            noteCompressionActivity();
         }
     }
 }

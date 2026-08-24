@@ -32,6 +32,10 @@ extern "C" {
 #define TERMUX_GHOSTTY_PROGRESS_STATE_INDETERMINATE 3
 #define TERMUX_GHOSTTY_PROGRESS_STATE_PAUSE 4
 
+#define TERMUX_GHOSTTY_COMPRESSION_RESULT_UNSUPPORTED 0
+#define TERMUX_GHOSTTY_COMPRESSION_RESULT_PENDING 1
+#define TERMUX_GHOSTTY_COMPRESSION_RESULT_COMPLETE 2
+
 typedef struct termux_ghostty_session termux_ghostty_session;
 
 termux_ghostty_session* termux_ghostty_session_create(int32_t columns, int32_t rows, int32_t transcript_rows, int32_t cell_width_pixels, int32_t cell_height_pixels);
@@ -41,6 +45,11 @@ int32_t termux_ghostty_session_resize(termux_ghostty_session* session, int32_t c
 int32_t termux_ghostty_session_queue_mouse_event(termux_ghostty_session* session, int32_t action, int32_t button, int32_t modifiers, float surface_x, float surface_y, int32_t screen_width_px, int32_t screen_height_px, int32_t cell_width_px, int32_t cell_height_px, int32_t padding_top_px, int32_t padding_right_px, int32_t padding_bottom_px, int32_t padding_left_px);
 int32_t termux_ghostty_session_set_focus(termux_ghostty_session* session, bool focused);
 uint32_t termux_ghostty_session_append(termux_ghostty_session* session, const uint8_t* data, size_t len);
+uint64_t termux_ghostty_session_compression_activity(const termux_ghostty_session* session);
+int32_t termux_ghostty_session_compress_scrollback(termux_ghostty_session* session);
+uint8_t* termux_ghostty_session_capture_state_snapshot(termux_ghostty_session* session, size_t* out_len);
+void termux_ghostty_session_free_state_snapshot(uint8_t* data, size_t len);
+int32_t termux_ghostty_session_restore_state_snapshot(termux_ghostty_session* session, const uint8_t* data, size_t len);
 size_t termux_ghostty_session_drain_pending_output(termux_ghostty_session* session, uint8_t* buffer, size_t capacity);
 int32_t termux_ghostty_session_fill_snapshot(termux_ghostty_session* session, int32_t top_row, uint8_t* buffer, size_t capacity);
 int32_t termux_ghostty_session_get_columns(const termux_ghostty_session* session);

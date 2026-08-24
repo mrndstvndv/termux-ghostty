@@ -12,6 +12,7 @@ import com.termux.terminal.compose.TerminalCommandResult
 import com.termux.terminal.compose.TerminalFrame
 import com.termux.terminal.compose.TerminalSelection
 import com.termux.terminal.compose.TerminalSize
+import java.util.concurrent.CompletableFuture
 
 /** Default IME resize debounce in milliseconds (0 = resize immediately). */
 private const val DefaultResizeDebounceMillis = 0L
@@ -45,6 +46,20 @@ class TerminalSessionBackend @JvmOverloads constructor(
     fun setResizeDebounceMillis(millis: Long) {
         if (released) return
         resizeDebounceMillis = millis.coerceAtLeast(0L)
+    }
+
+    fun captureStateSnapshot(): CompletableFuture<ByteArray> {
+        if (!released) return session.captureStateSnapshot()
+        return failedFuture("Terminal backend is released")
+    }
+
+    fun restoreStateSnapshot(snapshot: ByteArray): CompletableFuture<Void> {
+        if (released) return failedFuture("Terminal backend is released")
+        return session.restoreStateSnapshot(snapshot).also { future ->
+            future.thenRun {
+                if (!released) topRow = 0
+            }
+        }
     }
 
     override fun attach(listener: TerminalBackendListener) {
@@ -187,6 +202,11 @@ class TerminalSessionBackend @JvmOverloads constructor(
     private fun reportError(code: Int, message: String) {
         listener?.onBackendError(TerminalBackendError(code, message))
     }
+
+    private fun <T> failedFuture(message: String): CompletableFuture<T> =
+        CompletableFuture<T>().also {
+            it.completeExceptionally(IllegalStateException(message))
+        }
 }
 
 /**

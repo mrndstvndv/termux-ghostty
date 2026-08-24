@@ -17,6 +17,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.UUID;
 
@@ -565,6 +566,30 @@ public final class TerminalSession extends TerminalOutput {
         if (mGhosttySessionWorker != null) {
             mGhosttySessionWorker.requestFullSnapshotRefresh();
         }
+    }
+
+    /** Capture the complete Ghostty VT state after all output currently queued for parsing. */
+    public CompletableFuture<byte[]> captureStateSnapshot() {
+        GhosttySessionWorker worker = mGhosttySessionWorker;
+        if (worker != null) {
+            return worker.captureStateSnapshot();
+        }
+
+        CompletableFuture<byte[]> future = new CompletableFuture<>();
+        future.completeExceptionally(new IllegalStateException("Terminal backend is unavailable"));
+        return future;
+    }
+
+    /** Transactionally restore a Ghostty VT state snapshot on the native-state owner thread. */
+    public CompletableFuture<Void> restoreStateSnapshot(byte[] snapshot) {
+        GhosttySessionWorker worker = mGhosttySessionWorker;
+        if (worker != null) {
+            return worker.restoreStateSnapshot(snapshot);
+        }
+
+        CompletableFuture<Void> future = new CompletableFuture<>();
+        future.completeExceptionally(new IllegalStateException("Terminal backend is unavailable"));
+        return future;
     }
 
     public void reloadColorScheme() {

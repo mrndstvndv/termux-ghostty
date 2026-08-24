@@ -5,6 +5,11 @@ pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
     const enable_logging = b.option(bool, "ghostty-log", "Enable verbose Ghostty JNI logging") orelse (optimize == .Debug);
+    const test_filters = b.option(
+        [][]const u8,
+        "test-filter",
+        "Only run matching Zig tests",
+    ) orelse &[0][]const u8{};
 
     const termux_options = b.addOptions();
     termux_options.addOption(bool, "enable_logging", enable_logging);
@@ -19,12 +24,29 @@ pub fn build(b: *std.Build) !void {
 
     root_module.addOptions("termux_ghostty_build_options", termux_options);
 
+    const test_step = b.step("test", "Run terminal wrapper Zig tests");
     if (b.lazyDependency("ghostty", .{
         .target = target,
         .optimize = optimize,
         .simd = false,
+        .@"vt-features" = "-kitty-graphics",
     })) |ghostty_dep| {
-        root_module.addImport("ghostty-vt", ghostty_dep.module("ghostty-vt"));
+        const ghostty_module = ghostty_dep.module("ghostty-vt");
+        root_module.addImport("ghostty-vt", ghostty_module);
+
+        const test_module = b.createModule(.{
+            .root_source_file = b.path("src/termux_ghostty.zig"),
+            .target = target,
+            .optimize = optimize,
+            .link_libc = true,
+        });
+        test_module.addOptions("termux_ghostty_build_options", termux_options);
+        test_module.addImport("ghostty-vt", ghostty_module);
+        const tests = b.addTest(.{
+            .root_module = test_module,
+            .filters = test_filters,
+        });
+        test_step.dependOn(&b.addRunArtifact(tests).step);
     }
 
     var mbedtls_lib: ?*std.Build.Step.Compile = null;

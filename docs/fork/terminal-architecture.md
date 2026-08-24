@@ -77,6 +77,7 @@ Main runtime module:
 - `GhosttyNative` and `jni_exports.zig` form the JNI seam.
 - `termux_ghostty.zig` owns Ghostty `Terminal`, parser, render state, viewport, protocol replies, and snapshot serialization.
 - `FrameDelta`, `ScreenSnapshot`, `ViewportLinkSnapshot`, and `RenderFrameCache` form the frame transport.
+- Ghostty binary state snapshots and scrollback compression remain worker-owned native maintenance operations; they are separate from frame transport snapshots.
 
 ## Runtime actors and ownership
 
@@ -200,6 +201,7 @@ Consequences:
 ## Backpressure and scheduling
 
 - Local process output uses a bounded 64 KiB `ByteQueue` and worker parse slices.
+- Scrollback compression waits 250 ms after compression-relevant activity, then runs bounded native steps 1 ms apart on the worker. It never publishes a frame because logical terminal content is unchanged.
 - Snapshot builds and main-thread callbacks are coalesced; terminal bytes are not.
 - Compose invalidation uses a conflated channel because it is a wakeup signal, not frame storage.
 - The immutable frame store holds the latest complete state.
@@ -219,6 +221,12 @@ They are forbidden as the authoritative source for:
 - deciding whether to drop mouse/tap/focus events;
 - encoding mode-sensitive keys, keypad keys, Kitty keyboard sequences, or bracketed paste;
 - ordering an input event against unparsed PTY output.
+
+## Binary terminal state snapshots
+
+Ghostty's binary terminal snapshot is not a `ScreenSnapshot`. Capture and restore requests enter `GhosttySessionWorker`, which first orders them against queued PTY output and then calls native snapshot codecs. Capture includes VT stream continuation state. Restore validates into temporary native state, preserves current host geometry, and replaces the live terminal only after complete validation. A successful restore resets the viewport and publishes a full immutable frame.
+
+The current Java/Compose seam materializes a complete snapshot as `byte[]`. Streaming READY/history restoration would require a worker-owned decoder and monotonic full-frame publications as restored history grows.
 
 ## Known architectural debt
 

@@ -193,6 +193,69 @@ pub export fn Java_com_termux_terminal_GhosttyNative_nativeAppend(
     return @intCast(core.termux_ghostty_session_append(handle, bytes.ptr, bytes.len));
 }
 
+pub export fn Java_com_termux_terminal_GhosttyNative_nativeGetCompressionActivity(
+    env: ?*c.JNIEnv,
+    clazz: c.jclass,
+    native_handle: jlong,
+) jlong {
+    _ = env;
+    _ = clazz;
+    return @bitCast(core.termux_ghostty_session_compression_activity(sessionFromHandle(native_handle)));
+}
+
+pub export fn Java_com_termux_terminal_GhosttyNative_nativeCompressScrollback(
+    env: ?*c.JNIEnv,
+    clazz: c.jclass,
+    native_handle: jlong,
+) jint {
+    _ = env;
+    _ = clazz;
+    return core.termux_ghostty_session_compress_scrollback(sessionFromHandle(native_handle));
+}
+
+pub export fn Java_com_termux_terminal_GhosttyNative_nativeCaptureStateSnapshot(
+    env: ?*c.JNIEnv,
+    clazz: c.jclass,
+    native_handle: jlong,
+) c.jbyteArray {
+    _ = clazz;
+    const jni = env orelse return null;
+    const handle = sessionFromHandle(native_handle) orelse return null;
+
+    var snapshot_len: usize = 0;
+    const snapshot = core.termux_ghostty_session_capture_state_snapshot(handle, &snapshot_len) orelse return null;
+    defer core.termux_ghostty_session_free_state_snapshot(snapshot, snapshot_len);
+
+    const java_len = std.math.cast(jint, snapshot_len) orelse {
+        ghostty_log.err("jni state snapshot too large handle=0x{x} bytes={}", .{ native_handle, snapshot_len });
+        return null;
+    };
+    const result = jni.*.*.NewByteArray.?(jni, java_len) orelse return null;
+    jni.*.*.SetByteArrayRegion.?(jni, result, 0, java_len, @ptrCast(snapshot));
+    return result;
+}
+
+pub export fn Java_com_termux_terminal_GhosttyNative_nativeRestoreStateSnapshot(
+    env: ?*c.JNIEnv,
+    clazz: c.jclass,
+    native_handle: jlong,
+    snapshot: c.jbyteArray,
+) jint {
+    _ = clazz;
+    const jni = env orelse return -1;
+    const handle = sessionFromHandle(native_handle) orelse return -1;
+    if (snapshot == null) return -1;
+
+    const java_len = jni.*.*.GetArrayLength.?(jni, snapshot);
+    const snapshot_len = std.math.cast(usize, java_len) orelse return -1;
+    if (snapshot_len == 0) return -1;
+
+    const bytes = native_allocator.alloc(u8, snapshot_len) catch return -1;
+    defer native_allocator.free(bytes);
+    jni.*.*.GetByteArrayRegion.?(jni, snapshot, 0, java_len, @ptrCast(bytes.ptr));
+    return core.termux_ghostty_session_restore_state_snapshot(handle, bytes.ptr, bytes.len);
+}
+
 pub export fn Java_com_termux_terminal_GhosttyNative_nativeDrainPendingOutput(
     env: ?*c.JNIEnv,
     clazz: c.jclass,

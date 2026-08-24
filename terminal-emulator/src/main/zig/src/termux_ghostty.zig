@@ -5,6 +5,11 @@ const ghostty_log = @import("android_log.zig");
 
 // Android Scudo rejects the 8-byte pointers returned by c_allocator's posix_memalign path.
 const native_allocator = std.heap.c_allocator;
+const state_snapshot_continuation_max_bytes = ghostty.apc.Protocol.maxDefaultBytes();
+
+pub const compression_result_unsupported: i32 = 0;
+pub const compression_result_pending: i32 = 1;
+pub const compression_result_complete: i32 = 2;
 
 pub const append_result_screen_changed: u32 = 1 << 0;
 pub const append_result_cursor_changed: u32 = 1 << 1;
@@ -217,6 +222,71 @@ pub const Session = struct {
         self.mouse_pressed_buttons = 0;
         self.mouse_last_cell = .{ .x = 0, .y = 0 };
         self.mouse_last_cell_valid = false;
+    }
+
+    fn captureStateSnapshot(self: *Session) ![]u8 {
+        var continuation_writer: std.Io.Writer.Allocating = .init(self.alloc);
+        defer continuation_writer.deinit();
+        try self.stream.writeContinuation(&continuation_writer.writer);
+
+        const continuation: ghostty.snapshot.Continuation = if (continuation_writer.written().len == 0)
+            .ground
+        else
+            .{ .bytes = continuation_writer.written() };
+
+        var snapshot_writer: std.Io.Writer.Allocating = .init(self.alloc);
+        defer snapshot_writer.deinit();
+        try ghostty.snapshot.encode(
+            self.alloc,
+            &snapshot_writer.writer,
+            &self.terminal,
+            .{ .continuation = continuation },
+        );
+        return snapshot_writer.toOwnedSlice();
+    }
+
+    fn restoreStateSnapshot(self: *Session, bytes: []const u8) !void {
+        var reader: std.Io.Reader = .fixed(bytes);
+        var decoded = try ghostty.snapshot.decodeExact(
+            self.alloc,
+            std.Io.Threaded.global_single_threaded.io(),
+            &reader,
+            .{ .max_continuation_bytes = state_snapshot_continuation_max_bytes },
+        );
+        defer decoded.deinit(self.alloc);
+
+        const cell_width = @max(1, self.terminal.width_px / self.terminal.cols);
+        const cell_height = @max(1, self.terminal.height_px / self.terminal.rows);
+        try decoded.terminal.?.resize(self.alloc, .{
+            .cols = self.terminal.cols,
+            .rows = self.terminal.rows,
+            .cell_size_px = .{
+                .width = cell_width,
+                .height = cell_height,
+            },
+        });
+
+        self.render_state.deinit(self.alloc);
+        self.stream.deinit();
+        self.terminal.deinit(self.alloc);
+
+        self.terminal = decoded.toOwned();
+        self.stream = ghostty.Stream(*Handler).init(.{
+            .handler = &self.handler,
+            .allocator = self.alloc,
+            .continuation_max_bytes = state_snapshot_continuation_max_bytes,
+        });
+        switch (decoded.continuation) {
+            .ground => {},
+            .bytes => |continuation| self.stream.nextSlice(continuation),
+        }
+
+        self.render_state = .empty;
+        self.viewport_top_row = 0;
+        self.render_state_needs_update = true;
+        self.serialized_metadata_valid = false;
+        self.resetTransientState();
+        self.requestFullSnapshotRefresh();
     }
 
     fn modeBits(self: *const Session) u32 {
@@ -1159,7 +1229,7 @@ const Handler = struct {
                 .unknown => {},
                 else => try self.session.terminal.setAttribute(value),
             },
-            .kitty_color_report => {},
+            .kitty_color_report, .kitty_clipboard, .kitty_dnd => {},
             .color_operation => try self.colorOperation(value.op, &value.requests, value.terminator),
             .semantic_prompt => try self.session.terminal.semanticPrompt(value),
             .title_push, .title_pop => {},
@@ -1538,7 +1608,11 @@ pub export fn termux_ghostty_session_create(
     }
 
     session.handler = .{ .session = session };
-    session.stream = ghostty.Stream(*Handler).init(.{ .handler = &session.handler, .allocator = session.alloc });
+    session.stream = ghostty.Stream(*Handler).init(.{
+        .handler = &session.handler,
+        .allocator = session.alloc,
+        .continuation_max_bytes = state_snapshot_continuation_max_bytes,
+    });
     session.render_state = .empty;
     session.pending_output = .empty;
     session.pending_title = .empty;
@@ -1854,6 +1928,60 @@ pub export fn termux_ghostty_session_append(
     }
 
     return result;
+}
+
+pub export fn termux_ghostty_session_compression_activity(session: ?*const Session) u64 {
+    const handle = session orelse return 0;
+    return handle.terminal.compressionActivity();
+}
+
+pub export fn termux_ghostty_session_compress_scrollback(session: ?*Session) i32 {
+    const handle = session orelse return compression_result_unsupported;
+    return switch (handle.terminal.compress(.incremental)) {
+        .unsupported => compression_result_unsupported,
+        .pending => compression_result_pending,
+        .complete => compression_result_complete,
+    };
+}
+
+pub export fn termux_ghostty_session_capture_state_snapshot(
+    session: ?*Session,
+    out_len: ?*usize,
+) ?[*]u8 {
+    const handle = session orelse return null;
+    const length = out_len orelse return null;
+    length.* = 0;
+
+    const snapshot = handle.captureStateSnapshot() catch |err| {
+        ghostty_log.err("core state snapshot capture failed session=0x{x} err={any}", .{ @intFromPtr(handle), err });
+        return null;
+    };
+    length.* = snapshot.len;
+    return snapshot.ptr;
+}
+
+pub export fn termux_ghostty_session_free_state_snapshot(
+    data: ?[*]u8,
+    len: usize,
+) void {
+    const bytes = data orelse return;
+    native_allocator.free(bytes[0..len]);
+}
+
+pub export fn termux_ghostty_session_restore_state_snapshot(
+    session: ?*Session,
+    data: ?[*]const u8,
+    len: usize,
+) i32 {
+    const handle = session orelse return -1;
+    const bytes = data orelse return -1;
+    if (len == 0) return -1;
+
+    handle.restoreStateSnapshot(bytes[0..len]) catch |err| {
+        ghostty_log.err("core state snapshot restore failed session=0x{x} bytes={} err={any}", .{ @intFromPtr(handle), len, err });
+        return -1;
+    };
+    return 0;
 }
 
 pub export fn termux_ghostty_session_drain_pending_output(
@@ -2950,4 +3078,62 @@ test "append while at bottom keeps viewport at bottom" {
 
     _ = appendTestBytes(session, "i\nj\nk\n");
     try testing.expectEqual(@as(i32, 0), session.viewport_top_row);
+}
+
+test "incremental scrollback compression follows activity" {
+    const session = termux_ghostty_session_create(80, 24, 10_000, 10, 20) orelse return error.OutOfMemory;
+    defer termux_ghostty_session_destroy(session);
+
+    const initial_activity = termux_ghostty_session_compression_activity(session);
+    for (0..4_000) |_| {
+        _ = appendTestBytes(session, "repeated and compressible terminal history\r\n");
+    }
+    try testing.expect(initial_activity != termux_ghostty_session_compression_activity(session));
+
+    var steps: usize = 0;
+    while (true) : (steps += 1) {
+        try testing.expect(steps < 10_000);
+        switch (termux_ghostty_session_compress_scrollback(session)) {
+            compression_result_pending => continue,
+            compression_result_complete => break,
+            else => return error.CompressionUnsupported,
+        }
+    }
+}
+
+test "state snapshot restores terminal and unfinished stream" {
+    const session = termux_ghostty_session_create(10, 5, 100, 10, 20) orelse return error.OutOfMemory;
+    defer termux_ghostty_session_destroy(session);
+
+    _ = appendTestBytes(session, "before\r\n\x1B[31");
+    var snapshot_len: usize = 0;
+    const snapshot = termux_ghostty_session_capture_state_snapshot(session, &snapshot_len) orelse
+        return error.OutOfMemory;
+    defer termux_ghostty_session_free_state_snapshot(snapshot, snapshot_len);
+
+    _ = appendTestBytes(session, "mafter");
+    try testing.expectEqual(
+        @as(i32, 0),
+        termux_ghostty_session_restore_state_snapshot(session, snapshot, snapshot_len),
+    );
+    _ = appendTestBytes(session, "mrestored");
+
+    const transcript = termux_ghostty_session_get_transcript_text(session, true, true) orelse
+        return error.OutOfMemory;
+    defer native_allocator.free(transcript);
+    try testing.expectEqualStrings("before\nrestored", transcript);
+}
+
+test "state snapshot restore rejects malformed bytes transactionally" {
+    const session = termux_ghostty_session_create(10, 5, 100, 10, 20) orelse return error.OutOfMemory;
+    defer termux_ghostty_session_destroy(session);
+
+    _ = appendTestBytes(session, "preserved");
+    const invalid = "not a snapshot";
+    try testing.expectError(error.InvalidMagic, session.restoreStateSnapshot(invalid));
+
+    const transcript = termux_ghostty_session_get_transcript_text(session, true, true) orelse
+        return error.OutOfMemory;
+    defer native_allocator.free(transcript);
+    try testing.expectEqualStrings("preserved", transcript);
 }

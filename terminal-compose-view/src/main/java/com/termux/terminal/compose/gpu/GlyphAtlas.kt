@@ -34,9 +34,11 @@ data class GlyphAtlasLimits(
 
     companion object {
         fun forGlMaxTextureSize(maxTextureSize: Int): GlyphAtlasLimits {
-            val pageSize = minOf(512, maxTextureSize.coerceAtLeast(32))
+            val maxPages = if (maxTextureSize >= 64) 2 else 1
+            val pageSize = minOf(512, maxTextureSize.coerceAtLeast(32) / maxPages)
             return GlyphAtlasLimits(
                 pageSizePx = pageSize,
+                maxPages = maxPages,
                 maxGlyphWidthPx = minOf(256, pageSize),
                 maxGlyphHeightPx = minOf(128, pageSize)
             )
@@ -446,10 +448,13 @@ internal class GlesGlyphAtlas(
 ) {
     private val allocator = GlyphAtlasAllocator(limits)
     private val rasterizer = AndroidGlyphRasterizer()
-    private var textureIds = IntArray(0)
+    private var textureId = 0
 
     val pageSizePx: Int
         get() = limits.pageSizePx
+
+    val textureWidthPx: Int
+        get() = limits.pageSizePx * limits.maxPages
 
     val maxPages: Int
         get() = limits.maxPages
@@ -483,14 +488,14 @@ internal class GlesGlyphAtlas(
                     deleteTextures()
                 }
             }
-            val texture = ensureTexture(allocation.region.pageIndex)
+            val texture = ensureTexture()
             GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
             GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, texture)
             GLES30.glPixelStorei(GLES30.GL_UNPACK_ALIGNMENT, 1)
             GLUtils.texSubImage2D(
                 GLES30.GL_TEXTURE_2D,
                 0,
-                allocation.region.left,
+                physicalLeft(allocation.region),
                 allocation.region.top,
                 rasterized.bitmap
             )
@@ -506,7 +511,7 @@ internal class GlesGlyphAtlas(
 
     fun diagnostics(): GlesAtlasDiagnostics = allocator.diagnostics()
 
-    fun textureId(pageIndex: Int): Int = textureIds.getOrElse(pageIndex) { 0 }
+    fun textureId(): Int = textureId
 
     fun reset(beforeReset: () -> Unit = {}) {
         try {
@@ -528,21 +533,15 @@ internal class GlesGlyphAtlas(
         }
     }
 
-    private fun ensureTexture(pageIndex: Int): Int {
-        if (pageIndex < textureIds.size && textureIds[pageIndex] != 0) {
-            return textureIds[pageIndex]
-        }
-        val next = IntArray(pageIndex + 1)
-        textureIds.copyInto(next)
-        textureIds = next
+    private fun ensureTexture(): Int {
+        if (textureId != 0) return textureId
         val texture = IntArray(1)
         GLES30.glGenTextures(1, texture, 0)
-        val id = texture[0]
-        if (id != 0) textureIds[pageIndex] = id
+        textureId = texture[0]
         checkGlError("atlas-generate")
-        if (id == 0) throw GlesResourceException("atlas texture: glGenTextures returned 0")
+        if (textureId == 0) throw GlesResourceException("atlas texture: glGenTextures returned 0")
         GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
-        GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, id)
+        GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, textureId)
         GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MIN_FILTER, GLES30.GL_LINEAR)
         GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MAG_FILTER, GLES30.GL_LINEAR)
         GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_WRAP_S, GLES30.GL_CLAMP_TO_EDGE)
@@ -551,7 +550,7 @@ internal class GlesGlyphAtlas(
             GLES30.GL_TEXTURE_2D,
             0,
             GLES30.GL_RGBA,
-            limits.pageSizePx,
+            textureWidthPx,
             limits.pageSizePx,
             0,
             GLES30.GL_RGBA,
@@ -559,16 +558,19 @@ internal class GlesGlyphAtlas(
             null
         )
         checkGlError("atlas-allocate")
-        return id
+        return textureId
     }
 
+    private fun physicalLeft(region: GlyphAtlasRegion): Int =
+        region.pageIndex * limits.pageSizePx + region.left
+
     private fun deleteTextures() {
-        if (textureIds.isEmpty()) return
+        if (textureId == 0) return
         try {
-            GLES30.glDeleteTextures(textureIds.size, textureIds, 0)
+            GLES30.glDeleteTextures(1, intArrayOf(textureId), 0)
             checkGlError("atlas-delete")
         } finally {
-            textureIds = IntArray(0)
+            textureId = 0
         }
     }
 

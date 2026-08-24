@@ -4,7 +4,7 @@ import android.opengl.GLES30
 import java.nio.FloatBuffer
 
 private const val DefaultRingSlotCount = 3
-private const val QuadVertexCount = 6
+private const val QuadVertexCount = 4
 private const val MaxFenceWaitAttempts = 4
 private const val FenceWaitTimeoutNanos = 1_000_000L
 
@@ -95,7 +95,7 @@ internal class GlesBufferRing private constructor(
                 instanceBuffer
             )
             GLES30.glDrawArraysInstanced(
-                GLES30.GL_TRIANGLES,
+                GLES30.GL_TRIANGLE_STRIP,
                 0,
                 QuadVertexCount,
                 instanceCount
@@ -281,7 +281,7 @@ internal class GlesStaticInstanceBuffer {
         GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, bufferId)
         configureAttributes()
         GLES30.glDrawArraysInstanced(
-            GLES30.GL_TRIANGLES,
+            GLES30.GL_TRIANGLE_STRIP,
             0,
             QuadVertexCount,
             instanceCount

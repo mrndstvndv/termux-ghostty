@@ -12,6 +12,7 @@ internal object GlesShaderSources {
         layout(location = 3) in uint aStyleLow;
         layout(location = 4) in uint aStyleHigh;
         layout(location = 5) in uint aStyleFlags;
+        layout(location = 6) in uint aGlyphMode;
 
         uniform vec2 uViewport;
         uniform sampler2D uPalette;
@@ -25,14 +26,13 @@ internal object GlesShaderSources {
         out vec4 vColor;
         out vec4 vBackground;
         flat out uint vInstanceValid;
+        flat out uint vGlyphMode;
 
-        const vec2 QUAD_VERTICES[6] = vec2[6](
+        const vec2 QUAD_VERTICES[4] = vec2[4](
             vec2(0.0, 0.0),
             vec2(0.0, 1.0),
-            vec2(1.0, 1.0),
-            vec2(0.0, 0.0),
-            vec2(1.0, 1.0),
-            vec2(1.0, 0.0)
+            vec2(1.0, 0.0),
+            vec2(1.0, 1.0)
         );
 
         vec4 decodeColor(uint payload, bool trueColor) {
@@ -97,6 +97,7 @@ internal object GlesShaderSources {
                 vTexCoord = vec2(0.0);
                 vColor = vec4(0.0);
                 vBackground = vec4(0.0);
+                vGlyphMode = 0u;
                 return;
             }
             vec2 unit = QUAD_VERTICES[gl_VertexID];
@@ -107,12 +108,14 @@ internal object GlesShaderSources {
             );
             gl_Position = vec4(ndc, 0.0, 1.0);
             vTexCoord = mix(aTexRect.xy, aTexRect.zw, unit);
-            if (uResolveStyle != 0) {
+            bool directColor = (aStyleFlags & 2u) != 0u;
+            if (uResolveStyle != 0 && !directColor) {
                 resolveStyle(vColor, vBackground);
             } else {
                 vColor = aColor;
                 vBackground = aColor;
             }
+            vGlyphMode = aGlyphMode;
         }
     """.trimIndent()
 
@@ -122,13 +125,13 @@ internal object GlesShaderSources {
 
         uniform sampler2D uAtlas;
         uniform int uTextured;
-        uniform int uMaskGlyph;
         uniform int uStyleBackground;
 
         in vec2 vTexCoord;
         in vec4 vColor;
         in vec4 vBackground;
         flat in uint vInstanceValid;
+        flat in uint vGlyphMode;
         out vec4 fragColor;
 
         void main() {
@@ -142,7 +145,7 @@ internal object GlesShaderSources {
                 return;
             }
             vec4 sampled = texture(uAtlas, vTexCoord);
-            if (uMaskGlyph != 0) {
+            if (vGlyphMode == 1u) {
                 float coverage = sampled.a;
                 fragColor = vec4(vColor.rgb * coverage, vColor.a * coverage);
                 return;

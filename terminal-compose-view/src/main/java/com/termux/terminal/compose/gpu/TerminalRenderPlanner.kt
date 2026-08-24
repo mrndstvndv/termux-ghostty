@@ -12,6 +12,7 @@ import com.termux.terminal.compose.internal.resolveEffectiveForegroundColor
 import kotlin.math.abs
 
 internal const val GlesStyleFlagOverlayReverse = 1
+internal const val GlesStyleFlagDirectColor = 1 shl 1
 
 internal data class TerminalQuad(
     val left: Float,
@@ -54,7 +55,10 @@ internal class TerminalRenderRowPlan(
     val cursorQuads: List<TerminalQuad>,
     val glyphs: List<TerminalGlyphPlacement>,
     val decorations: List<TerminalQuad>
-)
+) {
+    /** Cell backgrounds precede the cursor to preserve their blend order in one draw. */
+    val backgroundQuads: List<TerminalQuad> = cellBackgrounds + cursorQuads
+}
 
 /**
  * CPU-only conversion from an immutable frame to GLES draw packets.

@@ -5,8 +5,28 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.FloatBuffer
 
-private const val DirtyQuadVertexCount = 6
+private const val DirtyQuadVertexCount = 4
 private const val RowCountTextureUnit = GLES30.GL_TEXTURE2
+
+internal enum class GlesDirtyBufferUpdateStrategy {
+    NONE,
+    FRESH_STORAGE,
+    ORPHAN_STORAGE,
+    CLONE_STORAGE
+}
+
+internal fun glesDirtyBufferUpdateStrategy(
+    geometryChanged: Boolean,
+    changedRowCount: Int,
+    rowCount: Int
+): GlesDirtyBufferUpdateStrategy {
+    return when {
+        changedRowCount == 0 -> GlesDirtyBufferUpdateStrategy.NONE
+        geometryChanged -> GlesDirtyBufferUpdateStrategy.FRESH_STORAGE
+        changedRowCount == rowCount -> GlesDirtyBufferUpdateStrategy.ORPHAN_STORAGE
+        else -> GlesDirtyBufferUpdateStrategy.CLONE_STORAGE
+    }
+}
 
 /** Resident instance storage that updates only rows whose packet identity changed. */
 internal class GlesDirtyInstanceBuffer {
@@ -63,7 +83,7 @@ internal class GlesDirtyInstanceBuffer {
             ensureStorage(rowCount * rowStride * strideBytes, forceReallocate = false)
         }
 
-        var anyRowChanged = geometryChanged
+        var changedRowCount = 0
         var countsChanged = geometryChanged
         hasInstances = false
         for (index in 0 until rowCount) {
@@ -76,13 +96,16 @@ internal class GlesDirtyInstanceBuffer {
             nextCounts[index] = count
             changedRows[index] = geometryChanged ||
                 rowCounts[index] != count || (count > 0 && rowSources[index] !== source)
-            anyRowChanged = anyRowChanged || changedRows[index]
+            if (changedRows[index]) changedRowCount++
             countsChanged = countsChanged || rowCounts[index] != count
             hasInstances = hasInstances || count > 0
         }
-        if (!anyRowChanged) return
-
-        if (!geometryChanged) cloneStorageForUpdate()
+        when (glesDirtyBufferUpdateStrategy(geometryChanged, changedRowCount, rowCount)) {
+            GlesDirtyBufferUpdateStrategy.NONE -> return
+            GlesDirtyBufferUpdateStrategy.FRESH_STORAGE -> Unit
+            GlesDirtyBufferUpdateStrategy.ORPHAN_STORAGE -> orphanStorageForUpdate()
+            GlesDirtyBufferUpdateStrategy.CLONE_STORAGE -> cloneStorageForUpdate()
+        }
         for (index in 0 until rowCount) {
             if (!changedRows[index] || nextCounts[index] == 0) continue
             val rowBuffer = prepareScratch(scratch, rowStride * strideFloats)
@@ -115,7 +138,7 @@ internal class GlesDirtyInstanceBuffer {
         GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, bufferId)
         configureAttributes()
         GLES30.glDrawArraysInstanced(
-            GLES30.GL_TRIANGLES,
+            GLES30.GL_TRIANGLE_STRIP,
             0,
             DirtyQuadVertexCount,
             rowCount * rowStride
@@ -156,21 +179,8 @@ internal class GlesDirtyInstanceBuffer {
             capacityBytes = 0
             return
         }
-        if (bufferId == 0) {
-            bufferId = generateBuffer()
-            capacityBytes = requiredBytes
-            GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, bufferId)
-            GLES30.glBufferData(
-                GLES30.GL_ARRAY_BUFFER,
-                capacityBytes,
-                null,
-                GLES30.GL_DYNAMIC_DRAW
-            )
-            return
-        }
+        if (bufferId == 0) bufferId = generateBuffer()
         if (!forceReallocate && capacityBytes == requiredBytes) return
-        val oldBufferId = bufferId
-        bufferId = generateBuffer()
         capacityBytes = requiredBytes
         GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, bufferId)
         GLES30.glBufferData(
@@ -179,7 +189,16 @@ internal class GlesDirtyInstanceBuffer {
             null,
             GLES30.GL_DYNAMIC_DRAW
         )
-        GLES30.glDeleteBuffers(1, intArrayOf(oldBufferId), 0)
+    }
+
+    private fun orphanStorageForUpdate() {
+        GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, bufferId)
+        GLES30.glBufferData(
+            GLES30.GL_ARRAY_BUFFER,
+            capacityBytes,
+            null,
+            GLES30.GL_DYNAMIC_DRAW
+        )
     }
 
     private fun cloneStorageForUpdate() {
@@ -318,12 +337,10 @@ private class GlesRowCountTexture {
 /** Resident row buffers for the three non-atlas draw layers. */
 internal class GlesDirtyInstanceStore {
     val backgrounds = GlesDirtyInstanceBuffer()
-    val cursor = GlesDirtyInstanceBuffer()
     val decorations = GlesDirtyInstanceBuffer()
 
     fun release() {
         backgrounds.release()
-        cursor.release()
         decorations.release()
     }
 }

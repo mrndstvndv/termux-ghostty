@@ -4,9 +4,7 @@ import java.util.ArrayDeque
 import java.util.IdentityHashMap
 
 internal data class GlesGlyphBatchKey(
-    val pageIndex: Int,
-    val atlasGeneration: Int,
-    val rasterMode: Int = GlyphAtlasKey.RASTER_MODE_RGBA
+    val atlasGeneration: Int
 )
 
 internal data class GlesResolvedGlyph(
@@ -14,11 +12,7 @@ internal data class GlesResolvedGlyph(
     val region: GlyphAtlasRegion
 ) {
     val batchKey: GlesGlyphBatchKey
-        get() = GlesGlyphBatchKey(
-            pageIndex = region.pageIndex,
-            atlasGeneration = region.atlasGeneration,
-            rasterMode = region.rasterMode
-        )
+        get() = GlesGlyphBatchKey(atlasGeneration = region.atlasGeneration)
 }
 
 internal data class GlesGlyphBatch(
@@ -57,9 +51,9 @@ internal class GlesResolvedGlyphCache(private val maxEntries: Int = 8192) {
 }
 
 /**
- * Groups bounded glyph submissions by the texture and atlas generation they
- * reference. A reset boundary drains this accumulator before old textures are
- * deleted, so no batch can retain a stale region.
+ * Groups bounded glyph submissions by atlas generation. Every physical atlas
+ * page and raster mode shares one texture and shader submission. A reset
+ * boundary drains this accumulator before the old texture is deleted.
  */
 internal class GlesGlyphBatchAccumulator(
     private val maxQuadsPerBatch: Int,

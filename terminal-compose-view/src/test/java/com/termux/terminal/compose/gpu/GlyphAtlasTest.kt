@@ -94,6 +94,15 @@ class GlyphAtlasTest {
     }
 
     @Test
+    fun physicalAtlasPagesFitWithinTheReportedTextureLimit() {
+        listOf(32, 64, 1000, 16384).forEach { maxTextureSize ->
+            val limits = GlyphAtlasLimits.forGlMaxTextureSize(maxTextureSize)
+
+            assertTrue(limits.pageSizePx * limits.maxPages <= maxTextureSize)
+        }
+    }
+
+    @Test
     fun rasterGeometryKeepsSkewedInkInsideTheAtlasAndPreservesItsBearing() {
         val geometry = glyphRasterGeometry(
             bounds = GlyphPaintBounds(-2, -12, 10, 2),

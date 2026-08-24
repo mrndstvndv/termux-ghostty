@@ -667,6 +667,7 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         mTerminalView.setUnconditionalKeyboardOnTap(
             mProperties.isUnconditionalSoftKeyboardOnTapEnabled());
         mTerminalCursorBlinker = new TerminalCursorBlinker(mTerminalView::onFrameAvailable);
+        mTerminalView.setFontSizeBounds(mPreferences.getMinFontSize(), mPreferences.getMaxFontSize());
         mTerminalView.setFontSize(mPreferences.getFontSize());
 
         if (mTermuxTerminalViewClient != null)

@@ -133,6 +133,18 @@ public class TermuxFloatAppSharedPreferences extends AppSharedPreferences {
         setFontSize(fontSize);
     }
 
+    public int getMinFontSize() {
+        return MIN_FONTSIZE;
+    }
+
+    public int getMaxFontSize() {
+        return MAX_FONTSIZE;
+    }
+
+    public int getDefaultFontSize() {
+        return DEFAULT_FONTSIZE;
+    }
+
 
     public int getLogLevel(boolean readFromFile) {
         if (readFromFile)

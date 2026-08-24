@@ -55,7 +55,7 @@ fun TerminalCanvas(
     val preferences = remember(context) { context.getSharedPreferences("ssh_prefs", Context.MODE_PRIVATE) }
     val fontSizes = remember(context) { TermuxAppSharedPreferences.getDefaultFontSizes(context) }
     val minimumFontSize = fontSizes.getOrElse(1) { 8 }
-    val maximumFontSize = fontSizes.getOrElse(2) { 32 }
+    val maximumFontSize = fontSizes.getOrElse(2) { 256 }
     val fontSize = remember(session) {
         mutableIntStateOf(
             preferences.getInt("font_size", fontSizes.firstOrNull() ?: minimumFontSize)

@@ -197,6 +197,7 @@ public final class BubbleSessionActivity extends AppCompatActivity implements Se
         mTerminalExtraKeys = new BubbleTerminalExtraKeys(this, mTerminalView, mTerminalViewClient);
         mTerminalCursorBlinker = new TerminalCursorBlinker(mTerminalView::onFrameAvailable);
 
+        mTerminalView.setFontSizeBounds(mPreferences.getMinFontSize(), mPreferences.getMaxFontSize());
         mTerminalView.setFontSize(mPreferences.getFontSize());
         mTerminalView.setKeepScreenOn(mPreferences.shouldKeepScreenOn());
         mTerminalSessionClient.onCreate();

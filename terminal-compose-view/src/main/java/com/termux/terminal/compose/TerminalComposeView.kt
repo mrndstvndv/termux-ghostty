@@ -78,7 +78,7 @@ class TerminalComposeView @JvmOverloads constructor(
     private var modifierKeysState by mutableStateOf(ModifierKeyReader.NONE)
     private var fontSizeState by mutableIntStateOf(14)
     private var minimumFontSizeState by mutableIntStateOf(8)
-    private var maximumFontSizeState by mutableIntStateOf(32)
+    private var maximumFontSizeState by mutableIntStateOf(256)
     private var typefaceState by mutableStateOf<Typeface?>(Typeface.MONOSPACE)
     private var accessibilityEnabledState by mutableStateOf(false)
     private var unconditionalKeyboardOnTapState by mutableStateOf(true)

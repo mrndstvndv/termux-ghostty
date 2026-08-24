@@ -17,7 +17,7 @@ import androidx.compose.ui.graphics.Color
 data class TerminalCanvasConfig(
     val fontSize: Int = 14,
     val minimumFontSize: Int = 8,
-    val maximumFontSize: Int = 32,
+    val maximumFontSize: Int = 256,
     val typeface: Typeface? = null,
     val cursorEffect: CursorEffect? = null,
     /** Selects terminal pixels; GLES also owns cursor-effect pixels while input stays in Compose. */

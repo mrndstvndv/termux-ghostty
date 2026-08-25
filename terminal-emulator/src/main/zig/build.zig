@@ -24,12 +24,12 @@ pub fn build(b: *std.Build) !void {
 
     root_module.addOptions("termux_ghostty_build_options", termux_options);
 
+    var test_module_opt: ?*std.Build.Module = null;
     const test_step = b.step("test", "Run terminal wrapper Zig tests");
     if (b.lazyDependency("ghostty", .{
         .target = target,
         .optimize = optimize,
         .simd = false,
-        .@"vt-features" = "-kitty-graphics",
     })) |ghostty_dep| {
         const ghostty_module = ghostty_dep.module("ghostty-vt");
         root_module.addImport("ghostty-vt", ghostty_module);
@@ -42,6 +42,7 @@ pub fn build(b: *std.Build) !void {
         });
         test_module.addOptions("termux_ghostty_build_options", termux_options);
         test_module.addImport("ghostty-vt", ghostty_module);
+        test_module_opt = test_module;
         const tests = b.addTest(.{
             .root_module = test_module,
             .filters = test_filters,
@@ -63,8 +64,10 @@ pub fn build(b: *std.Build) !void {
         // into a shared lib so they must be position-independent.
         lib_dep.root_module.pic = true;
         root_module.linkLibrary(lib_dep);
+        if (test_module_opt) |tm| tm.linkLibrary(lib_dep);
     }
 
+    var zlib_lib: ?*std.Build.Step.Compile = null;
     if (b.lazyDependency("zlib", .{
         .target = target,
         .optimize = optimize,
@@ -74,6 +77,24 @@ pub fn build(b: *std.Build) !void {
             try addAndroidNdkPaths(b, z_lib);
         }
         z_lib.root_module.pic = true;
+        zlib_lib = z_lib;
+        root_module.linkLibrary(z_lib);
+        if (test_module_opt) |tm| tm.linkLibrary(z_lib);
+    }
+
+    // Kitty graphics PNG decoding via libspng backed by zlib.
+    if (b.lazyDependency("libspng", .{
+        .target = target,
+        .optimize = optimize,
+    })) |spng_dep| {
+        const spng_lib = spng_dep.artifact("spng");
+        if (spng_lib.rootModuleTarget().abi.isAndroid()) {
+            try addAndroidNdkPaths(b, spng_lib);
+        }
+        spng_lib.root_module.pic = true;
+        if (zlib_lib) |z| spng_lib.root_module.linkLibrary(z);
+        root_module.linkLibrary(spng_lib);
+        if (test_module_opt) |tm| tm.linkLibrary(spng_lib);
     }
 
     if (b.lazyDependency("libssh2", .{

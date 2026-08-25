@@ -11,7 +11,7 @@ public final class ViewportLinkSnapshot {
     private static final int NATIVE_SNAPSHOT_MAGIC = 0x54474c31;
     private static final Segment[] EMPTY_SEGMENTS = new Segment[0];
 
-    private final ByteBuffer mBuffer;
+    private ByteBuffer mBuffer;
     private ByteBuffer mCachedBuffer;
     private long mFrameSequence;
     private int mTopRow;
@@ -30,6 +30,18 @@ public final class ViewportLinkSnapshot {
         }
 
         mBuffer = ByteBuffer.allocateDirect(capacityBytes).order(ByteOrder.nativeOrder());
+    }
+
+    public void ensureCapacity(int minCapacity) {
+        if (minCapacity <= 0) {
+            throw new IllegalArgumentException("minCapacity must be > 0");
+        }
+        if (mBuffer.capacity() >= minCapacity) {
+            return;
+        }
+        int newCapacity = Math.max(minCapacity, mBuffer.capacity() * 2);
+        mBuffer = ByteBuffer.allocateDirect(newCapacity).order(ByteOrder.nativeOrder());
+        mCachedBuffer = null;
     }
 
     public static ViewportLinkSnapshot create(long frameSequence, int topRow, int rows, int columns,

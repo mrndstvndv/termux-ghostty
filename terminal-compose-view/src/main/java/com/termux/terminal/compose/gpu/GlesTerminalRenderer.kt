@@ -3,6 +3,7 @@ package com.termux.terminal.compose.gpu
 import android.opengl.GLES30
 import android.opengl.GLSurfaceView
 import android.os.Trace
+import com.termux.terminal.compose.TerminalImagePlacement
 import com.termux.terminal.compose.internal.CursorEffectRenderPlan
 import com.termux.terminal.compose.internal.planCursorEffect
 import java.nio.ByteBuffer
@@ -66,6 +67,7 @@ internal class GlesTerminalRenderer(
     private var lastError: String? = null
     private val renderPlanner = TerminalRenderPlanner()
     private val cursorEffectPlan = CursorEffectRenderPlan()
+    private val imageTextureCache = GlesImageTextureCache()
     private var vendor = "unknown"
     private var renderer = "unknown"
     private var version = "unknown"
@@ -175,6 +177,7 @@ internal class GlesTerminalRenderer(
 
         try {
             clear(backgroundColor(snapshot))
+            imageTextureCache.update(snapshot.frame.imagePlacements)
             currentResources.palette.bind(snapshot.frame.palette)
             traceSection("EctoGles.backgrounds") {
                 drawStyledRows(
@@ -186,6 +189,16 @@ internal class GlesTerminalRenderer(
                     reverseVideo = snapshot.frame.reverseVideo
                 )
             }
+            traceSection("EctoGles.images-under") {
+                drawImages(
+                    placements = snapshot.frame.imagePlacements,
+                    metrics = snapshot.metrics,
+                    viewportWidth = viewportWidth,
+                    viewportHeight = viewportHeight,
+                    imageProgram = currentResources.imageProgram,
+                    filter = { it.zIndex < 0 }
+                )
+            }
             // Retained glyph rows are rebuilt when the atlas generation changes.
             traceSection("EctoGles.glyphs") {
                 drawGlyphs(
@@ -193,16 +206,6 @@ internal class GlesTerminalRenderer(
                     rows = plan.rows,
                     rowStride = snapshot.frame.columns,
                     rowHeight = snapshot.metrics.cellHeightPx,
-                    reverseVideo = snapshot.frame.reverseVideo
-                )
-            }
-            traceSection("EctoGles.decorations") {
-                drawStyledRows(
-                    resources = currentResources,
-                    rows = plan.rows,
-                    rowStride = snapshot.frame.columns,
-                    rowHeight = snapshot.metrics.cellHeightPx,
-                    styleBackground = false,
                     reverseVideo = snapshot.frame.reverseVideo
                 )
             }
@@ -221,6 +224,26 @@ internal class GlesTerminalRenderer(
                         viewportHeight = viewportHeight
                     )
                 }
+            }
+            traceSection("EctoGles.images-over") {
+                drawImages(
+                    placements = snapshot.frame.imagePlacements,
+                    metrics = snapshot.metrics,
+                    viewportWidth = viewportWidth,
+                    viewportHeight = viewportHeight,
+                    imageProgram = currentResources.imageProgram,
+                    filter = { it.zIndex >= 0 }
+                )
+            }
+            traceSection("EctoGles.decorations") {
+                drawStyledRows(
+                    resources = currentResources,
+                    rows = plan.rows,
+                    rowStride = snapshot.frame.columns,
+                    rowHeight = snapshot.metrics.cellHeightPx,
+                    styleBackground = false,
+                    reverseVideo = snapshot.frame.reverseVideo
+                )
             }
             if (checkGlError("frame")) {
                 throw GlesResourceException("frame reported a GLES error")
@@ -255,20 +278,36 @@ internal class GlesTerminalRenderer(
         } catch (error: RuntimeException) {
             reportError("resource-release", error.message ?: "GLES resource release failed")
         }
+        try {
+            imageTextureCache.release()
+        } catch (error: RuntimeException) {
+            reportError("image-cache-release", error.message ?: "GLES image cache release failed")
+        }
     }
 
     @Suppress("ThrowsCount", "TooGenericExceptionCaught")
     private fun createResources(limits: GlyphAtlasLimits): GlesResources {
         val program = GlesProgram.create()
+        val imageProgram = try {
+            GlesImageProgram.create()
+        } catch (error: GlesProgramException) {
+            program.release()
+            throw error
+        } catch (error: RuntimeException) {
+            program.release()
+            throw GlesResourceException("GLES image program failed", error)
+        }
         val cursorEffects = try {
             GlesCursorEffectRenderer.create()
         } catch (error: RuntimeException) {
+            imageProgram.release()
             program.release()
             throw error
         }
         return try {
             GlesResources(
                 program = program,
+                imageProgram = imageProgram,
                 cursorEffects = cursorEffects,
                 dirtyBuffers = GlesDirtyInstanceStore(),
                 glyphRows = GlesGlyphRowBuffer(),
@@ -277,10 +316,12 @@ internal class GlesTerminalRenderer(
             )
         } catch (error: GlesRendererException) {
             cursorEffects.release()
+            imageProgram.release()
             program.release()
             throw error
         } catch (error: RuntimeException) {
             cursorEffects.release()
+            imageProgram.release()
             program.release()
             throw GlesResourceException("GLES resource setup failed", error)
         }
@@ -404,6 +445,45 @@ internal class GlesTerminalRenderer(
         GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, texture)
         resources.glyphRows.bindRowCounts()
         resources.glyphRows.draw(::bindGlyphInstanceAttributes)
+    }
+
+    @Suppress("MaxLineLength", "LongMethod")
+    private fun drawImages(
+        placements: List<TerminalImagePlacement>,
+        metrics: com.termux.terminal.compose.TerminalMetrics,
+        viewportWidth: Int,
+        viewportHeight: Int,
+        imageProgram: GlesImageProgram,
+        filter: (TerminalImagePlacement) -> Boolean
+    ) {
+        val filtered = placements.filter(filter)
+        if (filtered.isEmpty()) return
+        for (placement in filtered) {
+            val textureId = imageTextureCache.textureId(placement.imageId) ?: continue
+            val left = placement.viewportCol * metrics.cellWidthPx
+            val top = placement.viewportRow * metrics.cellHeightPx
+            val right = left + placement.destWidthPx
+            val bottom = top + placement.destHeightPx
+            val u0 = if (placement.textureWidth > 0) placement.srcX.toFloat() / placement.textureWidth.toFloat() else 0f
+            val v0 = if (placement.textureHeight > 0) placement.srcY.toFloat() / placement.textureHeight.toFloat() else 0f
+            val u1 = if (placement.textureWidth > 0) (placement.srcX + placement.srcWidth).toFloat() / placement.textureWidth.toFloat() else 1f
+            val v1 = if (placement.textureHeight > 0) (placement.srcY + placement.srcHeight).toFloat() / placement.textureHeight.toFloat() else 1f
+            imageProgram.bind(
+                viewportWidth = viewportWidth,
+                viewportHeight = viewportHeight,
+                textureId = textureId,
+                left = left,
+                top = top,
+                right = right,
+                bottom = bottom,
+                u0 = u0,
+                v0 = v0,
+                u1 = u1,
+                v1 = v1
+            )
+            GLES30.glDrawArrays(GLES30.GL_TRIANGLE_STRIP, 0, 4)
+            GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, 0)
+        }
     }
 
     private fun bindStyledInstanceAttributes() {
@@ -673,6 +753,7 @@ internal class GlesTerminalRenderer(
     @Suppress("NestedBlockDepth")
     private class GlesResources(
         val program: GlesProgram,
+        val imageProgram: GlesImageProgram,
         val cursorEffects: GlesCursorEffectRenderer,
         val dirtyBuffers: GlesDirtyInstanceStore,
         val glyphRows: GlesGlyphRowBuffer,
@@ -695,7 +776,11 @@ internal class GlesTerminalRenderer(
                             try {
                                 cursorEffects.release()
                             } finally {
-                                program.release()
+                                try {
+                                    imageProgram.release()
+                                } finally {
+                                    program.release()
+                                }
                             }
                         }
                     }

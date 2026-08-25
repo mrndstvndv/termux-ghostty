@@ -1,0 +1,7 @@
+.{
+    .name = .libspng,
+    .version = "0.7.4",
+    .fingerprint = 0x18a056a01c9fc594,
+    .minimum_zig_version = "0.16.0",
+    .paths = .{ "build.zig", "spng.c", "spng.h" },
+}

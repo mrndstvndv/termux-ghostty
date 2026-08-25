@@ -453,8 +453,13 @@ public final class GhosttyTerminalContent implements TerminalContent, AutoClosea
                 throw new IllegalStateException("nativeFillSnapshotCurrentViewport failed");
             }
             if (requiredBytes > snapshot.getCapacityBytes()) {
-                GhosttyLog.error("nativeFillSnapshotCurrentViewport buffer too small handle=0x" + Long.toHexString(nativeHandle) + " required=" + requiredBytes + " capacity=" + snapshot.getCapacityBytes());
-                throw new IllegalStateException("nativeFillSnapshotCurrentViewport buffer too small: required=" + requiredBytes + ", capacity=" + snapshot.getCapacityBytes());
+                snapshot.ensureCapacity(requiredBytes);
+                snapshot.getBuffer().clear();
+                requiredBytes = GhosttyNative.nativeFillSnapshotCurrentViewport(nativeHandle, snapshot.getBuffer(), snapshot.getCapacityBytes());
+                if (requiredBytes < 0 || requiredBytes > snapshot.getCapacityBytes()) {
+                    GhosttyLog.error("nativeFillSnapshotCurrentViewport buffer too small after resize handle=0x" + Long.toHexString(nativeHandle) + " required=" + requiredBytes + " capacity=" + snapshot.getCapacityBytes());
+                    throw new IllegalStateException("nativeFillSnapshotCurrentViewport buffer too small: required=" + requiredBytes + ", capacity=" + snapshot.getCapacityBytes());
+                }
             }
         }
 
@@ -496,11 +501,16 @@ public final class GhosttyTerminalContent implements TerminalContent, AutoClosea
                 throw new IllegalStateException("nativeFillViewportLinks failed");
             }
             if (requiredBytes > snapshot.getCapacityBytes()) {
-                GhosttyLog.error("nativeFillViewportLinks buffer too small handle=0x"
-                    + Long.toHexString(nativeHandle) + " required=" + requiredBytes
-                    + " capacity=" + snapshot.getCapacityBytes());
-                throw new IllegalStateException("nativeFillViewportLinks buffer too small: required="
-                    + requiredBytes + ", capacity=" + snapshot.getCapacityBytes());
+                snapshot.ensureCapacity(requiredBytes);
+                snapshot.getBuffer().clear();
+                requiredBytes = GhosttyNative.nativeFillViewportLinks(nativeHandle, snapshot.getBuffer(), snapshot.getCapacityBytes());
+                if (requiredBytes < 0 || requiredBytes > snapshot.getCapacityBytes()) {
+                    GhosttyLog.error("nativeFillViewportLinks buffer too small after resize handle=0x"
+                        + Long.toHexString(nativeHandle) + " required=" + requiredBytes
+                        + " capacity=" + snapshot.getCapacityBytes());
+                    throw new IllegalStateException("nativeFillViewportLinks buffer too small: required="
+                        + requiredBytes + ", capacity=" + snapshot.getCapacityBytes());
+                }
             }
         }
 

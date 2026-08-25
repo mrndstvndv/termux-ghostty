@@ -7,12 +7,15 @@ import com.termux.terminal.ViewportLinkSnapshot
 import com.termux.terminal.compose.TerminalCellLayout
 import com.termux.terminal.compose.TerminalCursor
 import com.termux.terminal.compose.TerminalFrame
+import com.termux.terminal.compose.TerminalImagePlacement
 import com.termux.terminal.compose.TerminalLinkLayout
 import com.termux.terminal.compose.TerminalLinkSegment
 import com.termux.terminal.compose.TerminalModes
 import com.termux.terminal.compose.TerminalPalette
 import com.termux.terminal.compose.TerminalRow
 import com.termux.terminal.compose.TerminalViewport
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 
 /** Session values that are not encoded in the visible frame transport. */
 data class TerminalFrameSessionState(
@@ -95,8 +98,41 @@ class TerminalSessionFrameAdapter {
             ),
             palette = content.palette,
             rows = content.rows,
-            linkLayout = linkLayoutCache.update(snapshot, viewportLinks, content)
+            linkLayout = linkLayoutCache.update(snapshot, viewportLinks, content),
+            imagePlacements = snapshot.toImagePlacements()
         )
+    }
+
+    private fun ScreenSnapshot.toImagePlacements(): List<TerminalImagePlacement> {
+        if (!hasImageUpdate() || imageCount == 0) return emptyList()
+        val pixelData = imagePixelData
+        return List(imageCount) { index ->
+            val src = getImagePlacement(index)
+            val buffer: ByteBuffer? = if (src.bufferLen > 0 && pixelData != null) {
+                ByteBuffer.wrap(pixelData, src.bufferOffset, src.bufferLen).order(ByteOrder.nativeOrder())
+            } else {
+                null
+            }
+            TerminalImagePlacement(
+                imageId = src.imageId.toLong() and 0xFFFFFFFFL,
+                placementId = src.placementId.toLong() and 0xFFFFFFFFL,
+                imageGeneration = src.imageGeneration,
+                viewportCol = src.viewportCol,
+                viewportRow = src.viewportRow,
+                colSpan = src.colSpan,
+                rowSpan = src.rowSpan,
+                zIndex = src.zIndex,
+                srcX = src.srcX,
+                srcY = src.srcY,
+                srcWidth = src.srcWidth,
+                srcHeight = src.srcHeight,
+                destWidthPx = src.destWidthPx,
+                destHeightPx = src.destHeightPx,
+                pixelBuffer = buffer,
+                textureWidth = src.destWidthPx,
+                textureHeight = src.destHeightPx
+            )
+        }
     }
 }
 

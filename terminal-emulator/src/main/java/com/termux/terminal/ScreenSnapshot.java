@@ -6,7 +6,7 @@ import java.util.concurrent.atomic.AtomicLong;
 
 public final class ScreenSnapshot {
 
-    public static final int DEFAULT_CAPACITY_BYTES = 1024 * 1024;
+    public static final int DEFAULT_CAPACITY_BYTES = 2 * 1024 * 1024;
 
     private static final int BACKING_NONE = 0;
     private static final int BACKING_JAVA = 1;
@@ -18,10 +18,11 @@ public final class ScreenSnapshot {
     static final int SNAPSHOT_METADATA_PALETTE = 1;
     static final int SNAPSHOT_METADATA_RENDER = 1 << 1;
     static final int SNAPSHOT_METADATA_MODE_BITS = 1 << 2;
+    static final int SNAPSHOT_METADATA_IMAGES = 1 << 3;
 
     private static final AtomicLong NEXT_ROW_GENERATION = new AtomicLong(1);
 
-    private final ByteBuffer mBuffer;
+    private ByteBuffer mBuffer;
     private ByteBuffer mCachedBuffer;
     private final int[] mPalette = new int[TextStyle.NUM_INDEXED_COLORS];
     private RowSnapshot[] mRowsData = new RowSnapshot[0];
@@ -44,6 +45,10 @@ public final class ScreenSnapshot {
     private int mCursorStyle;
     private boolean mReverseVideo;
     private int mModeBits;
+    private int mImageCount;
+    private long mImageStorageGeneration;
+    private ImagePlacement[] mImagePlacements = new ImagePlacement[0];
+    private byte[] mImagePixelData = new byte[0];
 
     public ScreenSnapshot() {
         this(DEFAULT_CAPACITY_BYTES);
@@ -55,6 +60,18 @@ public final class ScreenSnapshot {
         }
 
         mBuffer = ByteBuffer.allocateDirect(capacityBytes).order(ByteOrder.nativeOrder());
+    }
+
+    public void ensureCapacity(int minCapacity) {
+        if (minCapacity <= 0) {
+            throw new IllegalArgumentException("minCapacity must be > 0");
+        }
+        if (mBuffer.capacity() >= minCapacity) {
+            return;
+        }
+        int newCapacity = Math.max(minCapacity, mBuffer.capacity() * 2);
+        mBuffer = ByteBuffer.allocateDirect(newCapacity).order(ByteOrder.nativeOrder());
+        mCachedBuffer = null;
     }
 
     ByteBuffer getBuffer() {
@@ -191,6 +208,29 @@ public final class ScreenSnapshot {
 
     public boolean hasModeBitsUpdate() {
         return (mMetadataFlags & SNAPSHOT_METADATA_MODE_BITS) != 0;
+    }
+
+    public boolean hasImageUpdate() {
+        return (mMetadataFlags & SNAPSHOT_METADATA_IMAGES) != 0;
+    }
+
+    public int getImageCount() {
+        return mImageCount;
+    }
+
+    public long getImageStorageGeneration() {
+        return mImageStorageGeneration;
+    }
+
+    public ImagePlacement getImagePlacement(int index) {
+        if (index < 0 || index >= mImageCount) {
+            throw new IllegalArgumentException("image index out of range: " + index);
+        }
+        return mImagePlacements[index];
+    }
+
+    public byte[] getImagePixelData() {
+        return mImagePixelData;
     }
 
     public boolean hasJavaBacking() {
@@ -333,6 +373,18 @@ public final class ScreenSnapshot {
         if ((source.mMetadataFlags & SNAPSHOT_METADATA_MODE_BITS) != 0) {
             mModeBits = source.mModeBits;
         }
+        if ((source.mMetadataFlags & SNAPSHOT_METADATA_IMAGES) != 0) {
+            mImageCount = source.mImageCount;
+            mImageStorageGeneration = source.mImageStorageGeneration;
+            ensureImageCapacity(mImageCount);
+            System.arraycopy(source.mImagePlacements, 0, mImagePlacements, 0, mImageCount);
+            mImagePixelData = source.mImagePixelData != null ? source.mImagePixelData.clone() : new byte[0];
+        } else {
+            mImageCount = 0;
+            mImageStorageGeneration = 0;
+            mImagePlacements = new ImagePlacement[0];
+            mImagePixelData = new byte[0];
+        }
     }
 
     void copyRowFrom(ScreenSnapshot source, int rowIndex) {
@@ -385,6 +437,16 @@ public final class ScreenSnapshot {
         mRequiredBytes = 0;
         mFrameSequence = source.mFrameSequence;
         mMetadataFlags = source.mMetadataFlags;
+        mImageCount = source.mImageCount;
+        mImageStorageGeneration = source.mImageStorageGeneration;
+        ensureImageCapacity(mImageCount);
+        if (mImageCount > 0) {
+            System.arraycopy(source.mImagePlacements, 0, mImagePlacements, 0, mImageCount);
+            mImagePixelData = source.mImagePixelData != null ? source.mImagePixelData.clone() : new byte[0];
+        } else {
+            mImagePlacements = new ImagePlacement[0];
+            mImagePixelData = new byte[0];
+        }
     }
 
     private void copyDirtyRowsMetadataFrom(ScreenSnapshot source) {
@@ -431,7 +493,7 @@ public final class ScreenSnapshot {
             throw new IllegalStateException("Unexpected dirty row count: " + dirtyRowCount + " rows=" + rows);
         }
 
-        int unknownMetadataFlags = metadataFlags & ~(SNAPSHOT_METADATA_PALETTE | SNAPSHOT_METADATA_RENDER | SNAPSHOT_METADATA_MODE_BITS);
+        int unknownMetadataFlags = metadataFlags & ~(SNAPSHOT_METADATA_PALETTE | SNAPSHOT_METADATA_RENDER | SNAPSHOT_METADATA_MODE_BITS | SNAPSHOT_METADATA_IMAGES);
         if (unknownMetadataFlags != 0) {
             throw new IllegalStateException("Unexpected native metadata flags: 0x" + Integer.toHexString(unknownMetadataFlags));
         }
@@ -523,6 +585,67 @@ public final class ScreenSnapshot {
             // Validate cell layout bounds after bulk deserialization.
             validateNativeRow(rowIndex, charsUsed, columns, row.mCellTextStart, row.mCellTextLength, row.mCellDisplayWidth);
         }
+        if ((metadataFlags & SNAPSHOT_METADATA_IMAGES) != 0) {
+            buffer.position((buffer.position() + 7) & ~7);
+            int imageCount = buffer.getInt();
+            long generation = buffer.getLong();
+            if (imageCount < 0 || imageCount > 4096) {
+                throw new IllegalStateException("Invalid image count: " + imageCount);
+            }
+            mImageCount = imageCount;
+            mImageStorageGeneration = generation;
+            ensureImageCapacity(imageCount);
+            for (int i = 0; i < imageCount; i++) {
+                int imageId = buffer.getInt();
+                int placementId = buffer.getInt();
+                long imageGeneration = buffer.getLong();
+                int viewportCol = buffer.getInt();
+                int viewportRow = buffer.getInt();
+                int colSpan = buffer.getInt();
+                int rowSpan = buffer.getInt();
+                int zIndex = buffer.getInt();
+                int srcX = buffer.getInt();
+                int srcY = buffer.getInt();
+                int srcWidth = buffer.getInt();
+                int srcHeight = buffer.getInt();
+                int destWidthPx = buffer.getInt();
+                int destHeightPx = buffer.getInt();
+                int pixelFormat = buffer.getInt();
+                int bufferOffset = buffer.getInt();
+                int bufferLen = buffer.getInt();
+                mImagePlacements[i] = new ImagePlacement(imageId, placementId, imageGeneration, viewportCol, viewportRow, colSpan, rowSpan, zIndex, srcX, srcY, srcWidth, srcHeight, destWidthPx, destHeightPx, pixelFormat, bufferOffset, bufferLen);
+            }
+            buffer.position((buffer.position() + 7) & ~7);
+            int expectedPixelBytes = 0;
+            for (int i = 0; i < imageCount; i++) {
+                expectedPixelBytes += mImagePlacements[i].bufferLen;
+            }
+            if (expectedPixelBytes > buffer.remaining()) {
+                throw new IllegalStateException("Insufficient pixel data: expected " + expectedPixelBytes + " remaining " + buffer.remaining());
+            }
+            mImagePixelData = new byte[expectedPixelBytes];
+            if (expectedPixelBytes > 0) {
+                buffer.get(mImagePixelData, 0, expectedPixelBytes);
+            }
+            for (int i = 0; i < imageCount; i++) {
+                ImagePlacement p = mImagePlacements[i];
+                if (p.bufferOffset < 0 || p.bufferLen < 0 || p.bufferOffset + p.bufferLen > expectedPixelBytes) {
+                    throw new IllegalStateException("Invalid image buffer range for placement " + i);
+                }
+            }
+        } else {
+            mImageCount = 0;
+            mImageStorageGeneration = 0;
+            mImagePlacements = new ImagePlacement[0];
+            mImagePixelData = new byte[0];
+        }
+    }
+
+    private void ensureImageCapacity(int count) {
+        if (mImagePlacements.length >= count) {
+            return;
+        }
+        mImagePlacements = new ImagePlacement[count];
     }
 
     private void ensureRowCapacity(int rows) {
@@ -749,6 +872,46 @@ public final class ScreenSnapshot {
 
         private void markMutated() {
             mContentGeneration = NEXT_ROW_GENERATION.getAndIncrement();
+        }
+    }
+
+    public static final class ImagePlacement {
+        public final int imageId;
+        public final int placementId;
+        public final long imageGeneration;
+        public final int viewportCol;
+        public final int viewportRow;
+        public final int colSpan;
+        public final int rowSpan;
+        public final int zIndex;
+        public final int srcX;
+        public final int srcY;
+        public final int srcWidth;
+        public final int srcHeight;
+        public final int destWidthPx;
+        public final int destHeightPx;
+        public final int pixelFormat;
+        public final int bufferOffset;
+        public final int bufferLen;
+
+        ImagePlacement(int imageId, int placementId, long imageGeneration, int viewportCol, int viewportRow, int colSpan, int rowSpan, int zIndex, int srcX, int srcY, int srcWidth, int srcHeight, int destWidthPx, int destHeightPx, int pixelFormat, int bufferOffset, int bufferLen) {
+            this.imageId = imageId;
+            this.placementId = placementId;
+            this.imageGeneration = imageGeneration;
+            this.viewportCol = viewportCol;
+            this.viewportRow = viewportRow;
+            this.colSpan = colSpan;
+            this.rowSpan = rowSpan;
+            this.zIndex = zIndex;
+            this.srcX = srcX;
+            this.srcY = srcY;
+            this.srcWidth = srcWidth;
+            this.srcHeight = srcHeight;
+            this.destWidthPx = destWidthPx;
+            this.destHeightPx = destHeightPx;
+            this.pixelFormat = pixelFormat;
+            this.bufferOffset = bufferOffset;
+            this.bufferLen = bufferLen;
         }
     }
 }

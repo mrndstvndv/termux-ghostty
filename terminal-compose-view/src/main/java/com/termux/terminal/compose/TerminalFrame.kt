@@ -9,6 +9,27 @@ import com.termux.terminal.WcWidth
  * mutate a published frame; the canvas never calls back into the backend while
  * consuming one. Frames are monotonic in [sequence].
  */
+data class TerminalImagePlacement(
+    val imageId: Long,
+    val placementId: Long,
+    val imageGeneration: Long,
+    val viewportCol: Int,
+    val viewportRow: Int,
+    val colSpan: Int,
+    val rowSpan: Int,
+    val zIndex: Int,
+    val srcX: Int,
+    val srcY: Int,
+    val srcWidth: Int,
+    val srcHeight: Int,
+    val destWidthPx: Int,
+    val destHeightPx: Int,
+    val pixelBuffer: java.nio.ByteBuffer?,
+    val textureWidth: Int,
+    val textureHeight: Int
+)
+
+@Suppress("LongParameterList")
 class TerminalFrame(
     val sequence: Long,
     val viewport: TerminalViewport,
@@ -16,7 +37,8 @@ class TerminalFrame(
     val modes: TerminalModes,
     val palette: TerminalPalette,
     val rows: List<TerminalRow>,
-    val linkLayout: TerminalLinkLayout?
+    val linkLayout: TerminalLinkLayout?,
+    val imagePlacements: List<TerminalImagePlacement> = emptyList()
 ) {
 
     /** Absolute row of the top of the viewport (0 or negative). */

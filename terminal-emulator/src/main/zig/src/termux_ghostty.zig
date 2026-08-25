@@ -55,10 +55,85 @@ const snapshot_flag_full_rebuild: u32 = 1 << 0;
 const snapshot_metadata_palette: u32 = 1 << 0;
 const snapshot_metadata_render: u32 = 1 << 1;
 const snapshot_metadata_mode_bits: u32 = 1 << 2;
+const snapshot_metadata_images: u32 = 1 << 3;
 const snapshot_header_bytes: usize = @sizeOf(u32) + @sizeOf(i32) + (5 * @sizeOf(u32));
 const snapshot_render_metadata_bytes: usize = (3 * @sizeOf(i32)) + (2 * @sizeOf(u32));
 const snapshot_mode_bits_bytes: usize = @sizeOf(u32);
 const snapshot_row_header_bytes: usize = 2 * @sizeOf(u32) + @sizeOf(u64);
+const snapshot_images_header_bytes: usize = @sizeOf(u32) + @sizeOf(u64);
+const snapshot_image_placement_bytes: usize = @sizeOf(SnapshotImagePlacement);
+const kitty_image_storage_limit: usize = 64 * 1024 * 1024;
+
+const SnapshotImagePlacement = extern struct {
+    image_id: u32,
+    placement_id: u32,
+    image_generation: u64,
+    viewport_col: i32,
+    viewport_row: i32,
+    col_span: u32,
+    row_span: u32,
+    z_index: i32,
+    src_x: u32,
+    src_y: u32,
+    src_width: u32,
+    src_height: u32,
+    dest_width_px: u32,
+    dest_height_px: u32,
+    pixel_format: u32,
+    buffer_offset: u32,
+    buffer_len: u32,
+};
+
+const spng_ctx = opaque {};
+const SPNG_FMT_RGBA8: c_int = 1;
+const spng_ihdr = extern struct {
+    width: u32,
+    height: u32,
+    bit_depth: u8,
+    color_type: u8,
+    compression_method: u8,
+    filter_method: u8,
+    interlace_method: u8,
+};
+
+extern "c" fn spng_ctx_new(flags: c_int) ?*spng_ctx;
+extern "c" fn spng_ctx_free(ctx: ?*spng_ctx) void;
+extern "c" fn spng_set_png_buffer(ctx: *spng_ctx, buf: [*]const u8, size: usize) c_int;
+extern "c" fn spng_get_ihdr(ctx: *spng_ctx, ihdr: *spng_ihdr) c_int;
+extern "c" fn spng_decoded_image_size(ctx: *spng_ctx, fmt: c_int, len: *usize) c_int;
+extern "c" fn spng_decode_image(ctx: *spng_ctx, out: [*]u8, len: usize, fmt: c_int, flags: c_int) c_int;
+
+fn decodePngAlloc(alloc: std.mem.Allocator, data: []const u8) ghostty.sys.DecodeError!ghostty.sys.Image {
+    const ctx = spng_ctx_new(0) orelse return error.OutOfMemory;
+    defer spng_ctx_free(ctx);
+
+    if (spng_set_png_buffer(ctx, data.ptr, data.len) != 0) {
+        return error.InvalidData;
+    }
+
+    var ihdr: spng_ihdr = undefined;
+    if (spng_get_ihdr(ctx, &ihdr) != 0) {
+        return error.InvalidData;
+    }
+
+    var out_size: usize = 0;
+    if (spng_decoded_image_size(ctx, SPNG_FMT_RGBA8, &out_size) != 0) {
+        return error.InvalidData;
+    }
+
+    const pixels = try alloc.alloc(u8, out_size);
+    errdefer alloc.free(pixels);
+
+    if (spng_decode_image(ctx, pixels.ptr, out_size, SPNG_FMT_RGBA8, 0) != 0) {
+        return error.InvalidData;
+    }
+
+    return .{
+        .width = ihdr.width,
+        .height = ihdr.height,
+        .data = pixels,
+    };
+}
 const FNV_OFFSET_BASIS: u64 = 0xcbf29ce484222325;
 const FNV_PRIME: u64 = 0x100000001b3;
 
@@ -191,6 +266,10 @@ pub const Session = struct {
     mouse_pressed_buttons: u16 = 0,
     mouse_last_cell: ghostty.Coordinate = .{ .x = 0, .y = 0 },
     mouse_last_cell_valid: bool = false,
+    last_kitty_generation: u64 = 0,
+    last_kitty_viewport_top_row: i32 = 0,
+    scratch_kitty_placements: std.ArrayListUnmanaged(SnapshotImagePlacement) = .empty,
+    scratch_kitty_pixel_data: std.ArrayListUnmanaged(u8) = .empty,
 
     fn deinit(self: *Session) void {
         self.render_state.deinit(self.alloc);
@@ -208,6 +287,8 @@ pub const Session = struct {
         self.scratch_cell_styles.deinit(self.alloc);
         self.scratch_viewport_link_records.deinit(self.alloc);
         self.scratch_viewport_link_strings.deinit(self.alloc);
+        self.scratch_kitty_placements.deinit(self.alloc);
+        self.scratch_kitty_pixel_data.deinit(self.alloc);
     }
 
     fn resetTransientState(self: *Session) void {
@@ -556,6 +637,10 @@ pub const Session = struct {
         if ((metadata.flags & snapshot_metadata_palette) != 0) {
             self.last_serialized_palette = metadata.palette;
         }
+        if ((metadata.flags & snapshot_metadata_images) != 0) {
+            self.last_kitty_generation = self.kittyGeneration();
+            self.last_kitty_viewport_top_row = self.viewport_top_row;
+        }
         self.serialized_metadata_valid = true;
     }
 
@@ -580,6 +665,10 @@ pub const Session = struct {
 
             total = (total + 7) & ~@as(usize, 7);
             total += try self.snapshotRowRequiredBytes(row_index);
+        }
+        if ((metadata.flags & snapshot_metadata_images) != 0) {
+            total = (total + 7) & ~@as(usize, 7);
+            total += self.kittyImagesRequiredBytes();
         }
 
         return total;
@@ -616,6 +705,142 @@ pub const Session = struct {
         const base_size = snapshot_row_header_bytes + (cols * 4) + (cols * 2) + (cols * 1);
         const styles_padding = (8 - (base_size % 8)) % 8;
         return base_size + styles_padding + (cols * 8) + (chars * 2);
+    }
+
+    fn kittyGeneration(self: *const Session) u64 {
+        return self.terminal.screens.active.kitty_images.generation;
+    }
+
+    fn rebuildKittyPlacements(self: *Session) !void {
+        self.scratch_kitty_placements.clearRetainingCapacity();
+        self.scratch_kitty_pixel_data.clearRetainingCapacity();
+        const storage = &self.terminal.screens.active.kitty_images;
+        if (storage.generation == 0) return;
+        // Generation-based skip: if generation and viewport unchanged, keep previous placements?
+        // For now always rebuild to ensure viewport geometry is current.
+        const cell_width: u32 = @max(1, self.terminal.width_px / self.terminal.cols);
+        const cell_height: u32 = @max(1, self.terminal.height_px / self.terminal.rows);
+        _ = cell_width;
+        _ = cell_height;
+        var it = storage.placements.iterator();
+        while (it.next()) |entry| {
+            const key = entry.key_ptr;
+            const placement = entry.value_ptr;
+            if (placement.location == .virtual) continue;
+            const image = storage.images.getPtr(key.image_id) orelse continue;
+            const render_data = image.renderData();
+            const pixel_bytes = render_data.bytes() orelse continue;
+            if (pixel_bytes.len == 0) continue;
+            // Compute viewport position
+            const vp = self.kittyViewportPos(placement, image);
+            if (!vp.visible) continue;
+            const grid = placement.gridSize(image.*, &self.terminal);
+            const pixel = placement.pixelSize(image.*, &self.terminal);
+            const src = placement.sourceRect(image.*);
+            const pixel_format: u32 = switch (image.format) {
+                .rgb => 1,
+                .rgba => 0,
+                else => 0,
+            };
+            const buffer_offset: u32 = std.math.cast(u32, self.scratch_kitty_pixel_data.items.len) orelse continue;
+            const buffer_len: u32 = std.math.cast(u32, pixel_bytes.len) orelse continue;
+            // Append pixel buffer
+            try self.scratch_kitty_pixel_data.appendSlice(self.alloc, pixel_bytes);
+            try self.scratch_kitty_placements.append(self.alloc, .{
+                .image_id = key.image_id,
+                .placement_id = key.placement_id.id,
+                .image_generation = image.generation,
+                .viewport_col = vp.col,
+                .viewport_row = vp.row,
+                .col_span = grid.cols,
+                .row_span = grid.rows,
+                .z_index = placement.z,
+                .src_x = src.x,
+                .src_y = src.y,
+                .src_width = src.width,
+                .src_height = src.height,
+                .dest_width_px = pixel.width,
+                .dest_height_px = pixel.height,
+                .pixel_format = pixel_format,
+                .buffer_offset = buffer_offset,
+                .buffer_len = buffer_len,
+            });
+        }
+    }
+
+    fn kittyViewportPos(self: *const Session, placement: anytype, image: anytype) struct { col: i32, row: i32, visible: bool } {
+        // Replicate computeViewportPos logic from kitty_graphics.zig
+        const p = placement;
+        if (p.location == .virtual) return .{ .col = 0, .row = 0, .visible = false };
+        // For relative placements, resolve chain
+        const origin: struct { pin: *const ghostty.PageList.Pin, col_offset: i32, row_offset: i32 } = switch (p.location) {
+            .pin => |pin| .{ .pin = pin, .col_offset = 0, .row_offset = 0 },
+            .virtual => return .{ .col = 0, .row = 0, .visible = false },
+            .relative => |rel| origin: {
+                const storage = &self.terminal.screens.active.kitty_images;
+                const chain = storage.resolveChain(rel) orelse return .{ .col = 0, .row = 0, .visible = false };
+                switch (chain.root.location) {
+                    .pin => |root_pin| break :origin .{ .pin = root_pin, .col_offset = chain.horizontal_offset, .row_offset = chain.vertical_offset },
+                    .virtual => return .{ .col = 0, .row = 0, .visible = false },
+                    .relative => unreachable,
+                }
+            },
+        };
+        const pin = origin.pin;
+        if (pin.garbage) return .{ .col = 0, .row = 0, .visible = false };
+        const pages = &self.terminal.screens.active.pages;
+        const pin_screen = pages.pointFromPin(.screen, pin.*) orelse return .{ .col = 0, .row = 0, .visible = false };
+        const vp_tl = pages.getTopLeft(.viewport);
+        const vp_screen = pages.pointFromPin(.screen, vp_tl) orelse return .{ .col = 0, .row = 0, .visible = false };
+        const vp_row: i32 = (@as(i32, @intCast(pin_screen.screen.y)) - @as(i32, @intCast(vp_screen.screen.y))) +| origin.row_offset;
+        const vp_col: i32 = @as(i32, @intCast(pin_screen.screen.x)) +| origin.col_offset;
+        const grid = p.gridSize(image.*, &self.terminal);
+        const bottom_row = @as(i64, vp_row) + @as(i64, grid.rows);
+        const right_col = @as(i64, vp_col) + @as(i64, grid.cols);
+        const visible = bottom_row > 0 and vp_row < @as(i32, self.terminal.rows) and right_col > 0 and vp_col < @as(i32, self.terminal.cols);
+        return .{ .col = vp_col, .row = vp_row, .visible = visible };
+    }
+
+    fn kittyImagesRequiredBytes(self: *const Session) usize {
+        if (self.scratch_kitty_placements.items.len == 0) return 0;
+        var total: usize = snapshot_images_header_bytes;
+        total += self.scratch_kitty_placements.items.len * snapshot_image_placement_bytes;
+        // Align pixel data to 8 bytes? Keep 8-byte aligned for buffer start
+        total = (total + 7) & ~@as(usize, 7);
+        total += self.scratch_kitty_pixel_data.items.len;
+        return total;
+    }
+
+    fn writeKittyImages(self: *Session, writer: *BufferWriter) !void {
+        const count: u32 = std.math.cast(u32, self.scratch_kitty_placements.items.len) orelse return error.InvalidSnapshotRow;
+        try writer.writeU32(count);
+        try writer.writeU64(self.kittyGeneration());
+        for (self.scratch_kitty_placements.items) |placement| {
+            try writer.writeU32(placement.image_id);
+            try writer.writeU32(placement.placement_id);
+            try writer.writeU64(placement.image_generation);
+            try writer.writeI32(placement.viewport_col);
+            try writer.writeI32(placement.viewport_row);
+            try writer.writeU32(placement.col_span);
+            try writer.writeU32(placement.row_span);
+            try writer.writeI32(placement.z_index);
+            try writer.writeU32(placement.src_x);
+            try writer.writeU32(placement.src_y);
+            try writer.writeU32(placement.src_width);
+            try writer.writeU32(placement.src_height);
+            try writer.writeU32(placement.dest_width_px);
+            try writer.writeU32(placement.dest_height_px);
+            try writer.writeU32(placement.pixel_format);
+            try writer.writeU32(placement.buffer_offset);
+            try writer.writeU32(placement.buffer_len);
+        }
+        // Align before pixel data
+        while (writer.offset % 8 != 0) {
+            try writer.writeU8(0);
+        }
+        if (self.scratch_kitty_pixel_data.items.len > 0) {
+            try writer.writeBytes(self.scratch_kitty_pixel_data.items);
+        }
     }
 
     fn writeSnapshotRow(self: *Session, writer: *BufferWriter, row_index: usize) !void {
@@ -1104,9 +1329,10 @@ fn elapsedNanos(start_ns: i128) u64 {
 
 const Handler = struct {
     session: *Session,
+    apc_handler: ghostty.apc.Handler = .{},
 
     pub fn deinit(self: *Handler) void {
-        _ = self;
+        self.apc_handler.deinit();
     }
 
     pub fn vt(
@@ -1213,7 +1439,10 @@ const Handler = struct {
             .kitty_keyboard_set_or => self.session.terminal.screens.active.kitty_keyboard.set(.@"or", value.flags),
             .kitty_keyboard_set_not => self.session.terminal.screens.active.kitty_keyboard.set(.not, value.flags),
             .dcs_hook, .dcs_put, .dcs_unhook => {},
-            .apc_start, .apc_end, .apc_put, .apc_put_slice => {},
+            .apc_start => self.apc_handler.start(),
+            .apc_put => self.apc_handler.feed(self.session.alloc, value),
+            .apc_put_slice => self.apc_handler.feedSlice(self.session.alloc, value.bytes),
+            .apc_end => self.apcEnd(value.terminated),
             .end_hyperlink => self.session.terminal.screens.active.endHyperlink(),
             .active_status_display => self.session.terminal.status_display = value,
             .decaln => try self.session.terminal.decaln(),
@@ -1233,6 +1462,39 @@ const Handler = struct {
             .color_operation => try self.colorOperation(value.op, &value.requests, value.terminator),
             .semantic_prompt => try self.session.terminal.semanticPrompt(value),
             .title_push, .title_pop => {},
+        }
+    }
+
+    fn apcEnd(self: *Handler, terminated: bool) void {
+        var result = self.apc_handler.end() orelse return;
+        defer result.deinit(self.session.alloc);
+        switch (result) {
+            .unknown => |*unknown| {
+                if (terminated) _ = unknown;
+            },
+            .kitty => |*kitty_cmd| {
+                const io = std.Io.Threaded.global_single_threaded.io();
+                if (self.session.terminal.kittyGraphics(io, self.session.alloc, kitty_cmd)) |resp| {
+                    var buf: [1024]u8 = undefined;
+                    var writer: std.Io.Writer = .fixed(&buf);
+                    resp.encode(&writer) catch return;
+                    writer.writeByte(0) catch return;
+                    const final = writer.buffered();
+                    if (final.len > 1) {
+                        self.session.appendPendingOutput(final[0 .. final.len - 1]) catch {};
+                    }
+                }
+            },
+            .glyph => |*glyph_req| {
+                if (self.session.terminal.glyphProtocol(self.session.alloc, glyph_req)) |resp| {
+                    var buf: [1024]u8 = undefined;
+                    var writer: std.Io.Writer = .fixed(&buf);
+                    resp.formatWire(&writer) catch return;
+                    writer.writeByte(0) catch return;
+                    const final = writer.buffered();
+                    self.session.appendPendingOutput(final[0 .. final.len - 1]) catch {};
+                }
+            },
         }
     }
 
@@ -1626,6 +1888,8 @@ pub export fn termux_ghostty_session_create(
     session.scratch_cell_styles = .empty;
     session.scratch_viewport_link_records = .empty;
     session.scratch_viewport_link_strings = .empty;
+    session.scratch_kitty_placements = .empty;
+    session.scratch_kitty_pixel_data = .empty;
     session.colors_changed = false;
     session.bell_pending = false;
     session.progress_state = .none;
@@ -1648,8 +1912,23 @@ pub export fn termux_ghostty_session_create(
     session.mouse_pressed_buttons = 0;
     session.mouse_last_cell = .{ .x = 0, .y = 0 };
     session.mouse_last_cell_valid = false;
+    session.last_kitty_generation = 0;
+    session.last_kitty_viewport_top_row = 0;
     session.terminal.width_px = @as(u32, parsed_columns) * parsed_cell_width_pixels;
     session.terminal.height_px = @as(u32, parsed_rows) * parsed_cell_height_pixels;
+    if (ghostty.sys.decode_png == null) {
+        ghostty.sys.decode_png = &decodePngAlloc;
+    }
+    session.terminal.setKittyGraphicsSizeLimit(session.alloc, kitty_image_storage_limit);
+    const tmp_dir = if (std.c.getenv("TMPDIR")) |ptr|
+        std.mem.span(ptr)
+    else
+        "/data/data/com.termux/files/usr/tmp";
+    session.terminal.setKittyGraphicsLoadingLimits(.{
+        .file = true,
+        .temporary_file = .{ .enabled = .{ .directory = tmp_dir } },
+        .shared_memory = true,
+    });
 
     ghostty_log.info("core create session=0x{x} cols={} rows={} transcript={} cellWidth={} cellHeight={} scrollbackBytes={}", .{ @intFromPtr(session), columns, rows, transcript_rows, cell_width_pixels, cell_height_pixels, scrollback_bytes });
     return session;
@@ -2075,6 +2354,12 @@ fn fillSnapshotCurrentViewport(handle: *Session, out: []u8) i32 {
 
     const full_rebuild = handle.render_state.dirty == .full;
     var snapshot_metadata = handle.buildSnapshotMetadata(full_rebuild);
+    handle.rebuildKittyPlacements() catch |err| {
+        ghostty_log.warn("core fillSnapshot kitty rebuild failed session=0x{x} err={any}", .{ @intFromPtr(handle), err });
+    };
+    if (handle.scratch_kitty_placements.items.len > 0) {
+        snapshot_metadata.flags |= snapshot_metadata_images;
+    }
     const required_bytes = handle.snapshotRequiredBytes(&snapshot_metadata) catch |err| {
         ghostty_log.err("core fillSnapshot size failed session=0x{x} topRow={} err={any}", .{ @intFromPtr(handle), top_row, err });
         return -1;
@@ -2146,6 +2431,12 @@ fn fillSnapshotCurrentViewport(handle: *Session, out: []u8) i32 {
         }
 
         handle.writeSnapshotRow(&writer, row_index) catch return -1;
+    }
+    if ((snapshot_metadata.flags & snapshot_metadata_images) != 0) {
+        while (writer.offset % 8 != 0) {
+            writer.writeU8(0) catch return -1;
+        }
+        handle.writeKittyImages(&writer) catch return -1;
     }
 
     const snapshot_serialize_ns = elapsedNanos(snapshot_serialize_start_ns);
@@ -3048,12 +3339,12 @@ test "append shifts scrolled-up viewport into history" {
     defer termux_ghostty_session_destroy(session);
 
     _ = appendTestBytes(session, "a\nb\nc\nd\ne\nf\ng\nh\n");
-    try testing.expectEqual(@as(usize, 3), session.activeTranscriptRows());
+    try testing.expectEqual(@as(usize, 4), session.activeTranscriptRows());
     _ = termux_ghostty_session_set_viewport_top_row(session, -2);
     try testing.expectEqual(@as(i32, -2), session.viewport_top_row);
 
     _ = appendTestBytes(session, "i\nj\n");
-    try testing.expectEqual(@as(usize, 5), session.activeTranscriptRows());
+    try testing.expectEqual(@as(usize, 6), session.activeTranscriptRows());
     try testing.expectEqual(@as(i32, -4), session.viewport_top_row);
 }
 

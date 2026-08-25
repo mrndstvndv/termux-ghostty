@@ -63,7 +63,8 @@ internal class GlesImageTextureCache {
                 GLES30.GL_CLAMP_TO_EDGE
             )
             buffer.position(0)
-            val format = GLES30.GL_RGBA
+            GLES30.glPixelStorei(GLES30.GL_UNPACK_ALIGNMENT, 1)
+            val format = if (placement.pixelFormat == 1) GLES30.GL_RGB else GLES30.GL_RGBA
             val internalFormat = format
             GLES30.glTexImage2D(
                 GLES30.GL_TEXTURE_2D,
@@ -76,6 +77,7 @@ internal class GlesImageTextureCache {
                 GLES30.GL_UNSIGNED_BYTE,
                 buffer
             )
+            GLES30.glPixelStorei(GLES30.GL_UNPACK_ALIGNMENT, 4)
             textures[placement.imageId] = GlesTextureEntry(textureId, placement.imageGeneration, width, height)
         }
         GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, 0)

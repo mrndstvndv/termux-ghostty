@@ -128,6 +128,7 @@ class TerminalSessionFrameAdapter {
                 srcHeight = src.srcHeight,
                 destWidthPx = src.destWidthPx,
                 destHeightPx = src.destHeightPx,
+                pixelFormat = src.pixelFormat,
                 pixelBuffer = buffer,
                 textureWidth = if (src.srcWidth > 0) src.srcWidth else src.destWidthPx,
                 textureHeight = if (src.srcHeight > 0) src.srcHeight else src.destHeightPx

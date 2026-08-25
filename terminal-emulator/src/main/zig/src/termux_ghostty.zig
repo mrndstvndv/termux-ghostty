@@ -310,7 +310,9 @@ pub const Session = struct {
         self.mouse_pressed_buttons = 0;
         self.mouse_last_cell = .{ .x = 0, .y = 0 };
         self.mouse_last_cell_valid = false;
-        self.kitty_pinned_grid_spans.clearRetainingCapacity();
+        if (self.kitty_pinned_grid_spans.capacity() > 0) {
+            self.kitty_pinned_grid_spans.clearRetainingCapacity();
+        }
     }
 
     fn captureStateSnapshot(self: *Session) ![]u8 {
@@ -696,7 +698,7 @@ pub const Session = struct {
             if (raw_cell.wide == .spacer_tail or raw_cell.wide == .spacer_head) {
                 continue;
             }
-            if (!raw_cell.hasText()) {
+            if (!raw_cell.hasText() or raw_cell.codepoint() == ghostty.kitty.graphics.unicode.placeholder) {
                 continue;
             }
 
@@ -727,11 +729,15 @@ pub const Session = struct {
         if (storage.placements.count() == 0 and self.kitty_pinned_grid_spans.count() > 0) {
             self.kitty_pinned_grid_spans.clearRetainingCapacity();
         }
+        var has_virtual = false;
         var it = storage.placements.iterator();
         while (it.next()) |entry| {
             const key = entry.key_ptr;
             const placement = entry.value_ptr;
-            if (placement.location == .virtual) continue;
+            if (placement.location == .virtual) {
+                has_virtual = true;
+                continue;
+            }
             const image = storage.images.getPtr(key.image_id) orelse continue;
             const render_data = image.renderData();
             const pixel_bytes = render_data.bytes() orelse continue;
@@ -796,6 +802,65 @@ pub const Session = struct {
                 .buffer_offset = buffer_offset,
                 .buffer_len = buffer_len,
             });
+        }
+
+        if (has_virtual) {
+            const pages = &self.terminal.screens.active.pages;
+            const top = pages.getTopLeft(.viewport);
+            const bot = pages.getBottomRight(.viewport);
+            var virtual_it = ghostty.kitty.graphics.unicode.placementIterator(top, bot);
+            while (virtual_it.next()) |virtual_placement| {
+                const image = storage.images.getPtr(virtual_placement.image_id) orelse continue;
+                const render_data = image.renderData();
+                const pixel_bytes = render_data.bytes() orelse continue;
+                if (pixel_bytes.len == 0) continue;
+
+                const cell_w = @max(1, self.terminal.width_px / self.terminal.cols);
+                const cell_h = @max(1, self.terminal.height_px / self.terminal.rows);
+                const rendered = virtual_placement.renderPlacement(
+                    storage,
+                    image,
+                    cell_w,
+                    cell_h,
+                ) catch continue;
+                if (rendered.dest_width == 0 or rendered.dest_height == 0) continue;
+
+                const vp_point = pages.pointFromPin(.viewport, rendered.top_left) orelse continue;
+                const vp_coord = vp_point.coord();
+                const vp_col: i32 = @intCast(vp_coord.x);
+                const vp_row: i32 = @intCast(vp_coord.y);
+
+                const col_span = virtual_placement.width;
+                const row_span = virtual_placement.height;
+                const pixel_format: u32 = switch (image.format) {
+                    .rgb => 1,
+                    .rgba => 0,
+                    else => 0,
+                };
+                const buffer_offset: u32 = std.math.cast(u32, self.scratch_kitty_pixel_data.items.len) orelse continue;
+                const buffer_len: u32 = std.math.cast(u32, pixel_bytes.len) orelse continue;
+
+                try self.scratch_kitty_pixel_data.appendSlice(self.alloc, pixel_bytes);
+                try self.scratch_kitty_placements.append(self.alloc, .{
+                    .image_id = virtual_placement.image_id,
+                    .placement_id = virtual_placement.placement_id,
+                    .image_generation = image.generation,
+                    .viewport_col = vp_col,
+                    .viewport_row = vp_row,
+                    .col_span = col_span,
+                    .row_span = row_span,
+                    .z_index = 0,
+                    .src_x = rendered.source_x,
+                    .src_y = rendered.source_y,
+                    .src_width = rendered.source_width,
+                    .src_height = rendered.source_height,
+                    .dest_width_px = rendered.dest_width,
+                    .dest_height_px = rendered.dest_height,
+                    .pixel_format = pixel_format,
+                    .buffer_offset = buffer_offset,
+                    .buffer_len = buffer_len,
+                });
+            }
         }
     }
 
@@ -915,7 +980,7 @@ pub const Session = struct {
             try self.scratch_cell_starts.append(self.alloc, std.math.cast(i32, self.scratch_utf16.items.len) orelse return error.InvalidSnapshotRow);
             try self.scratch_cell_widths.append(self.alloc, width);
 
-            if (width == 0 or !raw_cell.hasText()) {
+            if (width == 0 or !raw_cell.hasText() or raw_cell.codepoint() == ghostty.kitty.graphics.unicode.placeholder) {
                 try self.scratch_cell_lengths.append(self.alloc, 0);
                 try self.scratch_cell_styles.append(self.alloc, encodeTermuxStyle(raw_cell, effective_style));
                 continue;
@@ -1921,6 +1986,7 @@ pub export fn termux_ghostty_session_create(
     session.scratch_viewport_link_strings = .empty;
     session.scratch_kitty_placements = .empty;
     session.scratch_kitty_pixel_data = .empty;
+    session.kitty_pinned_grid_spans = .empty;
     session.colors_changed = false;
     session.bell_pending = false;
     session.progress_state = .none;

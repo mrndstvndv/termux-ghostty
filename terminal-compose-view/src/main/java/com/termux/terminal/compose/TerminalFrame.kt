@@ -24,6 +24,7 @@ data class TerminalImagePlacement(
     val srcHeight: Int,
     val destWidthPx: Int,
     val destHeightPx: Int,
+    val pixelFormat: Int = 0,
     val pixelBuffer: java.nio.ByteBuffer?,
     val textureWidth: Int,
     val textureHeight: Int

@@ -226,6 +226,11 @@ const FramePerfCounters = struct {
     }
 };
 
+const PinnedGridSpan = struct {
+    cols: u32,
+    rows: u32,
+};
+
 pub const Session = struct {
     alloc: std.mem.Allocator,
     terminal: ghostty.Terminal,
@@ -268,6 +273,7 @@ pub const Session = struct {
     mouse_last_cell_valid: bool = false,
     last_kitty_generation: u64 = 0,
     last_kitty_viewport_top_row: i32 = 0,
+    kitty_pinned_grid_spans: std.AutoHashMapUnmanaged(u64, PinnedGridSpan) = .empty,
     scratch_kitty_placements: std.ArrayListUnmanaged(SnapshotImagePlacement) = .empty,
     scratch_kitty_pixel_data: std.ArrayListUnmanaged(u8) = .empty,
 
@@ -289,6 +295,7 @@ pub const Session = struct {
         self.scratch_viewport_link_strings.deinit(self.alloc);
         self.scratch_kitty_placements.deinit(self.alloc);
         self.scratch_kitty_pixel_data.deinit(self.alloc);
+        self.kitty_pinned_grid_spans.deinit(self.alloc);
     }
 
     fn resetTransientState(self: *Session) void {
@@ -303,6 +310,7 @@ pub const Session = struct {
         self.mouse_pressed_buttons = 0;
         self.mouse_last_cell = .{ .x = 0, .y = 0 };
         self.mouse_last_cell_valid = false;
+        self.kitty_pinned_grid_spans.clearRetainingCapacity();
     }
 
     fn captureStateSnapshot(self: *Session) ![]u8 {
@@ -716,12 +724,9 @@ pub const Session = struct {
         self.scratch_kitty_pixel_data.clearRetainingCapacity();
         const storage = &self.terminal.screens.active.kitty_images;
         if (storage.generation == 0) return;
-        // Generation-based skip: if generation and viewport unchanged, keep previous placements?
-        // For now always rebuild to ensure viewport geometry is current.
-        const cell_width: u32 = @max(1, self.terminal.width_px / self.terminal.cols);
-        const cell_height: u32 = @max(1, self.terminal.height_px / self.terminal.rows);
-        _ = cell_width;
-        _ = cell_height;
+        if (storage.placements.count() == 0 and self.kitty_pinned_grid_spans.count() > 0) {
+            self.kitty_pinned_grid_spans.clearRetainingCapacity();
+        }
         var it = storage.placements.iterator();
         while (it.next()) |entry| {
             const key = entry.key_ptr;
@@ -737,6 +742,32 @@ pub const Session = struct {
             const grid = placement.gridSize(image.*, &self.terminal);
             const pixel = placement.pixelSize(image.*, &self.terminal);
             const src = placement.sourceRect(image.*);
+            const composite_key: u64 = (@as(u64, key.image_id) << 32) | @as(u64, key.placement_id.id);
+            var col_span: u32 = 0;
+            var row_span: u32 = 0;
+            if (placement.columns > 0 and placement.rows > 0) {
+                col_span = placement.columns;
+                row_span = placement.rows;
+            } else if (placement.columns > 0) {
+                col_span = placement.columns;
+                row_span = grid.rows;
+            } else if (placement.rows > 0) {
+                col_span = grid.cols;
+                row_span = placement.rows;
+            } else {
+                // Native pixel placement: preserve initial grid cell extent across font zooms
+                if (self.kitty_pinned_grid_spans.get(composite_key)) |pinned| {
+                    col_span = pinned.cols;
+                    row_span = pinned.rows;
+                } else {
+                    col_span = grid.cols;
+                    row_span = grid.rows;
+                    try self.kitty_pinned_grid_spans.put(self.alloc, composite_key, .{
+                        .cols = col_span,
+                        .rows = row_span,
+                    });
+                }
+            }
             const pixel_format: u32 = switch (image.format) {
                 .rgb => 1,
                 .rgba => 0,
@@ -752,8 +783,8 @@ pub const Session = struct {
                 .image_generation = image.generation,
                 .viewport_col = vp.col,
                 .viewport_row = vp.row,
-                .col_span = grid.cols,
-                .row_span = grid.rows,
+                .col_span = col_span,
+                .row_span = row_span,
                 .z_index = placement.z,
                 .src_x = src.x,
                 .src_y = src.y,
@@ -2013,6 +2044,8 @@ pub export fn termux_ghostty_session_resize(
         ghostty_log.err("core resize failed session=0x{x} cols={} rows={} err={any}", .{ @intFromPtr(handle), columns, rows, err });
         return -1;
     };
+    handle.terminal.width_px = @as(u32, parsed_columns) * parsed_cell_width_pixels;
+    handle.terminal.height_px = @as(u32, parsed_rows) * parsed_cell_height_pixels;
     handle.viewport_top_row = handle.clampExternalTopRow(handle.viewport_top_row);
     handle.markRenderStateDirty();
     ghostty_log.debug("core resize session=0x{x} cols={} rows={} cellWidth={} cellHeight={}", .{ @intFromPtr(handle), columns, rows, cell_width_pixels, cell_height_pixels });

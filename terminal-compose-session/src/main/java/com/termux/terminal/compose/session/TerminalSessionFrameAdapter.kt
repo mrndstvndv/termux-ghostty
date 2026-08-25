@@ -129,8 +129,8 @@ class TerminalSessionFrameAdapter {
                 destWidthPx = src.destWidthPx,
                 destHeightPx = src.destHeightPx,
                 pixelBuffer = buffer,
-                textureWidth = src.destWidthPx,
-                textureHeight = src.destHeightPx
+                textureWidth = if (src.srcWidth > 0) src.srcWidth else src.destWidthPx,
+                textureHeight = if (src.srcHeight > 0) src.srcHeight else src.destHeightPx
             )
         }
     }

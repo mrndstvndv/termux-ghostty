@@ -462,8 +462,18 @@ internal class GlesTerminalRenderer(
             val textureId = imageTextureCache.textureId(placement.imageId) ?: continue
             val left = placement.viewportCol * metrics.cellWidthPx
             val top = placement.viewportRow * metrics.cellHeightPx
-            val right = left + placement.destWidthPx
-            val bottom = top + placement.destHeightPx
+            val widthPx = if (placement.colSpan > 0) {
+                placement.colSpan * metrics.cellWidthPx
+            } else {
+                placement.destWidthPx.toFloat()
+            }
+            val heightPx = if (placement.rowSpan > 0) {
+                placement.rowSpan * metrics.cellHeightPx
+            } else {
+                placement.destHeightPx.toFloat()
+            }
+            val right = left + widthPx
+            val bottom = top + heightPx
             val u0 = if (placement.textureWidth > 0) placement.srcX.toFloat() / placement.textureWidth.toFloat() else 0f
             val v0 = if (placement.textureHeight > 0) placement.srcY.toFloat() / placement.textureHeight.toFloat() else 0f
             val u1 = if (placement.textureWidth > 0) (placement.srcX + placement.srcWidth).toFloat() / placement.textureWidth.toFloat() else 1f

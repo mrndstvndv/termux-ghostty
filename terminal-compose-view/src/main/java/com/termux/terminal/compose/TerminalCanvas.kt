@@ -484,10 +484,10 @@ private fun rememberInputPipeline(
 @Composable
 private fun rememberFontSizeState(config: TerminalCanvasConfig): MutableIntState {
     val fontSizeState = remember { mutableIntStateOf(config.fontSize) }
-    LaunchedEffect(config.minimumFontSize, config.maximumFontSize) {
-        val fontSize = fontSizeState.intValue
-        if (fontSize !in config.minimumFontSize..config.maximumFontSize) {
-            fontSizeState.intValue = fontSize.coerceIn(config.minimumFontSize, config.maximumFontSize)
+    LaunchedEffect(config.fontSize, config.minimumFontSize, config.maximumFontSize) {
+        val fontSize = config.fontSize.coerceIn(config.minimumFontSize, config.maximumFontSize)
+        if (fontSizeState.intValue != fontSize) {
+            fontSizeState.intValue = fontSize
         }
     }
     return fontSizeState

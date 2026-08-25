@@ -166,9 +166,6 @@ internal class TerminalController(
     internal fun resizeIfNeeded(widthPx: Int, heightPx: Int) {
         val width = widthPx.coerceAtLeast(1)
         val height = heightPx.coerceAtLeast(1)
-        if (width == lastResizeWidth && height == lastResizeHeight) return
-        lastResizeWidth = width
-        lastResizeHeight = height
 
         val metrics = measureMetrics(effectiveFontSize, config.typeface, width, height)
         // Keep terminal column sizing on the raw measured width. Rounded
@@ -178,12 +175,16 @@ internal class TerminalController(
         val cellWidth = metrics.cellWidthPx.toInt().coerceAtLeast(1)
         val cellHeight = metrics.cellHeightPx.toInt().coerceAtLeast(1)
         val contentTop = metrics.lineSpacingAndAscentPx.toInt().coerceAtLeast(0)
-        val geometryUnchanged = columns == lastResizeColumns &&
+        val geometryUnchanged = width == lastResizeWidth &&
+            height == lastResizeHeight &&
+            columns == lastResizeColumns &&
             rows == lastResizeRows &&
             cellWidth == lastResizeCellWidth &&
             cellHeight == lastResizeCellHeight &&
             contentTop == lastResizeContentTop
         if (geometryUnchanged) return
+        lastResizeWidth = width
+        lastResizeHeight = height
         lastResizeColumns = columns
         lastResizeRows = rows
         lastResizeCellWidth = cellWidth

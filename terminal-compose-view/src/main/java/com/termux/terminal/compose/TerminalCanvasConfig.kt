@@ -20,6 +20,7 @@ data class TerminalCanvasConfig(
     val maximumFontSize: Int = 256,
     val typeface: Typeface? = null,
     val cursorEffect: CursorEffect? = null,
+    val scrollbar: TerminalScrollbarConfig = TerminalScrollbarConfig(),
     /** Neutral frame-rate request in frames per second; null means display rate. */
     val preferredFrameRate: Float? = null,
     val unconditionalKeyboardOnTap: Boolean = true,

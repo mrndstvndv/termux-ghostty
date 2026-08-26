@@ -60,6 +60,27 @@ internal class TerminalController(
     /** Publishes complete frames to the GLES renderer without recomposition. */
     var onFrameAvailable: (() -> Unit)? = null
 
+    private val frameListeners = mutableListOf<() -> Unit>()
+
+    fun addFrameListener(listener: () -> Unit) {
+        if (!frameListeners.contains(listener)) {
+            frameListeners.add(listener)
+        }
+    }
+
+    fun removeFrameListener(listener: () -> Unit) {
+        frameListeners.remove(listener)
+    }
+
+    private fun notifyFrameAvailable() {
+        onFrameAvailable?.invoke()
+        if (frameListeners.isNotEmpty()) {
+            for (i in 0 until frameListeners.size) {
+                frameListeners.getOrNull(i)?.invoke()
+            }
+        }
+    }
+
     private val invalidations = Channel<Unit>(CONFLATED)
     private var contentVersion = 0
     private var config: TerminalCanvasConfig = TerminalCanvasConfig()
@@ -109,6 +130,7 @@ internal class TerminalController(
         resetCursorTracking()
         onInvalidated = null
         onFrameAvailable = null
+        frameListeners.clear()
     }
 
     /**
@@ -408,7 +430,7 @@ internal class TerminalController(
         contentVersion++
         cursorFramePending = true
         invalidations.trySend(Unit)
-        onFrameAvailable?.invoke()
+        notifyFrameAvailable()
         onInvalidated?.invoke()
     }
 
@@ -457,7 +479,7 @@ internal class TerminalController(
     private fun updateVisualScrollOffset(nextOffsetPx: Float, notify: Boolean) {
         if (currentVisualScrollOffsetPx == nextOffsetPx) return
         currentVisualScrollOffsetPx = nextOffsetPx
-        if (notify) onFrameAvailable?.invoke()
+        if (notify) notifyFrameAvailable()
     }
 
     private companion object {

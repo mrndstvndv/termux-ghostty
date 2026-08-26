@@ -1,6 +1,7 @@
 package com.termux.terminal.compose
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class TerminalCanvasConfigTest {
@@ -11,5 +12,20 @@ class TerminalCanvasConfigTest {
         assertEquals(8, config.minimumFontSize)
         assertEquals(256, config.maximumFontSize)
         assertEquals(128, config.clampedFontSize(128))
+    }
+
+    @Test
+    fun `scrollbar config defaults and custom overrides`() {
+        val defaultConfig = TerminalCanvasConfig()
+        assertEquals(true, defaultConfig.scrollbar.enabled)
+        assertTrue(defaultConfig.scrollbar.visibility is ScrollbarVisibility.AutoFade)
+
+        val customScrollbar = TerminalScrollbarConfig(
+            enabled = false,
+            visibility = ScrollbarVisibility.Always
+        )
+        val customConfig = defaultConfig.copy(scrollbar = customScrollbar)
+        assertEquals(false, customConfig.scrollbar.enabled)
+        assertEquals(ScrollbarVisibility.Always, customConfig.scrollbar.visibility)
     }
 }

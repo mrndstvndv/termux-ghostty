@@ -16,6 +16,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -42,6 +43,7 @@ import com.termux.terminal.compose.internal.ImeHost
 import com.termux.terminal.compose.internal.TerminalController
 import com.termux.terminal.compose.internal.TerminalInputTranslator
 import com.termux.terminal.compose.internal.SelectionHandleEndpoint
+import com.termux.terminal.compose.internal.TerminalScrollbar
 import com.termux.terminal.compose.internal.TerminalSelectionActionMode
 import com.termux.terminal.compose.internal.TerminalSelectionOverlay
 import com.termux.terminal.compose.internal.TerminalSelectionState
@@ -61,6 +63,7 @@ import com.termux.terminal.compose.internal.updateSelectionHandle
 private const val AttachSettleMillis = 64L
 private const val PixelLayerZIndex = 0f
 private const val InputLayerZIndex = 1f
+private const val ScrollbarLayerZIndex = 2f
 private const val SelectionLayerZIndex = 3f
 
 /**
@@ -218,6 +221,14 @@ private fun TerminalCanvasLayout(
                 .zIndex(PixelLayerZIndex)
         )
         Canvas(modifier = inputModifier.zIndex(InputLayerZIndex)) {}
+        TerminalScrollbar(
+            controller = state.controller,
+            metrics = state.metrics,
+            config = state.config.scrollbar,
+            modifier = Modifier
+                .align(Alignment.CenterEnd)
+                .zIndex(ScrollbarLayerZIndex)
+        )
         Box(
             modifier = Modifier
                 .fillMaxSize()

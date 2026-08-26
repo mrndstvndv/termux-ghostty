@@ -12,6 +12,7 @@ import com.termux.terminal.compose.TerminalViewport
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotSame
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -20,6 +21,19 @@ import org.robolectric.RobolectricTestRunner
 
 @RunWith(RobolectricTestRunner::class)
 class TerminalRenderPlannerTest {
+    @Test
+    fun addsTopAndBottomOverscanRowsWithoutChangingVisibleRowPlacement() {
+        val snapshot = testSnapshot(14L)
+
+        val plan = TerminalRenderPlanner().plan(snapshot)
+
+        assertEquals(snapshot.frame.rowsVisible + 2, plan.rows.size)
+        assertNull(plan.rows.first())
+        assertNull(plan.rows.last())
+        assertEquals(-1, plan.rowOrigin)
+        assertTrue(plan.rows[1] != null)
+    }
+
     @Test
     fun reusesPlanAndRowPacketsWhenSnapshotIsUnchanged() {
         val snapshot = testSnapshot(14L)
@@ -81,9 +95,9 @@ class TerminalRenderPlannerTest {
         val first = planner.plan(firstSnapshot)
         val second = planner.plan(secondSnapshot)
 
-        assertSame(first.rows[1], second.rows[0])
         assertSame(first.rows[2], second.rows[1])
-        assertNotSame(first.rows[0], second.rows[2])
+        assertSame(first.rows[3], second.rows[2])
+        assertNotSame(first.rows[1], second.rows[3])
     }
 
     @Test

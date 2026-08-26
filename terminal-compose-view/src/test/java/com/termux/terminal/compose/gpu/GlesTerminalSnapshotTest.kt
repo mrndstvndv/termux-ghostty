@@ -18,11 +18,12 @@ class GlesTerminalSnapshotTest {
 
     @Test
     fun presentationRevisionCanAdvanceWithoutChangingTerminalSequence() {
-        val snapshot = testSnapshot(22L)
+        val snapshot = testSnapshot(22L).copy(visualOffsetPx = 7.5f)
 
         val next = snapshot.withPresentationRevision(23L)
 
         assertEquals(22L, next.frame.sequence)
         assertEquals(23L, next.presentationRevision)
+        assertEquals(7.5f, next.visualOffsetPx, 0f)
     }
 }

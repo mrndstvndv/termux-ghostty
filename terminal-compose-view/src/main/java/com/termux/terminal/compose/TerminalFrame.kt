@@ -54,6 +54,10 @@ class TerminalFrame(
     val columns: Int
         get() = viewport.columns
 
+    /** Number of transcript history rows above the current viewport. */
+    val transcriptRows: Int
+        get() = viewport.transcriptRows
+
     val reverseVideo: Boolean
         get() = modes.reverseVideo
 

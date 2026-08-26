@@ -31,6 +31,22 @@ class GlesPresentationTest {
     }
 
     @Test
+    fun visualOffsetChangeIsNotRedundant() {
+        val settled = testSnapshot(1L)
+        val moved = settled.copy(visualOffsetPx = 4f)
+
+        assertFalse(
+            glesPresentationDecision(
+                snapshot = moved,
+                presentedSnapshot = settled,
+                animationTime = 1f,
+                lastAnimationTime = 1f,
+                atlasReset = false
+            ).redundant
+        )
+    }
+
+    @Test
     fun newSnapshotOrAnimationTickIsNotRedundant() {
         val first = testSnapshot(1L)
         val second = testSnapshot(2L)

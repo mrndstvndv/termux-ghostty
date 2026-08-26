@@ -37,6 +37,7 @@ internal fun glesTerminalCanvasContent(
                     frame = completeFrame,
                     metrics = metrics,
                     selection = selection,
+                    visualOffsetPx = controller.visualScrollOffsetPx,
                     cursorEffect = controller.captureCursorEffectSnapshot(
                         frame = completeFrame,
                         timeSeconds = timeSeconds

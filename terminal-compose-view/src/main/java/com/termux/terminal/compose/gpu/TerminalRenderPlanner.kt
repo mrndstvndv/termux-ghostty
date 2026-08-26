@@ -15,6 +15,10 @@ import kotlin.math.abs
 internal const val GlesStyleFlagOverlayReverse = 1
 internal const val GlesStyleFlagDirectColor = 1 shl 1
 
+private const val OverscanRows = 1
+private const val RenderRowOrigin = -OverscanRows
+private const val RetainedFrameCapacity = 4
+
 internal data class TerminalQuad(
     val left: Float,
     val top: Float,
@@ -34,7 +38,8 @@ internal data class TerminalGlyphPlacement(
 )
 
 internal class TerminalRenderPlan(
-    val rows: List<TerminalRenderRowPlan?>
+    val rows: List<TerminalRenderRowPlan?>,
+    val rowOrigin: Int = 0
 ) {
     val cellBackgrounds: List<TerminalQuad> by lazy(LazyThreadSafetyMode.NONE) {
         rows.filterNotNull().flatMap { it.cellBackgrounds }
@@ -70,6 +75,7 @@ internal class TerminalRenderPlanner {
     private val measurePaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.SUBPIXEL_TEXT_FLAG)
     private var cachedSnapshot: GlesTerminalSnapshot? = null
     private var cachedPlan: TerminalRenderPlan? = null
+    private val recentFrames = ArrayDeque<TerminalFrame>(RetainedFrameCapacity)
     private var rowPlans = arrayOfNulls<CachedRowPlan>(0)
 
     fun plan(snapshot: GlesTerminalSnapshot): TerminalRenderPlan {
@@ -81,7 +87,10 @@ internal class TerminalRenderPlanner {
             return cachedPlan ?: error("cached GLES plan is missing")
         }
 
-        return TerminalRenderPlan(planRows(snapshot)).also { nextPlan ->
+        return TerminalRenderPlan(
+            rows = planRows(snapshot),
+            rowOrigin = RenderRowOrigin
+        ).also { nextPlan ->
             cachedSnapshot = snapshot
             cachedPlan = nextPlan
         }
@@ -89,20 +98,62 @@ internal class TerminalRenderPlanner {
 
     private fun planRows(snapshot: GlesTerminalSnapshot): List<TerminalRenderRowPlan?> {
         val frame = snapshot.frame
+        if (recentFrames.isEmpty() || recentFrames.last().sequence != frame.sequence) {
+            if (recentFrames.size >= RetainedFrameCapacity) {
+                recentFrames.removeFirst()
+            }
+            recentFrames.addLast(frame)
+        }
         val previousPlansByRow = IdentityHashMap<com.termux.terminal.compose.TerminalRow, CachedRowPlan>()
         rowPlans.filterNotNull().forEach { cached ->
             previousPlansByRow[cached.row] = cached
         }
-        val plannedRows = arrayOfNulls<TerminalRenderRowPlan>(frame.rowsVisible)
+        val plannedRows = arrayOfNulls<TerminalRenderRowPlan>(
+            frame.rowsVisible + OverscanRows * 2
+        )
         val nextRowPlans = arrayOfNulls<CachedRowPlan>(frame.rowsVisible)
         for (rowIndex in 0 until frame.rowsVisible) {
             val row = frame.row(rowIndex) ?: continue
             val result = planRowFor(snapshot, rowIndex, row, previousPlansByRow[row])
-            plannedRows[rowIndex] = result.plan
+            plannedRows[rowIndex + OverscanRows] = result.plan
             nextRowPlans[rowIndex] = result
         }
+
+        // Top overscan row (slot 0 -> absolute row frame.topRow - 1)
+        val topOverscanAbsolute = frame.topRow - 1
+        if (topOverscanAbsolute >= -frame.transcriptRows) {
+            findRowInRecentFrames(topOverscanAbsolute)?.let { row ->
+                plannedRows[0] = planRowFor(snapshot, -1, row, previousPlansByRow[row]).plan
+            }
+        }
+
+        // Bottom overscan row (slot frame.rowsVisible + 1 -> absolute row frame.topRow + frame.rowsVisible)
+        val bottomOverscanAbsolute = frame.topRow + frame.rowsVisible
+        if (bottomOverscanAbsolute <= 0) {
+            findRowInRecentFrames(bottomOverscanAbsolute)?.let { row ->
+                plannedRows[frame.rowsVisible + OverscanRows] = planRowFor(
+                    snapshot,
+                    frame.rowsVisible,
+                    row,
+                    previousPlansByRow[row]
+                ).plan
+            }
+        }
+
         rowPlans = nextRowPlans
         return plannedRows.toList()
+    }
+
+    private fun findRowInRecentFrames(absoluteRow: Int): com.termux.terminal.compose.TerminalRow? {
+        for (i in recentFrames.indices.reversed()) {
+            val candidateFrame = recentFrames[i]
+            val relativeIndex = absoluteRow - candidateFrame.topRow
+            if (relativeIndex in 0 until candidateFrame.rowsVisible) {
+                val row = candidateFrame.row(relativeIndex)
+                if (row != null) return row
+            }
+        }
+        return null
     }
 
     private fun planRowFor(
@@ -117,7 +168,7 @@ internal class TerminalRenderPlanner {
         val selectionStart = selection?.first ?: -1
         val selectionEnd = selection?.last ?: -1
         val linkSegments = frame.linkLayout
-            ?.takeIf { it.frameSequence == frame.sequence }
+            ?.takeIf { it.frameSequence == frame.sequence && rowIndex in 0 until frame.rowsVisible }
             ?.rowSegments(rowIndex)
             ?.takeIf { it.isNotEmpty() }
         if (cached != null && cached.matches(

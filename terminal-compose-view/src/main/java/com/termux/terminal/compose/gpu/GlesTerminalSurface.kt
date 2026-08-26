@@ -45,6 +45,7 @@ data class GlesTerminalSnapshot(
     val frame: TerminalFrame,
     val metrics: TerminalMetrics,
     val selection: TerminalSelection = TerminalSelection.EMPTY,
+    val visualOffsetPx: Float = 0f,
     val cursorEffect: CursorEffectSnapshot? = null,
     val viewportWidthPx: Int = metrics.viewportWidthPx,
     val viewportHeightPx: Int = metrics.viewportHeightPx,
@@ -55,6 +56,7 @@ data class GlesTerminalSnapshot(
     )
 ) {
     init {
+        require(visualOffsetPx.isFinite()) { "visualOffsetPx must be finite" }
         require(viewportWidthPx > 0) { "viewportWidthPx must be positive" }
         require(viewportHeightPx > 0) { "viewportHeightPx must be positive" }
         require(frame.rows.size == frame.rowsVisible) {
@@ -210,10 +212,12 @@ class GlesTerminalSurface(
     }
 
     /** Convenience publication overload for controller integration. */
+    @Suppress("LongParameterList")
     fun publish(
         frame: TerminalFrame,
         metrics: TerminalMetrics,
         selection: TerminalSelection = TerminalSelection.EMPTY,
+        visualOffsetPx: Float = 0f,
         cursorEffect: CursorEffectSnapshot? = null,
         contentRevision: Long = frame.sequence,
         presentationRevision: Long = contentRevision,
@@ -226,6 +230,7 @@ class GlesTerminalSurface(
             metrics = metrics,
             cursorEffect = cursorEffect,
             selection = selection,
+            visualOffsetPx = visualOffsetPx,
             contentRevision = contentRevision,
             presentationRevision = presentationRevision,
             visual = visual

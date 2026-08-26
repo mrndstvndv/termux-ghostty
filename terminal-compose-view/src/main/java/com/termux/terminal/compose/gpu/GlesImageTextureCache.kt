@@ -99,6 +99,7 @@ internal class GlesImageProgram private constructor(
     private val viewportUniform: Int,
     private val rectUniform: Int,
     private val texRectUniform: Int,
+    private val offsetUniform: Int,
     private val textureUniform: Int
 ) {
     fun bind(
@@ -109,6 +110,7 @@ internal class GlesImageProgram private constructor(
         top: Float,
         right: Float,
         bottom: Float,
+        offsetY: Float,
         u0: Float,
         v0: Float,
         u1: Float,
@@ -117,6 +119,7 @@ internal class GlesImageProgram private constructor(
         GLES30.glUseProgram(programId)
         GLES30.glUniform2f(viewportUniform, viewportWidth.toFloat(), viewportHeight.toFloat())
         GLES30.glUniform4f(rectUniform, left, top, right, bottom)
+        GLES30.glUniform1f(offsetUniform, offsetY)
         GLES30.glUniform4f(texRectUniform, u0, v0, u1, v1)
         GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
         GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, textureId)
@@ -155,12 +158,14 @@ internal class GlesImageProgram private constructor(
                 val viewport = GLES30.glGetUniformLocation(program, "uViewport")
                 val rect = GLES30.glGetUniformLocation(program, "uRect")
                 val texRect = GLES30.glGetUniformLocation(program, "uTexRect")
+                val offset = GLES30.glGetUniformLocation(program, "uOffsetY")
                 val texture = GLES30.glGetUniformLocation(program, "uTexture")
                 requireUniform(viewport, "uViewport")
                 requireUniform(rect, "uRect")
                 requireUniform(texRect, "uTexRect")
+                requireUniform(offset, "uOffsetY")
                 requireUniform(texture, "uTexture")
-                return GlesImageProgram(program, viewport, rect, texRect, texture)
+                return GlesImageProgram(program, viewport, rect, texRect, offset, texture)
             } catch (e: GlesProgramException) {
                 GLES30.glDeleteProgram(program)
                 throw e
@@ -198,6 +203,7 @@ internal object GlesImageShaderSources {
         uniform vec2 uViewport;
         uniform vec4 uRect;
         uniform vec4 uTexRect;
+        uniform float uOffsetY;
         out vec2 vTexCoord;
         const vec2 QUAD_VERTICES[4] = vec2[4](
             vec2(0.0, 0.0),
@@ -208,6 +214,7 @@ internal object GlesImageShaderSources {
         void main() {
             vec2 unit = QUAD_VERTICES[gl_VertexID];
             vec2 position = mix(uRect.xy, uRect.zw, unit);
+            position.y += uOffsetY;
             vec2 ndc = vec2(
                 (position.x / uViewport.x) * 2.0 - 1.0,
                 1.0 - (position.y / uViewport.y) * 2.0

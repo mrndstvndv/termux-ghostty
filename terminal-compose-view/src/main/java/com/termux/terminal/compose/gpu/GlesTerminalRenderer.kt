@@ -37,6 +37,7 @@ internal fun glesPresentationDecision(
 ): GlesPresentationDecision {
     val redundant = !atlasReset &&
         presentedSnapshot === snapshot &&
+        presentedSnapshot.visualOffsetPx == snapshot.visualOffsetPx &&
         animationTime == lastAnimationTime
     return GlesPresentationDecision(
         requiresCompleteFramebuffer = true,
@@ -112,7 +113,7 @@ internal class GlesTerminalRenderer(
         }
         GLES30.glDisable(GLES30.GL_DEPTH_TEST)
         GLES30.glDisable(GLES30.GL_CULL_FACE)
-        GLES30.glDisable(GLES30.GL_SCISSOR_TEST)
+        GLES30.glEnable(GLES30.GL_SCISSOR_TEST)
         GLES30.glEnable(GLES30.GL_BLEND)
         GLES30.glBlendFunc(GLES30.GL_ONE, GLES30.GL_ONE_MINUS_SRC_ALPHA)
         GLES30.glClearColor(0f, 0f, 0f, 1f)
@@ -126,6 +127,8 @@ internal class GlesTerminalRenderer(
         viewportWidth = width.coerceAtLeast(1)
         viewportHeight = height.coerceAtLeast(1)
         GLES30.glViewport(0, 0, viewportWidth, viewportHeight)
+        GLES30.glEnable(GLES30.GL_SCISSOR_TEST)
+        GLES30.glScissor(0, 0, viewportWidth, viewportHeight)
         checkGlError("viewport")
         reportState(force = true)
         requestRender()
@@ -137,6 +140,8 @@ internal class GlesTerminalRenderer(
             releaseOnGlThread()
             return
         }
+        GLES30.glEnable(GLES30.GL_SCISSOR_TEST)
+        GLES30.glScissor(0, 0, viewportWidth, viewportHeight)
         val nextSnapshot = surface.acquireSnapshot()
         if (nextSnapshot != null) lastSnapshot = nextSnapshot
         val snapshot = lastSnapshot
@@ -185,6 +190,8 @@ internal class GlesTerminalRenderer(
                     rows = plan.rows,
                     rowStride = snapshot.frame.columns + 1,
                     rowHeight = snapshot.metrics.cellHeightPx,
+                    offsetY = snapshot.visualOffsetPx,
+                    rowOrigin = plan.rowOrigin,
                     styleBackground = true,
                     reverseVideo = snapshot.frame.reverseVideo
                 )
@@ -196,6 +203,7 @@ internal class GlesTerminalRenderer(
                     viewportWidth = viewportWidth,
                     viewportHeight = viewportHeight,
                     imageProgram = currentResources.imageProgram,
+                    offsetY = snapshot.visualOffsetPx,
                     filter = { it.zIndex < 0 }
                 )
             }
@@ -206,6 +214,8 @@ internal class GlesTerminalRenderer(
                     rows = plan.rows,
                     rowStride = snapshot.frame.columns,
                     rowHeight = snapshot.metrics.cellHeightPx,
+                    offsetY = snapshot.visualOffsetPx,
+                    rowOrigin = plan.rowOrigin,
                     reverseVideo = snapshot.frame.reverseVideo
                 )
             }
@@ -221,7 +231,8 @@ internal class GlesTerminalRenderer(
                     currentResources.cursorEffects.draw(
                         plan = cursorEffectPlan,
                         viewportWidth = viewportWidth,
-                        viewportHeight = viewportHeight
+                        viewportHeight = viewportHeight,
+                        offsetY = snapshot.visualOffsetPx
                     )
                 }
             }
@@ -232,6 +243,7 @@ internal class GlesTerminalRenderer(
                     viewportWidth = viewportWidth,
                     viewportHeight = viewportHeight,
                     imageProgram = currentResources.imageProgram,
+                    offsetY = snapshot.visualOffsetPx,
                     filter = { it.zIndex >= 0 }
                 )
             }
@@ -241,6 +253,8 @@ internal class GlesTerminalRenderer(
                     rows = plan.rows,
                     rowStride = snapshot.frame.columns,
                     rowHeight = snapshot.metrics.cellHeightPx,
+                    offsetY = snapshot.visualOffsetPx,
+                    rowOrigin = plan.rowOrigin,
                     styleBackground = false,
                     reverseVideo = snapshot.frame.reverseVideo
                 )
@@ -327,11 +341,14 @@ internal class GlesTerminalRenderer(
         }
     }
 
+    @Suppress("LongParameterList")
     private fun drawStyledRows(
         resources: GlesResources,
         rows: List<TerminalRenderRowPlan?>,
         rowStride: Int,
         rowHeight: Float,
+        offsetY: Float,
+        rowOrigin: Int,
         styleBackground: Boolean,
         reverseVideo: Boolean
     ) {
@@ -376,17 +393,22 @@ internal class GlesTerminalRenderer(
             reverseVideo = reverseVideo,
             fixedRows = true,
             rowStride = rowStride,
-            rowHeight = rowHeight
+            rowHeight = rowHeight,
+            offsetY = offsetY,
+            rowOrigin = rowOrigin
         )
         buffer.bindRowCounts()
         buffer.draw(::bindStyledInstanceAttributes)
     }
 
+    @Suppress("LongMethod")
     private fun drawGlyphs(
         resources: GlesResources,
         rows: List<TerminalRenderRowPlan?>,
         rowStride: Int,
         rowHeight: Float,
+        offsetY: Float,
+        rowOrigin: Int,
         reverseVideo: Boolean
     ) {
         val itemsForRow: (TerminalRenderRowPlan?) -> List<TerminalGlyphPlacement> = { row ->
@@ -439,7 +461,9 @@ internal class GlesTerminalRenderer(
             reverseVideo = reverseVideo,
             fixedRows = true,
             rowStride = rowStride,
-            rowHeight = rowHeight
+            rowHeight = rowHeight,
+            offsetY = offsetY,
+            rowOrigin = rowOrigin
         )
         GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
         GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, texture)
@@ -454,6 +478,7 @@ internal class GlesTerminalRenderer(
         viewportWidth: Int,
         viewportHeight: Int,
         imageProgram: GlesImageProgram,
+        offsetY: Float,
         filter: (TerminalImagePlacement) -> Boolean
     ) {
         val filtered = placements.filter(filter)
@@ -486,6 +511,7 @@ internal class GlesTerminalRenderer(
                 top = top,
                 right = right,
                 bottom = bottom,
+                offsetY = offsetY,
                 u0 = u0,
                 v0 = v0,
                 u1 = u1,
@@ -825,7 +851,9 @@ private class GlesProgram private constructor(
     private val reverseVideoUniform: Int,
     private val fixedRowsUniform: Int,
     private val rowStrideUniform: Int,
-    private val rowHeightUniform: Int
+    private val rowHeightUniform: Int,
+    private val offsetUniform: Int,
+    private val rowOriginUniform: Int
 ) {
     fun bind(
         width: Int,
@@ -836,7 +864,9 @@ private class GlesProgram private constructor(
         reverseVideo: Boolean = false,
         fixedRows: Boolean = false,
         rowStride: Int = 1,
-        rowHeight: Float = 0f
+        rowHeight: Float = 0f,
+        offsetY: Float = 0f,
+        rowOrigin: Int = 0
     ) {
         GLES30.glUseProgram(programId)
         GLES30.glUniform2f(viewportUniform, width.toFloat(), height.toFloat())
@@ -850,6 +880,8 @@ private class GlesProgram private constructor(
         GLES30.glUniform1i(fixedRowsUniform, if (fixedRows) 1 else 0)
         GLES30.glUniform1i(rowStrideUniform, rowStride.coerceAtLeast(1))
         GLES30.glUniform1f(rowHeightUniform, rowHeight)
+        GLES30.glUniform1f(offsetUniform, offsetY)
+        GLES30.glUniform1i(rowOriginUniform, rowOrigin)
     }
 
     fun release() {
@@ -895,6 +927,8 @@ private class GlesProgram private constructor(
                 val fixedRows = GLES30.glGetUniformLocation(program, "uFixedRows")
                 val rowStride = GLES30.glGetUniformLocation(program, "uRowStride")
                 val rowHeight = GLES30.glGetUniformLocation(program, "uRowHeight")
+                val offset = GLES30.glGetUniformLocation(program, "uOffsetY")
+                val rowOrigin = GLES30.glGetUniformLocation(program, "uRowOrigin")
                 requireUniform(viewport, "uViewport")
                 requireUniform(textured, "uTextured")
                 requireUniform(atlas, "uAtlas")
@@ -906,6 +940,8 @@ private class GlesProgram private constructor(
                 requireUniform(fixedRows, "uFixedRows")
                 requireUniform(rowStride, "uRowStride")
                 requireUniform(rowHeight, "uRowHeight")
+                requireUniform(offset, "uOffsetY")
+                requireUniform(rowOrigin, "uRowOrigin")
                 return GlesProgram(
                     program,
                     viewport,
@@ -918,7 +954,9 @@ private class GlesProgram private constructor(
                     reverseVideo,
                     fixedRows,
                     rowStride,
-                    rowHeight
+                    rowHeight,
+                    offset,
+                    rowOrigin
                 )
             } catch (error: GlesProgramException) {
                 GLES30.glDeleteProgram(program)

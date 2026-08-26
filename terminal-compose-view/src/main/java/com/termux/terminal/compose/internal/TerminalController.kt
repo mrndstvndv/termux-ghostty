@@ -11,10 +11,18 @@ import com.termux.terminal.compose.TerminalCommandResult
 import com.termux.terminal.compose.TerminalDiagnostic
 import com.termux.terminal.compose.TerminalFrame
 import com.termux.terminal.compose.TerminalMetrics
+import com.termux.terminal.compose.TerminalPointerGeometry
 import com.termux.terminal.compose.TerminalSelection
 import com.termux.terminal.compose.TerminalSize
+import androidx.compose.runtime.withFrameNanos
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.Channel.Factory.CONFLATED
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlin.math.abs
+import kotlin.math.exp
 
 private const val MinGridDimension = 4
 
@@ -66,6 +74,13 @@ internal class TerminalController(
     private var lastResizeCellWidth = -1
     private var lastResizeCellHeight = -1
     private var lastResizeContentTop = -1
+    private var desiredTopRowF = 0.0
+    private var lastSubmittedTopRow = 0
+    private var discreteScrollAccumulatorPx = 0f
+    private var currentVisualScrollOffsetPx = 0f
+    private var lastKnownCellHeightPx = 0f
+    private var fractionalScrollAllowed: Boolean? = null
+    private var flingJob: Job? = null
 
     private val cursorEffectState = CursorEffectState()
     private var cursorFramePending = false
@@ -85,6 +100,7 @@ internal class TerminalController(
     fun release() {
         if (released) return
         released = true
+        cancelFling()
         detach()
         resetCursorTracking()
         onInvalidated = null
@@ -172,6 +188,7 @@ internal class TerminalController(
         lastResizeCellWidth = cellWidth
         lastResizeCellHeight = cellHeight
         lastResizeContentTop = contentTop
+        resetVisualScrollState()
         cursorEffectState.reset()
         cursorFramePending = false
         backend.resize(
@@ -190,6 +207,7 @@ internal class TerminalController(
     private fun invalidateViewportMeasurement() {
         lastResizeWidth = -1
         lastResizeHeight = -1
+        resetVisualScrollState()
     }
 
     /** Replays the latest backend publication after a first-frame attach race. */
@@ -205,6 +223,119 @@ internal class TerminalController(
     /** Latest backend frame, or null before the first invalidation. */
     fun currentFrame(): TerminalFrame? = backend.currentFrame()
 
+    /** Presentation-only remainder used to move GLES content between terminal rows. */
+    internal val visualScrollOffsetPx: Float
+        get() = currentVisualScrollOffsetPx
+
+    /** Starts a gesture from the settled integer viewport position. */
+    internal fun beginScrollGesture() {
+        if (released) return
+        cancelFling()
+        discreteScrollAccumulatorPx = 0f
+        val frame = backend.currentFrame()
+        if (frame != null) synchronizeFractionalScrollMode(frame)
+        val initialRow = frame?.topRow ?: 0
+        desiredTopRowF = initialRow.toDouble()
+        lastSubmittedTopRow = initialRow
+        updateVisualScrollOffset(0f, notify = true)
+    }
+
+    /** Applies one pan sample while keeping integer viewport mutation on the backend. */
+    @Suppress("ReturnCount")
+    internal fun applyScrollDelta(deltaPx: Float, cellHeightPx: Float): Int {
+        if (released) return 0
+        if (!deltaPx.isFinite()) return 0
+        if (!cellHeightPx.isFinite() || cellHeightPx <= 0f) return 0
+        lastKnownCellHeightPx = cellHeightPx
+        val frame = backend.currentFrame() ?: return 0
+        synchronizeFractionalScrollMode(frame)
+        if (!canUseFractionalScroll(frame)) {
+            updateVisualScrollOffset(0f, notify = false)
+            val total = discreteScrollAccumulatorPx + deltaPx
+            val deltaRows = (total / cellHeightPx).toInt()
+            discreteScrollAccumulatorPx = total - deltaRows * cellHeightPx
+            return deltaRows
+        }
+
+        val maxHistory = frame.transcriptRows.toDouble()
+        val nextDesired = desiredTopRowF - (deltaPx / cellHeightPx).toDouble()
+        desiredTopRowF = nextDesired.coerceIn(-maxHistory, 0.0)
+
+        val targetIntRow = kotlin.math.round(desiredTopRowF).toInt().coerceIn(-frame.transcriptRows, 0)
+        val deltaRows = -(targetIntRow - lastSubmittedTopRow)
+        if (targetIntRow != lastSubmittedTopRow) {
+            lastSubmittedTopRow = targetIntRow
+        }
+
+        val nextOffset = ((frame.topRow.toDouble() - desiredTopRowF) * cellHeightPx).toFloat()
+        updateVisualScrollOffset(nextOffset, notify = true)
+        return deltaRows
+    }
+
+    /** Cancels any active inertial fling coroutine. */
+    internal fun cancelFling() {
+        flingJob?.cancel()
+        flingJob = null
+    }
+
+    /** Launches an inertial fling animation decaying smoothly on vsync. */
+    internal fun startFling(
+        coroutineScope: CoroutineScope,
+        initialVelocityPxPerSec: Float,
+        cellHeightPx: Float
+    ) {
+        cancelFling()
+        val frame = backend.currentFrame()
+        if (!canLaunchFling(initialVelocityPxPerSec, cellHeightPx, frame)) return
+
+        flingJob = coroutineScope.launch {
+            var velocity = initialVelocityPxPerSec
+            var lastFrameTimeNanos = 0L
+            val frictionMultiplier = 4.2f
+
+            while (isActive && abs(velocity) > 30f) {
+                withFrameNanos { frameTimeNanos ->
+                    if (lastFrameTimeNanos != 0L) {
+                        val dt = ((frameTimeNanos - lastFrameTimeNanos) / 1_000_000_000f).coerceIn(0.001f, 0.05f)
+                        val deltaPx = velocity * dt
+                        velocity *= exp(-frictionMultiplier * dt)
+                        val deltaRows = applyScrollDelta(deltaPx, cellHeightPx)
+                        if (deltaRows != 0) {
+                            submit(
+                                TerminalCommand.Scroll(
+                                    rowsDown = -deltaRows,
+                                    xPx = 0f,
+                                    yPx = 0f,
+                                    geometry = TerminalPointerGeometry(
+                                        cellWidthPx = 1f,
+                                        cellHeightPx = cellHeightPx,
+                                        contentTopPx = 0f,
+                                        viewportWidthPx = 1,
+                                        viewportHeightPx = 1
+                                    )
+                                )
+                            )
+                        }
+                    }
+                    lastFrameTimeNanos = frameTimeNanos
+                }
+            }
+            flingJob = null
+        }
+    }
+
+    /** Settles presentation-only motion before hit-testing or a new gesture. */
+    internal fun settleVisualScrollOffset() {
+        if (released) return
+        cancelFling()
+        discreteScrollAccumulatorPx = 0f
+        val frame = backend.currentFrame()
+        val settledRow = frame?.topRow ?: 0
+        desiredTopRowF = settledRow.toDouble()
+        lastSubmittedTopRow = settledRow
+        updateVisualScrollOffset(0f, notify = true)
+    }
+
     /**
      * Returns a complete frame whose grid matches the current measured canvas.
      * A resize command can be asynchronous, so publishing the old grid with
@@ -212,6 +343,7 @@ internal class TerminalController(
      */
     internal fun currentFrameForMetrics(metrics: TerminalMetrics): TerminalFrame? {
         val frame = backend.currentFrame() ?: return null
+        synchronizeFractionalScrollMode(frame)
         val expectedColumns = terminalColumnsForMeasuredCellWidth(
             metrics.viewportWidthPx,
             metrics.measuredCellWidthPx
@@ -242,6 +374,14 @@ internal class TerminalController(
 
     override fun onFrameInvalidated() {
         if (released) return
+        val frame = backend.currentFrame()
+        if (frame != null) {
+            synchronizeFractionalScrollMode(frame)
+            if (canUseFractionalScroll(frame) && lastKnownCellHeightPx > 0f) {
+                val nextOffset = ((frame.topRow.toDouble() - desiredTopRowF) * lastKnownCellHeightPx).toFloat()
+                updateVisualScrollOffset(nextOffset, notify = false)
+            }
+        }
         contentVersion++
         cursorFramePending = true
         invalidations.trySend(Unit)
@@ -258,6 +398,43 @@ internal class TerminalController(
         config.onDiagnostics(
             TerminalDiagnostic.BackendError(error.code, error.message)
         )
+    }
+
+    private fun canLaunchFling(
+        initialVelocityPxPerSec: Float,
+        cellHeightPx: Float,
+        frame: TerminalFrame?
+    ): Boolean {
+        if (released || frame == null) return false
+        val validVelocity = initialVelocityPxPerSec.isFinite() && abs(initialVelocityPxPerSec) >= 50f
+        val validCellHeight = cellHeightPx.isFinite() && cellHeightPx > 0f
+        return validVelocity && validCellHeight && canUseFractionalScroll(frame)
+    }
+
+    private fun canUseFractionalScroll(frame: TerminalFrame?): Boolean =
+        frame != null && !frame.alternateBufferActive && !frame.mouseTrackingActive
+
+    private fun synchronizeFractionalScrollMode(frame: TerminalFrame) {
+        val allowed = canUseFractionalScroll(frame)
+        if (fractionalScrollAllowed == allowed) return
+        fractionalScrollAllowed = allowed
+        resetVisualScrollState()
+    }
+
+    private fun resetVisualScrollState() {
+        cancelFling()
+        discreteScrollAccumulatorPx = 0f
+        val frame = backend.currentFrame()
+        val initialRow = frame?.topRow ?: 0
+        desiredTopRowF = initialRow.toDouble()
+        lastSubmittedTopRow = initialRow
+        updateVisualScrollOffset(0f, notify = false)
+    }
+
+    private fun updateVisualScrollOffset(nextOffsetPx: Float, notify: Boolean) {
+        if (currentVisualScrollOffsetPx == nextOffsetPx) return
+        currentVisualScrollOffsetPx = nextOffsetPx
+        if (notify) onFrameAvailable?.invoke()
     }
 
     private companion object {

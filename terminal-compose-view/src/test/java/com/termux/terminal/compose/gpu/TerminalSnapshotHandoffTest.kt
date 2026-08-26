@@ -19,6 +19,20 @@ class TerminalSnapshotHandoffTest {
     }
 
     @Test
+    fun offsetOnlyPublicationAdvancesWithTheSameTerminalSequence() {
+        val handoff = TerminalSnapshotHandoff()
+        val settled = testSnapshot(3L)
+        val moved = settled.copy(
+            visualOffsetPx = 6f,
+            presentationRevision = 4L
+        )
+
+        assertTrue(handoff.publish(settled))
+        assertTrue(handoff.publish(moved))
+        assertTrue(handoff.acquire() === moved)
+    }
+
+    @Test
     fun releaseBeforeConsumeDropsPendingAndRejectsFuturePublications() {
         val handoff = TerminalSnapshotHandoff()
         handoff.publish(testSnapshot(1L))

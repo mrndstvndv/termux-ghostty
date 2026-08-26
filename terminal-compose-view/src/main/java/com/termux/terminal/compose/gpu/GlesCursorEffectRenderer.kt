@@ -16,6 +16,7 @@ internal class GlesCursorEffectRenderer private constructor(
     private val viewportUniform: Int,
     private val colorUniform: Int,
     private val cutoutUniform: Int,
+    private val offsetUniform: Int,
     private val bufferId: Int
 ) {
     private val vertexBuffer: FloatBuffer = ByteBuffer
@@ -24,7 +25,12 @@ internal class GlesCursorEffectRenderer private constructor(
         .asFloatBuffer()
     private var released = false
 
-    fun draw(plan: CursorEffectRenderPlan, viewportWidth: Int, viewportHeight: Int) {
+    fun draw(
+        plan: CursorEffectRenderPlan,
+        viewportWidth: Int,
+        viewportHeight: Int,
+        offsetY: Float = 0f
+    ) {
         check(!released) { "cursor effect renderer is released" }
         if (plan.vertexCount < 3) return
 
@@ -34,6 +40,7 @@ internal class GlesCursorEffectRenderer private constructor(
 
         GLES30.glUseProgram(programId)
         GLES30.glUniform2f(viewportUniform, viewportWidth.toFloat(), viewportHeight.toFloat())
+        GLES30.glUniform1f(offsetUniform, offsetY)
         val alpha = ((plan.argb ushr 24) and 0xFF) / 255f
         GLES30.glUniform4f(
             colorUniform,
@@ -45,9 +52,9 @@ internal class GlesCursorEffectRenderer private constructor(
         GLES30.glUniform4f(
             cutoutUniform,
             plan.cutoutLeft,
-            plan.cutoutTop,
+            plan.cutoutTop + offsetY,
             plan.cutoutRight,
-            plan.cutoutBottom
+            plan.cutoutBottom + offsetY
         )
         GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, bufferId)
         GLES30.glBufferSubData(
@@ -120,6 +127,7 @@ internal class GlesCursorEffectRenderer private constructor(
                     viewportUniform = requiredUniform(program, "uViewport"),
                     colorUniform = requiredUniform(program, "uColor"),
                     cutoutUniform = requiredUniform(program, "uCutout"),
+                    offsetUniform = requiredUniform(program, "uOffsetY"),
                     bufferId = bufferId
                 )
             } catch (error: GlesRendererException) {

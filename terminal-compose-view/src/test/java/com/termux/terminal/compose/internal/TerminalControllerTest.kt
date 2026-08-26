@@ -55,6 +55,48 @@ class TerminalControllerTest {
         assertEquals(1, controller.version())
     }
     @Test
+    fun fractionalScrollPublishesRemainderAndCommitsIntegerRows() {
+        val controller = testController(
+            RecordingBackend(completeFrame(columns = 80, rows = 24))
+        )
+        controller.onFrameInvalidated()
+        controller.beginScrollGesture()
+
+        assertEquals(0, controller.applyScrollDelta(deltaPx = 6f, cellHeightPx = 16f))
+        assertEquals(6f, controller.visualScrollOffsetPx, 0f)
+        assertEquals(1, controller.applyScrollDelta(deltaPx = 10f, cellHeightPx = 16f))
+        assertEquals(16f, controller.visualScrollOffsetPx, 0f)
+    }
+
+    @Test
+    fun boundaryDragClampsAndPreventsUnexecutableSubmissions() {
+        val frame = completeFrame(columns = 80, rows = 24, transcriptRows = 0)
+        val controller = testController(RecordingBackend(frame))
+        controller.onFrameInvalidated()
+        controller.beginScrollGesture()
+
+        assertEquals(0, controller.applyScrollDelta(deltaPx = 25f, cellHeightPx = 16f))
+        assertEquals(0f, controller.visualScrollOffsetPx, 0f)
+    }
+
+    @Test
+    fun fractionalScrollIsDisabledForMouseTrackingFrames() {
+        val frame = completeFrame(
+            columns = 80,
+            rows = 24,
+            modes = TerminalModes(false, false, false, true, false)
+        )
+        val controller = testController(RecordingBackend(frame))
+        controller.onFrameInvalidated()
+        controller.beginScrollGesture()
+
+        assertEquals(0, controller.applyScrollDelta(deltaPx = 8f, cellHeightPx = 16f))
+        assertEquals(0f, controller.visualScrollOffsetPx, 0f)
+        assertEquals(1, controller.applyScrollDelta(deltaPx = 8f, cellHeightPx = 16f))
+        assertEquals(0f, controller.visualScrollOffsetPx, 0f)
+    }
+
+    @Test
     fun refreshDoesNotDoubleInvalidateWhenBackendAlreadyNotified() {
         val backend = RecordingBackend(
             publishedFrame = completeFrame(columns = 80, rows = 24),
@@ -279,11 +321,16 @@ private fun testController(backend: TerminalBackend): TerminalController =
         )
     }
 
-private fun completeFrame(columns: Int, rows: Int): TerminalFrame = TerminalFrame(
+private fun completeFrame(
+    columns: Int,
+    rows: Int,
+    modes: TerminalModes = TerminalModes(false, false, false, false, false),
+    transcriptRows: Int = rows
+): TerminalFrame = TerminalFrame(
     sequence = 1L,
-    viewport = TerminalViewport(0, rows, columns, rows),
+    viewport = TerminalViewport(0, rows, columns, transcriptRows),
     cursor = TerminalCursor(0, 0, false, TerminalCursor.STYLE_BLOCK),
-    modes = TerminalModes(false, false, false, false, false),
+    modes = modes,
     palette = TerminalPalette.of(IntArray(259)),
     rows = List(rows) {
         TerminalRow(

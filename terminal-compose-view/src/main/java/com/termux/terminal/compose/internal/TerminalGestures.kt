@@ -1,3 +1,5 @@
+@file:Suppress("TooManyFunctions")
+
 package com.termux.terminal.compose.internal
 
 import android.view.InputDevice
@@ -12,6 +14,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.MutableIntState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -23,6 +26,8 @@ import androidx.compose.ui.input.pointer.PointerEvent
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.pointerInteropFilter
 import androidx.compose.ui.input.pointer.positionChanged
+import androidx.compose.ui.input.pointer.util.VelocityTracker
+import kotlinx.coroutines.CoroutineScope
 import com.termux.terminal.compose.TerminalCanvasConfig
 import com.termux.terminal.compose.TerminalCommand
 import com.termux.terminal.compose.TerminalFrame
@@ -47,7 +52,6 @@ private class GestureContext(
 
 /** Per-gesture scroll, pan, and zoom state. */
 private class ScrollGestureState {
-    var dragAccumulator = 0f
     var totalPanX = 0f
     var totalPanY = 0f
     var isVerticalScroll = false
@@ -66,6 +70,30 @@ private class ScrollGestureState {
             }
         }
     }
+}
+
+internal data class ScrollPixelDelta(
+    val deltaRows: Int,
+    val remainderPx: Float
+)
+
+@Suppress("ReturnCount")
+internal fun scrollPixelDelta(
+    accumulatedPx: Float,
+    deltaPx: Float,
+    cellHeightPx: Float
+): ScrollPixelDelta {
+    if (!accumulatedPx.isFinite()) return ScrollPixelDelta(0, accumulatedPx)
+    if (!deltaPx.isFinite()) return ScrollPixelDelta(0, accumulatedPx)
+    if (!cellHeightPx.isFinite() || cellHeightPx <= 0f) {
+        return ScrollPixelDelta(0, accumulatedPx)
+    }
+    val totalPx = accumulatedPx + deltaPx
+    val deltaRows = (totalPx / cellHeightPx).toInt()
+    return ScrollPixelDelta(
+        deltaRows = deltaRows,
+        remainderPx = totalPx - deltaRows * cellHeightPx
+    )
 }
 
 /** Captures tap source metadata without retaining framework MotionEvent instances. */
@@ -125,6 +153,7 @@ internal fun Modifier.terminalGestures(
     val currentMetrics by rememberUpdatedState(metrics)
     val currentConfig by rememberUpdatedState(config)
     val currentOnFontSizeChange by rememberUpdatedState(onFontSizeChange)
+    val coroutineScope = rememberCoroutineScope()
     return pointerInput(controller, selectionState) {
         val context = GestureContext(
             controller = controller,
@@ -134,29 +163,48 @@ internal fun Modifier.terminalGestures(
             onFontSizeChangeProvider = { currentOnFontSizeChange }
         )
         awaitEachGesture {
-            handleTerminalGesture(selectionState, context)
+            handleTerminalGesture(selectionState, context, coroutineScope)
         }
     }
 }
 
 private suspend fun AwaitPointerEventScope.handleTerminalGesture(
     selectionState: TerminalSelectionState,
-    context: GestureContext
+    context: GestureContext,
+    coroutineScope: CoroutineScope
 ) {
     var scaleAccumulator = 1f
     val touchSlop = viewConfiguration.touchSlop
     val scrollState = ScrollGestureState()
+    val velocityTracker = VelocityTracker()
 
-    awaitFirstDown(requireUnconsumed = false)
+    val down = awaitFirstDown(requireUnconsumed = false)
+    velocityTracker.resetTracking()
+    velocityTracker.addPosition(down.uptimeMillis, down.position)
+    context.controller.beginScrollGesture()
     if (selectionState.isSelecting) return
 
     do {
         val event = awaitPointerEvent()
         val canceled = event.changes.any { it.isConsumed }
         if (!canceled) {
+            event.changes.firstOrNull()?.let { change ->
+                velocityTracker.addPosition(change.uptimeMillis, change.position)
+            }
             scaleAccumulator = handleGestureEvent(event, scaleAccumulator, scrollState, touchSlop, context)
         }
     } while (!canceled && event.changes.any { it.pressed })
+
+    if (scrollState.isVerticalScroll && !scrollState.isPinchZoom && !selectionState.isSelecting) {
+        val velocityY = velocityTracker.calculateVelocity().y
+        if (abs(velocityY) >= 100f) {
+            context.controller.startFling(
+                coroutineScope = coroutineScope,
+                initialVelocityPxPerSec = velocityY,
+                cellHeightPx = context.metrics.cellHeightPx
+            )
+        }
+    }
 }
 
 private fun handleGestureEvent(
@@ -176,7 +224,7 @@ private fun handleGestureEvent(
     if (scrollState.isHorizontalSwipe) return scaleAccumulator
     scrollState.trackPan(event, touchSlop)
     if (scrollState.isVerticalScroll && event.calculatePan().y != 0f) {
-        handleScrollGesture(event, context, scrollState)
+        handleScrollGesture(event, context)
     }
     return scaleAccumulator
 }
@@ -226,16 +274,16 @@ private fun handlePinchZoom(
 /** Applies vertical scroll through backend-routed incremental deltas. */
 private fun handleScrollGesture(
     event: PointerEvent,
-    context: GestureContext,
-    scrollState: ScrollGestureState
+    context: GestureContext
 ) {
     event.changes.forEach { if (it.positionChanged()) it.consume() }
     // Keep routing in the backend; a rendered frame can lag live multiplexer modes.
     val centroid = event.calculateCentroid()
-    scrollState.dragAccumulator += event.calculatePan().y
-    val deltaRows = (scrollState.dragAccumulator / context.metrics.cellHeightPx).toInt()
+    val deltaRows = context.controller.applyScrollDelta(
+        deltaPx = event.calculatePan().y,
+        cellHeightPx = context.metrics.cellHeightPx
+    )
     if (deltaRows != 0) {
-        scrollState.dragAccumulator -= deltaRows * context.metrics.cellHeightPx
         context.controller.submit(scrollCommandForGesture(deltaRows, centroid, context.metrics))
     }
 }
@@ -302,6 +350,7 @@ private fun handleTap(
     event: MotionEvent,
     context: TapContext
 ) {
+    context.controller.settleVisualScrollOffset()
     try {
         if (context.selectionState.isSelecting) {
             context.selectionState.clear()
@@ -347,6 +396,7 @@ private fun handleLongPress(
     selectionState: TerminalSelectionState,
     hapticFeedback: HapticFeedback
 ) {
+    controller.settleVisualScrollOffset()
     if (selectionState.isSelecting) return
     hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
     val frame = controller.currentFrame() ?: return

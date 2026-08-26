@@ -9,6 +9,23 @@ import org.junit.Test
 
 class TerminalGesturesTest {
     @Test
+    fun scrollPixelDeltaRetainsFractionalMotionUntilOneRowIsCrossed() {
+        val first = scrollPixelDelta(0f, 7f, 20f)
+        val second = scrollPixelDelta(first.remainderPx, 7f, 20f)
+        val third = scrollPixelDelta(second.remainderPx, 7f, 20f)
+        val reverse = scrollPixelDelta(0f, -7f, 20f)
+
+        assertEquals(0, first.deltaRows)
+        assertEquals(7f, first.remainderPx, 0f)
+        assertEquals(0, second.deltaRows)
+        assertEquals(14f, second.remainderPx, 0f)
+        assertEquals(1, third.deltaRows)
+        assertEquals(1f, third.remainderPx, 0f)
+        assertEquals(0, reverse.deltaRows)
+        assertEquals(-7f, reverse.remainderPx, 0f)
+    }
+
+    @Test
     fun scrollCommandPreservesTouchPositionForPaneRouting() {
         val command = scrollCommandForGesture(
             deltaRows = 2,

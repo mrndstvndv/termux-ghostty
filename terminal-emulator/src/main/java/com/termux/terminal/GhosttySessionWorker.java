@@ -436,7 +436,11 @@ final class GhosttySessionWorker extends Thread {
         mCurrentTopRow = updatedTopRow;
         addPendingFrameReason(FrameDelta.REASON_VIEWPORT_SCROLL);
         mFramePublicationGate.markSnapshotDirty();
-        scheduleSnapshotBuild();
+        if (mPendingFrameReasonFlags.get() == FrameDelta.REASON_VIEWPORT_SCROLL) {
+            buildAndPublishSnapshot();
+        } else {
+            scheduleSnapshotBuild();
+        }
     }
 
     private void handleScrollEvent(GhosttyScrollEvent event) {

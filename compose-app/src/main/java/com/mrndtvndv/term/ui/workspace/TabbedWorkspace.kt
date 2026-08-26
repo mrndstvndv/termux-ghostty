@@ -46,7 +46,6 @@ fun TabbedWorkspace(
     extraKeysController: ExtraKeysController,
     extraKeysEnabled: Boolean,
     extraKeysJson: String,
-    gpuRenderingEnabled: Boolean = false,
     hideTabs: Boolean = false,
     herdrEnabled: Boolean = false,
     herdrWorkspaces: List<HerdrWorkspaceResolver.HerdrWorkspaceNode> = emptyList(),
@@ -249,7 +248,6 @@ fun TabbedWorkspace(
                                     session = session,
                                     extraKeysController = extraKeysController,
                                     isTerminalActive = activeTab == WorkspaceTab.Terminal,
-                                    gpuRenderingEnabled = gpuRenderingEnabled,
                                     onBackendCreated = onBackendCreated,
                                     onBackendReleased = onBackendReleased,
                                     onOpenUrl = onOpenUrl

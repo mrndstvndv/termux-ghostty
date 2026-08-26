@@ -6,6 +6,9 @@
     android:sharedUserLabel="@string/shared_user_label">
 
     <uses-feature
+        android:glEsVersion="0x00030000"
+        android:required="true" />
+    <uses-feature
         android:name="android.hardware.touchscreen"
         android:required="false" />
     <uses-feature

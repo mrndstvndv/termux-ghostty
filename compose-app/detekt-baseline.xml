@@ -62,7 +62,6 @@
     <ID>UnusedImports:ExtraKeysToolbar.kt$import androidx.compose.foundation.interaction.MutableInteractionSource</ID>
     <ID>UnusedImports:TabbedWorkspace.kt$import androidx.compose.ui.unit.dp</ID>
     <ID>UnusedImports:TerminalCanvas.kt$import com.termux.terminal.TerminalConstants</ID>
-    <ID>UnusedImports:TerminalCanvas.kt$import com.termux.view.TerminalRenderer</ID>
     <ID>UnusedImports:TerminalFocusWrapper.kt$import androidx.compose.foundation.interaction.MutableInteractionSource</ID>
     <ID>UnusedImports:TerminalWorkspaceContainer.kt$import android.content.Context</ID>
     <ID>UnusedImports:TerminalWorkspaceContainer.kt$import android.graphics.Paint</ID>

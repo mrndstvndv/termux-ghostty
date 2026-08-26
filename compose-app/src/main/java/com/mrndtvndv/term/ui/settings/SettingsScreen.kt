@@ -59,8 +59,6 @@ fun SettingsScreen(
     onNativeLogcatLoggingEnabledChange: (Boolean) -> Unit = {},
     debugHudEnabled: Boolean = false,
     onDebugHudEnabledChange: (Boolean) -> Unit = {},
-    gpuRenderingEnabled: Boolean = true,
-    onGpuRenderingEnabledChange: (Boolean) -> Unit = {},
     cursorTrail: String = CursorTrailEffect.WARP.key,
     onCursorTrailChange: (String) -> Unit = {},
     visualEffectFrameRate: String = VisualEffectFrameRate.VSYNC.key,
@@ -254,28 +252,6 @@ fun SettingsScreen(
                     }
                     val minFontSize = sizes[1]
                     val maxFontSize = sizes[2]
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("OpenGL ES Rendering", style = MaterialTheme.typography.bodyLarge)
-                            Text(
-                                text = "Hardware-accelerated terminal renderer. " +
-                                    "Turn it off to use the Compose renderer.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        Switch(
-                            checked = gpuRenderingEnabled,
-                            onCheckedChange = onGpuRenderingEnabledChange
-                        )
-                    }
-
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),

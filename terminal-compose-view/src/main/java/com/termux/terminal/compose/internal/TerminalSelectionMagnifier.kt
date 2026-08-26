@@ -1,29 +1,8 @@
 package com.termux.terminal.compose.internal
 
-import androidx.compose.foundation.magnifier
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.unit.DpSize
-import androidx.compose.ui.unit.dp
 import com.termux.terminal.compose.TerminalMetrics
 import com.termux.terminal.compose.TerminalSelection
-
-private const val SelectionMagnifierZoom = 2f
-
-internal fun Modifier.terminalSelectionMagnifier(
-    visible: Boolean,
-    sourceCenter: () -> Offset
-): Modifier =
-    if (visible) {
-        magnifier(
-            sourceCenter = { sourceCenter() },
-            zoom = SelectionMagnifierZoom,
-            size = DpSize(width = 128.dp, height = 56.dp),
-            cornerRadius = 28.dp
-        )
-    } else {
-        this
-    }
 
 internal fun selectionMagnifierSourceForSelection(
     endpoint: SelectionHandleEndpoint,

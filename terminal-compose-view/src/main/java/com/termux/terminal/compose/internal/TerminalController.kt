@@ -1,11 +1,5 @@
 package com.termux.terminal.compose.internal
 
-import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.GraphicsContext
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.PathFillType
-import androidx.compose.ui.graphics.drawscope.DrawScope
 import com.termux.terminal.compose.CursorEffectState
 import com.termux.terminal.compose.CursorEffectSnapshot
 import com.termux.terminal.compose.TerminalBackend
@@ -32,17 +26,15 @@ internal fun terminalColumnsForMeasuredCellWidth(widthPx: Int, measuredCellWidth
     (widthPx / measuredCellWidthPx).toInt().coerceAtLeast(MinGridDimension)
 
 /**
- * Owns the backend lifecycle, retained renderer, cursor effects, and frame scheduling
- * decisions for one [TerminalCanvas].
+ * Owns the backend lifecycle, cursor effects, and frame scheduling decisions for
+ * one [TerminalCanvas].
  *
  * The controller is main-thread confined. [release] is idempotent and releases
- * every row layer, parent layer, and cursor resource. Backend ownership remains
- * with the host that supplied it.
+ * UI-owned resources. Backend ownership remains with the host that supplied it.
  */
 @Suppress("TooManyFunctions") // lifecycle and rendering responsibilities share one backend owner
 internal class TerminalController(
     private val backend: TerminalBackend,
-    private val graphicsContext: GraphicsContext,
     private val measureMetrics: (Int, android.graphics.Typeface?, Int, Int) -> TerminalMetrics =
         { fontSizePx, typeface, width, height ->
             TerminalMetrics.from(
@@ -57,7 +49,7 @@ internal class TerminalController(
     /** Invoked when Compose-owned overlays need a frame-driven state update. */
     var onInvalidated: (() -> Unit)? = null
 
-    /** Publishes complete frames to non-Compose renderers without recomposition. */
+    /** Publishes complete frames to the GLES renderer without recomposition. */
     var onFrameAvailable: (() -> Unit)? = null
 
     private val invalidations = Channel<Unit>(CONFLATED)
@@ -66,9 +58,6 @@ internal class TerminalController(
     private var effectiveFontSize = config.fontSize
     private var attached = false
     private var released = false
-
-    private var rowRenderer: TerminalRowRenderer? = null
-    private var renderer: TerminalRenderNodeRenderer? = null
 
     private var lastResizeWidth = -1
     private var lastResizeHeight = -1
@@ -80,11 +69,6 @@ internal class TerminalController(
 
     private val cursorEffectState = CursorEffectState()
     private var cursorFramePending = false
-    private val cursorEffectPlan = CursorEffectRenderPlan()
-    private val cursorEffectPath = Path()
-
-    private var renderKey = RenderKey(0, null)
-
     fun attach() {
         if (attached || released) return
         attached = true
@@ -102,9 +86,6 @@ internal class TerminalController(
         if (released) return
         released = true
         detach()
-        renderer?.release()
-        renderer = null
-        rowRenderer = null
         resetCursorTracking()
         onInvalidated = null
         onFrameAvailable = null
@@ -157,8 +138,8 @@ internal class TerminalController(
     /**
      * Resizes the backend when the display grid (columns x rows) changes.
      *
-     * The grid is derived from the row renderer's measured cell width using
-     * the same raw-width formula as terminal rendering, so
+     * The grid is derived from the measured cell width using the same
+     * raw-width formula as terminal rendering, so
      * pixel drift during a drag-resize that does not cross a cell boundary is coalesced away. This
      * avoids churning every intermediate size through reflow -> SIGWINCH ->
      * full tmux redraw. Once the grid changes, the actual pixel size is still
@@ -248,34 +229,6 @@ internal class TerminalController(
     /** Submits an input or navigation command to the backend. */
     fun submit(command: TerminalCommand): TerminalCommandResult = backend.submit(command)
 
-    /**
-     * Draws the current frame. Resizes the backend when the draw size
-     * changed and re-creates the retained renderer on font/typeface changes.
-     * [contentVersion] is the composable's snapshot-state invalidation counter:
-     * reading it here redraws the canvas when content changes.
-     */
-    fun draw(
-        drawScope: DrawScope,
-        selection: TerminalSelection,
-        contentVersion: Int
-    ) {
-        if (released) return
-        val cfg = config
-        val renderer = ensureRenderer(cfg) ?: return
-        resizeIfNeeded(
-            widthPx = drawScope.size.width.toInt(),
-            heightPx = drawScope.size.height.toInt()
-        )
-
-        val frame = backend.currentFrame() ?: return
-        renderer.draw(
-            drawScope = drawScope,
-            frame = frame,
-            contentVersion = contentVersion,
-            selection = selection
-        )
-    }
-
     /** Captures cursor movement from one complete frame for a renderer thread. */
     internal fun captureCursorEffectSnapshot(
         frame: TerminalFrame,
@@ -285,43 +238,6 @@ internal class TerminalController(
         cursorEffectState.observe(frame, timeSeconds)
         cursorFramePending = false
         return cursorEffectState.snapshot(effect)
-    }
-
-    /** Draws the shared cursor-effect geometry through the Compose adapter. */
-    fun drawCursorEffect(
-        drawScope: DrawScope,
-        metrics: TerminalMetrics,
-        timeSeconds: Float
-    ) {
-        if (released) return
-        val frame = backend.currentFrame() ?: return
-        val effectSnapshot = captureCursorEffectSnapshot(frame, timeSeconds) ?: return
-        if (planCursorEffect(effectSnapshot, frame, metrics, timeSeconds, cursorEffectPlan)) {
-            drawCursorEffectPlan(drawScope)
-        }
-    }
-
-    private fun drawCursorEffectPlan(drawScope: DrawScope) {
-        cursorEffectPath.reset()
-        cursorEffectPath.fillType = PathFillType.EvenOdd
-        cursorEffectPath.moveTo(cursorEffectPlan.vertices[0], cursorEffectPlan.vertices[1])
-        for (index in 1 until cursorEffectPlan.vertexCount) {
-            val offset = index * 2
-            cursorEffectPath.lineTo(
-                cursorEffectPlan.vertices[offset],
-                cursorEffectPlan.vertices[offset + 1]
-            )
-        }
-        cursorEffectPath.close()
-        cursorEffectPath.addRect(
-            Rect(
-                cursorEffectPlan.cutoutLeft,
-                cursorEffectPlan.cutoutTop,
-                cursorEffectPlan.cutoutRight,
-                cursorEffectPlan.cutoutBottom
-            )
-        )
-        drawScope.drawPath(cursorEffectPath, Color(cursorEffectPlan.argb))
     }
 
     override fun onFrameInvalidated() {
@@ -342,40 +258,6 @@ internal class TerminalController(
         config.onDiagnostics(
             TerminalDiagnostic.BackendError(error.code, error.message)
         )
-    }
-
-
-    private fun ensureRenderer(cfg: TerminalCanvasConfig): TerminalRenderNodeRenderer? {
-        val newKey = RenderKey(effectiveFontSize, cfg.typeface)
-        if (renderKey == newKey) {
-            return renderer
-        }
-        renderKey = newKey
-
-        renderer?.release()
-        rowRenderer = TerminalRowRenderer(
-            typeface = cfg.typeface,
-            fontSizePx = effectiveFontSize.toFloat()
-        )
-        val next = TerminalRenderNodeRenderer(
-            graphicsContext = graphicsContext,
-            rowRenderer = rowRenderer!!
-        )
-        renderer = next
-        return next
-    }
-
-    private class RenderKey(
-        val fontSize: Int,
-        val typeface: android.graphics.Typeface?
-    ) {
-        override fun equals(other: Any?): Boolean =
-            other is RenderKey &&
-                fontSize == other.fontSize &&
-                typeface == other.typeface
-
-        override fun hashCode(): Int =
-            31 * fontSize + (typeface?.hashCode() ?: 0)
     }
 
     private companion object {

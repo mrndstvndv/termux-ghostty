@@ -1,7 +1,5 @@
 package com.termux.terminal.compose.internal
 
-import androidx.compose.ui.graphics.GraphicsContext
-import androidx.compose.ui.graphics.layer.GraphicsLayer
 import com.termux.terminal.compose.CursorEffect
 import com.termux.terminal.compose.CursorEffectState
 import com.termux.terminal.compose.TerminalBackend
@@ -25,7 +23,7 @@ import org.junit.Test
 class TerminalControllerTest {
     @Test
     fun frameInvalidationSchedulesCursorAnimationBeforeFirstRenderedFrame() {
-        val controller = TerminalController(RecordingBackend(), UnusedGraphicsContext)
+        val controller = TerminalController(RecordingBackend())
         controller.configure(TerminalCanvasConfig(cursorEffect = CursorEffect.SWEEP))
 
         controller.onFrameInvalidated()
@@ -35,9 +33,9 @@ class TerminalControllerTest {
 
 
     @Test
-    fun frameInvalidationPublishesBeforeRequestingComposeState() {
+    fun frameInvalidationPublishesBeforeRequestingOverlayState() {
         val callbacks = ArrayList<String>()
-        val controller = TerminalController(RecordingBackend(), UnusedGraphicsContext)
+        val controller = TerminalController(RecordingBackend())
         controller.onFrameAvailable = { callbacks += "frame" }
         controller.onInvalidated = { callbacks += "compose" }
 
@@ -127,8 +125,8 @@ class TerminalControllerTest {
     @Test
     fun attachReplacesThePreviousListenerAndDetachStopsInvalidations() {
         val backend = RecordingBackend()
-        val first = TerminalController(backend, UnusedGraphicsContext)
-        val second = TerminalController(backend, UnusedGraphicsContext)
+        val first = TerminalController(backend)
+        val second = TerminalController(backend)
 
         first.attach()
         second.attach()
@@ -141,7 +139,7 @@ class TerminalControllerTest {
     @Test
     fun releaseIsIdempotentAndLeavesBackendOwnedByTheHost() {
         val backend = RecordingBackend()
-        val controller = TerminalController(backend, UnusedGraphicsContext)
+        val controller = TerminalController(backend)
         controller.attach()
 
         controller.release()
@@ -153,7 +151,7 @@ class TerminalControllerTest {
     @Test
     fun invalidationIsIgnoredAfterRelease() {
         val backend = RecordingBackend()
-        val controller = TerminalController(backend, UnusedGraphicsContext)
+        val controller = TerminalController(backend)
         controller.attach()
         controller.release()
 
@@ -178,7 +176,7 @@ class TerminalControllerTest {
     @Test
     fun fontSizeChangeRecomputesGridAtUnchangedViewportSize() {
         val backend = RecordingBackend()
-        val controller = TerminalController(backend, UnusedGraphicsContext) { fontSize, _, width, height ->
+        val controller = TerminalController(backend) { fontSize, _, width, height ->
             TerminalMetrics.of(
                 cellWidthPx = fontSize.toFloat(),
                 cellHeightPx = fontSize.toFloat() * 2,
@@ -202,7 +200,7 @@ class TerminalControllerTest {
     @Test
     fun fontGeometryChangeResizesBackendEvenWhenMinimumGridIsUnchanged() {
         val backend = RecordingBackend()
-        val controller = TerminalController(backend, UnusedGraphicsContext) { fontSize, _, width, height ->
+        val controller = TerminalController(backend) { fontSize, _, width, height ->
             TerminalMetrics.of(
                 cellWidthPx = fontSize.toFloat(),
                 cellHeightPx = fontSize.toFloat() * 2,
@@ -270,7 +268,7 @@ private fun cursorFrame(sequence: Long, column: Int, row: Int): TerminalFrame =
     )
 
 private fun testController(backend: TerminalBackend): TerminalController =
-    TerminalController(backend, UnusedGraphicsContext) { _, _, width, height ->
+    TerminalController(backend) { _, _, width, height ->
         TerminalMetrics.of(
             cellWidthPx = 8f,
             cellHeightPx = 16f,
@@ -300,12 +298,6 @@ private fun completeFrame(columns: Int, rows: Int): TerminalFrame = TerminalFram
     },
     linkLayout = null
 )
-
-private object UnusedGraphicsContext : GraphicsContext {
-    override fun createGraphicsLayer(): GraphicsLayer = error("Not used by this test")
-
-    override fun releaseGraphicsLayer(layer: GraphicsLayer) = Unit
-}
 
 private class RecordingBackend(
     private val publishedFrame: TerminalFrame? = null,

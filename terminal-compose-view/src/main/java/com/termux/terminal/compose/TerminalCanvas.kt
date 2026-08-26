@@ -8,30 +8,25 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.MutableFloatState
 import androidx.compose.runtime.MutableIntState
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusTarget
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.GraphicsContext
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInWindow
-import androidx.compose.ui.platform.LocalGraphicsContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.preferredFrameRate
@@ -55,7 +50,6 @@ import com.termux.terminal.compose.internal.rememberSelectionHandleColor
 import com.termux.terminal.compose.internal.terminalGestures
 import com.termux.terminal.compose.internal.selectionMagnifierSourceForSelection
 import com.termux.terminal.compose.internal.terminalImeHost
-import com.termux.terminal.compose.internal.terminalSelectionMagnifier
 import com.termux.terminal.compose.internal.terminalTaps
 import com.termux.terminal.compose.internal.updateSelectionHandle
 
@@ -67,15 +61,7 @@ import com.termux.terminal.compose.internal.updateSelectionHandle
 private const val AttachSettleMillis = 64L
 private const val PixelLayerZIndex = 0f
 private const val InputLayerZIndex = 1f
-private const val CursorEffectZIndex = 2f
 private const val SelectionLayerZIndex = 3f
-
-internal fun requiresComposeFrameUpdate(
-    renderer: TerminalRenderer,
-    accessibilityEnabled: Boolean,
-    selectionActive: Boolean
-): Boolean = renderer != TerminalRenderer.OPENGL_ES ||
-    accessibilityEnabled || selectionActive
 
 /**
  * Compose terminal canvas.
@@ -96,21 +82,23 @@ fun TerminalCanvas(
     requestImeKey: Long = 0L,
     modifier: Modifier = Modifier
 ) {
-    val graphicsContext = LocalGraphicsContext.current
     val selectionState = remember(backend) { TerminalSelectionState() }
     val hapticFeedback = LocalHapticFeedback.current
     val focusRequester = remember { FocusRequester() }
 
     val contentVersionState = remember { mutableIntStateOf(0) }
-    val frameTimeState = remember { mutableFloatStateOf(0f) }
     val fontSizeState = rememberFontSizeState(config)
     var viewportSizePx by remember { mutableStateOf(IntSize.Zero) }
     var canvasPositionInWindow by remember { mutableStateOf(Offset.Zero) }
 
     val controller = rememberConfiguredController(
-        backend, graphicsContext, frameTimeState, fontSizeState, config,
+        backend = backend,
+        fontSizeState = fontSizeState,
+        config = config,
         onInvalidated = {
-            requestComposeFrameIfRequired(config, selectionState, contentVersionState)
+            if (config.accessibilityEnabled || !selectionState.selection.isEmpty) {
+                contentVersionState.intValue++
+            }
         }
     )
     // Initial-frame safety net: a frame published before the canvas attached
@@ -154,28 +142,11 @@ fun TerminalCanvas(
             focusRequester = focusRequester,
             hapticFeedback = hapticFeedback,
             contentVersionState = contentVersionState,
-            frameTimeState = frameTimeState,
             canvasPositionInWindow = canvasPositionInWindow
         ),
         onViewportSizeChanged = { viewportSizePx = it },
         onCanvasPositionChanged = { canvasPositionInWindow = it }
     )
-}
-
-private fun requestComposeFrameIfRequired(
-    config: TerminalCanvasConfig,
-    selectionState: TerminalSelectionState,
-    contentVersionState: MutableIntState
-) {
-    if (!requiresComposeFrameUpdate(
-            renderer = config.renderer,
-            accessibilityEnabled = config.accessibilityEnabled,
-            selectionActive = !selectionState.selection.isEmpty
-        )
-    ) {
-        return
-    }
-    contentVersionState.intValue++
 }
 
 private data class TerminalCanvasState(
@@ -190,7 +161,6 @@ private data class TerminalCanvasState(
     val focusRequester: FocusRequester,
     val hapticFeedback: androidx.compose.ui.hapticfeedback.HapticFeedback,
     val contentVersionState: MutableIntState,
-    val frameTimeState: MutableFloatState,
     val canvasPositionInWindow: Offset
 )
 
@@ -215,24 +185,6 @@ private fun TerminalCanvasLayout(
             .focusRequester(state.focusRequester)
             .focusTarget()
             .terminalKeyHandling(state.translator, state.selectionState, state.config)
-            .terminalSelectionMagnifier(
-                visible = magnifierEndpoint != null && !selection.isEmpty &&
-                    state.config.renderer != TerminalRenderer.OPENGL_ES &&
-                    state.controller.currentFrame() != null
-            ) {
-                val endpoint = magnifierEndpoint
-                val frame = state.controller.currentFrame()
-                if (endpoint == null || frame == null) {
-                    Offset.Unspecified
-                } else {
-                    selectionMagnifierSourceForSelection(
-                        endpoint = endpoint,
-                        selection = selection,
-                        topRow = frame.topRow,
-                        metrics = state.metrics
-                    )
-                }
-            }
     ) {
         val inputModifier = Modifier
             .fillMaxSize()
@@ -255,42 +207,17 @@ private fun TerminalCanvasLayout(
                 state.hapticFeedback
             )
 
-        val glesSurface = if (state.config.renderer == TerminalRenderer.OPENGL_ES) {
-            val surface = glesTerminalCanvasContent(
-                controller = state.controller,
-                metrics = state.metrics,
-                selection = state.selectionState.selection,
-                fontSizePx = state.fontSizeState.intValue.toFloat(),
-                config = state.config,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .zIndex(PixelLayerZIndex)
-            )
-            Canvas(modifier = inputModifier.zIndex(InputLayerZIndex)) {}
-            surface
-        } else {
-            Canvas(modifier = inputModifier.zIndex(InputLayerZIndex)) {
-                state.controller.draw(
-                    drawScope = this,
-                    selection = state.selectionState.selection,
-                    contentVersion = state.contentVersionState.intValue
-                )
-            }
-            null
-        }
-        if (state.config.cursorEffect != null && state.config.renderer != TerminalRenderer.OPENGL_ES) {
-            Canvas(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .zIndex(CursorEffectZIndex)
-            ) {
-                state.controller.drawCursorEffect(
-                    drawScope = this,
-                    metrics = state.metrics,
-                    timeSeconds = state.frameTimeState.floatValue
-                )
-            }
-        }
+        val glesSurface = glesTerminalCanvasContent(
+            controller = state.controller,
+            metrics = state.metrics,
+            selection = state.selectionState.selection,
+            fontSizePx = state.fontSizeState.intValue.toFloat(),
+            config = state.config,
+            modifier = Modifier
+                .fillMaxSize()
+                .zIndex(PixelLayerZIndex)
+        )
+        Canvas(modifier = inputModifier.zIndex(InputLayerZIndex)) {}
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -398,30 +325,16 @@ private fun GlesSelectionMagnifierEffect(
 @Composable
 private fun rememberConfiguredController(
     backend: TerminalBackend,
-    graphicsContext: GraphicsContext,
-    frameTimeState: MutableFloatState,
     fontSizeState: MutableIntState,
     config: TerminalCanvasConfig,
     onInvalidated: () -> Unit
 ): TerminalController {
     val controller = rememberTerminalController(
         backend = backend,
-        graphicsContext = graphicsContext,
         onInvalidated = onInvalidated
     )
     SideEffect {
         controller.configure(config, fontSizeState.intValue)
-    }
-    LaunchedEffect(
-        controller,
-        config.cursorEffect,
-        config.renderer,
-        fontSizeState.intValue
-    ) {
-        controller.configure(config, fontSizeState.intValue)
-        if (config.renderer != TerminalRenderer.OPENGL_ES) {
-            runFrameLoop(controller, frameTimeState)
-        }
     }
     return controller
 }
@@ -429,11 +342,10 @@ private fun rememberConfiguredController(
 @Composable
 private fun rememberTerminalController(
     backend: TerminalBackend,
-    graphicsContext: GraphicsContext,
     onInvalidated: () -> Unit
 ): TerminalController {
-    val controller = remember(backend, graphicsContext) { TerminalController(backend, graphicsContext) }
-    // Wire the callback before attach and keep it current as renderer policy changes.
+    val controller = remember(backend) { TerminalController(backend) }
+    // Wire the callback before attach and keep it current as overlay policy changes.
     val currentOnInvalidated by rememberUpdatedState(onInvalidated)
     DisposableEffect(controller) {
         val callback = { currentOnInvalidated() }
@@ -506,22 +418,6 @@ private fun rememberCanvasMetrics(
         viewportWidthPx = viewportSizePx.width,
         viewportHeightPx = viewportSizePx.height
     )
-}
-
-/** Frame loop for invalidations and transient cursor effects. */
-private suspend fun runFrameLoop(
-    controller: TerminalController,
-    frameTimeState: MutableFloatState
-) {
-    controller.resetCursorTracking()
-    while (true) {
-        controller.awaitInvalidation()
-        do {
-            withFrameNanos { nanos ->
-                frameTimeState.floatValue = nanos / 1_000_000_000f
-            }
-        } while (controller.needsFrame(frameTimeState.floatValue))
-    }
 }
 
 /** Reports selection geometry changes to the consumer. */

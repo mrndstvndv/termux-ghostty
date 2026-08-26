@@ -23,7 +23,6 @@ import com.termux.terminal.compose.ModifierKeyReader
 import com.termux.terminal.compose.TerminalCanvas as ComposeTerminalCanvas
 import com.termux.terminal.compose.TerminalCanvasConfig
 import com.termux.terminal.compose.TerminalBackend
-import com.termux.terminal.compose.TerminalRenderer
 import com.termux.terminal.compose.session.TerminalSessionBackend
 
 /** Default soft-keyboard resize debounce in milliseconds (0 = immediate). */
@@ -48,7 +47,6 @@ fun TerminalCanvas(
     onBackendCreated: (TerminalSession, TerminalBackend) -> Unit,
     onBackendReleased: (TerminalSession, TerminalBackend) -> Unit,
     isTerminalActive: Boolean,
-    gpuRenderingEnabled: Boolean = true,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -91,7 +89,6 @@ fun TerminalCanvas(
             cursorEffect = cursorEffect,
             frameRate = frameRate,
             accessibilityEnabled = accessibilityEnabled,
-            gpuRenderingEnabled = gpuRenderingEnabled,
             session = session,
             onOpenUrl = onOpenUrl
         )
@@ -178,7 +175,6 @@ private data class TerminalCanvasConfigInput(
     val cursorEffect: com.termux.terminal.compose.CursorEffect?,
     val frameRate: VisualEffectFrameRate,
     val accessibilityEnabled: Boolean,
-    val gpuRenderingEnabled: Boolean,
     val session: TerminalSession,
     val onOpenUrl: (String) -> Unit
 )
@@ -196,11 +192,6 @@ private fun createTerminalCanvasConfig(input: TerminalCanvasConfigInput): Termin
             true
         ),
         accessibilityEnabled = input.accessibilityEnabled,
-        renderer = if (input.gpuRenderingEnabled) {
-            TerminalRenderer.OPENGL_ES
-        } else {
-            TerminalRenderer.COMPOSE
-        },
         onFontSizeChange = { requestedSize ->
             val nextSize = requestedSize.coerceIn(input.minimumFontSize, input.maximumFontSize)
             input.fontSize.intValue = nextSize

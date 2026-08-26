@@ -44,8 +44,6 @@ import com.termux.terminal.compose.TerminalBackend
 import com.termux.terminal.TerminalSession
 import java.io.File
 
-private const val GpuRenderingPreference = "gpu_rendering_enabled"
-
 @Suppress("LongParameterList", "LongMethod", "CyclomaticComplexMethod")
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -101,8 +99,6 @@ fun MainContent(
     val savedVisualEffectFrameRate = VisualEffectFrameRate.fromPref(
         sharedPreferences.getString("visual_effect_frame_rate", null)
     ).key
-    val savedGpuRenderingEnabled = sharedPreferences.getBoolean(GpuRenderingPreference, true)
-
     var appTheme by remember { mutableStateOf(savedTheme) }
 
     // Sync backstack with ViewModel screen state
@@ -133,8 +129,6 @@ fun MainContent(
             var unconditionalSoftKeyboardOnTap by remember { mutableStateOf(savedUnconditionalSoftKeyboardOnTap) }
             var cursorTrail by remember { mutableStateOf(savedCursorTrail) }
             var visualEffectFrameRate by remember { mutableStateOf(savedVisualEffectFrameRate) }
-            var gpuRenderingEnabled by remember { mutableStateOf(savedGpuRenderingEnabled) }
-
             val pickFontLauncher = rememberLauncherForActivityResult(
                 contract = ActivityResultContracts.GetContent()
             ) { uri: Uri? ->
@@ -278,13 +272,6 @@ fun MainContent(
                                 onDebugHudEnabledChange = { enabled ->
                                     viewModel.userPrefs.setDebugHudEnabled(enabled, sharedPreferences)
                                 },
-                                gpuRenderingEnabled = gpuRenderingEnabled,
-                                onGpuRenderingEnabledChange = { enabled ->
-                                    gpuRenderingEnabled = enabled
-                                    sharedPreferences.edit()
-                                        .putBoolean(GpuRenderingPreference, enabled)
-                                        .apply()
-                                },
                                 cursorTrail = cursorTrail,
                                 onCursorTrailChange = { effect ->
                                     cursorTrail = effect
@@ -336,7 +323,6 @@ fun MainContent(
                                         reviewViewModel = reviewVM,
                                         extraKeysEnabled = extraKeysEnabled,
                                         extraKeysJson = resolvedJson,
-                                        gpuRenderingEnabled = gpuRenderingEnabled,
                                         hideWorkspaceTabs = hideWorkspaceTabs,
                                         herdrEnabled = server.config.herdrEnabled,
                                         herdrWorkspaces = viewModel.herdrWorkspaces.value,

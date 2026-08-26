@@ -1,11 +1,9 @@
 package com.termux.terminal.compose
 
-/**
- * Renderer-neutral cursor trail preset.
+/** Cursor trail preset.
  *
- * Cursor movement is captured from complete immutable [TerminalFrame] publications. Both the
- * Compose and OpenGL ES renderers consume the same geometry planner, so selecting a renderer does
- * not change trail timing, color, or shape.
+ * Cursor movement is captured from complete immutable [TerminalFrame] publications and rendered
+ * by the OpenGL ES pipeline without reading backend state during drawing.
  */
 enum class CursorEffect(
     val maxDurationSeconds: Float

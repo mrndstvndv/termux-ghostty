@@ -20,8 +20,6 @@ data class TerminalCanvasConfig(
     val maximumFontSize: Int = 256,
     val typeface: Typeface? = null,
     val cursorEffect: CursorEffect? = null,
-    /** Selects terminal pixels; GLES also owns cursor-effect pixels while input stays in Compose. */
-    val renderer: TerminalRenderer = TerminalRenderer.OPENGL_ES,
     /** Neutral frame-rate request in frames per second; null means display rate. */
     val preferredFrameRate: Float? = null,
     val unconditionalKeyboardOnTap: Boolean = true,
@@ -59,12 +57,6 @@ data class TerminalCanvasConfig(
 
     /** Clamps a requested font size to the configured bounds. */
     fun clampedFontSize(requested: Int): Int = requested.coerceIn(minimumFontSize, maximumFontSize)
-}
-
-/** Pixel renderer used beneath the shared Compose input, selection, and accessibility layers. */
-enum class TerminalRenderer {
-    COMPOSE,
-    OPENGL_ES
 }
 
 /**

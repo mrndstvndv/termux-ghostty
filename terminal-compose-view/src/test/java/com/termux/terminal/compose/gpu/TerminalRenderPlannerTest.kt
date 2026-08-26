@@ -126,7 +126,7 @@ class TerminalRenderPlannerTest {
         assertEquals(GlyphAtlasKey.RASTER_MODE_MASK, plan.glyphs[0].key.rasterMode)
         assertEquals("🧠", plan.glyphs[1].key.text)
         assertEquals(GlyphAtlasKey.RASTER_MODE_RGBA, plan.glyphs[1].key.rasterMode)
-        // TerminalRowRenderer paints the block cursor before text and swaps the
+        // The GLES planner paints the block cursor before text and swaps the
         // cell colors, so the wide glyph uses its original background as ink.
         assertEquals(0xFF101010.toInt(), plan.glyphs[1].key.foregroundArgb)
         assertTrue(plan.cellBackgrounds.any { it.left == 0f && it.style != null })

@@ -33,7 +33,7 @@ class TerminalSnapshotHandoffTest {
     }
 
     @Test
-    fun aConsumedSnapshotRemainsRetainedForARecreatedRenderer() {
+    fun aConsumedSnapshotRemainsRetainedForARecreatedSurface() {
         val handoff = TerminalSnapshotHandoff()
         val snapshot = testSnapshot(7L)
 

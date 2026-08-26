@@ -15,7 +15,6 @@ fun TerminalWorkspaceContainer(
     onBackendReleased: (TerminalSession, TerminalBackend) -> Unit,
     onOpenUrl: (String) -> Unit,
     isTerminalActive: Boolean,
-    gpuRenderingEnabled: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     TerminalCanvas(
@@ -25,7 +24,6 @@ fun TerminalWorkspaceContainer(
         onBackendCreated = onBackendCreated,
         onBackendReleased = onBackendReleased,
         isTerminalActive = isTerminalActive,
-        gpuRenderingEnabled = gpuRenderingEnabled,
         modifier = modifier
     )
 }

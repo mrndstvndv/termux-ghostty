@@ -56,12 +56,14 @@ internal fun glesTerminalCanvasContent(
     DisposableEffect(surface, controller) {
         val callback = { currentPublisher() }
         controller.onFrameAvailable = callback
+        callback()
         onDispose {
             if (controller.onFrameAvailable === callback) controller.onFrameAvailable = null
         }
     }
     LaunchedEffect(
         surface,
+        controller,
         selection,
         metrics,
         fontSizePx,

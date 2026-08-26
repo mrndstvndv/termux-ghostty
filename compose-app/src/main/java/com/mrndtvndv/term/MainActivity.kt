@@ -23,7 +23,6 @@ import com.mrndtvndv.term.ui.notification.NotificationState
 import com.mrndtvndv.term.ui.prefs.UserPrefs
 import com.mrndtvndv.term.ui.MainContent
 import com.termux.shared.interact.ShareUtils
-import com.termux.terminal.compose.TerminalBackend
 import com.termux.terminal.TerminalSession
 import androidx.core.content.FileProvider
 import java.io.File
@@ -49,10 +48,6 @@ class MainActivity : ComponentActivity(), SessionHost {
         }
     }
 
-    private val terminalFrameRouter = ActiveTerminalFrameRouter<TerminalSession, TerminalBackend> { backend ->
-        backend.refresh()
-    }
-
     private val viewingFileState = mutableStateOf<File?>(null)
     private var windowHasFocus = false
     private var focusedTerminalSession: TerminalSession? = null
@@ -60,7 +55,7 @@ class MainActivity : ComponentActivity(), SessionHost {
     // ── SessionHost: live UI half of AppSessionManager ───────────────
 
     override fun onFrameAvailable(session: TerminalSession) {
-        terminalFrameRouter.onFrameAvailable(session)
+        // Backend now observes TerminalSession.FrameCallback directly; no host routing required.
     }
 
     override fun copyToClipboard(text: String) {
@@ -78,14 +73,6 @@ class MainActivity : ComponentActivity(), SessionHost {
     }
 
     // ── Activity lifecycle ───────────────────────────────────────────
-
-    override fun onStart() {
-        super.onStart()
-        // Frame callbacks are intentionally dropped while the activity is stopped. Re-apply the
-        // latest published delta now so RenderFrameCache can detect a gap and request a full
-        // snapshot instead of waiting for terminal input to cause another redraw.
-        terminalFrameRouter.refreshActive()
-    }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
@@ -142,12 +129,8 @@ class MainActivity : ComponentActivity(), SessionHost {
                 viewModel = viewModel,
                 sharedPreferences = sharedPreferences,
                 customFontFamily = customFontFamily,
-                onBackendCreated = { session, backend ->
-                    terminalFrameRouter.bind(session, backend)
-                },
-                onBackendReleased = { session, backend ->
-                    terminalFrameRouter.unbind(session, backend)
-                },
+                onBackendCreated = { _, _ -> },
+                onBackendReleased = { _, _ -> },
                 onActiveTerminalSessionChanged = { session ->
                     updateFocusedTerminalSession(session)
                 },

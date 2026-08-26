@@ -11,8 +11,10 @@ import java.util.concurrent.atomic.AtomicReference
  */
 internal class TerminalSnapshotHandoff {
     private val slot = AtomicReference<Slot>(Empty(Long.MIN_VALUE))
+    private val retainedSnapshot = AtomicReference<RetainedPublication?>(null)
 
     fun publish(snapshot: GlesTerminalSnapshot): Boolean {
+        val publication = RetainedPublication(snapshot)
         while (true) {
             val current = slot.get()
             if (
@@ -22,7 +24,9 @@ internal class TerminalSnapshotHandoff {
             ) {
                 return false
             }
+            retainedSnapshot.set(publication)
             if (slot.compareAndSet(current, Pending(snapshot))) return true
+            retainedSnapshot.compareAndSet(publication, null)
         }
     }
 
@@ -42,10 +46,17 @@ internal class TerminalSnapshotHandoff {
         }
     }
 
+    fun acquireOrRetained(): GlesTerminalSnapshot? = acquire() ?: peekRetained()
+
     fun hasPending(): Boolean = slot.get() is Pending
+
+    fun hasRetained(): Boolean = retainedSnapshot.get() != null
+
+    fun peekRetained(): GlesTerminalSnapshot? = retainedSnapshot.get()?.snapshot
 
     fun release() {
         slot.getAndSet(Released)
+        retainedSnapshot.set(null)
     }
 
     private interface Slot {
@@ -67,4 +78,6 @@ internal class TerminalSnapshotHandoff {
         override val revision: Long = snapshot.presentationRevision
         override val contentRevision: Long = snapshot.frame.sequence
     }
+
+    private class RetainedPublication(val snapshot: GlesTerminalSnapshot)
 }

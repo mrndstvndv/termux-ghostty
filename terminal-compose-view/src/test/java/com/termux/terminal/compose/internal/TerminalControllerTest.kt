@@ -48,13 +48,29 @@ class TerminalControllerTest {
 
     @Test
     fun initialFrameRecoveryRefreshesBackendBeforeRepaint() {
-        val backend = RecordingBackend()
-        val controller = TerminalController(backend, UnusedGraphicsContext)
+        val backend = RecordingBackend(completeFrame(columns = 80, rows = 24))
+        val controller = testController(backend)
 
         controller.refresh()
 
         assertEquals(1, backend.refreshCount)
+        assertEquals(1, controller.version())
     }
+    @Test
+    fun refreshDoesNotDoubleInvalidateWhenBackendAlreadyNotified() {
+        val backend = RecordingBackend(
+            publishedFrame = completeFrame(columns = 80, rows = 24),
+            notifyOnRefresh = true
+        )
+        val controller = testController(backend)
+        controller.attach()
+        val versionAfterAttach = controller.version()
+
+        controller.refresh()
+
+        assertEquals(versionAfterAttach + 1, controller.version())
+    }
+
     @Test
     fun invisibleCursorDoesNotBecomePreviousTrailPosition() {
         val state = CursorEffectState()
@@ -123,7 +139,7 @@ class TerminalControllerTest {
     }
 
     @Test
-    fun releaseIsIdempotentAndReleasesBackendOnce() {
+    fun releaseIsIdempotentAndLeavesBackendOwnedByTheHost() {
         val backend = RecordingBackend()
         val controller = TerminalController(backend, UnusedGraphicsContext)
         controller.attach()
@@ -131,7 +147,7 @@ class TerminalControllerTest {
         controller.release()
         controller.release()
 
-        assertEquals(listOf("attach", "detach", "release"), backend.lifecycle)
+        assertEquals(listOf("attach", "detach"), backend.lifecycle)
     }
 
     @Test
@@ -144,7 +160,7 @@ class TerminalControllerTest {
         controller.onFrameInvalidated()
 
         assertEquals(0, controller.version())
-        assertEquals(listOf("attach", "detach", "release"), backend.lifecycle)
+        assertEquals(listOf("attach", "detach"), backend.lifecycle)
     }
 
     @Test
@@ -292,7 +308,8 @@ private object UnusedGraphicsContext : GraphicsContext {
 }
 
 private class RecordingBackend(
-    private val publishedFrame: TerminalFrame? = null
+    private val publishedFrame: TerminalFrame? = null,
+    private val notifyOnRefresh: Boolean = false
 ) : TerminalBackend {
     val resizes = mutableListOf<TerminalSize>()
     val lifecycle = mutableListOf<String>()
@@ -310,6 +327,7 @@ private class RecordingBackend(
 
     override fun refresh() {
         refreshCount++
+        if (notifyOnRefresh) attachedListener?.onFrameInvalidated()
     }
 
     override fun resize(size: TerminalSize) {

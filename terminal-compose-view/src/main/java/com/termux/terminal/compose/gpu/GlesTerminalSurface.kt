@@ -175,6 +175,7 @@ class GlesTerminalSurface(
     onDiagnostic: (GlesTerminalDiagnostic) -> Unit = {}
 ) {
     private val handoff = TerminalSnapshotHandoff()
+    private val lastPublishedSnapshot = AtomicReference<GlesTerminalSnapshot?>(null)
     private val released = AtomicBoolean(false)
     private val diagnosticListener = AtomicReference<(GlesTerminalDiagnostic) -> Unit>(onDiagnostic)
     private val requestRender = AtomicReference<(() -> Unit)?>(null)
@@ -193,6 +194,8 @@ class GlesTerminalSurface(
 
     /** Publishes one complete frame without blocking the caller. */
     fun publish(snapshot: GlesTerminalSnapshot): Boolean {
+        if (released.get()) return false
+        lastPublishedSnapshot.set(snapshot)
         if (!handoff.publish(snapshot)) return false
         val cursorEffect = snapshot.cursorEffect
         val cursorDeadline = cursorEffect?.let {
@@ -257,6 +260,7 @@ class GlesTerminalSurface(
     fun release() {
         if (!released.compareAndSet(false, true)) return
         handoff.release()
+        lastPublishedSnapshot.set(null)
         val releaseResources = releaseGlResources.getAndSet(null)
         val request = requestRender.getAndSet(null)
         val lifecycle = lifecycleDecision.getAndSet(null)
@@ -285,7 +289,8 @@ class GlesTerminalSurface(
 
     internal fun isReleased(): Boolean = released.get()
 
-    internal fun acquireSnapshot(): GlesTerminalSnapshot? = handoff.acquire()
+    internal fun acquireSnapshot(): GlesTerminalSnapshot? =
+        handoff.acquireOrRetained() ?: lastPublishedSnapshot.get()
 
     internal fun animationTimeSeconds(): Float = animationTimeSeconds.get()
 
@@ -347,7 +352,9 @@ class GlesTerminalSurface(
         selectionMagnifierRequest.get()?.let { pending ->
             view.showSelectionMagnifier(pending.sourceCenterX, pending.sourceCenterY)
         }
-        if (handoff.hasPending()) request()
+        if (handoff.hasPending() || handoff.hasRetained() || lastPublishedSnapshot.get() != null) {
+            request()
+        }
     }
 
     internal fun detachView(view: GlesTerminalSurfaceView) {
@@ -456,7 +463,6 @@ fun GlesTerminalSurface(
             )
             onDispose {
                 lifecycle.removeObserver(observer)
-                surface.release()
             }
         }
     }

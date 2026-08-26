@@ -7,6 +7,7 @@ import android.system.ErrnoException;
 import android.system.Os;
 import android.system.OsConstants;
 
+import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import java.io.File;
@@ -17,9 +18,11 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * A terminal session, consisting of a process coupled to a terminal interface.
@@ -68,6 +71,22 @@ public final class TerminalSession extends TerminalOutput {
 
     /** Callback which gets notified when a session finishes or changes title. */
     TerminalSessionClient mClient;
+
+    public interface FrameCallback {
+        void onFrameAvailable();
+    }
+
+    private final List<FrameCallback> mFrameCallbacks = new CopyOnWriteArrayList<>();
+
+    public void addFrameCallback(@NonNull FrameCallback callback) {
+        if (callback == null) return;
+        mFrameCallbacks.add(callback);
+    }
+
+    public void removeFrameCallback(@Nullable FrameCallback callback) {
+        if (callback == null) return;
+        mFrameCallbacks.remove(callback);
+    }
 
     /** The pid of the shell process. 0 if not started and -1 if finished running. */
     int mShellPid;
@@ -621,7 +640,10 @@ public final class TerminalSession extends TerminalOutput {
 
     /** Notify the {@link #mClient} that a new frame is ready to draw. */
     protected void notifyFrameAvailable() {
-        mClient.onFrameAvailable(this);
+        if (mClient != null) mClient.onFrameAvailable(this);
+        for (FrameCallback callback : mFrameCallbacks) {
+            callback.onFrameAvailable();
+        }
     }
 
     /** Reset state for the active terminal backend. */

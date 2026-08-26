@@ -117,6 +117,7 @@ class TerminalComposeView @JvmOverloads constructor(
             accessibilityManager.addAccessibilityStateChangeListener(accessibilityStateChangeListener)
             accessibilityListenerRegistered = true
         }
+        backendState?.refresh()
     }
 
     override fun onDetachedFromWindow() {
@@ -182,11 +183,15 @@ class TerminalComposeView @JvmOverloads constructor(
 
     /** Installs or replaces the backend; the canvas owns its lifecycle after this call. */
     fun setBackend(backend: TerminalBackend?) {
-        if (backendState === backend) return
+        if (backendState === backend) {
+            backend?.refresh()
+            return
+        }
         selectedTextState = null
         storedSelectedTextState = null
         selectingState = false
         backendState = backend
+        backend?.refresh()
     }
 
     fun getBackend(): TerminalBackend? = backendState

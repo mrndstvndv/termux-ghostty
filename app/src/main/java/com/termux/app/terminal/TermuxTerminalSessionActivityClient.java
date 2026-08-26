@@ -39,6 +39,8 @@ import androidx.viewpager.widget.ViewPager;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.InputStream;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Properties;
 
 /** The {@link TerminalSessionClient} implementation that may require an {@link Activity} for its interface methods. */
@@ -53,6 +55,8 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
     private int mBellSoundId;
 
     private static final String LOG_TAG = "TermuxTerminalSessionActivityClient";
+
+    private final Map<String, TerminalSessionBackend> mSessionBackends = new HashMap<>();
 
     public TermuxTerminalSessionActivityClient(TermuxActivity activity) {
         this.mActivity = activity;
@@ -315,7 +319,12 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
         if (session == null) return;
 
         if (mActivity.getCurrentSession() != session) {
-            mActivity.getTerminalView().setBackend(new TerminalSessionBackend(session));
+            TerminalSessionBackend backend = mSessionBackends.get(session.mHandle);
+            if (backend == null) {
+                backend = new TerminalSessionBackend(session);
+                mSessionBackends.put(session.mHandle, backend);
+            }
+            mActivity.getTerminalView().setBackend(backend);
             mActivity.setCurrentSession(session);
             // notify about switched session if not already displaying the session
             notifyOfSessionChange();
@@ -462,6 +471,8 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
     }
 
     public void removeFinishedSession(TerminalSession finishedSession) {
+        TerminalSessionBackend backend = mSessionBackends.remove(finishedSession.mHandle);
+        if (backend != null) backend.release();
         // Return pressed with finished session - remove it.
         TermuxService service = mActivity.getTermuxService();
         if (service == null) return;

@@ -36,7 +36,8 @@ internal fun terminalColumnsForMeasuredCellWidth(widthPx: Int, measuredCellWidth
  * decisions for one [TerminalCanvas].
  *
  * The controller is main-thread confined. [release] is idempotent and releases
- * every row layer, parent layer, and backend resource.
+ * every row layer, parent layer, and cursor resource. Backend ownership remains
+ * with the host that supplied it.
  */
 @Suppress("TooManyFunctions") // lifecycle and rendering responsibilities share one backend owner
 internal class TerminalController(
@@ -96,7 +97,7 @@ internal class TerminalController(
         backend.detach()
     }
 
-    /** Idempotent; releases backend and every render resource. */
+    /** Idempotent; detaches the backend and releases every render resource. */
     fun release() {
         if (released) return
         released = true
@@ -104,9 +105,9 @@ internal class TerminalController(
         renderer?.release()
         renderer = null
         rowRenderer = null
+        resetCursorTracking()
         onInvalidated = null
         onFrameAvailable = null
-        backend.release()
     }
 
     /**
@@ -213,7 +214,11 @@ internal class TerminalController(
     /** Replays the latest backend publication after a first-frame attach race. */
     fun refresh() {
         if (released) return
+        val versionBeforeRefresh = contentVersion
         backend.refresh()
+        if (backend.currentFrame() != null && contentVersion == versionBeforeRefresh) {
+            onFrameInvalidated()
+        }
     }
 
     /** Latest backend frame, or null before the first invalidation. */

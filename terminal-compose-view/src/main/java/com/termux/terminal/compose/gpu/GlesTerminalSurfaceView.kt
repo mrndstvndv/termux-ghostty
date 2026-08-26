@@ -62,7 +62,6 @@ internal class GlesTerminalSurfaceView(
         surface.detachView(this)
         // Queue while the GLSurfaceView still owns this renderer, before pause.
         queueGlRelease()
-        surface.release()
         if (resumed) {
             onPause()
             resumed = false

@@ -42,6 +42,7 @@ class TerminalSessionBackend @JvmOverloads constructor(
     private var topRow = 0
     private var fullRefreshRequestedForSequence = -1L
     private var released = false
+    private val frameCallback = TerminalSession.FrameCallback { refresh() }
 
     fun setResizeDebounceMillis(millis: Long) {
         if (released) return
@@ -65,15 +66,13 @@ class TerminalSessionBackend @JvmOverloads constructor(
     override fun attach(listener: TerminalBackendListener) {
         if (released) return
         this.listener = listener
-        val previousSequence = currentFrame()?.sequence
+        session.addFrameCallback(frameCallback)
         refresh()
-        val currentFrame = currentFrame()
-        if (currentFrame != null && currentFrame.sequence == previousSequence) {
-            listener.onFrameInvalidated()
-        }
+        currentFrame()?.let { listener.onFrameInvalidated() }
     }
 
     override fun detach() {
+        session.removeFrameCallback(frameCallback)
         listener = null
     }
 
@@ -93,7 +92,11 @@ class TerminalSessionBackend @JvmOverloads constructor(
                 }
                 TerminalSessionFrameStore.ApplyResult.NEEDS_FULL_REFRESH ->
                     requestFullRefresh(frameDelta.frameSequence)
-                TerminalSessionFrameStore.ApplyResult.IGNORED -> Unit
+                TerminalSessionFrameStore.ApplyResult.IGNORED -> {
+                    if (frameStore.currentFrame() != null) {
+                        listener?.onFrameInvalidated()
+                    }
+                }
             }
         } catch (error: IllegalArgumentException) {
             recoverFromFrameError(frameDelta.frameSequence, error)
@@ -146,6 +149,7 @@ class TerminalSessionBackend @JvmOverloads constructor(
     override fun release() {
         if (released) return
         released = true
+        session.removeFrameCallback(frameCallback)
         listener = null
         resizeHandler.removeCallbacks(resizeRunnable)
         pendingResize = null

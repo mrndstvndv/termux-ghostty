@@ -139,7 +139,12 @@ private fun rememberTerminalBackend(
     }
     DisposableEffect(backend) {
         onBackendCreated(session, backend)
-        onDispose { onBackendReleased(session, backend) }
+        onDispose {
+            // This effect is keyed to the session backend, not the UI controller. A
+            // controller can be recreated while this session-scoped backend remains alive.
+            backend.release()
+            onBackendReleased(session, backend)
+        }
     }
     LaunchedEffect(backend, resizeDebounceMillis) {
         backend.setResizeDebounceMillis(resizeDebounceMillis)

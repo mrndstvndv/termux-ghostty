@@ -83,8 +83,8 @@ internal fun requiresComposeFrameUpdate(
  * Owns rendering, input/IME translation, selection gestures, links, scrolling,
  * focus, and accessibility seams. The backend stays neutral: all session
  * interaction goes through [TerminalBackend] commands and immutable
- * [TerminalFrame] snapshots. All resources are released when the canvas leaves
- * composition (release is idempotent).
+ * [TerminalFrame] snapshots. UI resources are released when the canvas leaves
+ * composition; the host retains backend ownership.
  */
 @Composable
 fun TerminalCanvas(

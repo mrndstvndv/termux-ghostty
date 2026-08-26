@@ -29,15 +29,19 @@ class TerminalSnapshotHandoffTest {
         assertNull(handoff.acquire())
         assertFalse(handoff.publish(testSnapshot(2L)))
         assertFalse(handoff.hasPending())
+        assertFalse(handoff.hasRetained())
     }
 
     @Test
-    fun aConsumedSnapshotRemainsImmutableToTheHandoff() {
+    fun aConsumedSnapshotRemainsRetainedForARecreatedRenderer() {
         val handoff = TerminalSnapshotHandoff()
         val snapshot = testSnapshot(7L)
 
         assertTrue(handoff.publish(snapshot))
         assertTrue(handoff.acquire() === snapshot)
+        assertTrue(handoff.hasRetained())
+        assertTrue(handoff.peekRetained() === snapshot)
+        assertTrue(handoff.acquireOrRetained() === snapshot)
         assertEquals(7L, snapshot.presentationRevision)
     }
 

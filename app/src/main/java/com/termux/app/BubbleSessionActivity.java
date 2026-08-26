@@ -41,6 +41,8 @@ import com.termux.terminal.TerminalSession;
 import com.termux.terminal.compose.ModifierKeyReader;
 import com.termux.terminal.compose.TerminalComposeView;
 import com.termux.terminal.compose.session.TerminalSessionBackend;
+import java.util.HashMap;
+import java.util.Map;
 
 public final class BubbleSessionActivity extends AppCompatActivity implements ServiceConnection {
 
@@ -69,6 +71,8 @@ public final class BubbleSessionActivity extends AppCompatActivity implements Se
     private static final float DEFAULT_EXTRA_KEYS_HEIGHT_DP = 37.5f;
 
     private static final String LOG_TAG = "BubbleSessionActivity";
+
+    private final Map<String, TerminalSessionBackend> mSessionBackends = new HashMap<>();
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -258,6 +262,11 @@ public final class BubbleSessionActivity extends AppCompatActivity implements Se
         closeTermuxActivityIfLaunchedFromBubble();
         super.onDestroy();
 
+        for (TerminalSessionBackend backend : mSessionBackends.values()) {
+            backend.release();
+        }
+        mSessionBackends.clear();
+
         if (mTermuxService != null) {
             mTermuxService.unregisterTerminalSessionClient(mTerminalSessionClient);
             mTermuxService = null;
@@ -307,7 +316,12 @@ public final class BubbleSessionActivity extends AppCompatActivity implements Se
             return;
         }
 
-        mTerminalView.setBackend(new TerminalSessionBackend(session));
+        TerminalSessionBackend backend = mSessionBackends.get(session.mHandle);
+        if (backend == null) {
+            backend = new TerminalSessionBackend(session);
+            mSessionBackends.put(session.mHandle, backend);
+        }
+        mTerminalView.setBackend(backend);
         setCurrentSession(session);
         mTerminalSessionClient.applyTerminalStyling();
         updateSessionTitle();
@@ -454,6 +468,11 @@ public final class BubbleSessionActivity extends AppCompatActivity implements Se
     }
 
     public void onSessionFinished() {
+        TerminalSession session = getCurrentSession();
+        if (session != null) {
+            TerminalSessionBackend backend = mSessionBackends.remove(session.mHandle);
+            if (backend != null) backend.release();
+        }
         finishActivityIfNotFinishing();
     }
 

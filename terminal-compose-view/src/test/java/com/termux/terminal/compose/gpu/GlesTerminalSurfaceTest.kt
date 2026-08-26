@@ -20,6 +20,18 @@ class GlesTerminalSurfaceTest {
     }
 
     @Test
+    fun retainedSnapshotSurvivesAConsumedPublication() {
+        val surface = GlesTerminalSurface()
+        val snapshot = testSnapshot(41L)
+
+        assertTrue(surface.publish(snapshot))
+        assertTrue(surface.acquireSnapshot() === snapshot)
+        assertTrue(surface.acquireSnapshot() === snapshot)
+
+        surface.release()
+    }
+
+    @Test
     fun aNewSurfaceAcceptsASequenceRestartFromANewTerminalOwner() {
         val oldSurface = GlesTerminalSurface()
         assertTrue(oldSurface.publish(testSnapshot(100L)))

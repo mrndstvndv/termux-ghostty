@@ -203,7 +203,11 @@ private suspend fun AwaitPointerEventScope.handleTerminalGesture(
                 initialVelocityPxPerSec = velocityY,
                 cellHeightPx = context.metrics.cellHeightPx
             )
+        } else {
+            context.controller.settleVisualScrollOffset()
         }
+    } else {
+        context.controller.settleVisualScrollOffset()
     }
 }
 

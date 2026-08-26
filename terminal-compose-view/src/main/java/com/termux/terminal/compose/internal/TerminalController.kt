@@ -80,7 +80,11 @@ internal class TerminalController(
     private var currentVisualScrollOffsetPx = 0f
     private var lastKnownCellHeightPx = 0f
     private var fractionalScrollAllowed: Boolean? = null
+    private var isDragging = false
     private var flingJob: Job? = null
+
+    private val isScrollActive: Boolean
+        get() = isDragging || flingJob != null
 
     private val cursorEffectState = CursorEffectState()
     private var cursorFramePending = false
@@ -231,6 +235,7 @@ internal class TerminalController(
     internal fun beginScrollGesture() {
         if (released) return
         cancelFling()
+        isDragging = true
         discreteScrollAccumulatorPx = 0f
         val frame = backend.currentFrame()
         if (frame != null) synchronizeFractionalScrollMode(frame)
@@ -285,48 +290,54 @@ internal class TerminalController(
         cellHeightPx: Float
     ) {
         cancelFling()
+        isDragging = false
         val frame = backend.currentFrame()
         if (!canLaunchFling(initialVelocityPxPerSec, cellHeightPx, frame)) return
 
         flingJob = coroutineScope.launch {
-            var velocity = initialVelocityPxPerSec
-            var lastFrameTimeNanos = 0L
-            val frictionMultiplier = 4.2f
+            try {
+                var velocity = initialVelocityPxPerSec
+                var lastFrameTimeNanos = 0L
+                val frictionMultiplier = 4.2f
 
-            while (isActive && abs(velocity) > 30f) {
-                withFrameNanos { frameTimeNanos ->
-                    if (lastFrameTimeNanos != 0L) {
-                        val dt = ((frameTimeNanos - lastFrameTimeNanos) / 1_000_000_000f).coerceIn(0.001f, 0.05f)
-                        val deltaPx = velocity * dt
-                        velocity *= exp(-frictionMultiplier * dt)
-                        val deltaRows = applyScrollDelta(deltaPx, cellHeightPx)
-                        if (deltaRows != 0) {
-                            submit(
-                                TerminalCommand.Scroll(
-                                    rowsDown = -deltaRows,
-                                    xPx = 0f,
-                                    yPx = 0f,
-                                    geometry = TerminalPointerGeometry(
-                                        cellWidthPx = 1f,
-                                        cellHeightPx = cellHeightPx,
-                                        contentTopPx = 0f,
-                                        viewportWidthPx = 1,
-                                        viewportHeightPx = 1
+                while (isActive && abs(velocity) > 30f) {
+                    withFrameNanos { frameTimeNanos ->
+                        if (lastFrameTimeNanos != 0L) {
+                            val dt = ((frameTimeNanos - lastFrameTimeNanos) / 1_000_000_000f).coerceIn(0.001f, 0.05f)
+                            val deltaPx = velocity * dt
+                            velocity *= exp(-frictionMultiplier * dt)
+                            val deltaRows = applyScrollDelta(deltaPx, cellHeightPx)
+                            if (deltaRows != 0) {
+                                submit(
+                                    TerminalCommand.Scroll(
+                                        rowsDown = -deltaRows,
+                                        xPx = 0f,
+                                        yPx = 0f,
+                                        geometry = TerminalPointerGeometry(
+                                            cellWidthPx = 1f,
+                                            cellHeightPx = cellHeightPx,
+                                            contentTopPx = 0f,
+                                            viewportWidthPx = 1,
+                                            viewportHeightPx = 1
+                                        )
                                     )
                                 )
-                            )
+                            }
                         }
+                        lastFrameTimeNanos = frameTimeNanos
                     }
-                    lastFrameTimeNanos = frameTimeNanos
                 }
+            } finally {
+                flingJob = null
+                settleVisualScrollOffset()
             }
-            flingJob = null
         }
     }
 
     /** Settles presentation-only motion before hit-testing or a new gesture. */
     internal fun settleVisualScrollOffset() {
         if (released) return
+        isDragging = false
         cancelFling()
         discreteScrollAccumulatorPx = 0f
         val frame = backend.currentFrame()
@@ -359,7 +370,12 @@ internal class TerminalController(
     fun selectedText(selection: TerminalSelection): String = backend.selectedText(selection)
 
     /** Submits an input or navigation command to the backend. */
-    fun submit(command: TerminalCommand): TerminalCommandResult = backend.submit(command)
+    fun submit(command: TerminalCommand): TerminalCommandResult {
+        if (command !is TerminalCommand.Scroll) {
+            settleVisualScrollOffset()
+        }
+        return backend.submit(command)
+    }
 
     /** Captures cursor movement from one complete frame for a renderer thread. */
     internal fun captureCursorEffectSnapshot(
@@ -378,8 +394,15 @@ internal class TerminalController(
         if (frame != null) {
             synchronizeFractionalScrollMode(frame)
             if (canUseFractionalScroll(frame) && lastKnownCellHeightPx > 0f) {
-                val nextOffset = ((frame.topRow.toDouble() - desiredTopRowF) * lastKnownCellHeightPx).toFloat()
-                updateVisualScrollOffset(nextOffset, notify = false)
+                val rowDiscrepancy = frame.topRow.toDouble() - desiredTopRowF
+                if (!isScrollActive || abs(rowDiscrepancy) > 1.5) {
+                    desiredTopRowF = frame.topRow.toDouble()
+                    lastSubmittedTopRow = frame.topRow
+                    updateVisualScrollOffset(0f, notify = false)
+                } else {
+                    val nextOffset = (rowDiscrepancy * lastKnownCellHeightPx).toFloat()
+                    updateVisualScrollOffset(nextOffset, notify = false)
+                }
             }
         }
         contentVersion++

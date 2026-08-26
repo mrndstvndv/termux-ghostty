@@ -80,6 +80,25 @@ class TerminalControllerTest {
     }
 
     @Test
+    fun externalViewportJumpResetsVisualOffsetAndPreventsScreenDrift() {
+        val initialFrame = completeFrame(columns = 80, rows = 24, transcriptRows = 100, topRow = -50)
+        val backend = RecordingBackend(initialFrame)
+        val controller = testController(backend)
+        controller.onFrameInvalidated()
+        controller.beginScrollGesture()
+        controller.applyScrollDelta(deltaPx = 6f, cellHeightPx = 16f)
+        controller.settleVisualScrollOffset()
+
+        // User types text command, which jumps viewport to bottom
+        controller.submit(TerminalCommand.Text("a"))
+        val jumpedFrame = completeFrame(columns = 80, rows = 24, transcriptRows = 100, topRow = 0)
+        backend.publishedFrame = jumpedFrame
+        controller.onFrameInvalidated()
+
+        assertEquals(0f, controller.visualScrollOffsetPx, 0f)
+    }
+
+    @Test
     fun fractionalScrollIsDisabledForMouseTrackingFrames() {
         val frame = completeFrame(
             columns = 80,
@@ -325,10 +344,11 @@ private fun completeFrame(
     columns: Int,
     rows: Int,
     modes: TerminalModes = TerminalModes(false, false, false, false, false),
-    transcriptRows: Int = rows
+    transcriptRows: Int = rows,
+    topRow: Int = 0
 ): TerminalFrame = TerminalFrame(
     sequence = 1L,
-    viewport = TerminalViewport(0, rows, columns, transcriptRows),
+    viewport = TerminalViewport(topRow, rows, columns, transcriptRows),
     cursor = TerminalCursor(0, 0, false, TerminalCursor.STYLE_BLOCK),
     modes = modes,
     palette = TerminalPalette.of(IntArray(259)),
@@ -347,7 +367,7 @@ private fun completeFrame(
 )
 
 private class RecordingBackend(
-    private val publishedFrame: TerminalFrame? = null,
+    var publishedFrame: TerminalFrame? = null,
     private val notifyOnRefresh: Boolean = false
 ) : TerminalBackend {
     val resizes = mutableListOf<TerminalSize>()

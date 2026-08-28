@@ -320,6 +320,8 @@ private fun WorkspaceListItem(
  * https://github.com/simple-icons/simple-icons/blob/develop/icons/openjdk.svg
  * The Bun mark is sourced from Simple Icons (CC0 1.0):
  * https://github.com/simple-icons/simple-icons/blob/develop/icons/bun.svg
+ * The Git mark is sourced from Simple Icons (CC0 1.0):
+ * https://github.com/simple-icons/simple-icons/blob/develop/icons/git.svg
  * The fx mark is sourced from https://fx.sh/favicon.png.
  */
 @Suppress("CyclomaticComplexMethod")
@@ -333,6 +335,7 @@ private fun agentIconResource(agent: String?): Int? = when (agent?.lowercase(Loc
     "cursor" -> R.drawable.agent_cursor
     "droid" -> R.drawable.agent_droid
     "fx" -> R.drawable.agent_fx
+    "git", "lazygit" -> R.drawable.agent_git
     "grok" -> R.drawable.agent_grok
     "hermes" -> R.drawable.agent_hermes
     "kimi" -> R.drawable.agent_kimi
@@ -367,6 +370,7 @@ private fun processIconResource(processName: String?): Int? = when (
     "fx" -> R.drawable.agent_fx
     "java", "javac", "openjdk" -> R.drawable.agent_java
     "bun", "bunx" -> R.drawable.agent_bun
+    "git", "lazygit", "gitui", "tig" -> R.drawable.agent_git
     else -> null
 }
 

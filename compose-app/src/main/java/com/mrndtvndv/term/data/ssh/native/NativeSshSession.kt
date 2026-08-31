@@ -114,8 +114,10 @@ class NativeSshSession : SshSession {
         return withContext(Dispatchers.IO) {
             synchronized(lock) {
                 val handle = nativeSessionHandle
-                if (handle == 0L) ""
-                else GhosttyNative.nativeSshExec(handle, command) ?: ""
+                check(handle != 0L) { "SSH session is not connected" }
+                checkNotNull(GhosttyNative.nativeSshExec(handle, command)) {
+                    "SSH command execution failed"
+                }
             }
         }
     }

@@ -738,6 +738,46 @@ fn newJStringFromUtf8(env: *c.JNIEnv, utf8: []const u8) c.jstring {
     return env.*.*.NewString.?(env, if (units.items.len == 0) null else units.items.ptr, @intCast(units.items.len));
 }
 
+fn throwJavaRuntimeException(env: *c.JNIEnv, message: []const u8) void {
+    const exception_class = env.*.*.FindClass.?(env, "java/lang/IllegalStateException") orelse return;
+    defer env.*.*.DeleteLocalRef.?(env, exception_class);
+    const message_c = native_allocator.dupeZ(u8, message) catch return;
+    defer native_allocator.free(message_c);
+    _ = env.*.*.ThrowNew.?(env, exception_class, message_c.ptr);
+}
+
+fn throwSshCommandFailure(
+    env: *c.JNIEnv,
+    exit_status: c_int,
+    error_output: []const u8,
+    output: []const u8,
+) void {
+    const error_detail = std.mem.trim(u8, error_output, " \t\r\n");
+    if (error_detail.len > 0) {
+        throwJavaRuntimeException(env, error_detail);
+        return;
+    }
+
+    const output_detail = std.mem.trim(u8, output, " \t\r\n");
+    if (output_detail.len > 0) {
+        throwJavaRuntimeException(env, output_detail);
+        return;
+    }
+
+    if (exit_status > 0) {
+        var message: [64]u8 = undefined;
+        const formatted = std.fmt.bufPrint(
+            &message,
+            "Remote command exited with status {}",
+            .{exit_status},
+        ) catch "Remote command failed";
+        throwJavaRuntimeException(env, formatted);
+        return;
+    }
+
+    throwJavaRuntimeException(env, "SSH command execution failed");
+}
+
 pub export fn Java_com_termux_terminal_GhosttyNative_nativeSshInit(
     env: ?*c.JNIEnv,
     clazz: c.jclass,
@@ -921,7 +961,22 @@ pub export fn Java_com_termux_terminal_GhosttyNative_nativeSshExec(
     defer jni.*.*.ReleaseStringUTFChars.?(jni, command, chars);
     var output: std.ArrayList(u8) = .empty;
     defer output.deinit(native_allocator);
-    session.execCommand(std.mem.span(chars), &output) catch return null;
+    var error_output: std.ArrayList(u8) = .empty;
+    defer error_output.deinit(native_allocator);
+
+    const exit_status = session.execCommand(
+        std.mem.span(chars),
+        &output,
+        &error_output,
+    ) catch {
+        throwSshCommandFailure(jni, -1, error_output.items, output.items);
+        return null;
+    };
+    if (exit_status > 0) {
+        throwSshCommandFailure(jni, exit_status, error_output.items, output.items);
+        return null;
+    }
+
     return newJStringFromUtf8(jni, output.items);
 }
 

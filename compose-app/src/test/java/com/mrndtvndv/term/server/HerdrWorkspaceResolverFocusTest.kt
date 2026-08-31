@@ -50,8 +50,12 @@ class HerdrWorkspaceResolverFocusTest {
 
         assertTrue(result)
         assertEquals(1, commands.size)
-        assertTrue(commands[0].endsWith("herdr workspace focus 2"))
-        assertTrue(commands[0].startsWith("export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; "))
+        assertTrue(commands[0].contains("herdr workspace focus 2"))
+        assertTrue(
+            commands[0].startsWith(
+                "env PATH=\"\$PATH:\$HOME/.local/bin:\$HOME/.local/share/mise/shims:"
+            )
+        )
     }
 
     @Test
@@ -61,7 +65,7 @@ class HerdrWorkspaceResolverFocusTest {
 
         assertTrue(result)
         assertEquals(1, commands.size)
-        assertTrue(commands[0].endsWith("herdr tab focus t_2_3"))
+        assertTrue(commands[0].contains("herdr tab focus t_2_3"))
     }
 
     @Test
@@ -78,8 +82,8 @@ class HerdrWorkspaceResolverFocusTest {
 
         assertTrue(result)
         assertEquals(2, commands.size)
-        assertTrue(commands[0].endsWith("herdr tab list --workspace 2"))
-        assertTrue(commands[1].endsWith("herdr tab focus w0:t2"))
+        assertTrue(commands[0].contains("herdr tab list --workspace 2"))
+        assertTrue(commands[1].contains("herdr tab focus w0:t2"))
     }
 
     @Test
@@ -95,7 +99,7 @@ class HerdrWorkspaceResolverFocusTest {
 
         assertTrue(result)
         assertEquals(2, commands.size)
-        assertTrue(commands[1].endsWith("herdr workspace focus 2"))
+        assertTrue(commands[1].contains("herdr workspace focus 2"))
     }
 
     @Test
@@ -125,7 +129,7 @@ class HerdrWorkspaceResolverFocusTest {
         val agents = resolver { cmd -> commands += cmd; output }.listAgents()
 
         assertEquals(1, commands.size)
-        assertTrue(commands[0].endsWith("herdr agent list; herdr workspace list"))
+        assertTrue(commands[0].contains("herdr agent list && herdr workspace list"))
         assertEquals(1, agents.size)
         assertEquals("pi", agents[0].agent)
         assertEquals("morphe-disk", agents[0].name)
@@ -152,6 +156,25 @@ class HerdrWorkspaceResolverFocusTest {
     }
 
     @Test
+    fun `propagates workspace list command failures`() = runTest {
+        val expected = IllegalStateException("remote command failed")
+        val failure = runCatching {
+            resolver { throw expected }.listWorkspaceTabs()
+        }.exceptionOrNull()
+
+        assertEquals(expected, failure)
+    }
+
+    @Test
+    fun `treats workspace resolution command failures as unavailable`() = runTest {
+        val info = resolver {
+            throw IllegalStateException("remote command failed")
+        }.resolve("host", "user")
+
+        assertNull(info)
+    }
+
+    @Test
     fun `focuses an agent pane`() = runTest {
         val commands = mutableListOf<String>()
         val agent = HerdrWorkspaceResolver.HerdrAgentInfo(
@@ -173,7 +196,10 @@ class HerdrWorkspaceResolverFocusTest {
 
         assertTrue(result)
         assertEquals(1, commands.size)
-        assertTrue(commands[0].endsWith("herdr agent focus 'w0:p2'"))
+        assertTrue(
+            commands[0].contains("herdr agent focus") &&
+                commands[0].contains("w0:p2")
+        )
     }
 
     @Test
@@ -229,7 +255,10 @@ class HerdrWorkspaceResolverFocusTest {
         }.listWorkspaceTabs()
 
         assertEquals(2, commands.size)
-        assertTrue(commands[1].contains("herdr pane process-info --pane 'w0:p1'"))
+        assertTrue(
+            commands[1].contains("herdr pane process-info --pane") &&
+                commands[1].contains("w0:p1")
+        )
         val idlePane = workspaces[0].tabs[0].panes.first { it.paneId == "w0:p1" }
         assertEquals("nvim", idlePane.processName)
         assertEquals("nvim", idlePane.title)

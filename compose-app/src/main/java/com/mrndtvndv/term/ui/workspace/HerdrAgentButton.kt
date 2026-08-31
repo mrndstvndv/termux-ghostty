@@ -323,6 +323,8 @@ private fun WorkspaceListItem(
  * The Git mark is sourced from Simple Icons (CC0 1.0):
  * https://github.com/simple-icons/simple-icons/blob/develop/icons/git.svg
  * The fx mark is sourced from https://fx.sh/favicon.png.
+ * The Cargo process icon is an original generic crate mark and does not reproduce
+ * the Rust/Cargo trademarks.
  */
 @Suppress("CyclomaticComplexMethod")
 private fun agentIconResource(agent: String?): Int? = when (agent?.lowercase(Locale.ROOT)) {
@@ -370,6 +372,7 @@ private fun processIconResource(processName: String?): Int? = when (
     "fx" -> R.drawable.agent_fx
     "java", "javac", "openjdk" -> R.drawable.agent_java
     "bun", "bunx" -> R.drawable.agent_bun
+    "cargo", "rustc" -> R.drawable.agent_cargo
     "git", "lazygit", "gitui", "tig" -> R.drawable.agent_git
     else -> null
 }

@@ -9,6 +9,10 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
+private const val HerdrCommandPrefix =
+    "env PATH=\"\$PATH:\$HOME/.local/bin:\$HOME/.local/share/mise/shims:" +
+        "/home/linuxbrew/.linuxbrew/bin:/opt/homebrew/bin:/usr/local/bin\" sh -c "
+
 /**
  * Parses Herdr workspace, pane, and agent command output.
  * Pure logic — no Android dependencies, testable with sample JSON.
@@ -28,10 +32,11 @@ class HerdrWorkspaceResolver(
         host: String,
         username: String,
     ): WorkspaceInfo? {
-        val output = execCommand(
-            "export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; " +
-                "herdr workspace list; herdr pane list"
-        )
+        val output = runCatching {
+            execCommand(
+                herdrCommand("herdr workspace list && herdr pane list")
+            )
+        }.getOrNull() ?: return null
         return parseHerdrOutput(output, host, username)
     }
 
@@ -146,20 +151,19 @@ class HerdrWorkspaceResolver(
      */
     suspend fun focusFromBody(body: String?): Boolean {
         val target = parseFocusTarget(body) ?: return false
-        val prefix = "export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; "
-        execCommand(prefix + buildFocusCommand(target, prefix))
+        execCommand(herdrCommand(buildFocusCommand(target)))
         return true
     }
 
     suspend fun listAgents(): List<HerdrAgentInfo> {
-        val prefix = "export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; "
-        return parseAgentList(execCommand(prefix + "herdr agent list; herdr workspace list"))
+        return parseAgentList(
+            execCommand(herdrCommand("herdr agent list && herdr workspace list"))
+        )
     }
 
     suspend fun listWorkspaceTabs(): List<HerdrWorkspaceNode> {
-        val prefix = "export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; "
         val workspaces = parseWorkspaceTabs(
-            execCommand(prefix + "herdr workspace list; herdr pane list")
+            execCommand(herdrCommand("herdr workspace list && herdr pane list"))
         )
         val idlePaneIds = workspaces.asSequence()
             .flatMap { it.tabs }
@@ -170,10 +174,13 @@ class HerdrWorkspaceResolver(
         val workspacesWithProcessNames = if (idlePaneIds.isEmpty()) {
             workspaces
         } else {
-            val processQuery = prefix + idlePaneIds.joinToString("; ") { paneId ->
+            val processQuery = idlePaneIds.joinToString(" && ") { paneId ->
                 "herdr pane process-info --pane ${shellQuote(paneId)}"
             }
-            attachProcessNames(workspaces, parseProcessNames(execCommand(processQuery)))
+            attachProcessNames(
+                workspaces,
+                parseProcessNames(execCommand(herdrCommand(processQuery))),
+            )
         }
         val sessionReferences = workspacesWithProcessNames.asSequence()
             .flatMap { it.tabs }
@@ -186,7 +193,9 @@ class HerdrWorkspaceResolver(
         if (sessionQueries.isEmpty()) return workspacesWithProcessNames
         return attachAgentSessionNames(
             workspacesWithProcessNames,
-            parseAgentSessionNames(execCommand(prefix + sessionQueries.joinToString("; "))),
+            parseAgentSessionNames(
+                execCommand(herdrCommand(sessionQueries.joinToString("; ")))
+            ),
         )
     }
 
@@ -204,22 +213,19 @@ class HerdrWorkspaceResolver(
      */
     suspend fun closePane(paneId: String): Boolean {
         val validPaneId = paneId.takeIf { it.isNotBlank() } ?: return false
-        val prefix = "export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; "
-        execCommand(prefix + "herdr pane close ${shellQuote(validPaneId)}")
+        execCommand(herdrCommand("herdr pane close ${shellQuote(validPaneId)}"))
         return true
     }
 
     private suspend fun focusTabId(tabId: String): Boolean {
         val validTabId = tabId.takeIf { it.isNotBlank() } ?: return false
-        val prefix = "export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; "
-        execCommand(prefix + "herdr tab focus $validTabId")
+        execCommand(herdrCommand("herdr tab focus $validTabId"))
         return true
     }
 
     private suspend fun focusAgentPane(paneId: String): Boolean {
         val validPaneId = paneId.takeIf { it.isNotBlank() } ?: return false
-        val prefix = "export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; "
-        val output = execCommand(prefix + "herdr agent focus ${shellQuote(validPaneId)}")
+        val output = execCommand(herdrCommand("herdr agent focus ${shellQuote(validPaneId)}"))
         return output.lineSequence().mapNotNull { parseHerdrLine(it) }.any { (id, result) ->
             if (id != "cli:agent:focus") return@any false
             if (result["type"]?.jsonPrimitive?.contentOrNull != "agent_info") return@any false
@@ -230,7 +236,7 @@ class HerdrWorkspaceResolver(
         }
     }
 
-    private suspend fun buildFocusCommand(target: HerdrFocusTarget, prefix: String): String {
+    private suspend fun buildFocusCommand(target: HerdrFocusTarget): String {
         val tabLabel = target.tabLabel
         if (tabLabel == null) {
             return "herdr workspace focus ${target.workspaceNumber}"
@@ -241,7 +247,9 @@ class HerdrWorkspaceResolver(
             return "herdr tab focus t_${target.workspaceNumber}_$tabNumber"
         }
         // Custom-named tab: resolve tab id via tab list.
-        val output = execCommand(prefix + "herdr tab list --workspace ${target.workspaceNumber}")
+        val output = execCommand(
+            herdrCommand("herdr tab list --workspace ${target.workspaceNumber}")
+        )
         val tabId = findTabIdByLabel(output, tabLabel)
         return tabId?.let { "herdr tab focus $it" }
             ?: "herdr workspace focus ${target.workspaceNumber}"
@@ -611,6 +619,9 @@ class HerdrWorkspaceResolver(
         val number: Int?,
         val order: Int,
     )
+
+    private fun herdrCommand(command: String): String =
+        HerdrCommandPrefix + shellQuote(command)
 
     private fun shellQuote(value: String): String =
         "'" + value.replace("'", "'\\''") + "'"

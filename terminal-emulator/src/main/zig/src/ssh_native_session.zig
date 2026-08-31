@@ -123,6 +123,8 @@ pub const SshNativeSession = struct {
     const ExecContext = struct {
         command: []const u8,
         output: *std.ArrayList(u8),
+        error_output: *std.ArrayList(u8),
+        exit_status: c_int = -1,
         success: bool = false,
     };
 
@@ -481,9 +483,21 @@ pub const SshNativeSession = struct {
         return result;
     }
 
-    pub fn execCommand(self: *SshNativeSession, command: []const u8, output: *std.ArrayList(u8)) !void {
-        var context = ExecContext{ .command = command, .output = output };
-        if (!self.dispatchSync(execCommandCallback, &context) or !context.success) return error.CommandExecFailed;
+    pub fn execCommand(
+        self: *SshNativeSession,
+        command: []const u8,
+        output: *std.ArrayList(u8),
+        error_output: *std.ArrayList(u8),
+    ) !c_int {
+        var context = ExecContext{
+            .command = command,
+            .output = output,
+            .error_output = error_output,
+        };
+        if (!self.dispatchSync(execCommandCallback, &context) or !context.success) {
+            return error.CommandExecFailed;
+        }
+        return context.exit_status;
     }
 
     pub fn sftpInit(self: *SshNativeSession) ?*anyopaque {
@@ -848,11 +862,20 @@ pub const SshNativeSession = struct {
 
     fn execCommandCallback(self: *SshNativeSession, command: *Command) void {
         const context: *ExecContext = @ptrCast(@alignCast(command.context.?));
-        self.execCommandOwned(context.command, context.output) catch return;
+        context.exit_status = self.execCommandOwned(
+            context.command,
+            context.output,
+            context.error_output,
+        ) catch return;
         context.success = true;
     }
 
-    fn execCommandOwned(self: *SshNativeSession, command: []const u8, output: *std.ArrayList(u8)) !void {
+    fn execCommandOwned(
+        self: *SshNativeSession,
+        command: []const u8,
+        output: *std.ArrayList(u8),
+        error_output: *std.ArrayList(u8),
+    ) !c_int {
         const cmd_c = try self.allocator.dupeZ(u8, command);
         defer self.allocator.free(cmd_c);
 
@@ -878,19 +901,64 @@ pub const SshNativeSession = struct {
             return error.CommandExecFailed;
         }
 
-        var buffer: [4096]u8 = undefined;
-        while (true) {
-            const result = c.libssh2_channel_read(exec_channel, &buffer, buffer.len);
-            if (result > 0) {
-                try output.appendSlice(self.allocator, buffer[0..@intCast(result)]);
-            } else if (result == c.LIBSSH2_ERROR_EAGAIN) {
+        var stdout_done = false;
+        var stderr_done = false;
+        var stdout_buffer: [4096]u8 = undefined;
+        var stderr_buffer: [4096]u8 = undefined;
+        while (!stdout_done or !stderr_done) {
+            var made_progress = false;
+
+            if (!stdout_done) {
+                while (true) {
+                    const result = c.libssh2_channel_read(
+                        exec_channel,
+                        &stdout_buffer,
+                        stdout_buffer.len,
+                    );
+                    if (result > 0) {
+                        try output.appendSlice(self.allocator, stdout_buffer[0..@intCast(result)]);
+                        made_progress = true;
+                    } else if (result == c.LIBSSH2_ERROR_EAGAIN) {
+                        break;
+                    } else if (result == 0 or result == c.LIBSSH2_ERROR_CHANNEL_CLOSED) {
+                        stdout_done = true;
+                        break;
+                    } else {
+                        return error.ReadFailed;
+                    }
+                }
+            }
+
+            if (!stderr_done) {
+                while (true) {
+                    const result = c.libssh2_channel_read_stderr(
+                        exec_channel,
+                        &stderr_buffer,
+                        stderr_buffer.len,
+                    );
+                    if (result > 0) {
+                        try error_output.appendSlice(
+                            self.allocator,
+                            stderr_buffer[0..@intCast(result)],
+                        );
+                        made_progress = true;
+                    } else if (result == c.LIBSSH2_ERROR_EAGAIN) {
+                        break;
+                    } else if (result == 0 or result == c.LIBSSH2_ERROR_CHANNEL_CLOSED) {
+                        stderr_done = true;
+                        break;
+                    } else {
+                        return error.ReadFailed;
+                    }
+                }
+            }
+
+            if ((!stdout_done or !stderr_done) and !made_progress) {
                 waitSocket(self.socket_fd, self.session) catch return error.ReadFailed;
-            } else if (result == 0 or result == c.LIBSSH2_ERROR_CHANNEL_CLOSED) {
-                break;
-            } else {
-                return error.ReadFailed;
             }
         }
+
+        return c.libssh2_channel_get_exit_status(exec_channel);
     }
 
     fn sftpInitCallback(self: *SshNativeSession, command: *Command) void {

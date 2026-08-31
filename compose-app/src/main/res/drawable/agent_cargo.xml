@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Original generic crate mark for Cargo/rustc processes.
+  This does not reproduce the Rust or Cargo trademarks.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:fillType="evenOdd"
+        android:pathData="M2,6 L12,2 L22,6 L22,18 L12,22 L2,18 Z
+            M12,4.2 L4.2,7.3 L12,10.4 L19.8,7.3 Z
+            M4,8.9 L10.8,11.6 L10.8,19.6 L4,16.9 Z
+            M13.2,11.6 L20,8.9 L20,16.9 L13.2,19.6 Z" />
+</vector>

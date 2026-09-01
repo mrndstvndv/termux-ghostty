@@ -7,7 +7,7 @@ import kotlinx.serialization.json.Json
 
 class ServerRepository(
     private val prefs: SharedPreferences,
-) {
+) : ServerRepositoryAccess {
     private val json = Json {
         ignoreUnknownKeys = true
         encodeDefaults = true
@@ -17,7 +17,7 @@ class ServerRepository(
         private const val KEY_SAVED_SERVERS = "saved_servers_v2"
     }
 
-    fun loadAll(): List<ServerConfig> {
+    override fun loadAll(): List<ServerConfig> {
         val raw = prefs.getString(KEY_SAVED_SERVERS, null) ?: return emptyList()
         return try {
             json.decodeFromString<List<ServerConfig>>(raw)
@@ -34,21 +34,21 @@ class ServerRepository(
         prefs.edit().putString(KEY_SAVED_SERVERS, json.encodeToString(servers)).apply()
     }
 
-    fun add(config: ServerConfig) {
+    override fun add(config: ServerConfig) {
         val list = loadAll().toMutableList()
         list.add(config)
         saveAll(list)
     }
 
-    fun remove(id: String) {
+    override fun remove(id: String) {
         val list = loadAll().filter { it.id != id }
         saveAll(list)
     }
 
-    fun update(config: ServerConfig) {
+    override fun update(config: ServerConfig) {
         val list = loadAll().map { if (it.id == config.id) config else it }
         saveAll(list)
     }
 
-    fun get(id: String): ServerConfig? = loadAll().find { it.id == id }
+    override fun get(id: String): ServerConfig? = loadAll().find { it.id == id }
 }

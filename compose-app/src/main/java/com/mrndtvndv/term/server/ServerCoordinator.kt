@@ -16,7 +16,7 @@ class ServerCoordinator(
     private val serverManager: ServerManager,
     private val serverRepository: ServerRepository,
     private val transferManager: SftpTransferManager? = SftpTransferManager.current,
-) {
+) : ServerCoordinatorAccess {
     private val sftpViewModels = mutableMapOf<String, SftpViewModel>()
     private val reviewViewModels = mutableMapOf<String, ReviewViewModel?>()
     // Track in-flight connections to allow cancellation on disconnectAll
@@ -52,15 +52,15 @@ class ServerCoordinator(
         }
     }
 
-    fun getServer(id: String): Server? = serverManager.get(id)
+    override fun getServer(id: String): Server? = serverManager.get(id)
 
-    val activeIds: Set<String> get() = serverManager.activeIds
+    override val activeIds: Set<String> get() = serverManager.activeIds
 
-    fun getSftpViewModel(id: String): SftpViewModel? = sftpViewModels[id]
+    override fun getSftpViewModel(id: String): SftpViewModel? = sftpViewModels[id]
 
-    fun getReviewViewModel(id: String): ReviewViewModel? = reviewViewModels[id]
+    override fun getReviewViewModel(id: String): ReviewViewModel? = reviewViewModels[id]
 
-    fun disconnect(id: String) {
+    override fun disconnect(id: String) {
         connectJobs[id]?.cancel()
         connectJobs.remove(id)
         serverManager.disconnect(id)
@@ -77,26 +77,28 @@ class ServerCoordinator(
     }
 
     /** Returns new workspace dir if workspace changed, null otherwise. */
-    suspend fun refreshWorkspace(serverId: String): WorkspaceChange? {
+    override suspend fun refreshWorkspace(serverId: String): WorkspaceChange? {
+        val tracker = workspaceTracker(serverId) ?: return null
+        val result = tracker.sync()
+        if (result !is WorkspaceTracker.SyncResult.WorkspaceChanged) return null
+        sftpViewModels[serverId]?.navigateTo(result.workspaceDir)
+        return WorkspaceChange(
+            workspaceDir = result.workspaceDir,
+        )
+    }
+
+    private fun workspaceTracker(serverId: String): WorkspaceTracker? {
         val server = serverManager.get(serverId) ?: return null
         // Local sessions have no workspace tracker — nothing to refresh
         if (server.config.isLocal) return null
-        val tracker = (server.workspaceState as? WorkspaceState.Tracked)?.tracker
-            ?: return null
-        val result = tracker.sync()
-        return if (result is WorkspaceTracker.SyncResult.WorkspaceChanged) {
-            sftpViewModels[serverId]?.navigateTo(result.workspaceDir)
-            WorkspaceChange(
-                workspaceDir = result.workspaceDir,
-            )
-        } else null
+        return (server.workspaceState as? WorkspaceState.Tracked)?.tracker
     }
 
     /**
      * Notify the tracker that the user navigated in SFTP.
      * Called by SftpViewModel.onPathChanged (wired during VM creation).
      */
-    fun onDirectoryChanged(serverId: String, path: String) {
+    override fun onDirectoryChanged(serverId: String, path: String) {
         val server = serverManager.get(serverId) ?: return
         (server.workspaceState as? WorkspaceState.Tracked)?.tracker?.onDirectoryChanged(path)
     }

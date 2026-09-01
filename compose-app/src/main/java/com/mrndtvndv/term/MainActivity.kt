@@ -197,7 +197,7 @@ class MainActivity : ComponentActivity(), SessionHost {
         val serverId = intent?.getStringExtra(AppSessionManager.EXTRA_NOTIFICATION_SERVER_ID) ?: return
         intent.removeExtra(AppSessionManager.EXTRA_NOTIFICATION_SERVER_ID)
         val body = intent.getStringExtra(AppSessionManager.EXTRA_NOTIFICATION_BODY)
-        viewModel.focusHerdrNotification(serverId, body)
+        viewModel.focusTerminalNotification(serverId, body)
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {

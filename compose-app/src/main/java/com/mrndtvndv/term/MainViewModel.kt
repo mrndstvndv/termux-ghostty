@@ -6,11 +6,11 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.mrndtvndv.term.data.prefs.LastSessionStore
 import com.mrndtvndv.term.domain.ServerConfig
-import com.mrndtvndv.term.server.AppSessionManager
+import com.mrndtvndv.term.server.AppSessionManagerAccess
 import com.mrndtvndv.term.server.HerdrWorkspaceResolver
 import com.mrndtvndv.term.server.Server
-import com.mrndtvndv.term.server.ServerCoordinator
-import com.mrndtvndv.term.server.ServerRepository
+import com.mrndtvndv.term.server.ServerCoordinatorAccess
+import com.mrndtvndv.term.server.ServerRepositoryAccess
 import com.mrndtvndv.term.ui.notification.NotificationState
 import com.mrndtvndv.term.ui.prefs.UserPrefs
 import com.mrndtvndv.term.ui.review.ReviewViewModel
@@ -33,14 +33,14 @@ sealed interface ScreenState {
 
 @Suppress("TooManyFunctions") // session restore helpers pushed past the 20-function threshold
 class MainViewModel(
-    private val sessionManager: AppSessionManager,
+    private val sessionManager: AppSessionManagerAccess,
     val userPrefs: UserPrefs,
     val notificationState: NotificationState,
     private val lastSessionStore: LastSessionStore,
 ) : ViewModel() {
 
-    private val coordinator: ServerCoordinator get() = sessionManager.coordinator
-    private val serverRepository: ServerRepository get() = sessionManager.serverRepository
+    private val coordinator: ServerCoordinatorAccess get() = sessionManager.coordinator
+    private val serverRepository: ServerRepositoryAccess get() = sessionManager.serverRepository
     private val herdrFrameSynchronizer = HerdrTerminalFrameSynchronizer { serverId ->
         coordinator.getServer(serverId)?.terminalSession?.requestGhosttyFullSnapshotRefresh()
     }
@@ -195,12 +195,22 @@ class MainViewModel(
     }
 
     /**
-     * Handle a tapped terminal notification: focus the herdr workspace (and tab,
-     * when identifiable) that produced it, using the notification body as the
-     * target. No-op when the server is gone or the body isn't a herdr context.
+     * Handle a tapped terminal notification by selecting its terminal session and,
+     * when available, focusing the Herdr target from the notification body.
      */
-    fun focusHerdrNotification(serverId: String?, body: String?) {
+    fun focusTerminalNotification(serverId: String?, body: String?) {
         val targetServerId = serverId ?: return
+        if (coordinator.getServer(targetServerId) != null) {
+            _uiState.value = _uiState.value.copy(
+                screen = ScreenState.TerminalWorkspace(targetServerId),
+                activeTab = WorkspaceTab.Terminal,
+            )
+            persistLastSession()
+        } else {
+            _uiState.value = _uiState.value.copy(activeTab = WorkspaceTab.Terminal)
+            connect(targetServerId)
+        }
+
         val resolver = herdrResolver(targetServerId) ?: return
         viewModelScope.launch {
             herdrFrameSynchronizer.focus(targetServerId) { resolver.focusFromBody(body) }
@@ -208,7 +218,9 @@ class MainViewModel(
     }
 
     private fun herdrResolver(serverId: String): HerdrWorkspaceResolver? {
-        val sshSession = coordinator.getServer(serverId)?.sshSession ?: return null
+        val server = coordinator.getServer(serverId)
+        val sshSession = server?.sshSession
+        if (server == null || !server.config.herdrEnabled || sshSession == null) return null
         return HerdrWorkspaceResolver { cmd -> sshSession.execCommand(cmd) }
     }
 

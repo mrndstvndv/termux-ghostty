@@ -27,12 +27,12 @@ import java.lang.ref.WeakReference
  * forwards input; the manager keeps connections, service binding and
  * notifications independent of the UI.
  */
-class AppSessionManager private constructor(context: Context) {
+class AppSessionManager private constructor(context: Context) : AppSessionManagerAccess {
 
     private val appContext = context.applicationContext
     private val prefs by lazy { appContext.getSharedPreferences("ssh_prefs", Context.MODE_PRIVATE) }
 
-    val serverRepository by lazy { ServerRepository(prefs) }
+    override val serverRepository by lazy { ServerRepository(prefs) }
     private val persistence by lazy { SharedPreferencesWorkspacePersistence(prefs) }
 
     private val serverFactory by lazy {
@@ -45,7 +45,7 @@ class AppSessionManager private constructor(context: Context) {
         )
     }
     private val serverManager by lazy { ServerManager(serverFactory) }
-    val coordinator by lazy {
+    override val coordinator by lazy {
         ServerCoordinator(
             serverManager = serverManager,
             serverRepository = serverRepository,
@@ -55,7 +55,7 @@ class AppSessionManager private constructor(context: Context) {
 
     private val finishedSessions = SessionFinishedEvents()
     /** Emits a server id whenever one of its sessions finished on its own. */
-    val sessionFinished = finishedSessions.flow
+    override val sessionFinished = finishedSessions.flow
     private val terminalProgress = TerminalProgressStore()
 
     private var hostRef: WeakReference<SessionHost>? = null
@@ -66,12 +66,12 @@ class AppSessionManager private constructor(context: Context) {
         hostRef = host?.let { WeakReference(it) }
     }
 
-    fun observeTerminalProgress(session: TerminalSession): StateFlow<TerminalProgress?> =
+    override fun observeTerminalProgress(session: TerminalSession): StateFlow<TerminalProgress?> =
         terminalProgress.observe(session)
 
     // ── Connection lifecycle ─────────────────────────────────────────
 
-    suspend fun connect(id: String): Result<Server> = coordinator.connect(id)
+    override suspend fun connect(id: String): Result<Server> = coordinator.connect(id)
 
     fun disconnectAll() {
         coordinator.disconnectAll()

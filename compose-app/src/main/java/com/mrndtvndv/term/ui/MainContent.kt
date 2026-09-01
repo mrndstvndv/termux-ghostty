@@ -112,7 +112,11 @@ fun MainContent(
             }
             is ScreenState.TerminalWorkspace -> {
                 val serverId = (uiState.screen as ScreenState.TerminalWorkspace).serverId
-                if (navigator.backStack.lastOrNull() !is AppNavKey.TerminalWorkspace) {
+                val currentKey = navigator.backStack.lastOrNull()
+                if (currentKey !is AppNavKey.TerminalWorkspace || currentKey.serverId != serverId) {
+                    if (navigator.backStack.lastOrNull() !is AppNavKey.ServerList) {
+                        navigator.goBackToRoot()
+                    }
                     navigator.navigate(AppNavKey.TerminalWorkspace(serverId))
                 }
             }
@@ -392,7 +396,7 @@ fun MainContent(
                     onDismiss = { viewModel.notificationState.dismiss() },
                     onClick = {
                         notification?.let {
-                            viewModel.focusHerdrNotification(it.serverId, it.body)
+                            viewModel.focusTerminalNotification(it.serverId, it.body)
                         }
                         viewModel.notificationState.dismiss()
                     },

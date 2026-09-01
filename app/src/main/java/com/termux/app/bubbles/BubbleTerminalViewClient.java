@@ -114,6 +114,16 @@ public final class BubbleTerminalViewClient extends TermuxTerminalClientBase {
     }
 
     @Override
+    public boolean onCodePoint(int codePoint, boolean ctrlDown, TerminalSession session) {
+        if (!session.isRunning() && (codePoint == '\r' || codePoint == '\n' || codePoint == 13 || codePoint == 10 || (ctrlDown && codePoint == 106))) {
+            mActivity.finishActivityIfNotFinishing();
+            return true;
+        }
+
+        return false;
+    }
+
+    @Override
     public boolean onKeyDown(int keyCode, KeyEvent e, TerminalSession session) {
         if (keyCode != KeyEvent.KEYCODE_ENTER) return false;
         if (session == null) return false;

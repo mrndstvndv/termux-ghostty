@@ -379,6 +379,11 @@ public class TermuxTerminalViewClient extends TermuxTerminalClientBase {
 
     @Override
     public boolean onCodePoint(final int codePoint, boolean ctrlDown, TerminalSession session) {
+        if (!session.isRunning() && (codePoint == '\r' || codePoint == '\n' || codePoint == 13 || codePoint == 10 || (ctrlDown && codePoint == 106))) {
+            mTermuxTerminalSessionActivityClient.removeFinishedSession(session);
+            return true;
+        }
+
         if (mVirtualFnKeyDown) {
             int resultingKeyCode = -1;
             int resultingCodePoint = -1;
@@ -479,11 +484,6 @@ public class TermuxTerminalViewClient extends TermuxTerminalClientBase {
             }
             return true;
         } else if (ctrlDown) {
-            if (codePoint == 106 /* Ctrl+j or \n */ && !session.isRunning()) {
-                mTermuxTerminalSessionActivityClient.removeFinishedSession(session);
-                return true;
-            }
-
             List<KeyboardShortcut> shortcuts = mSessionShortcuts;
             if (shortcuts != null && !shortcuts.isEmpty()) {
                 int codePointLowerCase = Character.toLowerCase(codePoint);

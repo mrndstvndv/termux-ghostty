@@ -171,6 +171,12 @@ public final class BubbleSessionActivity extends AppCompatActivity implements Se
             }
 
             @Override
+            public boolean onCodePoint(int codePoint, boolean controlDown, boolean altDown) {
+                TerminalSession session = getCurrentSession();
+                return session != null && mTerminalViewClient.onCodePoint(codePoint, controlDown, session);
+            }
+
+            @Override
             public void onImeSessionClosed() {
                 mTerminalViewClient.onSoftKeyboardDismissed();
             }

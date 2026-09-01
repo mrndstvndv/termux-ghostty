@@ -97,6 +97,7 @@ jobs:
 
           echo "Verifying APK signatures (fail if unsigned)"
           export APK_DIR_PATH
+          export APK_BASENAME_PREFIX
           export ECTO_APK_PATH
           # Expanded by the nested Nix shell.
           # shellcheck disable=SC2016

@@ -58,34 +58,46 @@ jobs:
           export KEY_PASSWORD
           echo "Keystore file: $KEYSTORE_FILE (exists: $(test -f "$KEYSTORE_FILE" && echo yes || echo no), size: $(stat -c%s "$KEYSTORE_FILE" 2>/dev/null || stat -f%z "$KEYSTORE_FILE" 2>/dev/null || echo unknown))"
 
-          if ! nix develop --command ./gradlew assembleRelease --no-daemon; then
-            exit_on_error "Build failed for release."
+          if ! nix develop --command ./gradlew :app:assembleRelease --no-daemon; then
+            exit_on_error "Build failed for legacy app release."
+          fi
+
+          if ! nix develop --command ./gradlew :compose-app:assembleArm64Release --no-daemon; then
+            exit_on_error "Build failed for Ecto arm64-v8a release."
           fi
 
           APK_DIR_PATH="./app/build/outputs/apk/release"
           APK_BASENAME_PREFIX="termux_${TERMUX_APP_VERSION_NAME}"
+          ECTO_APK_BASENAME="ecto_${TERMUX_APP_VERSION_NAME}-arm64-v8a"
+          ECTO_APK_PATH="./compose-app/build/outputs/apk/arm64/release/${ECTO_APK_BASENAME}.apk"
 
-          echo "Validating APKs"
-          for abi in universal arm64-v8a armeabi-v7a x86_64 x86; do
+          echo "Validating Termux APKs"
+          for abi in arm64-v8a armeabi-v7a x86_64 x86; do
             if ! test -f "$APK_DIR_PATH/${APK_BASENAME_PREFIX}_$abi.apk"; then
               files_found="$(ls "$APK_DIR_PATH")"
               exit_on_error "Failed to find built APK at '$APK_DIR_PATH/${APK_BASENAME_PREFIX}_$abi.apk'. Files found: "$'\n'"$files_found"
             fi
           done
 
-          echo "Generating sha25sums file"
+          echo "Validating Ecto APK"
+          if ! test -f "$ECTO_APK_PATH"; then
+            files_found="$(ls ./compose-app/build/outputs/apk/arm64/release)"
+            exit_on_error "Failed to find built APK at '$ECTO_APK_PATH'. Files found: "$'\n'"$files_found"
+          fi
+
+          echo "Generating sha256sums file"
           if ! (cd "$APK_DIR_PATH"; sha256sum \
-            "${APK_BASENAME_PREFIX}_universal.apk" \
             "${APK_BASENAME_PREFIX}_arm64-v8a.apk" \
             "${APK_BASENAME_PREFIX}_armeabi-v7a.apk" \
             "${APK_BASENAME_PREFIX}_x86_64.apk" \
             "${APK_BASENAME_PREFIX}_x86.apk" \
             > "${APK_BASENAME_PREFIX}_sha256sums"); then
-            exit_on_error "Generate sha25sums failed for release."
+            exit_on_error "Generate sha256sums failed for release."
           fi
 
           echo "Verifying APK signatures (fail if unsigned)"
           export APK_DIR_PATH
+          export ECTO_APK_PATH
           # Expanded by the nested Nix shell.
           # shellcheck disable=SC2016
           if ! nix develop --command bash -c '
@@ -99,8 +111,12 @@ jobs:
               echo "apksigner not found in Android SDK"
               exit 1
             fi
-            for apk in "$APK_DIR_PATH"/*.apk ./compose-app/build/outputs/apk/*/release/*.apk; do
-              [ -f "$apk" ] || continue
+            for apk in \
+              "$APK_DIR_PATH/${APK_BASENAME_PREFIX}_arm64-v8a.apk" \
+              "$APK_DIR_PATH/${APK_BASENAME_PREFIX}_armeabi-v7a.apk" \
+              "$APK_DIR_PATH/${APK_BASENAME_PREFIX}_x86_64.apk" \
+              "$APK_DIR_PATH/${APK_BASENAME_PREFIX}_x86.apk" \
+              "$ECTO_APK_PATH"; do
               echo "Verifying $apk"
               "$apksigner" verify --verbose "$apk"
             done
@@ -110,13 +126,8 @@ jobs:
 
           echo "APK_DIR_PATH=$APK_DIR_PATH" >> $GITHUB_ENV
           echo "APK_BASENAME_PREFIX=$APK_BASENAME_PREFIX" >> $GITHUB_ENV
-
-      - name: Upload universal APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ env.APK_BASENAME_PREFIX }}_universal
-          path: ${{ env.APK_DIR_PATH }}/${{ env.APK_BASENAME_PREFIX }}_universal.apk
-          retention-days: 14
+          echo "ECTO_APK_BASENAME=$ECTO_APK_BASENAME" >> $GITHUB_ENV
+          echo "ECTO_APK_PATH=$ECTO_APK_PATH" >> $GITHUB_ENV
 
       - name: Upload arm64-v8a APK
         uses: actions/upload-artifact@v4
@@ -152,3 +163,11 @@ jobs:
           name: ${{ env.APK_BASENAME_PREFIX }}_sha256sums
           path: ${{ env.APK_DIR_PATH }}/${{ env.APK_BASENAME_PREFIX }}_sha256sums
           retention-days: 14
+
+      - name: Upload Ecto arm64-v8a APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ECTO_APK_BASENAME }}
+          path: ${{ env.ECTO_APK_PATH }}
+          retention-days: 14
+

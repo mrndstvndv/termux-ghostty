@@ -698,6 +698,7 @@ public final class TermuxService extends Service implements AppShell.AppShellCli
                 mSessionBubbleController.removeSessionBubble(termuxSession.getTerminalSession().mHandle);
 
             mShellManager.mTermuxSessions.remove(termuxSession);
+            termuxSession.getTerminalSession().close();
 
             // Notify {@link TermuxSessionsListViewController} that sessions list has been updated if
             // activity in is foreground

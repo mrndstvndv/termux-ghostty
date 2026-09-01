@@ -612,7 +612,7 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
             @Override
             public boolean onKeyDown(android.view.KeyEvent event) {
                 TerminalSession session = getCurrentSession();
-                if (session == null || !session.hasActiveTerminalBackend()) return true;
+                if (session == null) return true;
                 if (mTermuxTerminalViewClient.onKeyDown(event.getKeyCode(), event, session)) return true;
                 if (event.getKeyCode() == android.view.KeyEvent.KEYCODE_BACK &&
                     mTermuxTerminalViewClient.shouldBackButtonBeMappedToEscape()) {

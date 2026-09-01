@@ -475,9 +475,13 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
         if (backend != null) backend.release();
         // Return pressed with finished session - remove it.
         TermuxService service = mActivity.getTermuxService();
-        if (service == null) return;
+        if (service == null) {
+            finishedSession.close();
+            return;
+        }
 
         int index = service.removeTermuxSession(finishedSession);
+        finishedSession.close();
 
         int size = service.getTermuxSessionsSize();
         if (size == 0) {

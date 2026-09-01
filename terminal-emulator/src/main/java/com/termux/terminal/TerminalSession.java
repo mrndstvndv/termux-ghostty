@@ -38,7 +38,14 @@ import java.util.concurrent.atomic.AtomicInteger;
  * <p>
  * NOTE: The terminal session may outlive the terminal view, so be careful with callbacks!
  */
-public final class TerminalSession extends TerminalOutput {
+public final class TerminalSession extends TerminalOutput implements AutoCloseable {
+
+    interface BackendResources {
+        boolean isActive();
+        void appendDirect(byte[] data);
+        void shutdownWorker();
+        void closeNativeContent();
+    }
 
     private static final int MSG_PROCESS_EXITED = 4;
 
@@ -50,11 +57,12 @@ public final class TerminalSession extends TerminalOutput {
 
     public final String mHandle = UUID.randomUUID().toString();
 
-    private GhosttyTerminalContent mGhosttyTerminalContent;
-    private GhosttySessionWorker mGhosttySessionWorker;
+    private volatile GhosttyTerminalContent mGhosttyTerminalContent;
+    private volatile GhosttySessionWorker mGhosttySessionWorker;
+    private volatile BackendResources mBackendResources;
     private long mSshSessionHandle = 0L;
 
-    private TerminalSessionIO mIoHandler;
+    private volatile TerminalSessionIO mIoHandler;
     private boolean mIsCustomIO = false;
 
     /**
@@ -98,7 +106,7 @@ public final class TerminalSession extends TerminalOutput {
      * The file descriptor referencing the master half of a pseudo-terminal pair, resulting from calling
      * {@link JNI#createSubprocess(String, String, String[], String[], int[], int, int, int, int)}.
      */
-    private int mTerminalFileDescriptor;
+    private int mTerminalFileDescriptor = -1;
 
     /** Set by the application for user identification of session, not by terminal. */
     public String mSessionName;
@@ -146,7 +154,53 @@ public final class TerminalSession extends TerminalOutput {
     /** True after an explicit finish request has started. Access under this object's monitor. */
     private boolean mFinishRequested;
 
+    /** True after the process exit callback has been handled. Access under this object's monitor. */
+    private volatile boolean mProcessExited;
+
+    /** True after the process-owned resources have been released. Access under this object's monitor. */
+    private boolean mProcessResourcesClosed;
+
+    /** True after the terminal session and its backend have been disposed. Access under this object's monitor. */
+    private volatile boolean mClosed;
+
     private static final String LOG_TAG = "TerminalSession";
+
+    private static final class GhosttyBackendResources implements BackendResources {
+        private final GhosttySessionWorker mWorker;
+        private final GhosttyTerminalContent mContent;
+        private volatile boolean mContentClosed;
+
+        GhosttyBackendResources(GhosttySessionWorker worker, GhosttyTerminalContent content) {
+            mWorker = worker;
+            mContent = content;
+        }
+
+        @Override
+        public boolean isActive() {
+            return !mContentClosed;
+        }
+
+        @Override
+        public void appendDirect(byte[] data) {
+            if (!mContentClosed) {
+                mWorker.appendDirect(data);
+            }
+        }
+
+        @Override
+        public void shutdownWorker() {
+            mWorker.shutdown();
+        }
+
+        @Override
+        public void closeNativeContent() {
+            if (mContentClosed) {
+                return;
+            }
+            mContentClosed = true;
+            mContent.close();
+        }
+    }
 
     public TerminalSession(String shellPath, String cwd, String[] args, String[] env, Integer transcriptRows, TerminalSessionClient client) {
         this.mShellPath = shellPath;
@@ -166,6 +220,17 @@ public final class TerminalSession extends TerminalOutput {
         this.mClient = client;
         this.mIoHandler = ioHandler;
         this.mIsCustomIO = true;
+    }
+
+    TerminalSession(TerminalSessionClient client, BackendResources backendResources) {
+        this.mShellPath = null;
+        this.mCwd = null;
+        this.mArgs = null;
+        this.mEnv = null;
+        this.mTranscriptRows = null;
+        this.mClient = client;
+        this.mBackendResources = backendResources;
+        this.mShellPid = -1;
     }
 
     /**
@@ -197,6 +262,9 @@ public final class TerminalSession extends TerminalOutput {
 
     /** Inform the attached pty of the new size or initialize the Ghostty backend. */
     public void updateSize(int columns, int rows, int cellWidthPixels, int cellHeightPixels) {
+        if (mClosed) {
+            return;
+        }
         if (!hasActiveTerminalBackend()) {
             GhosttyLog.info("Initializing terminal backend columns=" + columns + " rows=" + rows + " cellWidth=" + cellWidthPixels + " cellHeight=" + cellHeightPixels);
             initializeTerminalBackend(columns, rows, cellWidthPixels, cellHeightPixels);
@@ -225,7 +293,11 @@ public final class TerminalSession extends TerminalOutput {
         this.mCellHeightPixels = cellHeightPixels;
         this.mLastKnownActiveRows = rows;
 
-        JNI.setPtyWindowSize(mTerminalFileDescriptor, rows, columns, cellWidthPixels, cellHeightPixels);
+        synchronized (this) {
+            if (!mProcessResourcesClosed && mTerminalFileDescriptor >= 0) {
+                JNI.setPtyWindowSize(mTerminalFileDescriptor, rows, columns, cellWidthPixels, cellHeightPixels);
+            }
+        }
         if (mGhosttySessionWorker != null) {
             GhosttyLog.debug("Enqueuing Ghostty resize pid=" + mShellPid + " columns=" + columns + " rows=" + rows + " cellWidth=" + cellWidthPixels + " cellHeight=" + cellHeightPixels);
             mGhosttySessionWorker.resize(columns, rows, cellWidthPixels, cellHeightPixels);
@@ -271,6 +343,9 @@ public final class TerminalSession extends TerminalOutput {
      * @param rows    The number of rows in the terminal window.
      */
     public void initializeTerminalBackend(int columns, int rows, int cellWidthPixels, int cellHeightPixels) {
+        if (mClosed) {
+            return;
+        }
         if (!GhosttyNative.isLibraryLoaded()) {
             String message = "Ghostty native library is not loaded";
             mShellPid = -1;
@@ -301,6 +376,7 @@ public final class TerminalSession extends TerminalOutput {
             mGhosttyCursorCol = mGhosttyTerminalContent.getCursorCol();
             mGhosttyCursorStyle = mGhosttyTerminalContent.getCursorStyle();
             mGhosttySessionWorker = new GhosttySessionWorker(this, mGhosttyTerminalContent, mProcessToTerminalIOQueue, mMainThreadHandler, cellWidthPixels, cellHeightPixels);
+            mBackendResources = new GhosttyBackendResources(mGhosttySessionWorker, mGhosttyTerminalContent);
             if (mIsCustomIO) {
                 mShellPid = 1; // Dummy positive PID to pass isRunning() check
             }
@@ -321,6 +397,7 @@ public final class TerminalSession extends TerminalOutput {
                 mGhosttyTerminalContent = null;
             }
             mGhosttySessionWorker = null;
+            mBackendResources = null;
             mShellPid = -1;
             mShellExitStatus = 1;
             GhosttyLog.error("Ghostty backend creation failed for session " + mHandle, error);
@@ -388,7 +465,11 @@ public final class TerminalSession extends TerminalOutput {
     }
 
     public boolean hasActiveTerminalBackend() {
-        return mGhosttyTerminalContent != null;
+        if (mClosed) {
+            return false;
+        }
+        BackendResources backendResources = mBackendResources;
+        return backendResources == null ? mGhosttyTerminalContent != null : backendResources.isActive();
     }
 
     @Nullable
@@ -408,6 +489,9 @@ public final class TerminalSession extends TerminalOutput {
     /** Write data to the shell process. */
     @Override
     public void write(byte[] data, int offset, int count) {
+        if (mClosed || mProcessExited) {
+            return;
+        }
         long sshHandle = mSshSessionHandle;
         if (sshHandle != 0L) {
             GhosttyNative.nativeSshWrite(sshHandle, data, offset, count);
@@ -659,19 +743,13 @@ public final class TerminalSession extends TerminalOutput {
     /** Finish this terminal session by sending SIGKILL to the shell. */
     public void finishIfRunning() {
         synchronized (this) {
-            if (mShellPid == -1 || mFinishRequested) {
+            if (mClosed || mShellPid <= 0 || mFinishRequested) {
                 return;
             }
             mFinishRequested = true;
 
             if (mIsCustomIO) {
-                cleanupResources(0);
-                mMainThreadHandler.post(new Runnable() {
-                    @Override
-                    public void run() {
-                        mClient.onSessionFinished(TerminalSession.this);
-                    }
-                });
+                mMainThreadHandler.sendMessage(mMainThreadHandler.obtainMessage(MSG_PROCESS_EXITED, 0));
                 return;
             }
             try {
@@ -682,37 +760,136 @@ public final class TerminalSession extends TerminalOutput {
         }
     }
 
-    /** Cleanup resources when the process exits. */
-    void cleanupResources(int exitStatus) {
-        GhosttyLog.info("Cleaning up session " + mHandle + " exitStatus=" + exitStatus + " pid=" + mShellPid);
+    /** Release process-owned resources without destroying the terminal backend. */
+    private void closeProcessResources() {
+        TerminalSessionIO ioHandler;
+        int terminalFileDescriptor;
         synchronized (this) {
-            mShellPid = -1;
-            mShellExitStatus = exitStatus;
+            if (mProcessResourcesClosed) {
+                return;
+            }
+            mProcessResourcesClosed = true;
+            ioHandler = mIoHandler;
+            mIoHandler = null;
+            terminalFileDescriptor = mTerminalFileDescriptor;
+            mTerminalFileDescriptor = -1;
         }
 
         mTerminalToProcessIOQueue.close();
         mProcessToTerminalIOQueue.close();
 
-        if (mGhosttySessionWorker != null) {
-            mGhosttySessionWorker.shutdown();
-            mGhosttySessionWorker = null;
-        }
-        if (mGhosttyTerminalContent != null) {
-            try {
-                mGhosttyTerminalContent.close();
-            } catch (Exception ignored) {
+        if (mIsCustomIO) {
+            if (ioHandler == null) {
+                return;
             }
-            mGhosttyTerminalContent = null;
+            try {
+                ioHandler.onClose();
+            } catch (Exception error) {
+                Logger.logStackTraceWithMessage(mClient, LOG_TAG, "Failed closing custom terminal IO", error);
+            }
+            return;
         }
 
-        if (mIsCustomIO) {
-            if (mIoHandler != null) {
-                TerminalSessionIO io = mIoHandler;
-                mIoHandler = null;
-                io.onClose();
+        if (terminalFileDescriptor >= 0) {
+            JNI.close(terminalFileDescriptor);
+        }
+    }
+
+    /**
+     * Dispose of the terminal backend and all remaining session resources.
+     *
+     * Process termination and terminal destruction are intentionally separate: a finished process
+     * keeps the backend alive until its owner explicitly closes the session so the final screen can
+     * still be rendered and interacted with.
+     */
+    @Override
+    public void close() {
+        finishIfRunning();
+
+        GhosttySessionWorker worker;
+        GhosttyTerminalContent content;
+        BackendResources backendResources;
+        synchronized (this) {
+            if (mClosed) {
+                return;
             }
-        } else {
-            JNI.close(mTerminalFileDescriptor);
+            mClosed = true;
+            mShellPid = -1;
+            worker = mGhosttySessionWorker;
+            content = mGhosttyTerminalContent;
+            backendResources = mBackendResources;
+            mGhosttySessionWorker = null;
+            mGhosttyTerminalContent = null;
+            mBackendResources = null;
+        }
+
+        closeProcessResources();
+
+        if (backendResources != null) {
+            try {
+                backendResources.shutdownWorker();
+            } finally {
+                backendResources.closeNativeContent();
+            }
+            return;
+        }
+
+        try {
+            if (worker != null) {
+                worker.shutdown();
+            }
+        } finally {
+            if (content != null) {
+                try {
+                    content.close();
+                } catch (Exception ignored) {
+                }
+            }
+        }
+    }
+
+    /** Handle process termination while keeping the terminal backend alive. */
+    void onProcessExited(int exitStatus) {
+        synchronized (this) {
+            if (mProcessExited) {
+                return;
+            }
+            mProcessExited = true;
+            mShellPid = -1;
+            mShellExitStatus = exitStatus;
+        }
+
+        GhosttyLog.info("Process exited for session " + mHandle + " exitStatus=" + exitStatus);
+        closeProcessResources();
+
+        String exitDescription = "\r\n[Process completed";
+        if (exitStatus > 0) {
+            exitDescription += " (code " + exitStatus + ")";
+        } else if (exitStatus < 0) {
+            exitDescription += " (signal " + (-exitStatus) + ")";
+        }
+        exitDescription += " - press Enter]";
+
+        synchronized (this) {
+            if (mClosed) {
+                return;
+            }
+            if (!mClosed) {
+                byte[] exitMessage = exitDescription.getBytes(StandardCharsets.UTF_8);
+                BackendResources backendResources = mBackendResources;
+                if (backendResources != null) {
+                    backendResources.appendDirect(exitMessage);
+                } else {
+                    GhosttySessionWorker worker = mGhosttySessionWorker;
+                    if (worker != null) {
+                        worker.appendDirect(exitMessage);
+                    }
+                }
+            }
+
+            if (mClient != null) {
+                mClient.onSessionFinished(this);
+            }
         }
     }
 
@@ -866,24 +1043,7 @@ public final class TerminalSession extends TerminalOutput {
             }
 
             int exitCode = (Integer) msg.obj;
-            GhosttyLog.info("Process exited for session " + mHandle + " exitCode=" + exitCode);
-            cleanupResources(exitCode);
-
-            String exitDescription = "\r\n[Process completed";
-            if (exitCode > 0) {
-                exitDescription += " (code " + exitCode + ")";
-            } else if (exitCode < 0) {
-                exitDescription += " (signal " + (-exitCode) + ")";
-            }
-            exitDescription += " - press Enter]";
-
-            byte[] bytesToWrite = exitDescription.getBytes(StandardCharsets.UTF_8);
-            if (mGhosttySessionWorker != null) {
-                mGhosttySessionWorker.onOutputAvailable();
-                mGhosttySessionWorker.appendDirect(bytesToWrite);
-            }
-
-            mClient.onSessionFinished(TerminalSession.this);
+            onProcessExited(exitCode);
         }
 
     }

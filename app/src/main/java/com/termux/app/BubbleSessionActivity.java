@@ -156,7 +156,7 @@ public final class BubbleSessionActivity extends AppCompatActivity implements Se
             @Override
             public boolean onKeyDown(KeyEvent event) {
                 TerminalSession session = getCurrentSession();
-                if (session == null || !session.hasActiveTerminalBackend()) return true;
+                if (session == null) return true;
                 if (mTerminalViewClient.onKeyDown(event.getKeyCode(), event, session)) return true;
                 if (event.getKeyCode() == KeyEvent.KEYCODE_BACK &&
                     mTerminalViewClient.shouldBackButtonBeMappedToEscape()) {

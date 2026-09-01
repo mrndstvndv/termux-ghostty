@@ -25,6 +25,7 @@ class Server(
      */
     fun disconnect() {
         try { terminalSession.finishIfRunning() } catch (_: Exception) { }
+        try { terminalSession.close() } catch (_: Exception) { }
         try { sftpClient?.close() } catch (_: Exception) { }
         try { shellChannel?.close() } catch (_: Exception) { }
         try { sshSession?.disconnect() } catch (_: Exception) { }

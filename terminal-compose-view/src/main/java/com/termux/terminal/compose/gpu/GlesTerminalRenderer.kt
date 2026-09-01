@@ -151,6 +151,7 @@ internal class GlesTerminalRenderer(
             clear(0xFF000000.toInt())
             return
         }
+        val imageProgram = currentResources.imageProgram
 
         val animationTime = surface.animationTimeSeconds()
         val atlasReset = surface.consumeAtlasReset()
@@ -182,7 +183,9 @@ internal class GlesTerminalRenderer(
 
         try {
             clear(backgroundColor(snapshot))
-            imageTextureCache.update(snapshot.frame.imagePlacements)
+            if (imageProgram != null) {
+                imageTextureCache.update(snapshot.frame.imagePlacements)
+            }
             currentResources.palette.bind(snapshot.frame.palette)
             traceSection("EctoGles.backgrounds") {
                 drawStyledRows(
@@ -196,16 +199,18 @@ internal class GlesTerminalRenderer(
                     reverseVideo = snapshot.frame.reverseVideo
                 )
             }
-            traceSection("EctoGles.images-under") {
-                drawImages(
-                    placements = snapshot.frame.imagePlacements,
-                    metrics = snapshot.metrics,
-                    viewportWidth = viewportWidth,
-                    viewportHeight = viewportHeight,
-                    imageProgram = currentResources.imageProgram,
-                    offsetY = snapshot.visualOffsetPx,
-                    filter = { it.zIndex < 0 }
-                )
+            if (imageProgram != null) {
+                traceSection("EctoGles.images-under") {
+                    drawImages(
+                        placements = snapshot.frame.imagePlacements,
+                        metrics = snapshot.metrics,
+                        viewportWidth = viewportWidth,
+                        viewportHeight = viewportHeight,
+                        imageProgram = imageProgram,
+                        offsetY = snapshot.visualOffsetPx,
+                        filter = { it.zIndex < 0 }
+                    )
+                }
             }
             // Retained glyph rows are rebuilt when the atlas generation changes.
             traceSection("EctoGles.glyphs") {
@@ -236,16 +241,18 @@ internal class GlesTerminalRenderer(
                     )
                 }
             }
-            traceSection("EctoGles.images-over") {
-                drawImages(
-                    placements = snapshot.frame.imagePlacements,
-                    metrics = snapshot.metrics,
-                    viewportWidth = viewportWidth,
-                    viewportHeight = viewportHeight,
-                    imageProgram = currentResources.imageProgram,
-                    offsetY = snapshot.visualOffsetPx,
-                    filter = { it.zIndex >= 0 }
-                )
+            if (imageProgram != null) {
+                traceSection("EctoGles.images-over") {
+                    drawImages(
+                        placements = snapshot.frame.imagePlacements,
+                        metrics = snapshot.metrics,
+                        viewportWidth = viewportWidth,
+                        viewportHeight = viewportHeight,
+                        imageProgram = imageProgram,
+                        offsetY = snapshot.visualOffsetPx,
+                        filter = { it.zIndex >= 0 }
+                    )
+                }
             }
             traceSection("EctoGles.decorations") {
                 drawStyledRows(
@@ -305,16 +312,16 @@ internal class GlesTerminalRenderer(
         val imageProgram = try {
             GlesImageProgram.create()
         } catch (error: GlesProgramException) {
-            program.release()
-            throw error
+            reportError("image-program", error.message ?: "GLES image program unavailable")
+            null
         } catch (error: RuntimeException) {
-            program.release()
-            throw GlesResourceException("GLES image program failed", error)
+            reportError("image-program", error.message ?: "GLES image program unavailable")
+            null
         }
         val cursorEffects = try {
             GlesCursorEffectRenderer.create()
         } catch (error: RuntimeException) {
-            imageProgram.release()
+            imageProgram?.release()
             program.release()
             throw error
         }
@@ -330,12 +337,12 @@ internal class GlesTerminalRenderer(
             )
         } catch (error: GlesRendererException) {
             cursorEffects.release()
-            imageProgram.release()
+            imageProgram?.release()
             program.release()
             throw error
         } catch (error: RuntimeException) {
             cursorEffects.release()
-            imageProgram.release()
+            imageProgram?.release()
             program.release()
             throw GlesResourceException("GLES resource setup failed", error)
         }
@@ -789,7 +796,7 @@ internal class GlesTerminalRenderer(
     @Suppress("NestedBlockDepth")
     private class GlesResources(
         val program: GlesProgram,
-        val imageProgram: GlesImageProgram,
+        val imageProgram: GlesImageProgram?,
         val cursorEffects: GlesCursorEffectRenderer,
         val dirtyBuffers: GlesDirtyInstanceStore,
         val glyphRows: GlesGlyphRowBuffer,
@@ -813,7 +820,7 @@ internal class GlesTerminalRenderer(
                                 cursorEffects.release()
                             } finally {
                                 try {
-                                    imageProgram.release()
+                                    imageProgram?.release()
                                 } finally {
                                     program.release()
                                 }

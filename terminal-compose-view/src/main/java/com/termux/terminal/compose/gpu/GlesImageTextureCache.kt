@@ -131,7 +131,7 @@ internal class GlesImageProgram private constructor(
     }
 
     companion object {
-        @Suppress("ThrowsCount")
+        @Suppress("ThrowsCount", "TooGenericExceptionCaught")
         fun create(): GlesImageProgram {
             val vertexShader = compile("image-vertex", GLES30.GL_VERTEX_SHADER, GlesImageShaderSources.VERTEX)
             val fragmentShader = try {
@@ -167,6 +167,9 @@ internal class GlesImageProgram private constructor(
                 requireUniform(texture, "uTexture")
                 return GlesImageProgram(program, viewport, rect, texRect, offset, texture)
             } catch (e: GlesProgramException) {
+                GLES30.glDeleteProgram(program)
+                throw e
+            } catch (e: RuntimeException) {
                 GLES30.glDeleteProgram(program)
                 throw e
             } finally {

@@ -131,6 +131,84 @@ class SftpViewModelTest {
     }
 
     @Test
+    fun testBreadcrumbTrailPreservedOnParentNavigation() = runTest(testDispatcher) {
+        val savedState = SavedStateHandle(mapOf("current_path" to "/home/projects/docs"))
+        val viewModel = SftpViewModel(MockSftpClient(), savedState, transferManager = null)
+
+        advanceUntilIdle()
+        viewModel.navigateTo("/home/projects")
+        advanceUntilIdle()
+
+        assertEquals("/home/projects/docs", viewModel.trailPath.value)
+        assertEquals("/home/projects/docs", savedState.get<String>("trail_path"))
+    }
+
+    @Test
+    fun testBreadcrumbTrailPreservedOnIntermediateChildNavigation() = runTest(testDispatcher) {
+        val savedState = SavedStateHandle(mapOf("current_path" to "/home/projects/docs/reports"))
+        val viewModel = SftpViewModel(MockSftpClient(), savedState, transferManager = null)
+
+        advanceUntilIdle()
+        viewModel.navigateTo("/home/projects")
+        advanceUntilIdle()
+
+        assertEquals("/home/projects", viewModel.currentPath)
+        assertEquals("/home/projects/docs/reports", viewModel.trailPath.value)
+    }
+
+    @Test
+    fun testBreadcrumbTrailPreservedOnNavigateUp() = runTest(testDispatcher) {
+        val savedState = SavedStateHandle(mapOf("current_path" to "/home/projects"))
+        val viewModel = SftpViewModel(MockSftpClient(), savedState, transferManager = null)
+
+        advanceUntilIdle()
+        viewModel.navigateUp()
+        advanceUntilIdle()
+
+        assertEquals("/home", viewModel.currentPath)
+        assertEquals("/home/projects", viewModel.trailPath.value)
+    }
+
+    @Test
+    fun testBreadcrumbTrailPreservedOnRootNavigation() = runTest(testDispatcher) {
+        val savedState = SavedStateHandle(mapOf("current_path" to "/home/projects"))
+        val viewModel = SftpViewModel(MockSftpClient(), savedState, transferManager = null)
+
+        advanceUntilIdle()
+        viewModel.navigateTo("/")
+        advanceUntilIdle()
+
+        assertEquals("/", viewModel.currentPath)
+        assertEquals("/home/projects", viewModel.trailPath.value)
+    }
+
+    @Test
+    fun testBreadcrumbTrailInvalidatedOnDivergentNavigation() = runTest(testDispatcher) {
+        val savedState = SavedStateHandle(mapOf("current_path" to "/home/projects"))
+        val viewModel = SftpViewModel(MockSftpClient(), savedState, transferManager = null)
+
+        advanceUntilIdle()
+        viewModel.navigateTo("/var/log")
+        advanceUntilIdle()
+
+        assertEquals("/var/log", viewModel.trailPath.value)
+        assertEquals("/var/log", savedState.get<String>("trail_path"))
+    }
+
+    @Test
+    fun testBreadcrumbTrailExtendedOnDeeperNavigation() = runTest(testDispatcher) {
+        val savedState = SavedStateHandle(mapOf("current_path" to "/home/projects"))
+        val viewModel = SftpViewModel(MockSftpClient(), savedState, transferManager = null)
+
+        advanceUntilIdle()
+        viewModel.navigateTo("/home/projects/docs")
+        advanceUntilIdle()
+
+        assertEquals("/home/projects/docs", viewModel.trailPath.value)
+        assertEquals("/home/projects/docs", savedState.get<String>("trail_path"))
+    }
+
+    @Test
     fun testDeleteFile() = runTest(testDispatcher) {
         val client = MockSftpClient()
         val savedState = SavedStateHandle(mapOf("current_path" to "/"))

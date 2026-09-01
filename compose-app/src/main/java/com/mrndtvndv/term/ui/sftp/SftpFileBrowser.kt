@@ -16,6 +16,8 @@ import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -76,12 +78,16 @@ fun SftpBreadcrumbs(
     onSegmentClick: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val effectivePath = if (currentPath == "/" && trailPath.isNotEmpty()) trailPath else currentPath
+    val effectivePath = if (trailPath.isNotBlank()) trailPath else currentPath
     val segments = remember(effectivePath) { parsePathSegments(effectivePath) }
     val scrollState = rememberScrollState()
+    val activeSegmentRequester = remember { BringIntoViewRequester() }
+    val activeSegmentIndex = segments.indexOfFirst { it.fullPath == currentPath }
 
-    LaunchedEffect(segments.size) {
-        scrollState.animateScrollTo(scrollState.maxValue)
+    LaunchedEffect(currentPath, effectivePath) {
+        if (activeSegmentIndex >= 0) {
+            activeSegmentRequester.bringIntoView()
+        }
     }
 
     Surface(
@@ -96,32 +102,15 @@ fun SftpBreadcrumbs(
             verticalAlignment = Alignment.CenterVertically
         ) {
             segments.forEachIndexed { index, segment ->
-                val isLast = index == segments.size - 1
-                Surface(
-                    color = if (isLast) {
-                        MaterialTheme.colorScheme.primaryContainer
-                    } else {
-                        MaterialTheme.colorScheme.surface
-                    },
-                    shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier.clickable {
-                        onSegmentClick(segment.fullPath)
-                    }
-                ) {
-                    Text(
-                        text = segment.name,
-                        style = MaterialTheme.typography.labelLarge,
-                        color = if (isLast) {
-                            MaterialTheme.colorScheme.onPrimaryContainer
-                        } else {
-                            MaterialTheme.colorScheme.onSurface
-                        },
-                        fontWeight = if (isLast) FontWeight.Bold else FontWeight.Medium,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                    )
-                }
+                val isCurrent = segment.fullPath == currentPath
+                SftpBreadcrumbSegment(
+                    segment = segment,
+                    isCurrent = isCurrent,
+                    activeSegmentRequester = activeSegmentRequester,
+                    onSegmentClick = onSegmentClick
+                )
 
-                if (!isLast) {
+                if (index < segments.lastIndex) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
                         contentDescription = null,
@@ -131,6 +120,46 @@ fun SftpBreadcrumbs(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun SftpBreadcrumbSegment(
+    segment: PathSegment,
+    isCurrent: Boolean,
+    activeSegmentRequester: BringIntoViewRequester,
+    onSegmentClick: (String) -> Unit
+) {
+    Surface(
+        color = if (isCurrent) {
+            MaterialTheme.colorScheme.primaryContainer
+        } else {
+            MaterialTheme.colorScheme.surface
+        },
+        shape = RoundedCornerShape(8.dp),
+        modifier = Modifier
+            .then(
+                if (isCurrent) {
+                    Modifier.bringIntoViewRequester(activeSegmentRequester)
+                } else {
+                    Modifier
+                }
+            )
+            .clickable {
+                onSegmentClick(segment.fullPath)
+            }
+    ) {
+        Text(
+            text = segment.name,
+            style = MaterialTheme.typography.labelLarge,
+            color = if (isCurrent) {
+                MaterialTheme.colorScheme.onPrimaryContainer
+            } else {
+                MaterialTheme.colorScheme.onSurface
+            },
+            fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Medium,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+        )
     }
 }
 

@@ -200,7 +200,7 @@ internal class GlesImageProgram private constructor(
 }
 
 internal object GlesImageShaderSources {
-    const val VERTEX = """
+    val VERTEX = """
         #version 300 es
         precision highp float;
         uniform vec2 uViewport;
@@ -225,9 +225,9 @@ internal object GlesImageShaderSources {
             gl_Position = vec4(ndc, 0.0, 1.0);
             vTexCoord = mix(uTexRect.xy, uTexRect.zw, unit);
         }
-    """
+    """.trimIndent()
 
-    const val FRAGMENT = """
+    val FRAGMENT = """
         #version 300 es
         precision mediump float;
         uniform sampler2D uTexture;
@@ -237,5 +237,5 @@ internal object GlesImageShaderSources {
             vec4 sampled = texture(uTexture, vTexCoord);
             fragColor = vec4(sampled.rgb * sampled.a, sampled.a);
         }
-    """
+    """.trimIndent()
 }

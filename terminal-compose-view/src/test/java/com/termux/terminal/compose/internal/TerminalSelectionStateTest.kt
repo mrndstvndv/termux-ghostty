@@ -11,9 +11,58 @@ import com.termux.terminal.compose.TerminalSelection
 import androidx.compose.ui.geometry.Offset
 import com.termux.terminal.compose.TerminalViewport
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class TerminalSelectionStateTest {
+    @Test
+    fun selectionIsEmptyOnlyForInvalidColumnsOrInvertedRanges() {
+        assertTrue(TerminalSelection.EMPTY.isEmpty)
+        assertFalse(TerminalSelection(0, -10, 5, -10).isEmpty)
+        assertFalse(TerminalSelection(0, -5, 10, 2).isEmpty)
+        assertTrue(TerminalSelection(0, 5, 0, 4).isEmpty)
+        assertTrue(TerminalSelection(5, -2, 4, -2).isEmpty)
+        assertTrue(TerminalSelection(-1, -2, 5, -2).isEmpty)
+        assertTrue(TerminalSelection(0, -2, -1, -2).isEmpty)
+    }
+
+    @Test
+    fun startWordSelectionSupportsScrollbackRows() {
+        val state = TerminalSelectionState()
+        val frame = scrollbackFrame()
+
+        state.startWordSelection(frame, column = 1, row = -3)
+
+        assertEquals(TerminalSelection(0, -3, 3, -3), state.selection)
+        assertTrue(state.isSelecting)
+    }
+
+    @Test
+    fun updateHandleMovesBothEndpointsAcrossScrollbackRows() {
+        val state = TerminalSelectionState()
+        val frame = scrollbackFrame()
+        state.startWordSelection(frame, column = 1, row = -3)
+
+        state.updateHandle(frame, SelectionHandleEndpoint.START, column = 2, row = -5)
+        assertEquals(TerminalSelection(2, -5, 3, -3), state.selection)
+
+        state.updateHandle(frame, SelectionHandleEndpoint.END, column = 4, row = -1)
+
+        assertEquals(TerminalSelection(2, -5, 4, -1), state.selection)
+        assertFalse(state.selection.isEmpty)
+        assertTrue(state.isSelecting)
+    }
+
+    @Test
+    fun selectionTextIncludesScrollbackRows() {
+        val frame = scrollbackFrame()
+
+        val text = frame.selectionText(TerminalSelection(0, -5, 3, -3))
+
+        assertEquals("older\nhistory\nword", text)
+    }
+
     @Test
     fun dragMovementIsNotCompoundedWhenSelectionAnchorMoves() {
         val handleOffset = Offset(90f, 90f)
@@ -139,6 +188,18 @@ class TerminalSelectionStateTest {
         assertEquals(TerminalSelection(0, 0, 3, 0), state.selection)
     }
 
+    private fun scrollbackFrame(): TerminalFrame = frame(
+        rows = listOf(
+            row("older", columns = 12),
+            row("history", columns = 12),
+            row("word other", columns = 12),
+            row("next", columns = 12),
+            row("newest", columns = 12)
+        ),
+        topRow = -5,
+        transcriptRows = 5
+    )
+
     private fun row(text: String, columns: Int): TerminalRow = TerminalRow(
         columns = columns,
         text = text.toCharArray(),
@@ -149,13 +210,26 @@ class TerminalSelectionStateTest {
         isLineWrap = false
     )
 
-    private fun frame(row: TerminalRow): TerminalFrame = TerminalFrame(
-        sequence = 1L,
-        viewport = TerminalViewport(0, 1, row.columns, 0),
-        cursor = TerminalCursor(-1, -1, false, TerminalCursor.STYLE_BLOCK),
-        modes = TerminalModes(false, false, false, false, false),
-        palette = TerminalPalette.of(IntArray(259)),
+    private fun frame(
+        rows: List<TerminalRow>,
+        topRow: Int,
+        transcriptRows: Int
+    ): TerminalFrame {
+        val columns = rows.first().columns
+        return TerminalFrame(
+            sequence = 1L,
+            viewport = TerminalViewport(topRow, rows.size, columns, transcriptRows),
+            cursor = TerminalCursor(-1, -1, false, TerminalCursor.STYLE_BLOCK),
+            modes = TerminalModes(false, false, false, false, false),
+            palette = TerminalPalette.of(IntArray(259)),
+            rows = rows,
+            linkLayout = null
+        )
+    }
+
+    private fun frame(row: TerminalRow): TerminalFrame = frame(
         rows = listOf(row),
-        linkLayout = null
+        topRow = 0,
+        transcriptRows = 0
     )
 }

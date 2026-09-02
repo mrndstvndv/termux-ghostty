@@ -475,7 +475,8 @@ data class TerminalSelection(
     val endRow: Int
 ) {
     val isEmpty: Boolean
-        get() = startRow < 0 || endRow < 0
+        get() = startCol < 0 || endCol < 0 || startRow > endRow ||
+            (startRow == endRow && startCol > endCol)
 
     companion object {
         val EMPTY = TerminalSelection(-1, -1, -1, -1)

@@ -54,8 +54,9 @@ Config files:
 - `.editorconfig` — ktlint rules (shared with EditorConfig)
 - `config/detekt/detekt.yml` — detekt rules
 
-## Code Hygiene
+## Architectural Integrity & Code Hygiene
 
+- **Solve problems at the architecture/library level, never with ad-hoc consumer hacks.** When fixing bugs or adding capabilities across the terminal stack (`terminal-emulator`, `terminal-compose-session`, `terminal-compose-view`), address the root cause at the owning library layer instead of applying defensive workarounds, manual event-forwarding hacks, or duct tape in consumers (`compose-app`, `app`). Both hosts must benefit from clean, coherent library contracts (e.g., separating process exit from session disposal, authoritative frame publication, input translation) rather than compensating for engine-level omissions.
 - **No legacy shims or migration code unless explicitly requested.** Do not add backward-compat fallbacks, legacy preference keys, deprecated-API wrappers, or one-off data migrations to support old app versions.
 - If existing legacy code is found (e.g. dual-writes to old preference keys, migration fallbacks), prefer removing it outright. If user data is at stake, do a one-time conversion that deletes the legacy key afterwards — never keep it alive.
 

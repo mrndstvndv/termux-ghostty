@@ -53,6 +53,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -88,6 +89,7 @@ fun GitReviewScreen(
     val errorMessage by viewModel.errorMessage.collectAsState()
     val isCommitInProgress by viewModel.isCommitInProgress.collectAsState()
     val isBranchOperationInProgress by viewModel.isBranchOperationInProgress.collectAsState()
+    val isSyncInProgress by viewModel.isSyncInProgress.collectAsState()
     val keyboardController = LocalSoftwareKeyboardController.current
 
     val reviewBackStack: NavBackStack<NavKey> = rememberNavBackStack(ReviewNavKey.ChangesList)
@@ -452,6 +454,10 @@ fun GitReviewScreen(
                         isCommitInProgress = isCommitInProgress,
                         onRefresh = { viewModel.refresh() },
                         onBranchHeaderClick = { showBranchDialog = true },
+                        isSyncInProgress = isSyncInProgress,
+                        onFetch = { viewModel.fetchRemote() },
+                        onPull = { viewModel.pullBranch() },
+                        onPush = { viewModel.pushBranch() },
                         modifier = modifier
                     )
                 }
@@ -797,6 +803,10 @@ fun FileChangesList(
     isCommitInProgress: Boolean,
     onRefresh: () -> Unit,
     onBranchHeaderClick: () -> Unit = {},
+    isSyncInProgress: Boolean = false,
+    onFetch: () -> Unit = {},
+    onPull: () -> Unit = {},
+    onPush: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val stagedFiles = (uiState as? ReviewUiState.Success)?.stagedFiles.orEmpty()
@@ -899,7 +909,11 @@ fun FileChangesList(
                                     currentBranch = uiState.currentBranch,
                                     aheadCount = uiState.aheadCount,
                                     behindCount = uiState.behindCount,
-                                    onBranchClick = onBranchHeaderClick
+                                    isSyncInProgress = isSyncInProgress,
+                                    onBranchClick = onBranchHeaderClick,
+                                    onFetch = onFetch,
+                                    onPull = onPull,
+                                    onPush = onPush
                                 )
                             }
                             if (uiState.stagedFiles.isEmpty() && uiState.unstagedFiles.isEmpty()) {
@@ -2390,13 +2404,17 @@ private fun getColors(type: DiffLineType, isDark: Boolean, fallbackColor: Color)
     }
 }
 
-@Suppress("LongMethod")
+@Suppress("LongMethod", "LongParameterList")
 @Composable
 fun BranchHeader(
     currentBranch: String,
     onBranchClick: () -> Unit,
     aheadCount: Int = 0,
     behindCount: Int = 0,
+    isSyncInProgress: Boolean = false,
+    onFetch: () -> Unit = {},
+    onPull: () -> Unit = {},
+    onPush: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Surface(
@@ -2408,16 +2426,16 @@ fun BranchHeader(
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
     ) {
         Row(
-            modifier = Modifier
-                .clickable(onClick = onBranchClick)
-                .padding(horizontal = 12.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
-                modifier = Modifier.weight(1f)
+                modifier = Modifier
+                    .weight(1f)
+                    .clickable(onClick = onBranchClick)
+                    .padding(vertical = 4.dp)
             ) {
                 Surface(
                     color = MaterialTheme.colorScheme.primaryContainer,
@@ -2433,7 +2451,7 @@ fun BranchHeader(
                         )
                     }
                 }
-                Column {
+                Column(modifier = Modifier.weight(1f, fill = false)) {
                     Text(
                         text = "Current Branch",
                         style = MaterialTheme.typography.labelSmall,
@@ -2450,6 +2468,56 @@ fun BranchHeader(
             BranchSyncIndicators(
                 aheadCount = aheadCount,
                 behindCount = behindCount
+            )
+            if (isSyncInProgress) {
+                CircularProgressIndicator(
+                    modifier = Modifier
+                        .padding(12.dp)
+                        .size(24.dp),
+                    strokeWidth = 2.dp
+                )
+            } else {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    SyncActionButton(
+                        icon = Icons.Default.Sync,
+                        tooltip = "Fetch from remote",
+                        onClick = onFetch
+                    )
+                    SyncActionButton(
+                        icon = Icons.Default.CloudDownload,
+                        tooltip = "Pull from remote",
+                        onClick = onPull
+                    )
+                    SyncActionButton(
+                        icon = Icons.Default.CloudUpload,
+                        tooltip = "Push to remote",
+                        onClick = onPush
+                    )
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SyncActionButton(
+    icon: ImageVector,
+    tooltip: String,
+    onClick: () -> Unit
+) {
+    TooltipBox(
+        positionProvider = TooltipDefaults.rememberTooltipPositionProvider(
+            positioning = TooltipAnchorPosition.Above
+        ),
+        tooltip = { PlainTooltip { Text(tooltip) } },
+        state = rememberTooltipState()
+    ) {
+        IconButton(onClick = onClick) {
+            Icon(
+                imageVector = icon,
+                contentDescription = tooltip,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
     }

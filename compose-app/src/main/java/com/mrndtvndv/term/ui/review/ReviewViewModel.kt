@@ -107,6 +107,9 @@ class ReviewViewModel(
     private val _isBranchOperationInProgress = MutableStateFlow(false)
     val isBranchOperationInProgress = _isBranchOperationInProgress.asStateFlow()
 
+    private val _isSyncInProgress = MutableStateFlow(false)
+    val isSyncInProgress = _isSyncInProgress.asStateFlow()
+
     private val _isRefreshing = MutableStateFlow(false)
     val isRefreshing = _isRefreshing.asStateFlow()
 
@@ -134,6 +137,7 @@ class ReviewViewModel(
     private companion object {
         const val COMMIT_EXIT_MARKER = "__REVIEW_COMMIT_EXIT__"
         const val BRANCH_EXIT_MARKER = "__REVIEW_BRANCH_EXIT__"
+        const val SYNC_EXIT_MARKER = "__REVIEW_SYNC_EXIT__"
     }
 
     init {
@@ -757,5 +761,62 @@ class ReviewViewModel(
 
     fun clearErrorMessage() {
         _errorMessage.value = null
+    }
+
+    fun fetchRemote() {
+        runSyncOperation("Fetch", "git fetch")
+    }
+
+    fun pullBranch() {
+        runSyncOperation("Pull", "git pull --ff-only")
+    }
+
+    fun pushBranch() {
+        runSyncOperation("Push", "git push")
+    }
+
+    private fun runSyncOperation(label: String, gitCommand: String) {
+        if (_isSyncInProgress.value) return
+        viewModelScope.launch {
+            _isSyncInProgress.value = true
+            try {
+                val dir = workspaceDir.value
+                val repoRoot = getRepoRoot(execCommand, dir)
+                val pathEnv = "export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; "
+                val command = pathEnv + "cd ${shellQuote(repoRoot)} && " +
+                    "$gitCommand 2>&1; " +
+                    "syncExitCode=\$?; " +
+                    "printf '\\n$SYNC_EXIT_MARKER%s\\n' \"\$syncExitCode\""
+
+                val output = execCommand(command)
+                val markerIndex = output.lastIndexOf(SYNC_EXIT_MARKER)
+                val exitCode = if (markerIndex >= 0) {
+                    output.substring(markerIndex + SYNC_EXIT_MARKER.length)
+                        .lineSequence()
+                        .firstOrNull()
+                        ?.trim()
+                        ?.toIntOrNull()
+                } else {
+                    null
+                }
+                val details = if (markerIndex >= 0) {
+                    output.substring(0, markerIndex).trim()
+                } else {
+                    output.trim()
+                }
+
+                if (exitCode == 0) {
+                    _errorMessage.value = null
+                    refresh()
+                } else {
+                    val suffix = details.takeIf { it.isNotEmpty() }?.let { ": $it" }.orEmpty()
+                    _errorMessage.value = "$label failed$suffix"
+                }
+            } catch (e: Exception) {
+                _errorMessage.value = "$label failed: ${e.localizedMessage}"
+            } finally {
+                _isSyncInProgress.value = false
+            }
+        }
     }
 }

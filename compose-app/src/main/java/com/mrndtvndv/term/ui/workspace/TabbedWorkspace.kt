@@ -25,6 +25,7 @@ import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.pager.PagerDefaults
+import androidx.compose.foundation.pager.PagerSnapDistance
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
@@ -86,6 +87,10 @@ fun TabbedWorkspace(
         initialPage = activePageIndex,
         pageCount = { activeTabs.size }
     )
+    val flingBehavior = PagerDefaults.flingBehavior(
+        state = pagerState,
+        pagerSnapDistance = PagerSnapDistance.atMost(1),
+    )
     val coroutineScope = rememberCoroutineScope()
 
     // On non-Terminal pages, rightward swipes near the left screen edge would be
@@ -144,7 +149,7 @@ fun TabbedWorkspace(
 
     // Sync pagerState when activeTab changes
     LaunchedEffect(activePageIndex) {
-        if (pagerState.currentPage != activePageIndex) {
+        if (pagerState.currentPage != activePageIndex && !pagerState.isScrollInProgress) {
             pagerState.animateScrollToPage(activePageIndex)
         }
     }
@@ -201,6 +206,7 @@ fun TabbedWorkspace(
     ) { paddingValues ->
         HorizontalPager(
             state = pagerState,
+            flingBehavior = flingBehavior,
             userScrollEnabled = isPagerScrollAllowed,
             pageNestedScrollConnection = pageNestedScrollConnection,
             key = { index -> activeTabs.getOrNull(index)?.let { "${index}_${it.title}" } ?: index.toString() },

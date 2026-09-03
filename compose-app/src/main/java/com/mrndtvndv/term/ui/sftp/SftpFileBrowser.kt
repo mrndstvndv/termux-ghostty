@@ -76,7 +76,8 @@ fun SftpBreadcrumbs(
     currentPath: String,
     trailPath: String,
     onSegmentClick: (String) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    isTabActive: Boolean = true
 ) {
     val effectivePath = if (trailPath.isNotBlank()) trailPath else currentPath
     val segments = remember(effectivePath) { parsePathSegments(effectivePath) }
@@ -84,10 +85,13 @@ fun SftpBreadcrumbs(
     val activeSegmentRequester = remember { BringIntoViewRequester() }
     val activeSegmentIndex = segments.indexOfFirst { it.fullPath == currentPath }
 
-    LaunchedEffect(currentPath, effectivePath) {
-        if (activeSegmentIndex >= 0) {
-            activeSegmentRequester.bringIntoView()
-        }
+    // BringIntoView propagates to ALL ancestors including HorizontalPager: an offscreen
+    // SFTP page requesting it yanks the pager Terminal->Git overshooting onto SFTP.
+    // Only request when this tab is active (pager already settled on SFTP), so the
+    // request scopes to the breadcrumb Row's own horizontalScroll.
+    LaunchedEffect(currentPath, effectivePath, isTabActive) {
+        if (!isTabActive || activeSegmentIndex < 0) return@LaunchedEffect
+        activeSegmentRequester.bringIntoView()
     }
 
     Surface(
@@ -379,6 +383,7 @@ fun SftpFileBrowser(
                     SftpBreadcrumbs(
                         currentPath = viewModel.currentPath,
                         trailPath = trailPath,
+                        isTabActive = isTabActive,
                         onSegmentClick = { targetPath ->
                             if (sftpBackStack.none { (it as? SftpNavKey.Folder)?.path == targetPath }) {
                                 sftpBackStack.add(SftpNavKey.Folder(targetPath))

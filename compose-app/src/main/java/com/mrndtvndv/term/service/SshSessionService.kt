@@ -85,7 +85,10 @@ class SshSessionService : Service() {
     }
 
     fun disconnectAll() {
-        sessions.values.forEach { it.finishIfRunning() }
+        sessions.values.forEach {
+            try { it.finishIfRunning() } catch (_: Exception) { }
+            try { it.close() } catch (_: Exception) { }
+        }
         sessions.clear()
         updateNotification()
     }

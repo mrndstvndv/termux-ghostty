@@ -192,6 +192,35 @@ class MainViewModelNotificationFocusTest {
         assertTrue(ssh.commands.isEmpty())
     }
 
+    @Test
+    fun `external disconnect burst returns workspace to server list`() = runTest(testDispatcher) {
+        val serverA = server("server-a", ssh = RecordingSshSession())
+        val serverB = server("server-b", ssh = RecordingSshSession())
+        val manager = FakeSessionManager(
+            configs = listOf(serverA.config, serverB.config),
+            connectedServers = listOf(serverA, serverB),
+        )
+        val viewModel = viewModelFor(manager)
+
+        viewModel.connect(serverA.config.id)
+        advanceUntilIdle()
+        assertEquals(
+            ScreenState.TerminalWorkspace(serverA.config.id),
+            viewModel.uiState.value.screen,
+        )
+
+        // Simulate AppSessionManager.disconnectAll(): coordinator cleared first,
+        // then one finish event per server (close() suppresses onSessionFinished).
+        manager.coordinator.disconnect(serverA.config.id)
+        manager.coordinator.disconnect(serverB.config.id)
+        assertTrue(manager.sessionFinished.tryEmit(serverA.config.id))
+        assertTrue(manager.sessionFinished.tryEmit(serverB.config.id))
+        advanceUntilIdle()
+
+        assertEquals(ScreenState.ServerList, viewModel.uiState.value.screen)
+        assertTrue(viewModel.activeIds.value.isEmpty())
+    }
+
     private fun viewModelFor(
         manager: FakeSessionManager,
         preferences: MemorySharedPreferences = MemorySharedPreferences(),
@@ -231,7 +260,7 @@ class MainViewModelNotificationFocusTest {
 
         override val coordinator: ServerCoordinatorAccess = FakeCoordinator(servers)
         override val serverRepository: ServerRepositoryAccess = FakeRepository(configs)
-        override val sessionFinished = MutableSharedFlow<String>()
+        override val sessionFinished = MutableSharedFlow<String>(extraBufferCapacity = 8)
         val connectCalls = mutableListOf<String>()
         private val progress = MutableStateFlow<TerminalProgress?>(null)
 

@@ -11,7 +11,9 @@ import kotlinx.coroutines.flow.asSharedFlow
 class SessionFinishedEvents {
     private val _events = MutableSharedFlow<String>(
         replay = 1,
-        extraBufferCapacity = 1,
+        // disconnectAll() emits one event per server in a burst; keep room for
+        // maxConcurrent (5) plus natural finishes without dropping.
+        extraBufferCapacity = 8,
         onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
 

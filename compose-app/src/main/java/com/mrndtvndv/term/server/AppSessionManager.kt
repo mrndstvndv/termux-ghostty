@@ -74,7 +74,10 @@ class AppSessionManager private constructor(context: Context) : AppSessionManage
     override suspend fun connect(id: String): Result<Server> = coordinator.connect(id)
 
     fun disconnectAll() {
+        val disconnectedIds = coordinator.activeIds.toList()
+        val disconnectedSessions = disconnectedIds.mapNotNull { coordinator.getServer(it)?.terminalSession }
         coordinator.disconnectAll()
+        disconnectedSessions.forEach { terminalProgress.remove(it) }
         val service = sshService
         service?.disconnectAll()
         synchronized(this) {
@@ -83,6 +86,10 @@ class AppSessionManager private constructor(context: Context) : AppSessionManage
             sshService?.stopIfIdle()
             unbindServiceIfNeeded()
         }
+        // Explicit disconnects close the backend before the posted process-exit
+        // event runs, which suppresses onSessionFinished. Emit explicitly so the
+        // UI leaves the workspace instead of freezing on a dead session.
+        disconnectedIds.forEach { finishedSessions.emit(it) }
     }
 
     private fun onServerSessionFinished(serverId: String) {

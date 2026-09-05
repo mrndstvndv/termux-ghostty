@@ -193,6 +193,24 @@ class MainViewModelNotificationFocusTest {
     }
 
     @Test
+    fun `manual disconnect goes through the app session manager`() = runTest(testDispatcher) {
+        val server = server("server-a", ssh = RecordingSshSession())
+        val manager = FakeSessionManager(
+            configs = listOf(server.config),
+            connectedServers = listOf(server),
+        )
+        val viewModel = viewModelFor(manager)
+
+        viewModel.connect(server.config.id)
+        advanceUntilIdle()
+        viewModel.disconnect(server.config.id)
+
+        assertEquals(listOf(server.config.id), manager.disconnectCalls)
+        assertEquals(ScreenState.ServerList, viewModel.uiState.value.screen)
+        assertTrue(viewModel.activeIds.value.isEmpty())
+    }
+
+    @Test
     fun `external disconnect burst returns workspace to server list`() = runTest(testDispatcher) {
         val serverA = server("server-a", ssh = RecordingSshSession())
         val serverB = server("server-b", ssh = RecordingSshSession())
@@ -262,6 +280,7 @@ class MainViewModelNotificationFocusTest {
         override val serverRepository: ServerRepositoryAccess = FakeRepository(configs)
         override val sessionFinished = MutableSharedFlow<String>(extraBufferCapacity = 8)
         val connectCalls = mutableListOf<String>()
+        val disconnectCalls = mutableListOf<String>()
         private val progress = MutableStateFlow<TerminalProgress?>(null)
 
         override suspend fun connect(id: String): Result<Server> {
@@ -270,6 +289,11 @@ class MainViewModelNotificationFocusTest {
                 ?: return Result.failure(IllegalStateException("Unable to connect: $id"))
             servers[id] = server
             return Result.success(server)
+        }
+
+        override fun disconnect(id: String) {
+            disconnectCalls += id
+            coordinator.disconnect(id)
         }
 
         override fun observeTerminalProgress(session: TerminalSession): StateFlow<TerminalProgress?> =

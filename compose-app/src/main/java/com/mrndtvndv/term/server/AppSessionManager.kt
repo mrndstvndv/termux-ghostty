@@ -73,6 +73,20 @@ class AppSessionManager private constructor(context: Context) : AppSessionManage
 
     override suspend fun connect(id: String): Result<Server> = coordinator.connect(id)
 
+    /**
+     * Disconnect one server and remove its terminal from every process-scoped
+     * session registry. Manual close suppresses TerminalSession's finish
+     * callback, so this cleanup cannot rely on onSessionFinished().
+     */
+    override fun disconnect(id: String) {
+        val terminalSession = coordinator.getServer(id)?.terminalSession
+        coordinator.disconnect(id)
+        if (terminalSession != null) {
+            terminalProgress.remove(terminalSession)
+            unbindTerminalSession(terminalSession)
+        }
+    }
+
     fun disconnectAll() {
         val disconnectedIds = coordinator.activeIds.toList()
         val disconnectedSessions = disconnectedIds.mapNotNull { coordinator.getServer(it)?.terminalSession }

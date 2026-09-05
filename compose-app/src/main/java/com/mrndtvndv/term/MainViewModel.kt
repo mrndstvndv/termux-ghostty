@@ -136,7 +136,7 @@ class MainViewModel(
     }
 
     fun deleteServer(id: String) {
-        coordinator.disconnect(id)
+        sessionManager.disconnect(id)
         _activeIds.value = _activeIds.value - id
         serverRepository.remove(id)
         reloadServers()
@@ -304,7 +304,7 @@ class MainViewModel(
 
     fun disconnect(id: String) {
         _disconnectingId.value = id
-        coordinator.disconnect(id)
+        sessionManager.disconnect(id)
         _activeIds.value = _activeIds.value - id
         _disconnectingId.value = null
         leaveWorkspace()

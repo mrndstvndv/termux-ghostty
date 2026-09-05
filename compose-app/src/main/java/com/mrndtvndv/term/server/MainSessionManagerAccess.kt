@@ -42,5 +42,7 @@ interface AppSessionManagerAccess {
 
     suspend fun connect(id: String): Result<Server>
 
+    fun disconnect(id: String)
+
     fun observeTerminalProgress(session: TerminalSession): StateFlow<TerminalProgress?>
 }

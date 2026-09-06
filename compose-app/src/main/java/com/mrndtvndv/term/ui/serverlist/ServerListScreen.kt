@@ -192,8 +192,8 @@ private fun LocalTerminalSettingsDialog(
                 ImagePasteSettingsSection(
                     state = imagePasteState,
                     directorySupportingText =
-                        "Local directory where pasted images are stored. Required for image pasting.",
-                    activeSupportingText = "Save and paste clipboard images into terminal",
+                        "Local directory for uploaded files and pasted images. Required for uploads.",
+                    activeSupportingText = "Upload media and files or paste clipboard images into terminal",
                 )
             }
         },

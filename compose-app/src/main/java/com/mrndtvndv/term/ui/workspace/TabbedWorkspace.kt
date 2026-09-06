@@ -47,7 +47,8 @@ import java.io.File
 fun TabbedWorkspace(
     session: TerminalSession,
     terminalProgress: TerminalProgress?,
-    onUploadImage: () -> Unit,
+    onUploadMedia: () -> Unit,
+    onUploadFile: () -> Unit,
     sftpViewModel: SftpViewModel?,
     reviewViewModel: ReviewViewModel?,
     extraKeysController: ExtraKeysController,
@@ -265,7 +266,8 @@ fun TabbedWorkspace(
                                 TerminalFocusWrapper(
                                     session = session,
                                     extraKeysController = extraKeysController,
-                                    onUploadImage = onUploadImage,
+                                    onUploadMedia = onUploadMedia,
+                                    onUploadFile = onUploadFile,
                                     isTerminalActive = activeTab == WorkspaceTab.Terminal,
                                     onBackendCreated = onBackendCreated,
                                     onBackendReleased = onBackendReleased,

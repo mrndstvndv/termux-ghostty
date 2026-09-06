@@ -66,7 +66,7 @@ fun ImagePasteSettingsSection(
     OutlinedTextField(
         value = state.directory,
         onValueChange = { state.directory = it },
-        label = { Text("Pasted Image Directory") },
+        label = { Text("Upload Directory") },
         placeholder = { Text(ClipboardPathResolver.DEFAULT_IMAGE_CACHE_DIR) },
         supportingText = { Text(directorySupportingText) },
         singleLine = true,
@@ -78,7 +78,7 @@ fun ImagePasteSettingsSection(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            Text("Image Paste Support", style = MaterialTheme.typography.bodyLarge)
+            Text("Media Upload & Paste", style = MaterialTheme.typography.bodyLarge)
             Text(
                 if (state.hasDirectory) activeSupportingText else "Provide a cache directory above to enable",
                 style = MaterialTheme.typography.bodySmall,
@@ -102,7 +102,7 @@ fun ImagePasteSettingsSection(
             Column(modifier = Modifier.weight(1f)) {
                 Text("Auto Cleanup", style = MaterialTheme.typography.bodyLarge)
                 Text(
-                    "Automatically remove older images when pasting",
+                    "Automatically remove older clipboard images when pasting",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -121,11 +121,11 @@ fun ImagePasteSettingsSection(
                         state.maxFilesText = newValue
                     }
                 },
-                label = { Text("Max Retained Images") },
+                label = { Text("Max Retained Clipboard Images") },
                 placeholder = { Text(ClipboardImageHandler.MAX_IMAGE_RETENTION_COUNT.toString()) },
                 supportingText = {
                     Text(
-                        "Maximum number of recent images to keep " +
+                        "Maximum number of recent clipboard images to keep " +
                             "(default: ${ClipboardImageHandler.MAX_IMAGE_RETENTION_COUNT})",
                     )
                 },

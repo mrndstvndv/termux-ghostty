@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
@@ -78,7 +79,8 @@ private enum class TranscriptAction {
 
 private class ContextMenuCallbacks(
     val onDismiss: () -> Unit,
-    val onUploadImage: () -> Unit,
+    val onUploadMedia: () -> Unit,
+    val onUploadFile: () -> Unit,
     val onSelectUrls: () -> Unit,
     val onShareTranscript: () -> Unit,
     val onShowUrls: (List<String>) -> Unit,
@@ -92,7 +94,8 @@ fun TerminalContextMenu(
     session: TerminalSession,
     selectedText: String,
     onOpenUrl: (String) -> Unit,
-    onUploadImage: () -> Unit,
+    onUploadMedia: () -> Unit,
+    onUploadFile: () -> Unit,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -103,7 +106,7 @@ fun TerminalContextMenu(
     var isTranscriptLoading by remember { mutableStateOf(false) }
     val context = LocalContext.current
 
-    val callbacks = remember(onDismiss, onUploadImage) {
+    val callbacks = remember(onDismiss, onUploadMedia, onUploadFile) {
         ContextMenuCallbacks(
             onDismiss = {
                 transcriptAction = null
@@ -111,7 +114,8 @@ fun TerminalContextMenu(
                 isSheetVisible = false
                 onDismiss()
             },
-            onUploadImage = onUploadImage,
+            onUploadMedia = onUploadMedia,
+            onUploadFile = onUploadFile,
             onSelectUrls = { transcriptAction = TranscriptAction.SelectUrl },
             onShareTranscript = { transcriptAction = TranscriptAction.Share },
             onShowUrls = { urls ->
@@ -251,11 +255,19 @@ private fun rememberContextMenuItems(
             },
             ContextMenuItemData(
                 icon = Icons.Default.Image,
-                title = "Upload Image",
-                subtitle = "Choose an image and paste its path",
+                title = "Upload Media",
+                subtitle = "Choose an image or video and paste its path",
             ) {
                 callbacks.onDismiss()
-                callbacks.onUploadImage()
+                callbacks.onUploadMedia()
+            },
+            ContextMenuItemData(
+                icon = Icons.AutoMirrored.Filled.InsertDriveFile,
+                title = "Upload File",
+                subtitle = "Choose any file and paste its path",
+            ) {
+                callbacks.onDismiss()
+                callbacks.onUploadFile()
             },
             ContextMenuItemData(
                 icon = Icons.Default.Link,

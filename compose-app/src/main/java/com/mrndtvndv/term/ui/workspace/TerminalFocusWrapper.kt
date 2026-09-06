@@ -16,7 +16,8 @@ import com.termux.terminal.compose.TerminalImeController
 fun TerminalFocusWrapper(
     session: TerminalSession,
     extraKeysController: ExtraKeysController,
-    onUploadImage: () -> Unit,
+    onUploadMedia: () -> Unit,
+    onUploadFile: () -> Unit,
     isTerminalActive: Boolean,
     onBackendCreated: (TerminalSession, TerminalBackend) -> Unit,
     onBackendReleased: (TerminalSession, TerminalBackend) -> Unit,
@@ -27,7 +28,8 @@ fun TerminalFocusWrapper(
     TerminalWorkspaceContainer(
         session = session,
         extraKeysController = extraKeysController,
-        onUploadImage = onUploadImage,
+        onUploadMedia = onUploadMedia,
+        onUploadFile = onUploadFile,
         onBackendCreated = onBackendCreated,
         onBackendReleased = onBackendReleased,
         onOpenUrl = onOpenUrl,

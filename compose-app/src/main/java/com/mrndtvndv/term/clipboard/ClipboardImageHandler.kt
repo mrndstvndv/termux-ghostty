@@ -106,7 +106,7 @@ object ClipboardImageHandler {
     }
 
     /**
-     * Uploads a local image file to the server's existing SFTP client.
+     * Uploads a local file to the server's existing SFTP client.
      * Remote directory creation is the only shell operation; upload and cleanup use SFTP paths.
      */
     @Suppress("TooGenericExceptionCaught", "SwallowedException")
@@ -114,18 +114,22 @@ object ClipboardImageHandler {
         server: Server,
         localFile: File,
         customRemoteDir: String? = null,
+        remoteFileName: String = localFile.name,
         autoCleanup: Boolean = true,
         maxRetentionCount: Int = MAX_IMAGE_RETENTION_COUNT,
     ): String? = withContext(Dispatchers.IO) {
         try {
             val ssh = server.sshSession ?: return@withContext null
             val sftp = server.sftpClient ?: run {
-                Log.w(TAG, "Remote image upload requires the server SFTP client")
+                Log.w(TAG, "Remote file upload requires the server SFTP client")
                 return@withContext null
             }
             val resolvedDir = ClipboardPathResolver.resolveRemoteDir(ssh, customRemoteDir)
                 ?: return@withContext null
-            val remoteFilePath = "${resolvedDir.removeSuffix("/")}/${localFile.name}"
+            val safeRemoteFileName = FileUploadHandler.sanitizeFileName(remoteFileName)
+                ?: FileUploadHandler.sanitizeFileName(localFile.name)
+                ?: return@withContext null
+            val remoteFilePath = "${resolvedDir.removeSuffix("/")}/$safeRemoteFileName"
 
             val uploadContext = currentCoroutineContext()
             sftp.uploadFile(localFile, remoteFilePath) {
@@ -148,7 +152,7 @@ object ClipboardImageHandler {
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            Log.w(TAG, "Failed to upload clipboard image to remote server", e)
+            Log.w(TAG, "Failed to upload file to remote server", e)
             null
         } finally {
             try {
@@ -227,13 +231,22 @@ object ClipboardImageHandler {
     }
 
     fun getExtensionForMimeType(mimeType: String): String {
+        return getExtensionFromMimeType(mimeType) ?: "png"
+    }
+
+    private fun getExtensionFromMimeType(mimeType: String): String? {
         return when (mimeType.lowercase()) {
             "image/png" -> "png"
             "image/jpeg", "image/jpg" -> "jpg"
             "image/webp" -> "webp"
             "image/gif" -> "gif"
             "image/svg+xml" -> "svg"
-            else -> MimeTypeMap.getSingleton().getExtensionFromMimeType(mimeType) ?: "png"
+            "video/mp4" -> "mp4"
+            "video/webm" -> "webm"
+            "video/quicktime" -> "mov"
+            "video/3gpp" -> "3gp"
+            else -> MimeTypeMap.getSingleton().getExtensionFromMimeType(mimeType)
         }
     }
+
 }

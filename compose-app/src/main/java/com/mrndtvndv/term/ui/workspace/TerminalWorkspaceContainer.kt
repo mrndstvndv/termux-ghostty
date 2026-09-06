@@ -12,7 +12,8 @@ import com.termux.terminal.compose.TerminalImeController
 fun TerminalWorkspaceContainer(
     session: TerminalSession,
     extraKeysController: ExtraKeysController,
-    onUploadImage: () -> Unit,
+    onUploadMedia: () -> Unit,
+    onUploadFile: () -> Unit,
     onBackendCreated: (TerminalSession, TerminalBackend) -> Unit,
     onBackendReleased: (TerminalSession, TerminalBackend) -> Unit,
     onOpenUrl: (String) -> Unit,
@@ -23,7 +24,8 @@ fun TerminalWorkspaceContainer(
     TerminalCanvas(
         session = session,
         extraKeysController = extraKeysController,
-        onUploadImage = onUploadImage,
+        onUploadMedia = onUploadMedia,
+        onUploadFile = onUploadFile,
         onOpenUrl = onOpenUrl,
         onBackendCreated = onBackendCreated,
         onBackendReleased = onBackendReleased,

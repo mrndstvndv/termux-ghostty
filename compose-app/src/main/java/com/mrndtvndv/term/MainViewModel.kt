@@ -230,7 +230,7 @@ class MainViewModel(
     fun getLocalConfig(): ServerConfig? = serverRepository.get(LOCAL_TERMINAL_ID)
 
     /**
-     * Update configuration for the local terminal (startup command and image paste settings).
+     * Update configuration for the local terminal (startup command and upload settings).
      * Creates the config first if it doesn't exist yet.
      */
     fun updateLocalConfig(

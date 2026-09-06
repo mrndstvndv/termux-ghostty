@@ -44,7 +44,8 @@ const val MaxKeyboardResizeDebounceMillis = 100
 fun TerminalCanvas(
     session: TerminalSession,
     extraKeysController: ExtraKeysController,
-    onUploadImage: () -> Unit,
+    onUploadMedia: () -> Unit,
+    onUploadFile: () -> Unit,
     onOpenUrl: (String) -> Unit,
     onBackendCreated: (TerminalSession, TerminalBackend) -> Unit,
     onBackendReleased: (TerminalSession, TerminalBackend) -> Unit,
@@ -92,7 +93,8 @@ fun TerminalCanvas(
             session = session,
             selectedText = contextMenuSelectedText,
             onOpenUrl = onOpenUrl,
-            onUploadImage = onUploadImage,
+            onUploadMedia = onUploadMedia,
+            onUploadFile = onUploadFile,
             onDismiss = {
                 showContextMenu = false
                 contextMenuSelectedText = ""

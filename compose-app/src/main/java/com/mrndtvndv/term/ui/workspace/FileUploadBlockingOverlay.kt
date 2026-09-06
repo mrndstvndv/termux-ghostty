@@ -24,7 +24,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 
 @Composable
-fun ImagePasteBlockingOverlay(
+fun FileUploadBlockingOverlay(
     onCancel: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -39,7 +39,7 @@ fun ImagePasteBlockingOverlay(
                 onClick = onCancel,
             )
             .semantics {
-                contentDescription = "Image upload in progress. Tap to cancel."
+                contentDescription = "File upload in progress. Tap to cancel."
             },
         contentAlignment = Alignment.Center,
     ) {
@@ -62,7 +62,7 @@ fun ImagePasteBlockingOverlay(
                 )
                 Spacer(modifier = Modifier.size(16.dp))
                 Text(
-                    text = "Uploading image",
+                    text = "Uploading file",
                     style = MaterialTheme.typography.titleMedium,
                 )
                 Text(

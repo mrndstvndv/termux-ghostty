@@ -112,8 +112,8 @@ fun AddServerScreen(
             ImagePasteSettingsSection(
                 state = imagePasteState,
                 directorySupportingText =
-                    "Remote directory where pasted images are stored. Required for image pasting.",
-                activeSupportingText = "Upload and paste clipboard images into terminal",
+                    "Remote directory for uploaded files and pasted images. Required for uploads.",
+                activeSupportingText = "Upload media and files or paste clipboard images into terminal",
             )
 
             Button(

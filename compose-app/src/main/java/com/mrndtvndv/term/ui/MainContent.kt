@@ -40,7 +40,7 @@ import com.mrndtvndv.term.ui.workspace.MaxKeyboardResizeDebounceMillis
 import com.mrndtvndv.term.ui.workspace.TerminalWorkspaceScreen
 import com.mrndtvndv.term.ui.workspace.WorkspaceTab
 import com.mrndtvndv.term.ui.workspace.VisualEffectFrameRate
-import com.mrndtvndv.term.ui.workspace.ImagePasteBlockingOverlay
+import com.mrndtvndv.term.ui.workspace.FileUploadBlockingOverlay
 import com.termux.terminal.compose.TerminalBackend
 import com.termux.terminal.TerminalSession
 import java.io.File
@@ -55,9 +55,10 @@ fun MainContent(
     onBackendCreated: (TerminalSession, TerminalBackend) -> Unit,
     onBackendReleased: (TerminalSession, TerminalBackend) -> Unit,
     onActiveTerminalSessionChanged: (TerminalSession?) -> Unit,
-    imagePasteInProgress: Boolean,
-    onCancelImagePaste: () -> Unit,
-    onRequestImageUpload: (TerminalSession) -> Unit,
+    uploadInProgress: Boolean,
+    onCancelUpload: () -> Unit,
+    onRequestMediaUpload: (TerminalSession) -> Unit,
+    onRequestFileUpload: (TerminalSession) -> Unit,
     onOpenFile: (File) -> Unit,
     onOpenFileError: (String) -> Unit,
     onOpenUrl: (String) -> Unit,
@@ -345,8 +346,8 @@ fun MainContent(
                                 if (server != null) {
                                     BackPressInterceptor(
                                         onBack = {
-                                            if (imagePasteInProgress) {
-                                                onCancelImagePaste()
+                                            if (uploadInProgress) {
+                                                onCancelUpload()
                                             } else {
                                                 navigator.goBack()
                                             }
@@ -360,8 +361,11 @@ fun MainContent(
                                     TerminalWorkspaceScreen(
                                         session = server.terminalSession,
                                         terminalProgress = terminalProgress,
-                                        onUploadImage = {
-                                            onRequestImageUpload(server.terminalSession)
+                                        onUploadMedia = {
+                                            onRequestMediaUpload(server.terminalSession)
+                                        },
+                                        onUploadFile = {
+                                            onRequestFileUpload(server.terminalSession)
                                         },
                                         sftpViewModel = sftpVM,
                                         reviewViewModel = reviewVM,
@@ -453,9 +457,9 @@ fun MainContent(
                     modifier = Modifier.align(Alignment.TopCenter),
                 )
 
-                if (imagePasteInProgress) {
-                    ImagePasteBlockingOverlay(
-                        onCancel = onCancelImagePaste,
+                if (uploadInProgress) {
+                    FileUploadBlockingOverlay(
+                        onCancel = onCancelUpload,
                         modifier = Modifier.fillMaxSize(),
                     )
                 }

@@ -16,7 +16,8 @@ import java.io.File
 fun TerminalWorkspaceScreen(
     session: TerminalSession,
     terminalProgress: TerminalProgress?,
-    onUploadImage: () -> Unit,
+    onUploadMedia: () -> Unit,
+    onUploadFile: () -> Unit,
     sftpViewModel: SftpViewModel? = null,
     reviewViewModel: ReviewViewModel? = null,
     extraKeysEnabled: Boolean,
@@ -50,7 +51,8 @@ fun TerminalWorkspaceScreen(
     TabbedWorkspace(
         session = session,
         terminalProgress = terminalProgress,
-        onUploadImage = onUploadImage,
+        onUploadMedia = onUploadMedia,
+        onUploadFile = onUploadFile,
         sftpViewModel = sftpViewModel,
         reviewViewModel = reviewViewModel,
         extraKeysController = extraKeysController,

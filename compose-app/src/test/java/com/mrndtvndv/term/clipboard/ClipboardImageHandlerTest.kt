@@ -29,6 +29,42 @@ class ClipboardImageHandlerTest {
     }
 
     @Test
+    fun resolveSafeUploadFileName_preservesSafePickerName() {
+        assertEquals(
+            "holiday video.mp4",
+            FileUploadHandler.resolveSafeUploadFileName(
+                requestedName = "holiday video.mp4",
+                mimeType = "video/mp4",
+                timestamp = 42L,
+            ),
+        )
+    }
+
+    @Test
+    fun resolveSafeUploadFileName_removesPathComponents() {
+        assertEquals(
+            "video.mp4",
+            FileUploadHandler.resolveSafeUploadFileName(
+                requestedName = "../video.mp4",
+                mimeType = "video/mp4",
+                timestamp = 42L,
+            ),
+        )
+    }
+
+    @Test
+    fun resolveSafeUploadFileName_usesMimeTypeWhenPickerHasNoName() {
+        assertEquals(
+            "upload_42.mp4",
+            FileUploadHandler.resolveSafeUploadFileName(
+                requestedName = null,
+                mimeType = "video/mp4",
+                timestamp = 42L,
+            ),
+        )
+    }
+
+    @Test
     fun pruneOldImages_removesExpiredFiles() {
         val dir = tempFolder.newFolder("clipboard_test")
         val now = 100_000_000L

@@ -26,8 +26,6 @@ data class TerminalCanvasConfig(
     val unconditionalKeyboardOnTap: Boolean = true,
     /** Master switch for opening the soft keyboard on terminal tap. */
     val autoShowKeyboardOnTap: Boolean = true,
-    /** Manual keyboard gesture: two-finger swipe up opens the soft keyboard. */
-    val twoFingerSwipeUpOpensKeyboard: Boolean = true,
     val accessibilityEnabled: Boolean = false,
     /** Color for the selection handles; unspecified uses the host theme accent. */
     val selectionHandleColor: Color = Color.Unspecified,
@@ -48,6 +46,8 @@ data class TerminalCanvasConfig(
     val onCodePoint: ((codePoint: Int, controlDown: Boolean, altDown: Boolean) -> Boolean)? = null,
     /** Notifies a host that the platform IME session has closed. */
     val onImeSessionClosed: () -> Unit = {},
+    /** Reports the actual platform IME visibility, including an initial value after attach. */
+    val onImeVisibilityChanged: (Boolean) -> Unit = {},
     /** Adds the platform's optional More action to the floating toolbar. */
     val onMoreSelectionRequest: ((String) -> Unit)? = null,
     val onDiagnostics: (TerminalDiagnostic) -> Unit = {}

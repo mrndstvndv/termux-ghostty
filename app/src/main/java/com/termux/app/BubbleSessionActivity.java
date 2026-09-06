@@ -180,6 +180,11 @@ public final class BubbleSessionActivity extends AppCompatActivity implements Se
             public void onImeSessionClosed() {
                 mTerminalViewClient.onSoftKeyboardDismissed();
             }
+
+            @Override
+            public void onImeVisibilityChanged(boolean isVisible) {
+                mTerminalViewClient.onSoftKeyboardVisibilityChanged(isVisible);
+            }
         });
         mTerminalView.setModifierKeyReader(new ModifierKeyReader() {
             @Override

@@ -2,6 +2,7 @@ package com.mrndtvndv.term.ui.workspace
 
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import com.mrndtvndv.term.ui.keyboard.SoftKeyboardState
 import com.termux.terminal.TerminalSession
 import com.mrndtvndv.term.ui.sftp.SftpViewModel
 import com.termux.terminal.compose.TerminalBackend
@@ -30,6 +31,11 @@ fun TerminalWorkspaceScreen(
     onFocusHerdrPane: (HerdrWorkspaceResolver.HerdrPaneNode) -> Unit = {},
     onCloseHerdrPane: (HerdrWorkspaceResolver.HerdrPaneNode) -> Unit = {},
     herdrAgentFabOpacity: Float = 0.7f,
+    rememberSoftKeyboardState: Boolean = false,
+    lastSoftKeyboardState: SoftKeyboardState = SoftKeyboardState.UNKNOWN,
+    onKeyboardVisibilityChanged: (Boolean) -> Unit = {},
+    showKeyboardFab: Boolean = false,
+    hideKeyboardFabWhileTyping: Boolean = true,
     onBackendCreated: (TerminalSession, TerminalBackend) -> Unit,
     onBackendReleased: (TerminalSession, TerminalBackend) -> Unit,
     activeTab: WorkspaceTab,
@@ -60,6 +66,11 @@ fun TerminalWorkspaceScreen(
         onFocusHerdrPane = onFocusHerdrPane,
         onCloseHerdrPane = onCloseHerdrPane,
         herdrAgentFabOpacity = herdrAgentFabOpacity,
+        rememberSoftKeyboardState = rememberSoftKeyboardState,
+        lastSoftKeyboardState = lastSoftKeyboardState,
+        onKeyboardVisibilityChanged = onKeyboardVisibilityChanged,
+        showKeyboardFab = showKeyboardFab,
+        hideKeyboardFabWhileTyping = hideKeyboardFabWhileTyping,
         onBackendCreated = onBackendCreated,
         onBackendReleased = onBackendReleased,
         activeTab = activeTab,

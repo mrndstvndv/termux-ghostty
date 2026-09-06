@@ -20,6 +20,7 @@ fun TerminalFocusWrapper(
     onBackendCreated: (TerminalSession, TerminalBackend) -> Unit,
     onBackendReleased: (TerminalSession, TerminalBackend) -> Unit,
     onOpenUrl: (String) -> Unit,
+    onKeyboardVisibilityChanged: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     TerminalWorkspaceContainer(
@@ -29,6 +30,7 @@ fun TerminalFocusWrapper(
         onBackendCreated = onBackendCreated,
         onBackendReleased = onBackendReleased,
         onOpenUrl = onOpenUrl,
+        onKeyboardVisibilityChanged = onKeyboardVisibilityChanged,
         isTerminalActive = isTerminalActive,
         modifier = modifier
     )

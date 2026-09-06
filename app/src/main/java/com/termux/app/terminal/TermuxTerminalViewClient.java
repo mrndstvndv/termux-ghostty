@@ -206,7 +206,16 @@ public class TermuxTerminalViewClient extends TermuxTerminalClientBase {
 
     @Override
     public void onSoftKeyboardDismissed() {
+        if (!mActivity.hasWindowFocus()) return;
         hideSoftKeyboardAndRemember();
+    }
+
+    @Override
+    public void onSoftKeyboardVisibilityChanged(boolean isVisible) {
+        if (!mActivity.hasWindowFocus()) return;
+        rememberSoftKeyboardState(isVisible
+            ? TERMUX_APP.VALUE_LAST_SOFT_KEYBOARD_STATE_VISIBLE
+            : TERMUX_APP.VALUE_LAST_SOFT_KEYBOARD_STATE_HIDDEN);
     }
 
     @Override

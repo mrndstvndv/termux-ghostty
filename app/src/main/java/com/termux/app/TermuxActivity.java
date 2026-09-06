@@ -639,6 +639,11 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
             }
 
             @Override
+            public void onImeVisibilityChanged(boolean isVisible) {
+                mTermuxTerminalViewClient.onSoftKeyboardVisibilityChanged(isVisible);
+            }
+
+            @Override
             public void onDiagnostics(com.termux.terminal.compose.TerminalDiagnostic diagnostic) {
                 Logger.logWarn(LOG_TAG, "Terminal Compose diagnostic: " + diagnostic);
             }

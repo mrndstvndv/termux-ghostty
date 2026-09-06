@@ -57,8 +57,8 @@ fun SettingsScreen(
     onUnconditionalSoftKeyboardOnTapChange: (Boolean) -> Unit = {},
     autoShowKeyboardOnTap: Boolean = true,
     onAutoShowKeyboardOnTapChange: (Boolean) -> Unit = {},
-    twoFingerSwipeUpOpensKeyboard: Boolean = true,
-    onTwoFingerSwipeUpOpensKeyboardChange: (Boolean) -> Unit = {},
+    rememberSoftKeyboardState: Boolean = false,
+    onRememberSoftKeyboardStateChange: (Boolean) -> Unit = {},
     nativeLogcatLoggingEnabled: Boolean = false,
     onNativeLogcatLoggingEnabledChange: (Boolean) -> Unit = {},
     debugHudEnabled: Boolean = false,
@@ -69,6 +69,10 @@ fun SettingsScreen(
     onVisualEffectFrameRateChange: (String) -> Unit = {},
     hideWorkspaceTabs: Boolean = false,
     onHideWorkspaceTabsChange: (Boolean) -> Unit = {},
+    showKeyboardFab: Boolean = false,
+    onShowKeyboardFabChange: (Boolean) -> Unit = {},
+    hideKeyboardFabWhileTyping: Boolean = true,
+    onHideKeyboardFabWhileTypingChange: (Boolean) -> Unit = {},
     herdrAgentFabOpacity: Float = 0.7f,
     onHerdrAgentFabOpacityChange: (Float) -> Unit = {},
     onBack: () -> Unit
@@ -619,6 +623,51 @@ fun SettingsScreen(
 
                     HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
 
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Show Keyboard Button", style = MaterialTheme.typography.bodyLarge)
+                            Text(
+                                text = "Show a keyboard toggle button above the agents button " +
+                                    "in the terminal workspace.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = showKeyboardFab,
+                            onCheckedChange = onShowKeyboardFabChange
+                        )
+                    }
+
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Hide Button While Typing", style = MaterialTheme.typography.bodyLarge)
+                            Text(
+                                text = "Automatically hide the keyboard button " +
+                                    "while the soft keyboard is open.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = hideKeyboardFabWhileTyping,
+                            onCheckedChange = onHideKeyboardFabWhileTypingChange,
+                            enabled = showKeyboardFab
+                        )
+                    }
+
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
                     Column(modifier = Modifier.fillMaxWidth()) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -696,17 +745,16 @@ fun SettingsScreen(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text("Two-Finger Swipe Up Shows Keyboard", style = MaterialTheme.typography.bodyLarge)
+                            Text("Remember Keyboard State", style = MaterialTheme.typography.bodyLarge)
                             Text(
-                                text = "Swipe up with two fingers on the terminal to open " +
-                                    "the keyboard manually. Useful when auto-show is off.",
+                                text = "Restore the terminal keyboard's last visibility when reopening it",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                         Switch(
-                            checked = twoFingerSwipeUpOpensKeyboard,
-                            onCheckedChange = onTwoFingerSwipeUpOpensKeyboardChange
+                            checked = rememberSoftKeyboardState,
+                            onCheckedChange = onRememberSoftKeyboardStateChange
                         )
                     }
 

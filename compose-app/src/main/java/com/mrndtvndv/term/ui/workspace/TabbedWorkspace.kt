@@ -11,9 +11,15 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.mrndtvndv.term.ui.keyboard.SoftKeyboardState
+import com.mrndtvndv.term.ui.keyboard.SoftKeyboardVisibilityTracker
 import com.termux.terminal.TerminalSession
 import com.mrndtvndv.term.ui.sftp.SftpFileBrowser
 import com.mrndtvndv.term.ui.sftp.SftpViewModel
@@ -56,6 +62,11 @@ fun TabbedWorkspace(
     onFocusHerdrPane: (HerdrWorkspaceResolver.HerdrPaneNode) -> Unit = {},
     onCloseHerdrPane: (HerdrWorkspaceResolver.HerdrPaneNode) -> Unit = {},
     herdrAgentFabOpacity: Float = 0.7f,
+    rememberSoftKeyboardState: Boolean = false,
+    lastSoftKeyboardState: SoftKeyboardState = SoftKeyboardState.UNKNOWN,
+    onKeyboardVisibilityChanged: (Boolean) -> Unit = {},
+    showKeyboardFab: Boolean = false,
+    hideKeyboardFabWhileTyping: Boolean = true,
     onBackendCreated: (TerminalSession, TerminalBackend) -> Unit,
     onBackendReleased: (TerminalSession, TerminalBackend) -> Unit,
     activeTab: WorkspaceTab,
@@ -91,6 +102,38 @@ fun TabbedWorkspace(
         pagerSnapDistance = PagerSnapDistance.atMost(1),
     )
     val coroutineScope = rememberCoroutineScope()
+    val isLifecycleResumed by rememberLifecycleResumed()
+    val imeVisible = WindowInsets.isImeVisible
+    val keyboardVisibilityTracker = remember(session) { SoftKeyboardVisibilityTracker() }
+    val currentActiveTab = rememberUpdatedState(activeTab)
+    val currentLifecycleResumed = rememberUpdatedState(isLifecycleResumed)
+    val currentRememberKeyboardState = rememberUpdatedState(rememberSoftKeyboardState)
+    val currentOnKeyboardVisibilityChanged = rememberUpdatedState(onKeyboardVisibilityChanged)
+    val reportKeyboardVisibility: (Boolean) -> Unit = remember(session) {
+        { isVisible: Boolean ->
+            val visibilityToPersist = keyboardVisibilityTracker.observe(
+                isVisible = isVisible,
+                isTerminalActive = currentActiveTab.value == WorkspaceTab.Terminal,
+                isLifecycleResumed = currentLifecycleResumed.value
+            )
+            if (visibilityToPersist != null && currentRememberKeyboardState.value) {
+                currentOnKeyboardVisibilityChanged.value(visibilityToPersist)
+            }
+        }
+    }
+    val currentLastSoftKeyboardState = rememberUpdatedState(lastSoftKeyboardState)
+    LaunchedEffect(session, activeTab, rememberSoftKeyboardState, isLifecycleResumed) {
+        if (!rememberSoftKeyboardState) return@LaunchedEffect
+        if (activeTab != WorkspaceTab.Terminal || !isLifecycleResumed) return@LaunchedEffect
+        val stateToRestore = currentLastSoftKeyboardState.value
+        if (stateToRestore == SoftKeyboardState.UNKNOWN) return@LaunchedEffect
+        withFrameNanos { }
+        if (stateToRestore == SoftKeyboardState.VISIBLE) {
+            extraKeysController.requestShowKeyboard()
+        } else {
+            extraKeysController.requestHideKeyboard()
+        }
+    }
 
     // On non-Terminal pages, rightward swipes near the left screen edge would be
     // captured by the system back gesture (predictive back, API 29+) instead of the
@@ -226,26 +269,48 @@ fun TabbedWorkspace(
                                     isTerminalActive = activeTab == WorkspaceTab.Terminal,
                                     onBackendCreated = onBackendCreated,
                                     onBackendReleased = onBackendReleased,
-                                    onOpenUrl = onOpenUrl
+                                    onOpenUrl = onOpenUrl,
+                                    onKeyboardVisibilityChanged = reportKeyboardVisibility
                                 )
-                                if (herdrEnabled) {
-                                    HerdrAgentButton(
-                                        workspaces = herdrWorkspaces,
-                                        isLoading = herdrWorkspacesLoading,
-                                        error = herdrWorkspacesError,
-                                        onRefresh = onLoadHerdrAgents,
-                                        onFocusTab = onFocusHerdrTab,
-                                        onFocusPane = onFocusHerdrPane,
-                                        onClosePane = onCloseHerdrPane,
-                                        fabOpacity = herdrAgentFabOpacity,
+                                if (showKeyboardFab || herdrEnabled) {
+                                    Column(
                                         modifier = Modifier
-                                            .align(androidx.compose.ui.Alignment.BottomEnd)
+                                            .align(Alignment.BottomEnd)
                                             .padding(end = 12.dp, bottom = 8.dp),
-                                    )
+                                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                                        horizontalAlignment = Alignment.End
+                                    ) {
+                                        if (
+                                            isKeyboardFabVisible(
+                                                showKeyboardFab,
+                                                hideKeyboardFabWhileTyping,
+                                                imeVisible
+                                            )
+                                        ) {
+                                            KeyboardToggleFab(
+                                                isKeyboardVisible = imeVisible,
+                                                fabOpacity = herdrAgentFabOpacity,
+                                                onToggle = { visible ->
+                                                    extraKeysController.toggleKeyboard(visible)
+                                                }
+                                            )
+                                        }
+                                        if (herdrEnabled) {
+                                            HerdrAgentButton(
+                                                workspaces = herdrWorkspaces,
+                                                isLoading = herdrWorkspacesLoading,
+                                                error = herdrWorkspacesError,
+                                                onRefresh = onLoadHerdrAgents,
+                                                onFocusTab = onFocusHerdrTab,
+                                                onFocusPane = onFocusHerdrPane,
+                                                onClosePane = onCloseHerdrPane,
+                                                fabOpacity = herdrAgentFabOpacity
+                                            )
+                                        }
+                                    }
                                 }
                             }
                             if (extraKeysEnabled) {
-                                val imeVisible = WindowInsets.isImeVisible
                                 ExtraKeysToolbar(
                                     extraKeysController = extraKeysController,
                                     session = session,
@@ -280,4 +345,27 @@ fun TabbedWorkspace(
             }
         }
     }
+}
+
+@Composable
+private fun rememberLifecycleResumed(): State<Boolean> {
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val lifecycle = lifecycleOwner.lifecycle
+    val isResumed = remember(lifecycleOwner) {
+        mutableStateOf(lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED))
+    }
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            isResumed.value = when (event) {
+                Lifecycle.Event.ON_RESUME -> true
+                Lifecycle.Event.ON_PAUSE,
+                Lifecycle.Event.ON_STOP,
+                Lifecycle.Event.ON_DESTROY -> false
+                else -> lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
+            }
+        }
+        lifecycle.addObserver(observer)
+        onDispose { lifecycle.removeObserver(observer) }
+    }
+    return isResumed
 }

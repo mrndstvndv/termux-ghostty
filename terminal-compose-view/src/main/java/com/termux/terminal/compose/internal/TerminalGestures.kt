@@ -44,13 +44,11 @@ private class GestureContext(
     private val metricsProvider: () -> TerminalMetrics,
     private val configProvider: () -> TerminalCanvasConfig,
     val fontSizeState: MutableIntState,
-    private val onFontSizeChangeProvider: () -> (Int) -> Unit,
-    private val onTwoFingerSwipeUpProvider: () -> Unit
+    private val onFontSizeChangeProvider: () -> (Int) -> Unit
 ) {
     val metrics: TerminalMetrics get() = metricsProvider()
     val config: TerminalCanvasConfig get() = configProvider()
     val onFontSizeChange: (Int) -> Unit get() = onFontSizeChangeProvider()
-    fun onTwoFingerSwipeUp() = onTwoFingerSwipeUpProvider()
 }
 
 /** Per-gesture scroll, pan, and zoom state. */
@@ -73,77 +71,6 @@ private class ScrollGestureState {
             }
         }
     }
-}
-
-/** Minimum upward travel for a two-finger swipe-up to open the keyboard. */
-internal const val MinTwoFingerSwipeUpPx = 64f
-
-/** Rejects pinches: peak |zoom - 1| above this is a zoom, not a swipe. */
-internal const val MaxTwoFingerSwipeZoomDeviation = 0.2f
-
-/** Rejects diagonal drags: horizontal travel must stay below this fraction of upward travel. */
-internal const val MaxTwoFingerSwipeHorizontalRatio = 0.6f
-
-/** Tracks a parallel two-finger upward swipe across one gesture. */
-internal class TwoFingerSwipeUpTracker {
-    var seen = false
-        private set
-    var startCentroid = Offset.Zero
-        private set
-    var endCentroid = Offset.Zero
-        private set
-    var peakZoomDeviation = 0f
-        private set
-
-    fun observe(event: PointerEvent) {
-        if (event.changes.count { it.pressed } < 2) return
-        val centroid = event.calculateCentroid()
-        if (!seen) {
-            seen = true
-            startCentroid = centroid
-        }
-        endCentroid = centroid
-        val deviation = abs(event.calculateZoom() - 1f)
-        if (deviation.isFinite() && deviation > peakZoomDeviation) {
-            peakZoomDeviation = deviation
-        }
-    }
-}
-
-/** Pure decision for the manual keyboard gesture; unit-tested at the seam. */
-@Suppress("ReturnCount") // guard clauses intentionally use early returns per project conventions
-internal fun isTwoFingerSwipeUp(
-    startCentroid: Offset,
-    endCentroid: Offset,
-    peakZoomDeviation: Float,
-    touchSlop: Float
-): Boolean {
-    if (!peakZoomDeviation.isFinite() || peakZoomDeviation > MaxTwoFingerSwipeZoomDeviation) return false
-    val upwardPx = startCentroid.y - endCentroid.y
-    if (!upwardPx.isFinite() || upwardPx < twoFingerSwipeUpThresholdPx(touchSlop)) return false
-    val horizontalPx = abs(endCentroid.x - startCentroid.x)
-    if (!horizontalPx.isFinite() || horizontalPx > upwardPx * MaxTwoFingerSwipeHorizontalRatio) return false
-    return true
-}
-
-internal fun twoFingerSwipeUpThresholdPx(touchSlop: Float): Float {
-    if (!touchSlop.isFinite() || touchSlop <= 0f) return MinTwoFingerSwipeUpPx
-    return (touchSlop * 4f).coerceAtLeast(MinTwoFingerSwipeUpPx)
-}
-
-private fun maybeOpenKeyboardOnTwoFingerSwipeUp(
-    tracker: TwoFingerSwipeUpTracker,
-    touchSlop: Float,
-    context: GestureContext
-) {
-    if (!tracker.seen || !context.config.twoFingerSwipeUpOpensKeyboard) return
-    val isSwipeUp = isTwoFingerSwipeUp(
-        startCentroid = tracker.startCentroid,
-        endCentroid = tracker.endCentroid,
-        peakZoomDeviation = tracker.peakZoomDeviation,
-        touchSlop = touchSlop
-    )
-    if (isSwipeUp) context.onTwoFingerSwipeUp()
 }
 
 internal data class ScrollPixelDelta(
@@ -222,13 +149,11 @@ internal fun Modifier.terminalGestures(
     config: TerminalCanvasConfig,
     selectionState: TerminalSelectionState,
     fontSizeState: MutableIntState,
-    onFontSizeChange: (Int) -> Unit,
-    onTwoFingerSwipeUp: () -> Unit = {}
+    onFontSizeChange: (Int) -> Unit
 ): Modifier {
     val currentMetrics by rememberUpdatedState(metrics)
     val currentConfig by rememberUpdatedState(config)
     val currentOnFontSizeChange by rememberUpdatedState(onFontSizeChange)
-    val currentOnTwoFingerSwipeUp by rememberUpdatedState(onTwoFingerSwipeUp)
     val coroutineScope = rememberCoroutineScope()
     return pointerInput(controller, selectionState) {
         val context = GestureContext(
@@ -236,8 +161,7 @@ internal fun Modifier.terminalGestures(
             metricsProvider = { currentMetrics },
             configProvider = { currentConfig },
             fontSizeState = fontSizeState,
-            onFontSizeChangeProvider = { currentOnFontSizeChange },
-            onTwoFingerSwipeUpProvider = { currentOnTwoFingerSwipeUp() }
+            onFontSizeChangeProvider = { currentOnFontSizeChange }
         )
         awaitEachGesture {
             handleTerminalGesture(selectionState, context, coroutineScope)
@@ -253,7 +177,6 @@ private suspend fun AwaitPointerEventScope.handleTerminalGesture(
     var scaleAccumulator = 1f
     val touchSlop = viewConfiguration.touchSlop
     val scrollState = ScrollGestureState()
-    val swipeUpTracker = TwoFingerSwipeUpTracker()
     val velocityTracker = VelocityTracker()
 
     // Claim vertical terminal input before a parent pager gets its main-pass
@@ -276,12 +199,9 @@ private suspend fun AwaitPointerEventScope.handleTerminalGesture(
             event.changes.firstOrNull()?.let { change ->
                 velocityTracker.addPosition(change.uptimeMillis, change.position)
             }
-            swipeUpTracker.observe(event)
             scaleAccumulator = handleGestureEvent(event, scaleAccumulator, scrollState, touchSlop, context)
         }
     } while (!canceled && event.changes.any { it.pressed })
-
-    maybeOpenKeyboardOnTwoFingerSwipeUp(swipeUpTracker, touchSlop, context)
 
     if (scrollState.isVerticalScroll && !scrollState.isPinchZoom && !selectionState.isSelecting) {
         val velocityY = velocityTracker.calculateVelocity().y

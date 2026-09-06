@@ -76,6 +76,10 @@ fun MainContent(
     val nativeLogcatLoggingEnabled by viewModel.userPrefs.nativeLogcatLoggingEnabled.collectAsState()
     val debugHudEnabled by viewModel.userPrefs.debugHudEnabled.collectAsState()
     val hideWorkspaceTabs by viewModel.userPrefs.hideWorkspaceTabs.collectAsState()
+    val rememberSoftKeyboardState by viewModel.userPrefs.rememberSoftKeyboardState.collectAsState()
+    val lastSoftKeyboardState by viewModel.userPrefs.lastSoftKeyboardState.collectAsState()
+    val showKeyboardFab by viewModel.userPrefs.showKeyboardFab.collectAsState()
+    val hideKeyboardFabWhileTyping by viewModel.userPrefs.hideKeyboardFabWhileTyping.collectAsState()
     val herdrAgentFabOpacity by viewModel.userPrefs.herdrAgentFabOpacity.collectAsState()
     val context = LocalContext.current
     val notification by viewModel.notificationState.notification.collectAsState()
@@ -93,8 +97,6 @@ fun MainContent(
         sharedPreferences.getString("extra_keys_custom_json", "[]") ?: "[]"
     val savedUnconditionalSoftKeyboardOnTap = sharedPreferences.getBoolean("unconditional_soft_keyboard_on_tap", true)
     val savedAutoShowKeyboardOnTap = sharedPreferences.getBoolean("auto_show_soft_keyboard_on_tap", true)
-    val savedTwoFingerSwipeUpOpensKeyboard =
-        sharedPreferences.getBoolean("two_finger_swipe_up_opens_keyboard", true)
     val savedFontSize = sharedPreferences.getInt("font_size", 12)
     val savedKeyboardResizeDebounceMs = sharedPreferences.getInt(
         "keyboard_resize_debounce_ms",
@@ -139,7 +141,6 @@ fun MainContent(
             var keyboardResizeDebounceMs by remember { mutableStateOf(savedKeyboardResizeDebounceMs) }
             var unconditionalSoftKeyboardOnTap by remember { mutableStateOf(savedUnconditionalSoftKeyboardOnTap) }
             var autoShowKeyboardOnTap by remember { mutableStateOf(savedAutoShowKeyboardOnTap) }
-            var twoFingerSwipeUpOpensKeyboard by remember { mutableStateOf(savedTwoFingerSwipeUpOpensKeyboard) }
             var cursorTrail by remember { mutableStateOf(savedCursorTrail) }
             var visualEffectFrameRate by remember { mutableStateOf(savedVisualEffectFrameRate) }
             val pickFontLauncher = rememberLauncherForActivityResult(
@@ -281,11 +282,9 @@ fun MainContent(
                                     sharedPreferences.edit()
                                         .putBoolean("auto_show_soft_keyboard_on_tap", enabled).apply()
                                 },
-                                twoFingerSwipeUpOpensKeyboard = twoFingerSwipeUpOpensKeyboard,
-                                onTwoFingerSwipeUpOpensKeyboardChange = { enabled ->
-                                    twoFingerSwipeUpOpensKeyboard = enabled
-                                    sharedPreferences.edit()
-                                        .putBoolean("two_finger_swipe_up_opens_keyboard", enabled).apply()
+                                rememberSoftKeyboardState = rememberSoftKeyboardState,
+                                onRememberSoftKeyboardStateChange = { enabled ->
+                                    viewModel.userPrefs.setRememberSoftKeyboardState(enabled, sharedPreferences)
                                 },
                                 nativeLogcatLoggingEnabled = nativeLogcatLoggingEnabled,
                                 onNativeLogcatLoggingEnabledChange = { enabled ->
@@ -317,6 +316,14 @@ fun MainContent(
                                 hideWorkspaceTabs = hideWorkspaceTabs,
                                 onHideWorkspaceTabsChange = { enabled ->
                                     viewModel.userPrefs.setHideWorkspaceTabs(enabled, sharedPreferences)
+                                },
+                                showKeyboardFab = showKeyboardFab,
+                                onShowKeyboardFabChange = { enabled ->
+                                    viewModel.userPrefs.setShowKeyboardFab(enabled, sharedPreferences)
+                                },
+                                hideKeyboardFabWhileTyping = hideKeyboardFabWhileTyping,
+                                onHideKeyboardFabWhileTypingChange = { enabled ->
+                                    viewModel.userPrefs.setHideKeyboardFabWhileTyping(enabled, sharedPreferences)
                                 },
                                 herdrAgentFabOpacity = herdrAgentFabOpacity,
                                 onHerdrAgentFabOpacityChange = { opacity ->
@@ -361,6 +368,16 @@ fun MainContent(
                                         extraKeysEnabled = extraKeysEnabled,
                                         extraKeysJson = resolvedJson,
                                         hideWorkspaceTabs = hideWorkspaceTabs,
+                                        rememberSoftKeyboardState = rememberSoftKeyboardState,
+                                        lastSoftKeyboardState = lastSoftKeyboardState,
+                                        onKeyboardVisibilityChanged = { isVisible ->
+                                            viewModel.userPrefs.setLastSoftKeyboardVisibility(
+                                                isVisible,
+                                                sharedPreferences
+                                            )
+                                        },
+                                        showKeyboardFab = showKeyboardFab,
+                                        hideKeyboardFabWhileTyping = hideKeyboardFabWhileTyping,
                                         herdrEnabled = server.config.herdrEnabled,
                                         herdrWorkspaces = viewModel.herdrWorkspaces.value,
                                         herdrWorkspacesLoading = viewModel.herdrWorkspacesLoading.value,

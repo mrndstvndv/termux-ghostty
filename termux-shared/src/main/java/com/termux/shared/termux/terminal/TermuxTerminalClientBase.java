@@ -106,6 +106,9 @@ public class TermuxTerminalClientBase {
     public void onSoftKeyboardDismissed() {
     }
 
+    public void onSoftKeyboardVisibilityChanged(boolean visible) {
+    }
+
     public void onTerminalReady() {
     }
 

@@ -66,6 +66,8 @@ class TerminalComposeView @JvmOverloads constructor(
 
         fun onImeSessionClosed() = Unit
 
+        fun onImeVisibilityChanged(isVisible: Boolean) = Unit
+
         fun onDiagnostics(diagnostic: TerminalDiagnostic) = Unit
     }
 
@@ -83,7 +85,6 @@ class TerminalComposeView @JvmOverloads constructor(
     private var accessibilityEnabledState by mutableStateOf(false)
     private var unconditionalKeyboardOnTapState by mutableStateOf(true)
     private var autoShowKeyboardOnTapState by mutableStateOf(true)
-    private var twoFingerSwipeUpOpensKeyboardState by mutableStateOf(true)
     private var selectionResetKeyState by mutableLongStateOf(0L)
     private var requestFocusKeyState by mutableLongStateOf(0L)
     private var requestImeKeyState by mutableLongStateOf(0L)
@@ -153,7 +154,6 @@ class TerminalComposeView @JvmOverloads constructor(
                     typeface = typefaceState,
                     unconditionalKeyboardOnTap = unconditionalKeyboardOnTapState,
                     autoShowKeyboardOnTap = autoShowKeyboardOnTapState,
-                    twoFingerSwipeUpOpensKeyboard = twoFingerSwipeUpOpensKeyboardState,
                     accessibilityEnabled = accessibilityEnabledState,
                     selectionResetKey = selectionResetKeyState,
                     onFontSizeChange = { next ->
@@ -175,6 +175,9 @@ class TerminalComposeView @JvmOverloads constructor(
                         listenerState?.onCodePoint(codePoint, controlDown, altDown) == true
                     },
                     onImeSessionClosed = { listenerState?.onImeSessionClosed() },
+                    onImeVisibilityChanged = { isVisible ->
+                        listenerState?.onImeVisibilityChanged(isVisible)
+                    },
                     onMoreSelectionRequest = moreSelectionCallback,
                     onDiagnostics = { diagnostic -> listenerState?.onDiagnostics(diagnostic) }
                 ),
@@ -234,10 +237,6 @@ class TerminalComposeView @JvmOverloads constructor(
 
     fun setAutoShowKeyboardOnTap(enabled: Boolean) {
         autoShowKeyboardOnTapState = enabled
-    }
-
-    fun setTwoFingerSwipeUpOpensKeyboard(enabled: Boolean) {
-        twoFingerSwipeUpOpensKeyboardState = enabled
     }
 
     fun requestTerminalFocus() {

@@ -4,7 +4,10 @@ package com.termux.terminal.compose
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -77,6 +80,7 @@ private const val SelectionLayerZIndex = 3f
  * composition; the host retains backend ownership.
  */
 @Composable
+@OptIn(ExperimentalLayoutApi::class)
 @Suppress("LongParameterList", "LongMethod")
 fun TerminalCanvas(
     backend: TerminalBackend,
@@ -122,6 +126,11 @@ fun TerminalCanvas(
         onCodePoint = config.onCodePoint,
         onImeSessionClosed = config.onImeSessionClosed
     )
+    val imeVisible = WindowInsets.isImeVisible
+    val currentOnImeVisibilityChanged by rememberUpdatedState(config.onImeVisibilityChanged)
+    LaunchedEffect(imeVisible) {
+        currentOnImeVisibilityChanged(imeVisible)
+    }
     val metrics = rememberCanvasMetrics(fontSizeState, config, viewportSizePx)
     var lastHandledImeKey by remember { mutableLongStateOf(0L) }
     var lastHandledDismissImeKey by remember { mutableLongStateOf(0L) }
@@ -212,11 +221,7 @@ private fun TerminalCanvasLayout(
                 state.config,
                 state.selectionState,
                 state.fontSizeState,
-                onFontSizeChange = state.config.onFontSizeChange,
-                onTwoFingerSwipeUp = {
-                    state.focusRequester.requestFocus()
-                    state.imeHost.open()
-                }
+                onFontSizeChange = state.config.onFontSizeChange
             )
             .terminalTaps(
                 state.controller,

@@ -15,12 +15,11 @@ class TerminalCanvasConfigTest {
     }
 
     @Test
-    fun `keyboard policy defaults preserve tap auto-show and swipe-up gesture`() {
+    fun `keyboard policy defaults preserve tap auto-show`() {
         val config = TerminalCanvasConfig()
 
         assertEquals(true, config.unconditionalKeyboardOnTap)
         assertEquals(true, config.autoShowKeyboardOnTap)
-        assertEquals(true, config.twoFingerSwipeUpOpensKeyboard)
     }
 
     @Test

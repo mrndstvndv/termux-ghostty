@@ -16,6 +16,7 @@ fun TerminalWorkspaceContainer(
     onBackendReleased: (TerminalSession, TerminalBackend) -> Unit,
     onOpenUrl: (String) -> Unit,
     isTerminalActive: Boolean,
+    onKeyboardVisibilityChanged: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     TerminalCanvas(
@@ -26,6 +27,7 @@ fun TerminalWorkspaceContainer(
         onBackendCreated = onBackendCreated,
         onBackendReleased = onBackendReleased,
         isTerminalActive = isTerminalActive,
+        onKeyboardVisibilityChanged = onKeyboardVisibilityChanged,
         modifier = modifier
     )
 }

@@ -48,6 +48,7 @@ fun TerminalCanvas(
     onBackendCreated: (TerminalSession, TerminalBackend) -> Unit,
     onBackendReleased: (TerminalSession, TerminalBackend) -> Unit,
     isTerminalActive: Boolean,
+    onKeyboardVisibilityChanged: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -70,6 +71,7 @@ fun TerminalCanvas(
         session = session,
         preferences = preferences,
         onOpenUrl = onOpenUrl,
+        onImeVisibilityChanged = onKeyboardVisibilityChanged,
         onOpenContextMenu = { text ->
             contextMenuSelectedText = text
             showContextMenu = true
@@ -105,6 +107,7 @@ private fun rememberTerminalCanvasConfig(
     session: TerminalSession,
     preferences: SharedPreferences,
     onOpenUrl: (String) -> Unit,
+    onImeVisibilityChanged: (Boolean) -> Unit,
     onOpenContextMenu: (String) -> Unit
 ): TerminalCanvasConfig {
     val context = LocalContext.current
@@ -136,6 +139,7 @@ private fun rememberTerminalCanvasConfig(
             accessibilityEnabled = accessibilityEnabled,
             session = session,
             onOpenUrl = onOpenUrl,
+            onImeVisibilityChanged = onImeVisibilityChanged,
             onMoreSelectionRequest = onOpenContextMenu,
             onCodePoint = { codePoint, controlDown, altDown ->
                 handleTerminalCodePoint(
@@ -229,6 +233,7 @@ private data class TerminalCanvasConfigInput(
     val accessibilityEnabled: Boolean,
     val session: TerminalSession,
     val onOpenUrl: (String) -> Unit,
+    val onImeVisibilityChanged: (Boolean) -> Unit,
     val onMoreSelectionRequest: (String) -> Unit,
     val onCodePoint: (Int, Boolean, Boolean) -> Boolean
 )
@@ -249,10 +254,6 @@ private fun createTerminalCanvasConfig(input: TerminalCanvasConfigInput): Termin
             "auto_show_soft_keyboard_on_tap",
             true
         ),
-        twoFingerSwipeUpOpensKeyboard = input.preferences.getBoolean(
-            "two_finger_swipe_up_opens_keyboard",
-            true
-        ),
         accessibilityEnabled = input.accessibilityEnabled,
         onFontSizeChange = { requestedSize ->
             val nextSize = requestedSize.coerceIn(input.minimumFontSize, input.maximumFontSize)
@@ -260,6 +261,7 @@ private fun createTerminalCanvasConfig(input: TerminalCanvasConfigInput): Termin
             input.preferences.edit().putInt("font_size", nextSize).apply()
         },
         onOpenUrl = input.onOpenUrl,
+        onImeVisibilityChanged = input.onImeVisibilityChanged,
         onCopyRequest = input.session::onCopyTextToClipboard,
         onPasteRequest = input.session::onPasteTextFromClipboard,
         onMoreSelectionRequest = input.onMoreSelectionRequest,

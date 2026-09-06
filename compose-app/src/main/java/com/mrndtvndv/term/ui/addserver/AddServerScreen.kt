@@ -15,6 +15,8 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.mrndtvndv.term.domain.AuthType
 import com.mrndtvndv.term.domain.ServerConfig
+import com.mrndtvndv.term.ui.components.ImagePasteSettingsSection
+import com.mrndtvndv.term.ui.components.rememberImagePasteSettingsState
 
 @Suppress("LongMethod")
 @OptIn(ExperimentalMaterial3Api::class)
@@ -32,6 +34,7 @@ fun AddServerScreen(
     var username by remember(initialConfig) { mutableStateOf(initialConfig?.username ?: "") }
     var password by remember(initialConfig) { mutableStateOf(initialPassword) }
     var herdrEnabled by remember(initialConfig) { mutableStateOf(initialConfig?.herdrEnabled ?: true) }
+    val imagePasteState = rememberImagePasteSettingsState(initialConfig)
 
     Scaffold(
         topBar = {
@@ -104,6 +107,15 @@ fun AddServerScreen(
                 Switch(checked = herdrEnabled, onCheckedChange = { herdrEnabled = it })
             }
 
+            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+            ImagePasteSettingsSection(
+                state = imagePasteState,
+                directorySupportingText =
+                    "Remote directory where pasted images are stored. Required for image pasting.",
+                activeSupportingText = "Upload and paste clipboard images into terminal",
+            )
+
             Button(
                 onClick = {
                     onSave(
@@ -111,10 +123,14 @@ fun AddServerScreen(
                             id = initialConfig?.id ?: java.util.UUID.randomUUID().toString(),
                             label = label,
                             host = host,
-                            port = portString.toIntOrNull() ?: 22,
+                            port = parsePort(portString),
                             username = username,
                             auth = AuthType.Password(password),
                             herdrEnabled = herdrEnabled,
+                            imagePasteEnabled = imagePasteState.isPasteActive,
+                            imagePasteDirectory = imagePasteState.trimmedDirectory,
+                            imagePasteAutoCleanup = imagePasteState.autoCleanup,
+                            imagePasteMaxFiles = imagePasteState.maxFiles,
                         )
                     )
                 },
@@ -126,3 +142,5 @@ fun AddServerScreen(
         }
     }
 }
+
+private fun parsePort(text: String): Int = text.toIntOrNull() ?: 22

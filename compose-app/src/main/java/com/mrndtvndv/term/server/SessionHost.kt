@@ -15,7 +15,7 @@ interface SessionHost {
 
     fun copyToClipboard(text: String)
 
-    fun pasteFromClipboard(): String?
+    fun handlePaste(session: TerminalSession?)
 
     fun isAtLeast(state: Lifecycle.State): Boolean
 

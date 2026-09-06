@@ -69,6 +69,9 @@ class AppSessionManager private constructor(context: Context) : AppSessionManage
     override fun observeTerminalProgress(session: TerminalSession): StateFlow<TerminalProgress?> =
         terminalProgress.observe(session)
 
+    override fun serverIdForSession(session: TerminalSession): String? =
+        serverManager.serverIdForSession(session)
+
     // ── Connection lifecycle ─────────────────────────────────────────
 
     override suspend fun connect(id: String): Result<Server> = coordinator.connect(id)
@@ -275,8 +278,7 @@ class AppSessionManager private constructor(context: Context) : AppSessionManage
 
             override fun onPasteTextFromClipboard(session: TerminalSession?) {
                 val host = hostRef?.get() ?: return
-                val text = host.pasteFromClipboard() ?: return
-                session?.paste(text)
+                host.handlePaste(session)
             }
 
             override fun onTerminalProtocolNotification(

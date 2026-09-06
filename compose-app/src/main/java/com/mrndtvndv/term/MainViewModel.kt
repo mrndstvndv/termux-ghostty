@@ -230,17 +230,29 @@ class MainViewModel(
     fun getLocalConfig(): ServerConfig? = serverRepository.get(LOCAL_TERMINAL_ID)
 
     /**
-     * Update the startup command for the local terminal.
+     * Update configuration for the local terminal (startup command and image paste settings).
      * Creates the config first if it doesn't exist yet.
      */
-    fun setLocalStartupCommand(command: String) {
+    fun updateLocalConfig(
+        command: String,
+        imagePasteEnabled: Boolean = false,
+        imagePasteDirectory: String? = null,
+        imagePasteAutoCleanup: Boolean = true,
+        maxFiles: Int = 20,
+    ) {
         val trimmed = command.trim()
         val existing = serverRepository.get(LOCAL_TERMINAL_ID)
         val updated = (existing ?: ServerConfig(
             id = LOCAL_TERMINAL_ID,
             label = "Local Terminal",
             isLocal = true,
-        )).copy(startupCommand = trimmed.ifEmpty { null })
+        )).copy(
+            startupCommand = trimmed.ifEmpty { null },
+            imagePasteEnabled = imagePasteEnabled,
+            imagePasteDirectory = imagePasteDirectory?.trim()?.ifEmpty { null },
+            imagePasteAutoCleanup = imagePasteAutoCleanup,
+            imagePasteMaxFiles = maxFiles.coerceAtLeast(1),
+        )
         if (existing != null) {
             serverRepository.update(updated)
         } else {
@@ -248,6 +260,23 @@ class MainViewModel(
         }
         reloadServers()
     }
+
+    /**
+     * Update the startup command for the local terminal.
+     * Creates the config first if it doesn't exist yet.
+     */
+    fun setLocalStartupCommand(command: String) {
+        val existing = serverRepository.get(LOCAL_TERMINAL_ID)
+        updateLocalConfig(
+            command = command,
+            imagePasteEnabled = existing?.imagePasteEnabled ?: false,
+            imagePasteDirectory = existing?.imagePasteDirectory,
+            imagePasteAutoCleanup = existing?.imagePasteAutoCleanup ?: true,
+            maxFiles = existing?.safeImagePasteMaxFiles ?: ServerConfig.DEFAULT_IMAGE_PASTE_MAX_FILES,
+        )
+    }
+
+    fun getServerConfig(id: String): ServerConfig? = serverRepository.get(id)
 
     // ── Connection ────────────────────────────────────────────────────
 

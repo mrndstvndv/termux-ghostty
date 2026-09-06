@@ -40,6 +40,7 @@ import com.mrndtvndv.term.ui.workspace.MaxKeyboardResizeDebounceMillis
 import com.mrndtvndv.term.ui.workspace.TerminalWorkspaceScreen
 import com.mrndtvndv.term.ui.workspace.WorkspaceTab
 import com.mrndtvndv.term.ui.workspace.VisualEffectFrameRate
+import com.mrndtvndv.term.ui.workspace.ImagePasteBlockingOverlay
 import com.termux.terminal.compose.TerminalBackend
 import com.termux.terminal.TerminalSession
 import java.io.File
@@ -54,6 +55,8 @@ fun MainContent(
     onBackendCreated: (TerminalSession, TerminalBackend) -> Unit,
     onBackendReleased: (TerminalSession, TerminalBackend) -> Unit,
     onActiveTerminalSessionChanged: (TerminalSession?) -> Unit,
+    imagePasteInProgress: Boolean,
+    onCancelImagePaste: () -> Unit,
     onOpenFile: (File) -> Unit,
     onOpenFileError: (String) -> Unit,
     onOpenUrl: (String) -> Unit,
@@ -184,6 +187,9 @@ fun MainContent(
                                 onStartLocal = { viewModel.startLocalTerminal() },
                                 localConfig = viewModel.getLocalConfig(),
                                 onSetStartupCommand = { cmd -> viewModel.setLocalStartupCommand(cmd) },
+                                onUpdateLocalConfig = { cmd, enabled, dir, autoCleanup, maxFiles ->
+                                    viewModel.updateLocalConfig(cmd, enabled, dir, autoCleanup, maxFiles)
+                                },
                             )
                         }
 
@@ -313,7 +319,13 @@ fun MainContent(
 
                                 if (server != null) {
                                     BackPressInterceptor(
-                                        onBack = { navigator.goBack() },
+                                        onBack = {
+                                            if (imagePasteInProgress) {
+                                                onCancelImagePaste()
+                                            } else {
+                                                navigator.goBack()
+                                            }
+                                        },
                                     )
 
                                     val terminalProgress by viewModel
@@ -402,6 +414,13 @@ fun MainContent(
                     },
                     modifier = Modifier.align(Alignment.TopCenter),
                 )
+
+                if (imagePasteInProgress) {
+                    ImagePasteBlockingOverlay(
+                        onCancel = onCancelImagePaste,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
             }
         }
     }

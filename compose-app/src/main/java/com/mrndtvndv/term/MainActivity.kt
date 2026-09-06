@@ -1,7 +1,11 @@
 package com.mrndtvndv.term
 
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import com.mrndtvndv.term.domain.ServerConfig
+import com.mrndtvndv.term.server.Server
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -16,15 +20,21 @@ import androidx.compose.runtime.*
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.lifecycleScope
 import com.mrndtvndv.term.data.prefs.LastSessionStore
+import com.mrndtvndv.term.clipboard.ClipboardImageHandler
+import com.mrndtvndv.term.clipboard.ClipboardImagePasteService
 import com.mrndtvndv.term.server.AppSessionManager
 import com.mrndtvndv.term.server.SessionHost
 import com.mrndtvndv.term.ui.notification.NotificationState
 import com.mrndtvndv.term.ui.prefs.UserPrefs
 import com.mrndtvndv.term.ui.MainContent
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 import com.termux.shared.interact.ShareUtils
 import com.termux.terminal.TerminalSession
 import androidx.core.content.FileProvider
+import android.widget.Toast
 import java.io.File
 
 class MainActivity : ComponentActivity(), SessionHost {
@@ -39,6 +49,7 @@ class MainActivity : ComponentActivity(), SessionHost {
     private val lastSessionStore by lazy { LastSessionStore(sharedPreferences) }
     private val userPrefs by lazy { UserPrefs() }
     private val notificationState by lazy { NotificationState() }
+    private val clipboardImagePasteService by lazy { ClipboardImagePasteService(applicationContext) }
 
     private val viewModel: MainViewModel by viewModels {
         object : ViewModelProvider.Factory {
@@ -49,6 +60,8 @@ class MainActivity : ComponentActivity(), SessionHost {
     }
 
     private val viewingFileState = mutableStateOf<File?>(null)
+    private val imagePasteInProgressState = mutableStateOf(false)
+    private var imagePasteJob: Job? = null
     private var windowHasFocus = false
     private var focusedTerminalSession: TerminalSession? = null
 
@@ -62,8 +75,80 @@ class MainActivity : ComponentActivity(), SessionHost {
         ShareUtils.copyTextToClipboard(this, text)
     }
 
-    override fun pasteFromClipboard(): String? =
-        ShareUtils.getTextStringFromClipboardIfSet(this, true)
+    private class ActiveSessionContext(
+        val session: TerminalSession?,
+        val server: Server?,
+        val config: ServerConfig?,
+    )
+
+    private data class ImagePasteRequest(
+        val config: ServerConfig,
+    )
+
+    private fun resolveActiveSessionContext(session: TerminalSession?): ActiveSessionContext {
+        val activeSession = session ?: focusedTerminalSession
+        val serverId = activeSession?.let { sessionManager.serverIdForSession(it) }
+        val server = serverId?.let { viewModel.getServer(it) }
+        val config = server?.config ?: serverId?.let { viewModel.getServerConfig(it) }
+        return ActiveSessionContext(activeSession, server, config)
+    }
+
+    override fun handlePaste(session: TerminalSession?) {
+        val sessionContext = resolveActiveSessionContext(session)
+        val targetSession = sessionContext.session ?: return
+        val clipboardManager = getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+        val clipData = clipboardManager?.primaryClip
+
+        val request = resolveImagePasteRequest(sessionContext.config, clipData)
+        if (request == null) {
+            pasteClipboardText(targetSession)
+            return
+        }
+
+        if (imagePasteInProgressState.value) return
+        imagePasteInProgressState.value = true
+
+        val server = sessionContext.server
+        imagePasteJob = lifecycleScope.launch {
+            try {
+                val path = clipboardImagePasteService.saveImage(
+                    clipData = clipData,
+                    config = request.config,
+                    server = server,
+                )
+                val textToPaste = path ?: ShareUtils.getTextStringFromClipboardIfSet(
+                    this@MainActivity,
+                    true,
+                )
+                textToPaste?.let(targetSession::paste)
+            } finally {
+                imagePasteInProgressState.value = false
+                imagePasteJob = null
+            }
+        }
+    }
+
+    private fun cancelImagePaste() {
+        if (imagePasteJob?.isActive != true) return
+        imagePasteJob?.cancel()
+        Toast.makeText(this, "Image paste/upload cancelled", Toast.LENGTH_SHORT).show()
+    }
+
+    @Suppress("ReturnCount")
+    private fun resolveImagePasteRequest(
+        config: ServerConfig?,
+        clipData: ClipData?,
+    ): ImagePasteRequest? {
+        val imageConfig = config ?: return null
+        if (!imageConfig.imagePasteEnabled) return null
+        if (imageConfig.imagePasteDirectory?.trim().isNullOrEmpty()) return null
+        if (!ClipboardImageHandler.isImageClip(this, clipData)) return null
+        return ImagePasteRequest(imageConfig)
+    }
+
+    private fun pasteClipboardText(session: TerminalSession) {
+        ShareUtils.getTextStringFromClipboardIfSet(this, true)?.let(session::paste)
+    }
 
     override fun isAtLeast(state: Lifecycle.State): Boolean =
         lifecycle.currentState.isAtLeast(state)
@@ -134,6 +219,8 @@ class MainActivity : ComponentActivity(), SessionHost {
                 onActiveTerminalSessionChanged = { session ->
                     updateFocusedTerminalSession(session)
                 },
+                imagePasteInProgress = imagePasteInProgressState.value,
+                onCancelImagePaste = { cancelImagePaste() },
                 onOpenFile = { file -> openDownloadedFile(file) },
                 onOpenFileError = { errorMsg ->
                     sessionManager.handleTerminalNotification("SFTP Error", errorMsg)

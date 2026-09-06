@@ -51,6 +51,59 @@ fun TerminalCanvas(
 ) {
     val context = LocalContext.current
     val preferences = remember(context) { context.getSharedPreferences("ssh_prefs", Context.MODE_PRIVATE) }
+    val resizeDebounceMillis = remember(session) {
+        preferences.getInt("keyboard_resize_debounce_ms", DefaultKeyboardResizeDebounceMillis)
+            .coerceIn(0, MaxKeyboardResizeDebounceMillis)
+            .toLong()
+    }
+    val backend = rememberTerminalBackend(
+        session = session,
+        resizeDebounceMillis = resizeDebounceMillis,
+        onBackendCreated = onBackendCreated,
+        onBackendReleased = onBackendReleased
+    )
+    val modifierKeys = rememberModifierKeys(extraKeysController)
+    var showContextMenu by remember { mutableStateOf(false) }
+    var contextMenuSelectedText by remember { mutableStateOf("") }
+    val config = rememberTerminalCanvasConfig(
+        session = session,
+        preferences = preferences,
+        onOpenUrl = onOpenUrl,
+        onOpenContextMenu = { text ->
+            contextMenuSelectedText = text
+            showContextMenu = true
+        }
+    )
+
+    TerminalCanvasSurface(
+        backend = backend,
+        modifierKeys = modifierKeys,
+        config = config,
+        requestFocus = isTerminalActive,
+        modifier = modifier
+    )
+
+    if (showContextMenu) {
+        TerminalContextMenu(
+            session = session,
+            selectedText = contextMenuSelectedText,
+            onOpenUrl = onOpenUrl,
+            onDismiss = {
+                showContextMenu = false
+                contextMenuSelectedText = ""
+            }
+        )
+    }
+}
+
+@Composable
+private fun rememberTerminalCanvasConfig(
+    session: TerminalSession,
+    preferences: SharedPreferences,
+    onOpenUrl: (String) -> Unit,
+    onOpenContextMenu: (String) -> Unit
+): TerminalCanvasConfig {
+    val context = LocalContext.current
     val fontSizes = remember(context) { TermuxAppSharedPreferences.getDefaultFontSizes(context) }
     val minimumFontSize = fontSizes.getOrElse(1) { 8 }
     val maximumFontSize = fontSizes.getOrElse(2) { 256 }
@@ -60,26 +113,14 @@ fun TerminalCanvas(
                 .coerceIn(minimumFontSize, maximumFontSize)
         )
     }
-    val resizeDebounceMillis = remember(session) {
-        preferences.getInt("keyboard_resize_debounce_ms", DefaultKeyboardResizeDebounceMillis)
-            .coerceIn(0, MaxKeyboardResizeDebounceMillis)
-            .toLong()
-    }
     val typeface = remember(context) { loadTerminalTypeface(context) }
-    val backend = rememberTerminalBackend(
-        session = session,
-        resizeDebounceMillis = resizeDebounceMillis,
-        onBackendCreated = onBackendCreated,
-        onBackendReleased = onBackendReleased
-    )
     val cursorTrail = CursorTrailEffect.fromPref(preferences.getString("cursor_trail_effect", null))
     val cursorEffect = remember(cursorTrail) { cursorTrail.toCursorEffect() }
     val frameRate = VisualEffectFrameRate.fromPref(
         preferences.getString("visual_effect_frame_rate", null)
     )
     val accessibilityEnabled by rememberAccessibilityEnabled(context)
-    val modifierKeys = rememberModifierKeys(extraKeysController)
-    val config = createTerminalCanvasConfig(
+    return createTerminalCanvasConfig(
         TerminalCanvasConfigInput(
             preferences = preferences,
             fontSize = fontSize,
@@ -90,16 +131,18 @@ fun TerminalCanvas(
             frameRate = frameRate,
             accessibilityEnabled = accessibilityEnabled,
             session = session,
-            onOpenUrl = onOpenUrl
+            onOpenUrl = onOpenUrl,
+            onMoreSelectionRequest = onOpenContextMenu,
+            onCodePoint = { codePoint, controlDown, altDown ->
+                handleTerminalCodePoint(
+                    codePoint = codePoint,
+                    controlDown = controlDown,
+                    altDown = altDown,
+                    session = session,
+                    onOpenContextMenu = { onOpenContextMenu("") }
+                )
+            }
         )
-    )
-
-    TerminalCanvasSurface(
-        backend = backend,
-        modifierKeys = modifierKeys,
-        config = config,
-        requestFocus = isTerminalActive,
-        modifier = modifier
     )
 }
 
@@ -166,6 +209,7 @@ private fun rememberModifierKeys(controller: ExtraKeysController): ModifierKeyRe
         }
     }
 
+@Suppress("LongParameterList")
 private data class TerminalCanvasConfigInput(
     val preferences: SharedPreferences,
     val fontSize: androidx.compose.runtime.MutableIntState,
@@ -176,7 +220,9 @@ private data class TerminalCanvasConfigInput(
     val frameRate: VisualEffectFrameRate,
     val accessibilityEnabled: Boolean,
     val session: TerminalSession,
-    val onOpenUrl: (String) -> Unit
+    val onOpenUrl: (String) -> Unit,
+    val onMoreSelectionRequest: (String) -> Unit,
+    val onCodePoint: (Int, Boolean, Boolean) -> Boolean
 )
 
 private fun createTerminalCanvasConfig(input: TerminalCanvasConfigInput): TerminalCanvasConfig =
@@ -199,8 +245,32 @@ private fun createTerminalCanvasConfig(input: TerminalCanvasConfigInput): Termin
         },
         onOpenUrl = input.onOpenUrl,
         onCopyRequest = input.session::onCopyTextToClipboard,
-        onPasteRequest = input.session::onPasteTextFromClipboard
+        onPasteRequest = input.session::onPasteTextFromClipboard,
+        onMoreSelectionRequest = input.onMoreSelectionRequest,
+        onCodePoint = input.onCodePoint
     )
+
+private fun handleTerminalCodePoint(
+    codePoint: Int,
+    controlDown: Boolean,
+    altDown: Boolean,
+    session: TerminalSession,
+    onOpenContextMenu: () -> Unit
+): Boolean {
+    if (controlDown && altDown) {
+        when (codePoint) {
+            'm'.code, 'M'.code -> {
+                onOpenContextMenu()
+                return true
+            }
+            'v'.code, 'V'.code -> {
+                session.onPasteTextFromClipboard()
+                return true
+            }
+        }
+    }
+    return false
+}
 
 
 private fun loadTerminalTypeface(context: Context): Typeface {

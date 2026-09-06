@@ -4,6 +4,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -24,6 +26,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.mrndtvndv.term.domain.ServerConfig
+import com.mrndtvndv.term.ui.components.ImagePasteSettingsSection
+import com.mrndtvndv.term.ui.components.rememberImagePasteSettingsState
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Suppress("LongParameterList", "LongMethod")
@@ -42,10 +46,16 @@ fun ServerListScreen(
     onStartLocal: () -> Unit,
     localConfig: ServerConfig?,
     onSetStartupCommand: (String) -> Unit,
+    onUpdateLocalConfig: (
+        cmd: String,
+        imagePasteEnabled: Boolean,
+        imagePasteDirectory: String?,
+        autoCleanup: Boolean,
+        maxFiles: Int,
+    ) -> Unit = { cmd, _, _, _, _ -> onSetStartupCommand(cmd) },
     modifier: Modifier = Modifier,
 ) {
     var showStartupDialog by remember { mutableStateOf(false) }
-    var startupInput by remember { mutableStateOf("") }
     var pendingDeleteId by remember { mutableStateOf<String?>(null) }
 
     Scaffold(
@@ -78,11 +88,7 @@ fun ServerListScreen(
                 LocalTerminalCard(
                     onClick = onStartLocal,
                     startupCommand = localConfig?.startupCommand,
-                    onConfigure = {
-                        val current = localConfig?.startupCommand.orEmpty()
-                        showStartupDialog = true
-                        startupInput = current
-                    },
+                    onConfigure = { showStartupDialog = true },
                 )
             }
 
@@ -119,67 +125,120 @@ fun ServerListScreen(
             }
         }
 
-        // Startup command dialog
         if (showStartupDialog) {
-            AlertDialog(
-                onDismissRequest = { showStartupDialog = false },
-                title = { Text("Local Terminal Startup Command") },
-                text = {
-                    Column {
-                        Text(
-                            "Command to run automatically when the local shell starts:",
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                        Spacer(Modifier.height(12.dp))
-                        OutlinedTextField(
-                            value = startupInput,
-                            onValueChange = { startupInput = it },
-                            label = { Text("Startup command") },
-                            placeholder = { Text("e.g. cd /sdcard/Dev && ls") },
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true,
-                        )
-                    }
-                },
-                confirmButton = {
-                    TextButton(onClick = {
-                        onSetStartupCommand(startupInput)
-                        showStartupDialog = false
-                    }) {
-                        Text("Save")
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = { showStartupDialog = false }) {
-                        Text("Cancel")
-                    }
+            LocalTerminalSettingsDialog(
+                localConfig = localConfig,
+                onDismiss = { showStartupDialog = false },
+                onSave = { cmd, enabled, dir, autoCleanup, maxFiles ->
+                    onUpdateLocalConfig(cmd, enabled, dir, autoCleanup, maxFiles)
+                    showStartupDialog = false
                 },
             )
         }
 
-        // Delete confirmation dialog
         val pendingDelete = pendingDeleteId?.let { id -> servers.find { it.id == id } }
         if (pendingDelete != null) {
-            AlertDialog(
-                onDismissRequest = { pendingDeleteId = null },
-                title = { Text("Delete server?") },
-                text = { Text("Delete \"${pendingDelete.label}\"? This cannot be undone.") },
-                confirmButton = {
-                    TextButton(onClick = {
-                        onDelete(pendingDelete.id)
-                        pendingDeleteId = null
-                    }) {
-                        Text("Delete", color = MaterialTheme.colorScheme.error)
-                    }
+            DeleteServerConfirmationDialog(
+                serverLabel = pendingDelete.label,
+                onConfirm = {
+                    onDelete(pendingDelete.id)
+                    pendingDeleteId = null
                 },
-                dismissButton = {
-                    TextButton(onClick = { pendingDeleteId = null }) {
-                        Text("Cancel")
-                    }
-                },
+                onDismiss = { pendingDeleteId = null },
             )
         }
     }
+}
+
+@Suppress("LongMethod")
+@Composable
+private fun LocalTerminalSettingsDialog(
+    localConfig: ServerConfig?,
+    onDismiss: () -> Unit,
+    onSave: (
+        cmd: String,
+        imagePasteEnabled: Boolean,
+        imagePasteDirectory: String?,
+        autoCleanup: Boolean,
+        maxFiles: Int,
+    ) -> Unit,
+) {
+    var startupInput by remember { mutableStateOf(localConfig?.startupCommand.orEmpty()) }
+    val imagePasteState = rememberImagePasteSettingsState(localConfig)
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Local Terminal Settings") },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text(
+                    "Command to run automatically when the local shell starts:",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                OutlinedTextField(
+                    value = startupInput,
+                    onValueChange = { startupInput = it },
+                    label = { Text("Startup command") },
+                    placeholder = { Text("e.g. cd /sdcard/Dev && ls") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                )
+
+                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+                ImagePasteSettingsSection(
+                    state = imagePasteState,
+                    directorySupportingText =
+                        "Local directory where pasted images are stored. Required for image pasting.",
+                    activeSupportingText = "Save and paste clipboard images into terminal",
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                onSave(
+                    startupInput,
+                    imagePasteState.isPasteActive,
+                    imagePasteState.trimmedDirectory,
+                    imagePasteState.autoCleanup,
+                    imagePasteState.maxFiles,
+                )
+            }) {
+                Text("Save")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        },
+    )
+}
+
+@Composable
+private fun DeleteServerConfirmationDialog(
+    serverLabel: String,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Delete server?") },
+        text = { Text("Delete \"$serverLabel\"? This cannot be undone.") },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text("Delete", color = MaterialTheme.colorScheme.error)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        },
+    )
 }
 
 @Composable

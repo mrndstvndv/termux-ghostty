@@ -17,10 +17,15 @@ import com.termux.terminal.compose.TerminalCommandResult
  */
 internal class TerminalInputTranslator(
     private val modifierKeys: ModifierKeyReader,
-    private val onCodePoint: ((Int, Boolean, Boolean) -> Boolean)? = null,
+    onCodePoint: ((Int, Boolean, Boolean) -> Boolean)? = null,
     val submit: (TerminalCommand) -> TerminalCommandResult
 ) {
     private var combiningAccent = 0
+    private var onCodePoint = onCodePoint
+
+    fun updateOnCodePoint(callback: ((Int, Boolean, Boolean) -> Boolean)?) {
+        onCodePoint = callback
+    }
 
     /** Returns true when the event was consumed. */
     fun handleKeyEvent(nativeEvent: KeyEvent): Boolean {

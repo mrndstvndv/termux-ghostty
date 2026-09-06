@@ -5,6 +5,7 @@ import com.termux.terminal.compose.ModifierKeyReader
 import com.termux.terminal.compose.TerminalCommand
 import com.termux.terminal.compose.TerminalCommandResult
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ImeInputPipelineTest {
@@ -117,6 +118,22 @@ class ImeInputPipelineTest {
             listOf(TerminalCommand.Key(keyCode = 0, metaState = 0, down = true, codePoint = 1)),
             commands
         )
+    }
+
+    @Test
+    fun codePointPolicyCanBeUpdatedWithoutReplacingTheTranslator() {
+        var handled = false
+        val translator = TerminalInputTranslator(ModifierKeyReader.NONE) {
+            error("The updated host callback should consume the code point")
+        }
+
+        translator.updateOnCodePoint { _, _, _ ->
+            handled = true
+            true
+        }
+        translator.sendCodePoint('a'.code, alt = false)
+
+        assertTrue(handled)
     }
 
     @Test

@@ -14,7 +14,22 @@ data class ServerConfig(
     val herdrEnabled: Boolean = true,
     val isLocal: Boolean = false,
     val startupCommand: String? = null,
+    val imagePasteEnabled: Boolean = false,
+    val imagePasteDirectory: String? = null,
+    val imagePasteAutoCleanup: Boolean = true,
+    val imagePasteMaxFiles: Int = DEFAULT_IMAGE_PASTE_MAX_FILES,
 ) {
+    companion object {
+        const val DEFAULT_IMAGE_PASTE_MAX_FILES = 20
+    }
+
+    val isImagePasteActive: Boolean
+        get() = imagePasteEnabled && !imagePasteDirectory.isNullOrBlank()
+
+    /** Normalizes persisted or externally supplied retention limits before use. */
+    val safeImagePasteMaxFiles: Int
+        get() = imagePasteMaxFiles.coerceAtLeast(1)
+
     /** Unique stable key for SharedPreferences lookups */
     val prefsKey: String get() = if (isLocal) {
         "${id}_local"

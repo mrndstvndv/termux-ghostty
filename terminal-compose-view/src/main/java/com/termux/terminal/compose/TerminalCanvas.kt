@@ -380,12 +380,14 @@ private fun rememberInputPipeline(
     onCodePoint: ((Int, Boolean, Boolean) -> Boolean)?,
     onImeSessionClosed: () -> Unit
 ): Pair<TerminalInputTranslator, ImeHost> {
-    val translator = remember(controller, modifierKeys, onCodePoint) {
+    val currentOnCodePoint = rememberUpdatedState(onCodePoint)
+    val translator = remember(controller, modifierKeys) {
         TerminalInputTranslator(
             modifierKeys = modifierKeys,
-            onCodePoint = onCodePoint
+            onCodePoint = null
         ) { command -> controller.submit(command) }
     }
+    SideEffect { translator.updateOnCodePoint(currentOnCodePoint.value) }
     val imeProcessor = remember(translator) {
         ImeEditCommandProcessor(CommandTerminalInput(translator))
     }

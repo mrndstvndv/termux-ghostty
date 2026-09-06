@@ -25,13 +25,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.RestartAlt
-import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -62,7 +60,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogWindowProvider
-import com.termux.shared.data.DataUtils
 import com.termux.shared.interact.ShareUtils
 import com.termux.shared.shell.ShellUtils
 import com.termux.shared.termux.data.TermuxUrlUtils
@@ -75,23 +72,15 @@ private data class ContextMenuItemData(
     val title: String,
     val subtitle: String,
     val enabled: Boolean = true,
-    val destructive: Boolean = false,
     val onClick: () -> Unit
 )
-
-private enum class TranscriptAction {
-    SelectUrl,
-    Share,
-}
 
 private class ContextMenuCallbacks(
     val onDismiss: () -> Unit,
     val onUploadMedia: () -> Unit,
     val onUploadFile: () -> Unit,
     val onSelectUrls: () -> Unit,
-    val onShareTranscript: () -> Unit,
-    val onShowUrls: (List<String>) -> Unit,
-    val onShowKillConfirm: () -> Unit
+    val onShowUrls: (List<String>) -> Unit
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -99,7 +88,6 @@ private class ContextMenuCallbacks(
 @Suppress("LongMethod")
 fun TerminalContextMenu(
     session: TerminalSession,
-    selectedText: String,
     onOpenUrl: (String) -> Unit,
     onUploadMedia: () -> Unit,
     onUploadFile: () -> Unit,
@@ -108,70 +96,43 @@ fun TerminalContextMenu(
 ) {
     var isSheetVisible by remember { mutableStateOf(true) }
     var urlsForDialog by remember { mutableStateOf<List<String>?>(null) }
-    var showKillConfirm by remember { mutableStateOf(false) }
-    var transcriptAction by remember { mutableStateOf<TranscriptAction?>(null) }
+    var isSelectingUrls by remember { mutableStateOf(false) }
     var isTranscriptLoading by remember { mutableStateOf(false) }
     val context = LocalContext.current
 
     val callbacks = remember(onDismiss, onUploadMedia, onUploadFile) {
         ContextMenuCallbacks(
             onDismiss = {
-                transcriptAction = null
+                isSelectingUrls = false
                 isTranscriptLoading = false
                 isSheetVisible = false
                 onDismiss()
             },
             onUploadMedia = onUploadMedia,
             onUploadFile = onUploadFile,
-            onSelectUrls = { transcriptAction = TranscriptAction.SelectUrl },
-            onShareTranscript = { transcriptAction = TranscriptAction.Share },
+            onSelectUrls = { isSelectingUrls = true },
             onShowUrls = { urls ->
                 urlsForDialog = urls
                 isSheetVisible = false
-            },
-            onShowKillConfirm = {
-                isSheetVisible = false
-                showKillConfirm = true
             }
         )
     }
 
-    LaunchedEffect(transcriptAction) {
-        val action = transcriptAction ?: return@LaunchedEffect
+    LaunchedEffect(isSelectingUrls) {
+        if (!isSelectingUrls) return@LaunchedEffect
         isTranscriptLoading = true
-        when (action) {
-            TranscriptAction.SelectUrl -> {
-                val urls = withContext(Dispatchers.IO) { extractUrls(session) }
-                transcriptAction = null
-                isTranscriptLoading = false
-                if (urls.isEmpty()) {
-                    Toast.makeText(context, "No URLs found in transcript", Toast.LENGTH_SHORT).show()
-                    callbacks.onDismiss()
-                } else {
-                    callbacks.onShowUrls(urls.reversed())
-                }
-            }
-            TranscriptAction.Share -> {
-                val transcript = withContext(Dispatchers.IO) { transcriptForSharing(session) }
-                transcriptAction = null
-                isTranscriptLoading = false
-                if (transcript == null) {
-                    Toast.makeText(context, "Transcript is empty", Toast.LENGTH_SHORT).show()
-                    callbacks.onDismiss()
-                } else {
-                    callbacks.onDismiss()
-                    ShareUtils.shareText(
-                        context,
-                        "Share transcript",
-                        transcript,
-                        "Share transcript with",
-                    )
-                }
-            }
+        val urls = withContext(Dispatchers.IO) { extractUrls(session) }
+        isSelectingUrls = false
+        isTranscriptLoading = false
+        if (urls.isEmpty()) {
+            Toast.makeText(context, "No URLs found in transcript", Toast.LENGTH_SHORT).show()
+            callbacks.onDismiss()
+        } else {
+            callbacks.onShowUrls(urls.reversed())
         }
     }
 
-    val items = rememberContextMenuItems(session, selectedText, callbacks)
+    val items = rememberContextMenuItems(session, callbacks)
 
     if (isSheetVisible) {
         ModalBottomSheet(
@@ -202,8 +163,6 @@ fun TerminalContextMenu(
 
     ContextMenuDialogs(
         urlsForDialog = urlsForDialog,
-        showKillConfirm = showKillConfirm,
-        pid = session.pid,
         onOpenUrl = { url ->
             urlsForDialog = null
             onDismiss()
@@ -212,29 +171,15 @@ fun TerminalContextMenu(
         onDismissUrls = {
             urlsForDialog = null
             onDismiss()
-        },
-        onConfirmKill = {
-            showKillConfirm = false
-            onDismiss()
-            session.finishIfRunning()
-        },
-        onDismissKill = {
-            showKillConfirm = false
-            onDismiss()
         }
     )
 }
 
-@Suppress("LongParameterList")
 @Composable
 private fun ContextMenuDialogs(
     urlsForDialog: List<String>?,
-    showKillConfirm: Boolean,
-    pid: Int,
     onOpenUrl: (String) -> Unit,
-    onDismissUrls: () -> Unit,
-    onConfirmKill: () -> Unit,
-    onDismissKill: () -> Unit
+    onDismissUrls: () -> Unit
 ) {
     urlsForDialog?.let { urls ->
         SelectUrlDialog(
@@ -243,25 +188,16 @@ private fun ContextMenuDialogs(
             onDismiss = onDismissUrls
         )
     }
-
-    if (showKillConfirm) {
-        KillProcessDialog(
-            pid = pid,
-            onConfirm = onConfirmKill,
-            onDismiss = onDismissKill
-        )
-    }
 }
 
 @Suppress("LongMethod")
 @Composable
 private fun rememberContextMenuItems(
     session: TerminalSession,
-    selectedText: String,
     callbacks: ContextMenuCallbacks
 ): List<ContextMenuItemData> {
     val context = LocalContext.current
-    return remember(session, selectedText, callbacks) {
+    return remember(session, callbacks) {
         listOfNotNull(
             ContextMenuItemData(
                 icon = Icons.Default.ContentPaste,
@@ -273,8 +209,8 @@ private fun rememberContextMenuItems(
             },
             ContextMenuItemData(
                 icon = Icons.Default.Image,
-                title = "Upload Media",
-                subtitle = "Choose an image or video and paste its path",
+                title = "Upload Image",
+                subtitle = "Choose an image and paste its path",
             ) {
                 callbacks.onDismiss()
                 callbacks.onUploadMedia()
@@ -295,23 +231,6 @@ private fun rememberContextMenuItems(
                 callbacks.onSelectUrls()
             },
             ContextMenuItemData(
-                icon = Icons.Default.Share,
-                title = "Share Transcript",
-                subtitle = "Share full terminal buffer",
-            ) {
-                callbacks.onShareTranscript()
-            },
-            if (selectedText.isNotBlank()) {
-                ContextMenuItemData(
-                    icon = Icons.Default.ContentCopy,
-                    title = "Share Selected Text",
-                    subtitle = "Share highlighted text",
-                ) {
-                    callbacks.onDismiss()
-                    ShareUtils.shareText(context, "Share selected text", selectedText, "Share with")
-                }
-            } else null,
-            ContextMenuItemData(
                 icon = Icons.Default.RestartAlt,
                 title = "Reset Terminal",
                 subtitle = "Reset terminal state and clear screen",
@@ -319,15 +238,6 @@ private fun rememberContextMenuItems(
                 callbacks.onDismiss()
                 session.reset()
                 Toast.makeText(context, "Terminal reset", Toast.LENGTH_SHORT).show()
-            },
-            ContextMenuItemData(
-                icon = Icons.Default.Close,
-                title = "Kill Process",
-                subtitle = if (session.isRunning) "Terminate PID ${session.pid}" else "Process not running",
-                enabled = session.isRunning,
-                destructive = true,
-            ) {
-                callbacks.onShowKillConfirm()
             }
         )
     }
@@ -336,18 +246,6 @@ private fun rememberContextMenuItems(
 private fun extractUrls(session: TerminalSession): List<String> {
     val transcript = ShellUtils.getTerminalSessionTranscriptText(session, true, true)
     return transcript?.let { TermuxUrlUtils.extractUrls(it).map { url -> url.toString() } }.orEmpty()
-}
-
-private fun transcriptForSharing(session: TerminalSession): String? {
-    val transcript = ShellUtils.getTerminalSessionTranscriptText(session, false, true)
-    if (transcript.isNullOrBlank()) return null
-    return DataUtils.getTruncatedCommandOutput(
-        transcript,
-        DataUtils.TRANSACTION_SIZE_LIMIT_IN_BYTES,
-        false,
-        true,
-        false,
-    )?.trim().orEmpty().takeIf { it.isNotEmpty() }
 }
 
 @Composable
@@ -382,7 +280,6 @@ private fun TerminalContextMenuContent(
                 title = item.title,
                 subtitle = item.subtitle,
                 enabled = item.enabled,
-                destructive = item.destructive,
                 onClick = item.onClick
             )
             if (index < items.lastIndex) {
@@ -401,15 +298,9 @@ private fun ContextMenuItem(
     title: String,
     subtitle: String,
     enabled: Boolean = true,
-    destructive: Boolean = false,
     onClick: () -> Unit
 ) {
     val contentAlpha = if (enabled) 1f else 0.38f
-    val iconColor = if (destructive) {
-        MaterialTheme.colorScheme.error
-    } else {
-        MaterialTheme.colorScheme.primary
-    }
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -421,7 +312,7 @@ private fun ContextMenuItem(
         Icon(
             imageVector = icon,
             contentDescription = null,
-            tint = iconColor.copy(alpha = contentAlpha),
+            tint = MaterialTheme.colorScheme.primary.copy(alpha = contentAlpha),
             modifier = Modifier.size(28.dp)
         )
         Spacer(modifier = Modifier.width(12.dp))
@@ -537,37 +428,6 @@ private fun UrlListItem(
             }
         }
     }
-}
-
-@Composable
-private fun KillProcessDialog(
-    pid: Int,
-    onConfirm: () -> Unit,
-    onDismiss: () -> Unit
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Text(text = "Kill Process")
-        },
-        text = {
-            Text(text = "Are you sure you want to kill the process with PID $pid?")
-        },
-        confirmButton = {
-            TextButton(onClick = onConfirm) {
-                Text(
-                    text = "Kill",
-                    color = MaterialTheme.colorScheme.error,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
-            }
-        }
-    )
 }
 
 @Composable

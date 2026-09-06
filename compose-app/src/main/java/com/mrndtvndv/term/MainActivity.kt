@@ -124,7 +124,7 @@ class MainActivity : ComponentActivity(), SessionHost {
     }
 
     private fun requestMediaUpload(session: TerminalSession) {
-        requestFilePicker(session, arrayOf("image/*", "video/*"))
+        requestFilePicker(session, arrayOf("image/*"))
     }
 
     private fun requestFileUpload(session: TerminalSession) {

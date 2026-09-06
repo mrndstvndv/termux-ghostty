@@ -68,13 +68,11 @@ fun TerminalCanvas(
     )
     val modifierKeys = rememberModifierKeys(extraKeysController)
     var showContextMenu by remember { mutableStateOf(false) }
-    var contextMenuSelectedText by remember { mutableStateOf("") }
     val config = rememberTerminalCanvasConfig(
         session = session,
         preferences = preferences,
         onOpenUrl = onOpenUrl,
-        onOpenContextMenu = { text ->
-            contextMenuSelectedText = text
+        onOpenContextMenu = {
             showContextMenu = true
         }
     )
@@ -91,13 +89,11 @@ fun TerminalCanvas(
     if (showContextMenu) {
         TerminalContextMenu(
             session = session,
-            selectedText = contextMenuSelectedText,
             onOpenUrl = onOpenUrl,
             onUploadMedia = onUploadMedia,
             onUploadFile = onUploadFile,
             onDismiss = {
                 showContextMenu = false
-                contextMenuSelectedText = ""
             }
         )
     }

@@ -57,6 +57,7 @@ fun MainContent(
     onActiveTerminalSessionChanged: (TerminalSession?) -> Unit,
     imagePasteInProgress: Boolean,
     onCancelImagePaste: () -> Unit,
+    onRequestImageUpload: (TerminalSession) -> Unit,
     onOpenFile: (File) -> Unit,
     onOpenFileError: (String) -> Unit,
     onOpenUrl: (String) -> Unit,
@@ -335,6 +336,9 @@ fun MainContent(
                                     TerminalWorkspaceScreen(
                                         session = server.terminalSession,
                                         terminalProgress = terminalProgress,
+                                        onUploadImage = {
+                                            onRequestImageUpload(server.terminalSession)
+                                        },
                                         sftpViewModel = sftpVM,
                                         reviewViewModel = reviewVM,
                                         extraKeysEnabled = extraKeysEnabled,

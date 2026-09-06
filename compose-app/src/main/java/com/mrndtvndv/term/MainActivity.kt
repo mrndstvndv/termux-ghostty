@@ -13,6 +13,7 @@ import android.view.KeyEvent
 import android.view.inputmethod.InputMethodManager
 import android.webkit.MimeTypeMap
 import androidx.activity.ComponentActivity
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
@@ -37,6 +38,7 @@ import androidx.core.content.FileProvider
 import android.widget.Toast
 import java.io.File
 
+@Suppress("TooManyFunctions")
 class MainActivity : ComponentActivity(), SessionHost {
 
     private val sharedPreferences by lazy {
@@ -62,6 +64,12 @@ class MainActivity : ComponentActivity(), SessionHost {
     private val viewingFileState = mutableStateOf<File?>(null)
     private val imagePasteInProgressState = mutableStateOf(false)
     private var imagePasteJob: Job? = null
+    private var imageUploadTargetSession: TerminalSession? = null
+    private val imagePickerLauncher = registerForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri ->
+        handlePickedImage(uri)
+    }
     private var windowHasFocus = false
     private var focusedTerminalSession: TerminalSession? = null
 
@@ -104,22 +112,90 @@ class MainActivity : ComponentActivity(), SessionHost {
             pasteClipboardText(targetSession)
             return
         }
+        val imageClipData = clipData ?: return
 
+        startImageUpload(
+            targetSession = targetSession,
+            clipData = imageClipData,
+            config = request.config,
+            server = sessionContext.server,
+            pasteClipboardTextOnFailure = true,
+        )
+    }
+
+    private fun requestImageUpload(session: TerminalSession) {
+        if (imagePasteInProgressState.value) return
+        val sessionContext = resolveActiveSessionContext(session)
+        if (!canUploadImage(sessionContext.config, sessionContext.server)) {
+            Toast.makeText(
+                this,
+                "Enable image paste and set an image directory first",
+                Toast.LENGTH_SHORT,
+            ).show()
+            return
+        }
+        imageUploadTargetSession = session
+        imagePickerLauncher.launch("image/*")
+    }
+
+    private fun handlePickedImage(uri: Uri?) {
+        val targetSession = imageUploadTargetSession
+        imageUploadTargetSession = null
+        if (uri == null || targetSession == null) return
+
+        val sessionContext = resolveActiveSessionContext(targetSession)
+        val config = sessionContext.config ?: run {
+            Toast.makeText(
+                this,
+                "Enable image paste and set an image directory first",
+                Toast.LENGTH_SHORT,
+            ).show()
+            return
+        }
+        if (!canUploadImage(config, sessionContext.server)) {
+            Toast.makeText(
+                this,
+                "Enable image paste and set an image directory first",
+                Toast.LENGTH_SHORT,
+            ).show()
+            return
+        }
+        startImageUpload(
+            targetSession = targetSession,
+            clipData = ClipData.newRawUri("image", uri),
+            config = config,
+            server = sessionContext.server,
+            pasteClipboardTextOnFailure = false,
+        )
+    }
+
+    private fun canUploadImage(config: ServerConfig?, server: Server?): Boolean =
+        config?.isImagePasteActive == true && (config.isLocal || server != null)
+
+    private fun startImageUpload(
+        targetSession: TerminalSession,
+        clipData: ClipData,
+        config: ServerConfig,
+        server: Server?,
+        pasteClipboardTextOnFailure: Boolean,
+    ) {
         if (imagePasteInProgressState.value) return
         imagePasteInProgressState.value = true
-
-        val server = sessionContext.server
         imagePasteJob = lifecycleScope.launch {
             try {
                 val path = clipboardImagePasteService.saveImage(
                     clipData = clipData,
-                    config = request.config,
+                    config = config,
                     server = server,
                 )
-                val textToPaste = path ?: ShareUtils.getTextStringFromClipboardIfSet(
-                    this@MainActivity,
-                    true,
-                )
+                if (path == null && !pasteClipboardTextOnFailure) {
+                    Toast.makeText(this@MainActivity, "Image upload failed", Toast.LENGTH_SHORT).show()
+                }
+                val textToPaste = path ?: if (pasteClipboardTextOnFailure) {
+                    ShareUtils.getTextStringFromClipboardIfSet(this@MainActivity, true)
+                } else {
+                    null
+                }
                 textToPaste?.let(targetSession::paste)
             } finally {
                 imagePasteInProgressState.value = false
@@ -221,6 +297,7 @@ class MainActivity : ComponentActivity(), SessionHost {
                 },
                 imagePasteInProgress = imagePasteInProgressState.value,
                 onCancelImagePaste = { cancelImagePaste() },
+                onRequestImageUpload = { session -> requestImageUpload(session) },
                 onOpenFile = { file -> openDownloadedFile(file) },
                 onOpenFileError = { errorMsg ->
                     sessionManager.handleTerminalNotification("SFTP Error", errorMsg)

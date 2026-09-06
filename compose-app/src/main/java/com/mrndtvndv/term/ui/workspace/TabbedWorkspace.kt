@@ -22,16 +22,11 @@ import com.mrndtvndv.term.server.HerdrWorkspaceResolver
 import com.mrndtvndv.term.ui.review.ReviewViewModel
 import com.mrndtvndv.term.ui.review.GitReviewScreen
 import androidx.compose.foundation.gestures.Orientation
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.pager.PagerDefaults
 import androidx.compose.foundation.pager.PagerSnapDistance
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
-import androidx.compose.ui.input.pointer.PointerEventPass
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.unit.Velocity
 import kotlinx.coroutines.launch
 import java.io.File
@@ -42,6 +37,7 @@ import java.io.File
 fun TabbedWorkspace(
     session: TerminalSession,
     terminalProgress: TerminalProgress?,
+    onUploadImage: () -> Unit,
     sftpViewModel: SftpViewModel?,
     reviewViewModel: ReviewViewModel?,
     extraKeysController: ExtraKeysController,
@@ -98,10 +94,6 @@ fun TabbedWorkspace(
     // pager — e.g. SFTP→Git becomes a back press that navigates to the Terminal tab.
     // Hand the edge zone to the pager so those swipes always switch pages.
     val excludeFromSystemGesture = pagerState.currentPage != 0
-
-    var isPagerScrollAllowed by remember { mutableStateOf(true) }
-    val viewConfiguration = LocalViewConfiguration.current
-    val touchSlop = viewConfiguration.touchSlop
 
     // pageNestedScrollConnection is @Composable in foundation 1.11+, so it must be
     // called from the composable body, not inside remember {} or the object expression.
@@ -207,7 +199,6 @@ fun TabbedWorkspace(
         HorizontalPager(
             state = pagerState,
             flingBehavior = flingBehavior,
-            userScrollEnabled = isPagerScrollAllowed,
             pageNestedScrollConnection = pageNestedScrollConnection,
             key = { index -> activeTabs.getOrNull(index)?.let { "${index}_${it.title}" } ?: index.toString() },
             modifier = Modifier
@@ -218,31 +209,6 @@ fun TabbedWorkspace(
                 .imePadding()
                 .clipToBounds()
                 .then(if (excludeFromSystemGesture) Modifier.systemGestureExclusion() else Modifier)
-                .pointerInput(touchSlop) {
-                    awaitEachGesture {
-                        val down = awaitFirstDown(requireUnconsumed = false)
-                        var isLocked = false
-                        do {
-                            val event = awaitPointerEvent(PointerEventPass.Initial)
-                            if (!isLocked) {
-                                val pointer = event.changes.firstOrNull { it.id == down.id }
-                                    ?: event.changes.firstOrNull()
-                                if (pointer != null) {
-                                    val dx = kotlin.math.abs(pointer.position.x - down.position.x)
-                                    val dy = kotlin.math.abs(pointer.position.y - down.position.y)
-                                    val dist = kotlin.math.sqrt(dx * dx + dy * dy)
-                                    if (dist > touchSlop) {
-                                        isLocked = true
-                                        if (dy > dx * 0.7f) {
-                                            isPagerScrollAllowed = false
-                                        }
-                                    }
-                                }
-                            }
-                        } while (event.changes.any { it.pressed })
-                        isPagerScrollAllowed = true
-                    }
-                }
         ) { page ->
             if (page < activeTabs.size) {
                 when (activeTabs[page]) {
@@ -253,6 +219,7 @@ fun TabbedWorkspace(
                                 TerminalFocusWrapper(
                                     session = session,
                                     extraKeysController = extraKeysController,
+                                    onUploadImage = onUploadImage,
                                     isTerminalActive = activeTab == WorkspaceTab.Terminal,
                                     onBackendCreated = onBackendCreated,
                                     onBackendReleased = onBackendReleased,

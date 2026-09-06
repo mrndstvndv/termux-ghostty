@@ -23,6 +23,7 @@ import androidx.compose.ui.hapticfeedback.HapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.AwaitPointerEventScope
 import androidx.compose.ui.input.pointer.PointerEvent
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.pointerInteropFilter
 import androidx.compose.ui.input.pointer.positionChanged
@@ -178,14 +179,21 @@ private suspend fun AwaitPointerEventScope.handleTerminalGesture(
     val scrollState = ScrollGestureState()
     val velocityTracker = VelocityTracker()
 
-    val down = awaitFirstDown(requireUnconsumed = false)
+    // Claim vertical terminal input before a parent pager gets its main-pass
+    // opportunity to consume the same pointer stream. Tap handling remains in
+    // the main pass and is unaffected because this recognizer only consumes
+    // after it has established a vertical or pinch gesture.
+    val down = awaitFirstDown(
+        requireUnconsumed = false,
+        pass = PointerEventPass.Initial
+    )
     velocityTracker.resetTracking()
     velocityTracker.addPosition(down.uptimeMillis, down.position)
     context.controller.beginScrollGesture()
     if (selectionState.isSelecting) return
 
     do {
-        val event = awaitPointerEvent()
+        val event = awaitPointerEvent(PointerEventPass.Initial)
         val canceled = event.changes.any { it.isConsumed }
         if (!canceled) {
             event.changes.firstOrNull()?.let { change ->

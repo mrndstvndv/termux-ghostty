@@ -19,6 +19,7 @@ import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ContentPaste
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Share
@@ -77,6 +78,7 @@ private enum class TranscriptAction {
 
 private class ContextMenuCallbacks(
     val onDismiss: () -> Unit,
+    val onUploadImage: () -> Unit,
     val onSelectUrls: () -> Unit,
     val onShareTranscript: () -> Unit,
     val onShowUrls: (List<String>) -> Unit,
@@ -90,6 +92,7 @@ fun TerminalContextMenu(
     session: TerminalSession,
     selectedText: String,
     onOpenUrl: (String) -> Unit,
+    onUploadImage: () -> Unit,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -100,7 +103,7 @@ fun TerminalContextMenu(
     var isTranscriptLoading by remember { mutableStateOf(false) }
     val context = LocalContext.current
 
-    val callbacks = remember(onDismiss) {
+    val callbacks = remember(onDismiss, onUploadImage) {
         ContextMenuCallbacks(
             onDismiss = {
                 transcriptAction = null
@@ -108,6 +111,7 @@ fun TerminalContextMenu(
                 isSheetVisible = false
                 onDismiss()
             },
+            onUploadImage = onUploadImage,
             onSelectUrls = { transcriptAction = TranscriptAction.SelectUrl },
             onShareTranscript = { transcriptAction = TranscriptAction.Share },
             onShowUrls = { urls ->
@@ -227,6 +231,7 @@ private fun ContextMenuDialogs(
     }
 }
 
+@Suppress("LongMethod")
 @Composable
 private fun rememberContextMenuItems(
     session: TerminalSession,
@@ -243,6 +248,14 @@ private fun rememberContextMenuItems(
             ) {
                 callbacks.onDismiss()
                 session.onPasteTextFromClipboard()
+            },
+            ContextMenuItemData(
+                icon = Icons.Default.Image,
+                title = "Upload Image",
+                subtitle = "Choose an image and paste its path",
+            ) {
+                callbacks.onDismiss()
+                callbacks.onUploadImage()
             },
             ContextMenuItemData(
                 icon = Icons.Default.Link,

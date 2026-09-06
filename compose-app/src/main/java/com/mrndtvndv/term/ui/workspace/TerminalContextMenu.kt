@@ -29,7 +29,6 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Link
-import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -196,7 +195,6 @@ private fun rememberContextMenuItems(
     session: TerminalSession,
     callbacks: ContextMenuCallbacks
 ): List<ContextMenuItemData> {
-    val context = LocalContext.current
     return remember(session, callbacks) {
         listOfNotNull(
             ContextMenuItemData(
@@ -209,8 +207,8 @@ private fun rememberContextMenuItems(
             },
             ContextMenuItemData(
                 icon = Icons.Default.Image,
-                title = "Upload Image",
-                subtitle = "Choose an image and paste its path",
+                title = "Upload Media",
+                subtitle = "Choose an image or video and paste its path",
             ) {
                 callbacks.onDismiss()
                 callbacks.onUploadMedia()
@@ -229,15 +227,6 @@ private fun rememberContextMenuItems(
                 subtitle = "Extract and open URLs from session",
             ) {
                 callbacks.onSelectUrls()
-            },
-            ContextMenuItemData(
-                icon = Icons.Default.RestartAlt,
-                title = "Reset Terminal",
-                subtitle = "Reset terminal state and clear screen",
-            ) {
-                callbacks.onDismiss()
-                session.reset()
-                Toast.makeText(context, "Terminal reset", Toast.LENGTH_SHORT).show()
             }
         )
     }

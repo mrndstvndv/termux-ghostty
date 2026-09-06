@@ -13,6 +13,7 @@ import android.view.KeyEvent
 import android.view.inputmethod.InputMethodManager
 import android.webkit.MimeTypeMap
 import androidx.activity.ComponentActivity
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -65,6 +66,11 @@ class MainActivity : ComponentActivity(), SessionHost {
     private val uploadInProgressState = mutableStateOf(false)
     private var uploadJob: Job? = null
     private var fileUploadTargetSession: TerminalSession? = null
+    private val imagePickerLauncher = registerForActivityResult(
+        ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        handlePickedFile(uri)
+    }
     private val filePickerLauncher = registerForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri ->
@@ -124,22 +130,26 @@ class MainActivity : ComponentActivity(), SessionHost {
     }
 
     private fun requestMediaUpload(session: TerminalSession) {
-        requestFilePicker(session, arrayOf("image/*"))
+        if (!prepareFileUpload(session)) return
+        imagePickerLauncher.launch(
+            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
+        )
     }
 
     private fun requestFileUpload(session: TerminalSession) {
-        requestFilePicker(session, arrayOf("*/*"))
+        if (!prepareFileUpload(session)) return
+        filePickerLauncher.launch(arrayOf("*/*"))
     }
 
-    private fun requestFilePicker(session: TerminalSession, mimeTypes: Array<String>) {
-        if (uploadInProgressState.value) return
+    private fun prepareFileUpload(session: TerminalSession): Boolean {
+        if (uploadInProgressState.value) return false
         val sessionContext = resolveActiveSessionContext(session)
         if (!canUploadFile(sessionContext.config, sessionContext.server)) {
             showUploadConfigurationError()
-            return
+            return false
         }
         fileUploadTargetSession = session
-        filePickerLauncher.launch(mimeTypes)
+        return true
     }
 
     private fun handlePickedFile(uri: Uri?) {

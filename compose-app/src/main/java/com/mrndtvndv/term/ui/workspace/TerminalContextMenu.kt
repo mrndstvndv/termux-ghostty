@@ -4,26 +4,34 @@ import android.view.View
 import android.view.Window
 import android.view.WindowManager
 import android.widget.Toast
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Share
-import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -32,7 +40,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
@@ -68,6 +75,7 @@ private data class ContextMenuItemData(
     val title: String,
     val subtitle: String,
     val enabled: Boolean = true,
+    val destructive: Boolean = false,
     val onClick: () -> Unit
 )
 
@@ -170,13 +178,24 @@ fun TerminalContextMenu(
             onDismissRequest = onDismiss,
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
             containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+            contentColor = MaterialTheme.colorScheme.onSurface,
+            tonalElevation = 4.dp,
+            dragHandle = {
+                Box(
+                    modifier = Modifier
+                        .padding(vertical = 6.dp)
+                        .size(width = 40.dp, height = 4.dp)
+                        .clip(RoundedCornerShape(50))
+                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.65f))
+                )
+            },
             modifier = modifier
         ) {
             PlaceSheetAboveIme()
             if (isTranscriptLoading) {
                 TranscriptLoadingContent()
             } else {
-                TerminalContextMenuContent(session = session, items = items)
+                TerminalContextMenuContent(items = items)
             }
         }
     }
@@ -245,6 +264,14 @@ private fun rememberContextMenuItems(
     return remember(session, selectedText, callbacks) {
         listOfNotNull(
             ContextMenuItemData(
+                icon = Icons.Default.ContentPaste,
+                title = "Paste",
+                subtitle = "Paste clipboard text or image",
+            ) {
+                callbacks.onDismiss()
+                session.onPasteTextFromClipboard()
+            },
+            ContextMenuItemData(
                 icon = Icons.Default.Image,
                 title = "Upload Media",
                 subtitle = "Choose an image or video and paste its path",
@@ -263,14 +290,14 @@ private fun rememberContextMenuItems(
             ContextMenuItemData(
                 icon = Icons.Default.Link,
                 title = "Select URL",
-                subtitle = "Extract and open URLs from session"
+                subtitle = "Extract and open URLs from session",
             ) {
                 callbacks.onSelectUrls()
             },
             ContextMenuItemData(
                 icon = Icons.Default.Share,
                 title = "Share Transcript",
-                subtitle = "Share full terminal buffer"
+                subtitle = "Share full terminal buffer",
             ) {
                 callbacks.onShareTranscript()
             },
@@ -278,7 +305,7 @@ private fun rememberContextMenuItems(
                 ContextMenuItemData(
                     icon = Icons.Default.ContentCopy,
                     title = "Share Selected Text",
-                    subtitle = "Share highlighted text"
+                    subtitle = "Share highlighted text",
                 ) {
                     callbacks.onDismiss()
                     ShareUtils.shareText(context, "Share selected text", selectedText, "Share with")
@@ -287,7 +314,7 @@ private fun rememberContextMenuItems(
             ContextMenuItemData(
                 icon = Icons.Default.RestartAlt,
                 title = "Reset Terminal",
-                subtitle = "Reset terminal state and clear screen"
+                subtitle = "Reset terminal state and clear screen",
             ) {
                 callbacks.onDismiss()
                 session.reset()
@@ -297,7 +324,8 @@ private fun rememberContextMenuItems(
                 icon = Icons.Default.Close,
                 title = "Kill Process",
                 subtitle = if (session.isRunning) "Terminate PID ${session.pid}" else "Process not running",
-                enabled = session.isRunning
+                enabled = session.isRunning,
+                destructive = true,
             ) {
                 callbacks.onShowKillConfirm()
             }
@@ -337,55 +365,30 @@ private fun TranscriptLoadingContent() {
 }
 
 @Composable
+@Suppress("LongMethod")
 private fun TerminalContextMenuContent(
-    session: TerminalSession,
     items: List<ContextMenuItemData>
 ) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(bottom = 24.dp)
+            .heightIn(max = 640.dp)
+            .verticalScroll(rememberScrollState())
+            .padding(start = 12.dp, end = 12.dp, bottom = 16.dp)
     ) {
-        ContextMenuHeader(session)
-        HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-        items.forEach { item ->
+        items.forEachIndexed { index, item ->
             ContextMenuItem(
                 icon = item.icon,
                 title = item.title,
                 subtitle = item.subtitle,
                 enabled = item.enabled,
+                destructive = item.destructive,
                 onClick = item.onClick
             )
-        }
-    }
-}
-
-@Composable
-private fun ContextMenuHeader(session: TerminalSession) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 24.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        Icon(
-            imageVector = Icons.Default.Terminal,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.size(24.dp)
-        )
-        Column {
-            Text(
-                text = "Terminal Actions",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
-            if (session.isRunning) {
-                Text(
-                    text = "PID: ${session.pid}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+            if (index < items.lastIndex) {
+                HorizontalDivider(
+                    modifier = Modifier.padding(start = 52.dp),
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
                 )
             }
         }
@@ -398,41 +401,51 @@ private fun ContextMenuItem(
     title: String,
     subtitle: String,
     enabled: Boolean = true,
+    destructive: Boolean = false,
     onClick: () -> Unit
 ) {
-    val alpha = if (enabled) 1f else 0.38f
-    ListItem(
-        headlineContent = {
+    val contentAlpha = if (enabled) 1f else 0.38f
+    val iconColor = if (destructive) {
+        MaterialTheme.colorScheme.error
+    } else {
+        MaterialTheme.colorScheme.primary
+    }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 60.dp)
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = iconColor.copy(alpha = contentAlpha),
+            modifier = Modifier.size(28.dp)
+        )
+        Spacer(modifier = Modifier.width(12.dp))
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
             Text(
                 text = title,
                 style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = alpha)
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = contentAlpha),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
-        },
-        supportingContent = {
             Text(
                 text = subtitle,
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = alpha)
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = contentAlpha),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
-        },
-        leadingContent = {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = if (enabled) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
-                },
-                modifier = Modifier.size(24.dp)
-            )
-        },
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 8.dp)
-    )
+        }
+    }
 }
 
 @Composable

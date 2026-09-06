@@ -370,7 +370,7 @@ fun MainContent(
                                         hideWorkspaceTabs = hideWorkspaceTabs,
                                         rememberSoftKeyboardState = rememberSoftKeyboardState,
                                         lastSoftKeyboardState = lastSoftKeyboardState,
-                                        onKeyboardVisibilityChanged = { isVisible ->
+                                        onSoftKeyboardStateChanged = { isVisible ->
                                             viewModel.userPrefs.setLastSoftKeyboardVisibility(
                                                 isVisible,
                                                 sharedPreferences

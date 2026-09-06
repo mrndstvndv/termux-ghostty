@@ -23,6 +23,7 @@ import com.termux.terminal.compose.ModifierKeyReader
 import com.termux.terminal.compose.TerminalCanvas as ComposeTerminalCanvas
 import com.termux.terminal.compose.TerminalCanvasConfig
 import com.termux.terminal.compose.TerminalBackend
+import com.termux.terminal.compose.TerminalImeController
 import com.termux.terminal.compose.session.TerminalSessionBackend
 
 /** Default soft-keyboard resize debounce in milliseconds (0 = immediate). */
@@ -48,7 +49,7 @@ fun TerminalCanvas(
     onBackendCreated: (TerminalSession, TerminalBackend) -> Unit,
     onBackendReleased: (TerminalSession, TerminalBackend) -> Unit,
     isTerminalActive: Boolean,
-    onKeyboardVisibilityChanged: (Boolean) -> Unit = {},
+    imeController: TerminalImeController,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -71,7 +72,6 @@ fun TerminalCanvas(
         session = session,
         preferences = preferences,
         onOpenUrl = onOpenUrl,
-        onImeVisibilityChanged = onKeyboardVisibilityChanged,
         onOpenContextMenu = { text ->
             contextMenuSelectedText = text
             showContextMenu = true
@@ -82,9 +82,8 @@ fun TerminalCanvas(
         backend = backend,
         modifierKeys = modifierKeys,
         config = config,
+        imeController = imeController,
         requestFocus = isTerminalActive,
-        requestImeKey = extraKeysController.showKeyboardRequests,
-        requestDismissImeKey = extraKeysController.hideKeyboardRequests,
         modifier = modifier
     )
 
@@ -107,7 +106,6 @@ private fun rememberTerminalCanvasConfig(
     session: TerminalSession,
     preferences: SharedPreferences,
     onOpenUrl: (String) -> Unit,
-    onImeVisibilityChanged: (Boolean) -> Unit,
     onOpenContextMenu: (String) -> Unit
 ): TerminalCanvasConfig {
     val context = LocalContext.current
@@ -139,7 +137,6 @@ private fun rememberTerminalCanvasConfig(
             accessibilityEnabled = accessibilityEnabled,
             session = session,
             onOpenUrl = onOpenUrl,
-            onImeVisibilityChanged = onImeVisibilityChanged,
             onMoreSelectionRequest = onOpenContextMenu,
             onCodePoint = { codePoint, controlDown, altDown ->
                 handleTerminalCodePoint(
@@ -159,18 +156,16 @@ private fun TerminalCanvasSurface(
     backend: TerminalSessionBackend,
     modifierKeys: ModifierKeyReader,
     config: TerminalCanvasConfig,
+    imeController: TerminalImeController,
     requestFocus: Boolean,
-    requestImeKey: Long,
-    requestDismissImeKey: Long,
     modifier: Modifier
 ) {
     ComposeTerminalCanvas(
         backend = backend,
         modifierKeys = modifierKeys,
         config = config,
+        imeController = imeController,
         requestFocus = requestFocus,
-        requestImeKey = requestImeKey,
-        requestDismissImeKey = requestDismissImeKey,
         modifier = modifier.fillMaxSize()
     )
 }
@@ -233,7 +228,6 @@ private data class TerminalCanvasConfigInput(
     val accessibilityEnabled: Boolean,
     val session: TerminalSession,
     val onOpenUrl: (String) -> Unit,
-    val onImeVisibilityChanged: (Boolean) -> Unit,
     val onMoreSelectionRequest: (String) -> Unit,
     val onCodePoint: (Int, Boolean, Boolean) -> Boolean
 )
@@ -261,7 +255,6 @@ private fun createTerminalCanvasConfig(input: TerminalCanvasConfigInput): Termin
             input.preferences.edit().putInt("font_size", nextSize).apply()
         },
         onOpenUrl = input.onOpenUrl,
-        onImeVisibilityChanged = input.onImeVisibilityChanged,
         onCopyRequest = input.session::onCopyTextToClipboard,
         onPasteRequest = input.session::onPasteTextFromClipboard,
         onMoreSelectionRequest = input.onMoreSelectionRequest,

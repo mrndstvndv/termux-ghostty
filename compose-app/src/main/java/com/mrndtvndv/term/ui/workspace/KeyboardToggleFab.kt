@@ -30,14 +30,14 @@ fun isKeyboardFabVisible(
 fun KeyboardToggleFab(
     isKeyboardVisible: Boolean,
     fabOpacity: Float,
-    onToggle: (Boolean) -> Unit,
+    onToggle: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val haptics = LocalHapticFeedback.current
     SmallFloatingActionButton(
         onClick = {
             haptics.performHapticFeedback(HapticFeedbackType.VirtualKey)
-            onToggle(isKeyboardVisible)
+            onToggle()
         },
         modifier = modifier.alpha(fabOpacity.coerceIn(0f, 1f)),
         containerColor = MaterialTheme.colorScheme.surfaceVariant,

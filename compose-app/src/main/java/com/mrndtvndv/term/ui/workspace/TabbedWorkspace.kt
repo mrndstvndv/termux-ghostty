@@ -3,7 +3,6 @@ package com.mrndtvndv.term.ui.workspace
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.systemGestureExclusion
 import androidx.compose.foundation.pager.HorizontalPager
@@ -21,6 +20,8 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.mrndtvndv.term.ui.keyboard.SoftKeyboardState
 import com.mrndtvndv.term.ui.keyboard.SoftKeyboardVisibilityTracker
 import com.termux.terminal.TerminalSession
+import com.termux.terminal.compose.TerminalImeController
+import com.termux.terminal.compose.TerminalImeVisibility
 import com.mrndtvndv.term.ui.sftp.SftpFileBrowser
 import com.mrndtvndv.term.ui.sftp.SftpViewModel
 import com.mrndtvndv.term.ui.keyboard.ExtraKeysToolbar
@@ -64,7 +65,7 @@ fun TabbedWorkspace(
     herdrAgentFabOpacity: Float = 0.7f,
     rememberSoftKeyboardState: Boolean = false,
     lastSoftKeyboardState: SoftKeyboardState = SoftKeyboardState.UNKNOWN,
-    onKeyboardVisibilityChanged: (Boolean) -> Unit = {},
+    onSoftKeyboardStateChanged: (Boolean) -> Unit = {},
     showKeyboardFab: Boolean = false,
     hideKeyboardFabWhileTyping: Boolean = true,
     onBackendCreated: (TerminalSession, TerminalBackend) -> Unit,
@@ -103,22 +104,21 @@ fun TabbedWorkspace(
     )
     val coroutineScope = rememberCoroutineScope()
     val isLifecycleResumed by rememberLifecycleResumed()
-    val imeVisible = WindowInsets.isImeVisible
+    val imeController = remember(session) { TerminalImeController() }
+    val imeVisibility = imeController.visibility
+    val imeVisible = imeVisibility == TerminalImeVisibility.VISIBLE
     val keyboardVisibilityTracker = remember(session) { SoftKeyboardVisibilityTracker() }
-    val currentActiveTab = rememberUpdatedState(activeTab)
-    val currentLifecycleResumed = rememberUpdatedState(isLifecycleResumed)
     val currentRememberKeyboardState = rememberUpdatedState(rememberSoftKeyboardState)
-    val currentOnKeyboardVisibilityChanged = rememberUpdatedState(onKeyboardVisibilityChanged)
-    val reportKeyboardVisibility: (Boolean) -> Unit = remember(session) {
-        { isVisible: Boolean ->
-            val visibilityToPersist = keyboardVisibilityTracker.observe(
-                isVisible = isVisible,
-                isTerminalActive = currentActiveTab.value == WorkspaceTab.Terminal,
-                isLifecycleResumed = currentLifecycleResumed.value
-            )
-            if (visibilityToPersist != null && currentRememberKeyboardState.value) {
-                currentOnKeyboardVisibilityChanged.value(visibilityToPersist)
-            }
+    val currentOnSoftKeyboardStateChanged = rememberUpdatedState(onSoftKeyboardStateChanged)
+    LaunchedEffect(imeController, imeVisibility, activeTab, isLifecycleResumed) {
+        if (imeVisibility == TerminalImeVisibility.UNKNOWN) return@LaunchedEffect
+        val visibilityToPersist = keyboardVisibilityTracker.observe(
+            isVisible = imeVisibility == TerminalImeVisibility.VISIBLE,
+            isTerminalActive = activeTab == WorkspaceTab.Terminal,
+            isLifecycleResumed = isLifecycleResumed
+        )
+        if (visibilityToPersist != null && currentRememberKeyboardState.value) {
+            currentOnSoftKeyboardStateChanged.value(visibilityToPersist)
         }
     }
     val currentLastSoftKeyboardState = rememberUpdatedState(lastSoftKeyboardState)
@@ -129,9 +129,9 @@ fun TabbedWorkspace(
         if (stateToRestore == SoftKeyboardState.UNKNOWN) return@LaunchedEffect
         withFrameNanos { }
         if (stateToRestore == SoftKeyboardState.VISIBLE) {
-            extraKeysController.requestShowKeyboard()
+            imeController.show()
         } else {
-            extraKeysController.requestHideKeyboard()
+            imeController.hide()
         }
     }
 
@@ -270,7 +270,7 @@ fun TabbedWorkspace(
                                     onBackendCreated = onBackendCreated,
                                     onBackendReleased = onBackendReleased,
                                     onOpenUrl = onOpenUrl,
-                                    onKeyboardVisibilityChanged = reportKeyboardVisibility
+                                    imeController = imeController
                                 )
                                 if (showKeyboardFab || herdrEnabled) {
                                     Column(
@@ -290,9 +290,7 @@ fun TabbedWorkspace(
                                             KeyboardToggleFab(
                                                 isKeyboardVisible = imeVisible,
                                                 fabOpacity = herdrAgentFabOpacity,
-                                                onToggle = { visible ->
-                                                    extraKeysController.toggleKeyboard(visible)
-                                                }
+                                                onToggle = imeController::toggle
                                             )
                                         }
                                         if (herdrEnabled) {
@@ -315,9 +313,7 @@ fun TabbedWorkspace(
                                     extraKeysController = extraKeysController,
                                     session = session,
                                     extraKeysJson = extraKeysJson,
-                                    onToggleKeyboard = {
-                                        extraKeysController.toggleKeyboard(imeVisible)
-                                    },
+                                    onToggleKeyboard = imeController::toggle,
                                 )
                             }
                         }

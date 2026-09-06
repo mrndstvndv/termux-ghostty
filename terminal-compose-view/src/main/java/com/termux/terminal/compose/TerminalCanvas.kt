@@ -15,7 +15,6 @@ import androidx.compose.runtime.MutableIntState
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -76,7 +75,9 @@ private const val SelectionLayerZIndex = 3f
  * Owns rendering, input/IME translation, selection gestures, links, scrolling,
  * focus, and accessibility seams. The backend stays neutral: all session
  * interaction goes through [TerminalBackend] commands and immutable
- * [TerminalFrame] snapshots. UI resources are released when the canvas leaves
+ * [TerminalFrame] snapshots. [TerminalImeController] is the neutral host seam
+ * for keyboard requests and current platform visibility; persistence remains
+ * outside this library. UI resources are released when the canvas leaves
  * composition; the host retains backend ownership.
  */
 @Composable
@@ -86,15 +87,20 @@ fun TerminalCanvas(
     backend: TerminalBackend,
     modifierKeys: ModifierKeyReader,
     config: TerminalCanvasConfig,
+    imeController: TerminalImeController? = null,
     requestFocus: Boolean = false,
     requestFocusKey: Long = 0L,
-    requestImeKey: Long = 0L,
-    requestDismissImeKey: Long = 0L,
     modifier: Modifier = Modifier
 ) {
     val selectionState = remember(backend) { TerminalSelectionState() }
     val hapticFeedback = LocalHapticFeedback.current
     val focusRequester = remember { FocusRequester() }
+    val fallbackImeController = remember { TerminalImeController() }
+    val activeImeController = imeController ?: fallbackImeController
+    DisposableEffect(activeImeController) {
+        activeImeController.onCanvasAttached()
+        onDispose { activeImeController.onCanvasDetached() }
+    }
 
     val contentVersionState = remember { mutableIntStateOf(0) }
     val fontSizeState = rememberFontSizeState(config)
@@ -128,24 +134,25 @@ fun TerminalCanvas(
     )
     val imeVisible = WindowInsets.isImeVisible
     val currentOnImeVisibilityChanged by rememberUpdatedState(config.onImeVisibilityChanged)
-    LaunchedEffect(imeVisible) {
+    LaunchedEffect(activeImeController, imeVisible) {
+        activeImeController.updateVisibility(imeVisible)
         currentOnImeVisibilityChanged(imeVisible)
     }
     val metrics = rememberCanvasMetrics(fontSizeState, config, viewportSizePx)
-    var lastHandledImeKey by remember { mutableLongStateOf(0L) }
-    var lastHandledDismissImeKey by remember { mutableLongStateOf(0L) }
-    LaunchedEffect(requestFocus, requestFocusKey, requestImeKey) {
-        if (requestFocus || requestImeKey != 0L) focusRequester.requestFocus()
-        if (requestImeKey != 0L && requestImeKey != lastHandledImeKey) {
-            lastHandledImeKey = requestImeKey
-            imeHost.open()
-        }
+    val imeRequest = activeImeController.pendingRequest
+    LaunchedEffect(requestFocus, requestFocusKey) {
+        if (requestFocus || requestFocusKey != 0L) focusRequester.requestFocus()
     }
-    LaunchedEffect(requestDismissImeKey) {
-        if (requestDismissImeKey != 0L && requestDismissImeKey != lastHandledDismissImeKey) {
-            lastHandledDismissImeKey = requestDismissImeKey
-            imeHost.close()
+    LaunchedEffect(activeImeController, imeRequest) {
+        val request = imeRequest ?: return@LaunchedEffect
+        when (request.action) {
+            TerminalImeAction.SHOW -> {
+                focusRequester.requestFocus()
+                imeHost.open()
+            }
+            TerminalImeAction.HIDE -> imeHost.close()
         }
+        activeImeController.consumeRequest(request.sequence)
     }
     LaunchedEffect(config.selectionResetKey) {
         selectionState.clear()

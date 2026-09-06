@@ -5,6 +5,7 @@ import androidx.compose.ui.Modifier
 import com.mrndtvndv.term.ui.keyboard.ExtraKeysController
 import com.termux.terminal.TerminalSession
 import com.termux.terminal.compose.TerminalBackend
+import com.termux.terminal.compose.TerminalImeController
 
 @Composable
 @Suppress("LongParameterList")
@@ -16,7 +17,7 @@ fun TerminalWorkspaceContainer(
     onBackendReleased: (TerminalSession, TerminalBackend) -> Unit,
     onOpenUrl: (String) -> Unit,
     isTerminalActive: Boolean,
-    onKeyboardVisibilityChanged: (Boolean) -> Unit = {},
+    imeController: TerminalImeController,
     modifier: Modifier = Modifier
 ) {
     TerminalCanvas(
@@ -27,7 +28,7 @@ fun TerminalWorkspaceContainer(
         onBackendCreated = onBackendCreated,
         onBackendReleased = onBackendReleased,
         isTerminalActive = isTerminalActive,
-        onKeyboardVisibilityChanged = onKeyboardVisibilityChanged,
+        imeController = imeController,
         modifier = modifier
     )
 }

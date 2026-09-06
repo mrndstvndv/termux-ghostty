@@ -41,18 +41,4 @@ class ExtraKeysControllerTest {
         assertEquals(false, isKeyboardToggleKey("CTRL"))
     }
 
-    @Test
-    fun keyboardToggleRoutesToShowOrHideRequests() {
-        val controller = ExtraKeysController()
-        assertEquals(0L, controller.showKeyboardRequests)
-        assertEquals(0L, controller.hideKeyboardRequests)
-
-        controller.toggleKeyboard(isKeyboardVisible = false)
-        assertEquals(1L, controller.showKeyboardRequests)
-        assertEquals(0L, controller.hideKeyboardRequests)
-
-        controller.toggleKeyboard(isKeyboardVisible = true)
-        assertEquals(1L, controller.showKeyboardRequests)
-        assertEquals(1L, controller.hideKeyboardRequests)
-    }
 }

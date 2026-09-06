@@ -46,7 +46,10 @@ data class TerminalCanvasConfig(
     val onCodePoint: ((codePoint: Int, controlDown: Boolean, altDown: Boolean) -> Boolean)? = null,
     /** Notifies a host that the platform IME session has closed. */
     val onImeSessionClosed: () -> Unit = {},
-    /** Reports the actual platform IME visibility, including an initial value after attach. */
+    /**
+     * Reports the actual platform IME visibility, including an initial value
+     * after attach. Requests go through [TerminalImeController].
+     */
     val onImeVisibilityChanged: (Boolean) -> Unit = {},
     /** Adds the platform's optional More action to the floating toolbar. */
     val onMoreSelectionRequest: ((String) -> Unit)? = null,

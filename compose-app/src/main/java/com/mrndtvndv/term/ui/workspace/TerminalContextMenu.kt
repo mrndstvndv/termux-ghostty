@@ -19,7 +19,6 @@ import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.RestartAlt
@@ -245,14 +244,6 @@ private fun rememberContextMenuItems(
     val context = LocalContext.current
     return remember(session, selectedText, callbacks) {
         listOfNotNull(
-            ContextMenuItemData(
-                icon = Icons.Default.ContentPaste,
-                title = "Paste",
-                subtitle = "Paste clipboard text or image"
-            ) {
-                callbacks.onDismiss()
-                session.onPasteTextFromClipboard()
-            },
             ContextMenuItemData(
                 icon = Icons.Default.Image,
                 title = "Upload Media",

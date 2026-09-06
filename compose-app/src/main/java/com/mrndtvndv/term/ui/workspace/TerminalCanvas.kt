@@ -81,6 +81,8 @@ fun TerminalCanvas(
         modifierKeys = modifierKeys,
         config = config,
         requestFocus = isTerminalActive,
+        requestImeKey = extraKeysController.showKeyboardRequests,
+        requestDismissImeKey = extraKeysController.hideKeyboardRequests,
         modifier = modifier
     )
 
@@ -154,6 +156,8 @@ private fun TerminalCanvasSurface(
     modifierKeys: ModifierKeyReader,
     config: TerminalCanvasConfig,
     requestFocus: Boolean,
+    requestImeKey: Long,
+    requestDismissImeKey: Long,
     modifier: Modifier
 ) {
     ComposeTerminalCanvas(
@@ -161,6 +165,8 @@ private fun TerminalCanvasSurface(
         modifierKeys = modifierKeys,
         config = config,
         requestFocus = requestFocus,
+        requestImeKey = requestImeKey,
+        requestDismissImeKey = requestDismissImeKey,
         modifier = modifier.fillMaxSize()
     )
 }
@@ -237,6 +243,14 @@ private fun createTerminalCanvasConfig(input: TerminalCanvasConfigInput): Termin
         preferredFrameRate = input.frameRate.framesPerSecond,
         unconditionalKeyboardOnTap = input.preferences.getBoolean(
             "unconditional_soft_keyboard_on_tap",
+            true
+        ),
+        autoShowKeyboardOnTap = input.preferences.getBoolean(
+            "auto_show_soft_keyboard_on_tap",
+            true
+        ),
+        twoFingerSwipeUpOpensKeyboard = input.preferences.getBoolean(
+            "two_finger_swipe_up_opens_keyboard",
             true
         ),
         accessibilityEnabled = input.accessibilityEnabled,

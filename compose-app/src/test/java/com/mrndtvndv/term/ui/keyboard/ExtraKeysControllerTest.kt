@@ -31,4 +31,28 @@ class ExtraKeysControllerTest {
         assertEquals(ModifierState.LOCKED, controller.ctrlState)
         assertTrue(controller.readControl())
     }
+
+    @Test
+    fun keyboardToggleKeyMatchesLegacyToggleName() {
+        assertTrue(isKeyboardToggleKey("KEYBOARD"))
+        assertTrue(isKeyboardToggleKey("keyboard"))
+        assertEquals(false, isKeyboardToggleKey("ESC"))
+        assertEquals(false, isKeyboardToggleKey("PASTE"))
+        assertEquals(false, isKeyboardToggleKey("CTRL"))
+    }
+
+    @Test
+    fun keyboardToggleRoutesToShowOrHideRequests() {
+        val controller = ExtraKeysController()
+        assertEquals(0L, controller.showKeyboardRequests)
+        assertEquals(0L, controller.hideKeyboardRequests)
+
+        controller.toggleKeyboard(isKeyboardVisible = false)
+        assertEquals(1L, controller.showKeyboardRequests)
+        assertEquals(0L, controller.hideKeyboardRequests)
+
+        controller.toggleKeyboard(isKeyboardVisible = true)
+        assertEquals(1L, controller.showKeyboardRequests)
+        assertEquals(1L, controller.hideKeyboardRequests)
+    }
 }

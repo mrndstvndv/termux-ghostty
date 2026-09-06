@@ -1,8 +1,16 @@
 package com.mrndtvndv.term.ui.keyboard
 
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+
+/** Extra-keys name that toggles the soft keyboard instead of writing to the terminal. */
+const val ExtraKeyKeyboardToggleName = "KEYBOARD"
+
+/** Matches the [ExtraKeyKeyboardToggleName] toggle key, case-insensitively. */
+fun isKeyboardToggleKey(key: String): Boolean =
+    key.equals(ExtraKeyKeyboardToggleName, ignoreCase = true)
 
 const val PresetDoubleRow = "[['ESC','/',{key: '-', popup: '|'},'HOME','UP','END','PGUP']," +
     " [{key: 'TAB', popup: {key: 'PASTE', display: 'PASTE'}},'CTRL','ALT','LEFT','DOWN','RIGHT','PGDN']]"
@@ -74,6 +82,14 @@ class ExtraKeysController {
     var fnState by mutableStateOf(ModifierState.INACTIVE)
         private set
 
+    /** Increments every time the keyboard should be shown (observed as TerminalCanvas requestImeKey). */
+    var showKeyboardRequests by mutableLongStateOf(0L)
+        private set
+
+    /** Increments every time the keyboard should be hidden (observed as requestDismissImeKey). */
+    var hideKeyboardRequests by mutableLongStateOf(0L)
+        private set
+
     @Volatile private var ctrlConsumed = false
     @Volatile private var altConsumed = false
     @Volatile private var shiftConsumed = false
@@ -113,10 +129,24 @@ class ExtraKeysController {
         fnConsumed = false
         fnState = nextToggleState(fnState)
     }
-
     fun lockFn() {
         fnConsumed = false
         fnState = ModifierState.LOCKED
+    }
+
+    /** Requests the terminal canvas to show the soft keyboard. */
+    fun requestShowKeyboard() {
+        showKeyboardRequests++
+    }
+
+    /** Requests the terminal canvas to hide the soft keyboard. */
+    fun requestHideKeyboard() {
+        hideKeyboardRequests++
+    }
+
+    /** Routes a KEYBOARD extra-key press to a show or hide request. */
+    fun toggleKeyboard(isKeyboardVisible: Boolean) {
+        if (isKeyboardVisible) requestHideKeyboard() else requestShowKeyboard()
     }
 
     /**

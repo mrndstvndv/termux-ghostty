@@ -12,6 +12,7 @@ import androidx.compose.runtime.MutableIntState
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -76,6 +77,7 @@ private const val SelectionLayerZIndex = 3f
  * composition; the host retains backend ownership.
  */
 @Composable
+@Suppress("LongParameterList", "LongMethod")
 fun TerminalCanvas(
     backend: TerminalBackend,
     modifierKeys: ModifierKeyReader,
@@ -83,6 +85,7 @@ fun TerminalCanvas(
     requestFocus: Boolean = false,
     requestFocusKey: Long = 0L,
     requestImeKey: Long = 0L,
+    requestDismissImeKey: Long = 0L,
     modifier: Modifier = Modifier
 ) {
     val selectionState = remember(backend) { TerminalSelectionState() }
@@ -120,9 +123,20 @@ fun TerminalCanvas(
         onImeSessionClosed = config.onImeSessionClosed
     )
     val metrics = rememberCanvasMetrics(fontSizeState, config, viewportSizePx)
+    var lastHandledImeKey by remember { mutableLongStateOf(0L) }
+    var lastHandledDismissImeKey by remember { mutableLongStateOf(0L) }
     LaunchedEffect(requestFocus, requestFocusKey, requestImeKey) {
         if (requestFocus || requestImeKey != 0L) focusRequester.requestFocus()
-        if (requestImeKey != 0L) imeHost.open()
+        if (requestImeKey != 0L && requestImeKey != lastHandledImeKey) {
+            lastHandledImeKey = requestImeKey
+            imeHost.open()
+        }
+    }
+    LaunchedEffect(requestDismissImeKey) {
+        if (requestDismissImeKey != 0L && requestDismissImeKey != lastHandledDismissImeKey) {
+            lastHandledDismissImeKey = requestDismissImeKey
+            imeHost.close()
+        }
     }
     LaunchedEffect(config.selectionResetKey) {
         selectionState.clear()
@@ -198,7 +212,11 @@ private fun TerminalCanvasLayout(
                 state.config,
                 state.selectionState,
                 state.fontSizeState,
-                onFontSizeChange = state.config.onFontSizeChange
+                onFontSizeChange = state.config.onFontSizeChange,
+                onTwoFingerSwipeUp = {
+                    state.focusRequester.requestFocus()
+                    state.imeHost.open()
+                }
             )
             .terminalTaps(
                 state.controller,

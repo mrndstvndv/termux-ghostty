@@ -92,6 +92,9 @@ fun MainContent(
     val savedExtraKeysCustomJson =
         sharedPreferences.getString("extra_keys_custom_json", "[]") ?: "[]"
     val savedUnconditionalSoftKeyboardOnTap = sharedPreferences.getBoolean("unconditional_soft_keyboard_on_tap", true)
+    val savedAutoShowKeyboardOnTap = sharedPreferences.getBoolean("auto_show_soft_keyboard_on_tap", true)
+    val savedTwoFingerSwipeUpOpensKeyboard =
+        sharedPreferences.getBoolean("two_finger_swipe_up_opens_keyboard", true)
     val savedFontSize = sharedPreferences.getInt("font_size", 12)
     val savedKeyboardResizeDebounceMs = sharedPreferences.getInt(
         "keyboard_resize_debounce_ms",
@@ -135,6 +138,8 @@ fun MainContent(
             var fontSize by remember { mutableStateOf(savedFontSize) }
             var keyboardResizeDebounceMs by remember { mutableStateOf(savedKeyboardResizeDebounceMs) }
             var unconditionalSoftKeyboardOnTap by remember { mutableStateOf(savedUnconditionalSoftKeyboardOnTap) }
+            var autoShowKeyboardOnTap by remember { mutableStateOf(savedAutoShowKeyboardOnTap) }
+            var twoFingerSwipeUpOpensKeyboard by remember { mutableStateOf(savedTwoFingerSwipeUpOpensKeyboard) }
             var cursorTrail by remember { mutableStateOf(savedCursorTrail) }
             var visualEffectFrameRate by remember { mutableStateOf(savedVisualEffectFrameRate) }
             val pickFontLauncher = rememberLauncherForActivityResult(
@@ -269,6 +274,18 @@ fun MainContent(
                                     unconditionalSoftKeyboardOnTap = enabled
                                     sharedPreferences.edit()
                                         .putBoolean("unconditional_soft_keyboard_on_tap", enabled).apply()
+                                },
+                                autoShowKeyboardOnTap = autoShowKeyboardOnTap,
+                                onAutoShowKeyboardOnTapChange = { enabled ->
+                                    autoShowKeyboardOnTap = enabled
+                                    sharedPreferences.edit()
+                                        .putBoolean("auto_show_soft_keyboard_on_tap", enabled).apply()
+                                },
+                                twoFingerSwipeUpOpensKeyboard = twoFingerSwipeUpOpensKeyboard,
+                                onTwoFingerSwipeUpOpensKeyboardChange = { enabled ->
+                                    twoFingerSwipeUpOpensKeyboard = enabled
+                                    sharedPreferences.edit()
+                                        .putBoolean("two_finger_swipe_up_opens_keyboard", enabled).apply()
                                 },
                                 nativeLogcatLoggingEnabled = nativeLogcatLoggingEnabled,
                                 onNativeLogcatLoggingEnabledChange = { enabled ->

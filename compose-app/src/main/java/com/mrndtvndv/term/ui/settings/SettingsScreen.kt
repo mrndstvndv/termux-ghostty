@@ -55,6 +55,10 @@ fun SettingsScreen(
     onUseCustomFontForWholeUiChange: (Boolean) -> Unit,
     unconditionalSoftKeyboardOnTap: Boolean = true,
     onUnconditionalSoftKeyboardOnTapChange: (Boolean) -> Unit = {},
+    autoShowKeyboardOnTap: Boolean = true,
+    onAutoShowKeyboardOnTapChange: (Boolean) -> Unit = {},
+    twoFingerSwipeUpOpensKeyboard: Boolean = true,
+    onTwoFingerSwipeUpOpensKeyboardChange: (Boolean) -> Unit = {},
     nativeLogcatLoggingEnabled: Boolean = false,
     onNativeLogcatLoggingEnabledChange: (Boolean) -> Unit = {},
     debugHudEnabled: Boolean = false,
@@ -190,6 +194,7 @@ fun SettingsScreen(
                                         Text(
                                             "Examples:\n" +
                                             "• Simple key: 'ESC'\n" +
+                                            "• Keyboard toggle: 'KEYBOARD'\n" +
                                             "• Popup: {key: '-', popup: '|'}\n" +
                                             "• Macro: 'CTRL b n' or {macro: 'CTRL b n', display: 'tmux →'}"
                                         )
@@ -670,6 +675,58 @@ fun SettingsScreen(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
+                            Text("Auto-Show Keyboard On Tap", style = MaterialTheme.typography.bodyLarge)
+                            Text(
+                                text = "Automatically open the soft keyboard when tapping the terminal",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = autoShowKeyboardOnTap,
+                            onCheckedChange = onAutoShowKeyboardOnTapChange
+                        )
+                    }
+
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Two-Finger Swipe Up Shows Keyboard", style = MaterialTheme.typography.bodyLarge)
+                            Text(
+                                text = "Swipe up with two fingers on the terminal to open " +
+                                    "the keyboard manually. Useful when auto-show is off.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = twoFingerSwipeUpOpensKeyboard,
+                            onCheckedChange = onTwoFingerSwipeUpOpensKeyboardChange
+                        )
+                    }
+
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+                    Text(
+                        text = "Tip: add a KEYBOARD key to a Custom extra-keys layout " +
+                            "(it shows as \u2328) to toggle the keyboard from the toolbar.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
                             Text("Unconditional Keyboard On Tap", style = MaterialTheme.typography.bodyLarge)
                             Text(
                                 text = "Show soft keyboard on tap even when terminal " +
@@ -680,7 +737,8 @@ fun SettingsScreen(
                         }
                         Switch(
                             checked = unconditionalSoftKeyboardOnTap,
-                            onCheckedChange = onUnconditionalSoftKeyboardOnTapChange
+                            onCheckedChange = onUnconditionalSoftKeyboardOnTapChange,
+                            enabled = autoShowKeyboardOnTap
                         )
                     }
                 }

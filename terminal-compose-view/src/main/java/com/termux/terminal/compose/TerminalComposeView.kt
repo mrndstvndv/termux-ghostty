@@ -82,9 +82,12 @@ class TerminalComposeView @JvmOverloads constructor(
     private var typefaceState by mutableStateOf<Typeface?>(Typeface.MONOSPACE)
     private var accessibilityEnabledState by mutableStateOf(false)
     private var unconditionalKeyboardOnTapState by mutableStateOf(true)
+    private var autoShowKeyboardOnTapState by mutableStateOf(true)
+    private var twoFingerSwipeUpOpensKeyboardState by mutableStateOf(true)
     private var selectionResetKeyState by mutableLongStateOf(0L)
     private var requestFocusKeyState by mutableLongStateOf(0L)
     private var requestImeKeyState by mutableLongStateOf(0L)
+    private var requestDismissImeKeyState by mutableLongStateOf(0L)
     private var listenerState by mutableStateOf<Listener?>(null)
     private var selectedTextState by mutableStateOf<String?>(null)
     private var storedSelectedTextState by mutableStateOf<String?>(null)
@@ -149,6 +152,8 @@ class TerminalComposeView @JvmOverloads constructor(
                     maximumFontSize = maximumFontSizeState,
                     typeface = typefaceState,
                     unconditionalKeyboardOnTap = unconditionalKeyboardOnTapState,
+                    autoShowKeyboardOnTap = autoShowKeyboardOnTapState,
+                    twoFingerSwipeUpOpensKeyboard = twoFingerSwipeUpOpensKeyboardState,
                     accessibilityEnabled = accessibilityEnabledState,
                     selectionResetKey = selectionResetKeyState,
                     onFontSizeChange = { next ->
@@ -176,6 +181,7 @@ class TerminalComposeView @JvmOverloads constructor(
                 requestFocus = requestFocusKeyState != 0L,
                 requestFocusKey = requestFocusKeyState,
                 requestImeKey = requestImeKeyState,
+                requestDismissImeKey = requestDismissImeKeyState,
                 modifier = Modifier.fillMaxSize()
             )
         }
@@ -226,6 +232,14 @@ class TerminalComposeView @JvmOverloads constructor(
         unconditionalKeyboardOnTapState = enabled
     }
 
+    fun setAutoShowKeyboardOnTap(enabled: Boolean) {
+        autoShowKeyboardOnTapState = enabled
+    }
+
+    fun setTwoFingerSwipeUpOpensKeyboard(enabled: Boolean) {
+        twoFingerSwipeUpOpensKeyboardState = enabled
+    }
+
     fun requestTerminalFocus() {
         requestFocus()
     }
@@ -234,6 +248,16 @@ class TerminalComposeView @JvmOverloads constructor(
     fun showSoftKeyboard() {
         requestFocus()
         requestImeKeyState++
+    }
+
+    /** Closes the Compose-owned platform input session and hides the soft keyboard. */
+    fun hideSoftKeyboard() {
+        requestDismissImeKeyState++
+    }
+
+    /** Toggles the soft keyboard from a known visibility state. */
+    fun toggleSoftKeyboard(isKeyboardVisible: Boolean) {
+        if (isKeyboardVisible) hideSoftKeyboard() else showSoftKeyboard()
     }
 
     override fun requestFocus(direction: Int, previouslyFocusedRect: Rect?): Boolean {

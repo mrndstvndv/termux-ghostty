@@ -1,6 +1,9 @@
 package com.mrndtvndv.term.ui.workspace
 
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.systemGestureExclusion
 import androidx.compose.foundation.pager.HorizontalPager
@@ -31,7 +34,7 @@ import androidx.compose.ui.unit.Velocity
 import kotlinx.coroutines.launch
 import java.io.File
 
-@OptIn(ExperimentalFoundationApi::class)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalLayoutApi::class)
 @Suppress("LongParameterList", "LongMethod", "CyclomaticComplexMethod")
 @Composable
 fun TabbedWorkspace(
@@ -242,10 +245,14 @@ fun TabbedWorkspace(
                                 }
                             }
                             if (extraKeysEnabled) {
+                                val imeVisible = WindowInsets.isImeVisible
                                 ExtraKeysToolbar(
                                     extraKeysController = extraKeysController,
                                     session = session,
                                     extraKeysJson = extraKeysJson,
+                                    onToggleKeyboard = {
+                                        extraKeysController.toggleKeyboard(imeVisible)
+                                    },
                                 )
                             }
                         }

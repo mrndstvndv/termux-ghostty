@@ -42,7 +42,8 @@ fun ExtraKeysToolbar(
     extraKeysController: ExtraKeysController,
     session: TerminalSession?,
     extraKeysJson: String?,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onToggleKeyboard: () -> Unit = {}
 ) {
     val extraKeysInfo = remember(extraKeysJson) {
         try {
@@ -89,7 +90,8 @@ fun ExtraKeysToolbar(
                         buttonInfo = buttonInfo,
                         extraKeysController = extraKeysController,
                         session = session,
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f),
+                        onToggleKeyboard = onToggleKeyboard
                     )
                 }
             }
@@ -103,13 +105,15 @@ fun ExtraKeyButtonComponent(
     buttonInfo: ExtraKeyButton,
     extraKeysController: ExtraKeysController,
     session: TerminalSession?,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onToggleKeyboard: () -> Unit = {}
 ) {
     val view = LocalView.current
     var isPressed by remember { mutableStateOf(false) }
     var showPopup by remember { mutableStateOf(false) }
 
     val isModifier = buttonInfo.key == "CTRL" || buttonInfo.key == "ALT" || buttonInfo.key == "SHIFT" || buttonInfo.key == "FN"
+    val isKeyboardToggle = isKeyboardToggleKey(buttonInfo.key)
 
     val modifierState = when (buttonInfo.key) {
         "CTRL" -> extraKeysController.ctrlState
@@ -187,7 +191,7 @@ fun ExtraKeyButtonComponent(
                                     // Repeat action
                                     while (true) {
                                         if (session != null) {
-                                            dispatchExtraKey(buttonInfo, extraKeysController, session)
+                                            dispatchExtraKey(buttonInfo, extraKeysController, session, onToggleKeyboard)
                                         }
                                         delay(80) // Repeat delay (80ms)
                                     }
@@ -228,8 +232,16 @@ fun ExtraKeyButtonComponent(
 
                                     if (isSwipedUp && buttonInfo.popup != null) {
                                         if (session != null) {
-                                            dispatchExtraKey(buttonInfo.popup!!, extraKeysController, session)
+                                            dispatchExtraKey(
+                                                buttonInfo.popup!!,
+                                                extraKeysController,
+                                                session,
+                                                onToggleKeyboard
+                                            )
                                         }
+                                    } else if (isKeyboardToggle) {
+                                        view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                                        onToggleKeyboard()
                                     } else if (!isLongPressed || isModifier) {
                                         if (isModifier) {
                                             if (!isLongPressed) {
@@ -238,7 +250,12 @@ fun ExtraKeyButtonComponent(
                                         } else {
                                             view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                                             if (session != null) {
-                                                dispatchExtraKey(buttonInfo, extraKeysController, session)
+                                                dispatchExtraKey(
+                                                    buttonInfo,
+                                                    extraKeysController,
+                                                    session,
+                                                    onToggleKeyboard
+                                                )
                                             }
                                         }
                                     }
@@ -290,8 +307,13 @@ fun ExtraKeyButtonComponent(
 fun dispatchExtraKey(
     buttonInfo: ExtraKeyButton,
     extraKeysController: ExtraKeysController,
-    session: TerminalSession
+    session: TerminalSession,
+    onToggleKeyboard: () -> Unit = {}
 ) {
+    if (isKeyboardToggleKey(buttonInfo.key)) {
+        onToggleKeyboard()
+        return
+    }
     session.setGhosttyTopRow(0)
     val key = buttonInfo.key
     if ("PASTE" == key) {

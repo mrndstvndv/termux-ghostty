@@ -157,6 +157,131 @@ class TerminalGesturesTest {
         assertEquals(listOf(8), fontSizes)
     }
 
+    @Test
+    fun tapKeyboardPolicyMasterSwitchSuppressesEveryTapSource() {
+        assertEquals(
+            false,
+            shouldOpenKeyboardForTap(
+                autoShowKeyboardOnTap = false,
+                unconditionalKeyboardOnTap = true,
+                mouseTrackingActive = false,
+                isMouseSource = false
+            )
+        )
+        assertEquals(
+            false,
+            shouldOpenKeyboardForTap(
+                autoShowKeyboardOnTap = false,
+                unconditionalKeyboardOnTap = false,
+                mouseTrackingActive = false,
+                isMouseSource = false
+            )
+        )
+    }
+
+    @Test
+    fun tapKeyboardPolicyRespectsMouseSourceAndTrackingMode() {
+        assertEquals(
+            true,
+            shouldOpenKeyboardForTap(
+                autoShowKeyboardOnTap = true,
+                unconditionalKeyboardOnTap = true,
+                mouseTrackingActive = true,
+                isMouseSource = false
+            )
+        )
+        assertEquals(
+            false,
+            shouldOpenKeyboardForTap(
+                autoShowKeyboardOnTap = true,
+                unconditionalKeyboardOnTap = false,
+                mouseTrackingActive = true,
+                isMouseSource = false
+            )
+        )
+        assertEquals(
+            true,
+            shouldOpenKeyboardForTap(
+                autoShowKeyboardOnTap = true,
+                unconditionalKeyboardOnTap = false,
+                mouseTrackingActive = false,
+                isMouseSource = false
+            )
+        )
+        assertEquals(
+            false,
+            shouldOpenKeyboardForTap(
+                autoShowKeyboardOnTap = true,
+                unconditionalKeyboardOnTap = true,
+                mouseTrackingActive = false,
+                isMouseSource = true
+            )
+        )
+    }
+
+    @Test
+    fun twoFingerSwipeUpOpensKeyboardOnDeliberateParallelSwipe() {
+        assertTrue(
+            isTwoFingerSwipeUp(
+                startCentroid = Offset(200f, 600f),
+                endCentroid = Offset(205f, 480f),
+                peakZoomDeviation = 0.05f,
+                touchSlop = 18f
+            )
+        )
+    }
+
+    @Test
+    fun twoFingerSwipeUpRejectsDownwardShortDiagonalAndPinchMotion() {
+        // Downward drag.
+        assertEquals(
+            false,
+            isTwoFingerSwipeUp(
+                startCentroid = Offset(200f, 400f),
+                endCentroid = Offset(200f, 520f),
+                peakZoomDeviation = 0f,
+                touchSlop = 18f
+            )
+        )
+        // Too short to be deliberate.
+        assertEquals(
+            false,
+            isTwoFingerSwipeUp(
+                startCentroid = Offset(200f, 600f),
+                endCentroid = Offset(200f, 570f),
+                peakZoomDeviation = 0f,
+                touchSlop = 18f
+            )
+        )
+        // Diagonal drag exceeds the horizontal ratio.
+        assertEquals(
+            false,
+            isTwoFingerSwipeUp(
+                startCentroid = Offset(100f, 600f),
+                endCentroid = Offset(220f, 480f),
+                peakZoomDeviation = 0f,
+                touchSlop = 18f
+            )
+        )
+        // Pinch zoom deviation disqualifies the gesture.
+        assertEquals(
+            false,
+            isTwoFingerSwipeUp(
+                startCentroid = Offset(200f, 600f),
+                endCentroid = Offset(200f, 400f),
+                peakZoomDeviation = 0.4f,
+                touchSlop = 18f
+            )
+        )
+    }
+
+    @Test
+    fun twoFingerSwipeUpThresholdScalesWithTouchSlop() {
+        assertEquals(MinTwoFingerSwipeUpPx, twoFingerSwipeUpThresholdPx(10f), 0.001f)
+        assertEquals(160f, twoFingerSwipeUpThresholdPx(40f), 0.001f)
+        assertEquals(MinTwoFingerSwipeUpPx, twoFingerSwipeUpThresholdPx(0f), 0.001f)
+    }
+
     private fun metrics() = TerminalMetrics.of(
         cellWidthPx = 10f,
         cellHeightPx = 20f,

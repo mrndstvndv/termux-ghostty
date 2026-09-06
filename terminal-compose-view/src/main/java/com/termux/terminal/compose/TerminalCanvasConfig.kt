@@ -24,6 +24,10 @@ data class TerminalCanvasConfig(
     /** Neutral frame-rate request in frames per second; null means display rate. */
     val preferredFrameRate: Float? = null,
     val unconditionalKeyboardOnTap: Boolean = true,
+    /** Master switch for opening the soft keyboard on terminal tap. */
+    val autoShowKeyboardOnTap: Boolean = true,
+    /** Manual keyboard gesture: two-finger swipe up opens the soft keyboard. */
+    val twoFingerSwipeUpOpensKeyboard: Boolean = true,
     val accessibilityEnabled: Boolean = false,
     /** Color for the selection handles; unspecified uses the host theme accent. */
     val selectionHandleColor: Color = Color.Unspecified,

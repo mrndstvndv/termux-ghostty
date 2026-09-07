@@ -107,7 +107,8 @@ object ClipboardImageHandler {
 
     /**
      * Uploads a local file to the server's existing SFTP client.
-     * Remote directory creation is the only shell operation; upload and cleanup use SFTP paths.
+     * Directory creation, upload, and cleanup all use SFTP; only the returned path is formatted
+     * for pasting into the remote shell.
      */
     @Suppress("TooGenericExceptionCaught", "SwallowedException")
     suspend fun uploadToRemote(
@@ -119,27 +120,31 @@ object ClipboardImageHandler {
         maxRetentionCount: Int = MAX_IMAGE_RETENTION_COUNT,
     ): String? = withContext(Dispatchers.IO) {
         try {
-            val ssh = server.sshSession ?: return@withContext null
             val sftp = server.sftpClient ?: run {
                 Log.w(TAG, "Remote file upload requires the server SFTP client")
                 return@withContext null
             }
-            val resolvedDir = ClipboardPathResolver.resolveRemoteDir(ssh, customRemoteDir)
-                ?: return@withContext null
+            val resolvedDir = ClipboardPathResolver.resolveRemoteDir(
+                sftp = sftp,
+                ssh = server.sshSession,
+                customRemoteDir = customRemoteDir,
+            ) ?: return@withContext null
+            val sftpDir = ClipboardPathResolver.toSftpPath(resolvedDir)
             val safeRemoteFileName = FileUploadHandler.sanitizeFileName(remoteFileName)
                 ?: FileUploadHandler.sanitizeFileName(localFile.name)
                 ?: return@withContext null
-            val remoteFilePath = "${resolvedDir.removeSuffix("/")}/$safeRemoteFileName"
+            val sftpRemoteFilePath = "${sftpDir.removeSuffix("/")}/$safeRemoteFileName"
+            val shellRemoteFilePath = "${resolvedDir.removeSuffix("/")}/$safeRemoteFileName"
 
             val uploadContext = currentCoroutineContext()
-            sftp.uploadFile(localFile, remoteFilePath) {
+            sftp.uploadFile(localFile, sftpRemoteFilePath) {
                 uploadContext.ensureActive()
             }
             if (autoCleanup) {
                 try {
                     pruneRemoteImages(
                         sftp = sftp,
-                        directory = resolvedDir,
+                        directory = sftpDir,
                         maxRetentionCount = maxRetentionCount,
                     )
                 } catch (e: CancellationException) {
@@ -148,7 +153,7 @@ object ClipboardImageHandler {
                     Log.d(TAG, "Failed to prune remote clipboard images", error)
                 }
             }
-            remoteFilePath
+            shellRemoteFilePath
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

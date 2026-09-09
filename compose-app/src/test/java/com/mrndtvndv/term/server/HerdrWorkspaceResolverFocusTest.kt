@@ -200,6 +200,10 @@ class HerdrWorkspaceResolverFocusTest {
             commands[0].contains("herdr agent focus") &&
                 commands[0].contains("w0:p2")
         )
+        assertTrue(
+            commands[0].contains("herdr tab focus") &&
+                commands[0].contains("w0:t1")
+        )
     }
 
     @Test

@@ -199,13 +199,22 @@ class HerdrWorkspaceResolver(
         )
     }
 
-    suspend fun focusAgent(agent: HerdrAgentInfo): Boolean = focusAgentPane(agent.paneId)
+    suspend fun focusAgent(agent: HerdrAgentInfo): Boolean =
+        focusAgentPane(agent.paneId, agent.tabId)
 
     suspend fun focusTab(tab: HerdrTabNode): Boolean =
-        if (tab.agent != null) focusAgentPane(tab.paneId) else focusTabId(tab.tabId)
+        if (tab.agent != null) {
+            focusAgentPane(tab.paneId, tab.tabId)
+        } else {
+            focusTabId(tab.tabId)
+        }
 
     suspend fun focusPane(pane: HerdrPaneNode): Boolean =
-        if (pane.agent != null) focusAgentPane(pane.paneId) else focusTabId(pane.tabId)
+        if (pane.agent != null) {
+            focusAgentPane(pane.paneId, pane.tabId)
+        } else {
+            focusTabId(pane.tabId)
+        }
 
     /**
      * Close a pane's terminal. Herdr kills whatever runs inside the pane.
@@ -219,13 +228,24 @@ class HerdrWorkspaceResolver(
 
     private suspend fun focusTabId(tabId: String): Boolean {
         val validTabId = tabId.takeIf { it.isNotBlank() } ?: return false
-        execCommand(herdrCommand("herdr tab focus $validTabId"))
+        execCommand(herdrCommand("herdr tab focus ${shellQuote(validTabId)}"))
         return true
     }
 
-    private suspend fun focusAgentPane(paneId: String): Boolean {
+    private suspend fun focusAgentPane(paneId: String, tabId: String): Boolean {
         val validPaneId = paneId.takeIf { it.isNotBlank() } ?: return false
-        val output = execCommand(herdrCommand("herdr agent focus ${shellQuote(validPaneId)}"))
+        val validTabId = tabId.takeIf { it.isNotBlank() } ?: return false
+        // Herdr 0.9 keeps each client on its own workspace/tab projection. The
+        // agent focus API changes the server's focused pane, but a CLI request
+        // does not move the shell client that renders this terminal. A tab
+        // focus request publishes the target tab to that client; the preceding
+        // agent focus keeps the selected pane inside the tab.
+        val output = execCommand(
+            herdrCommand(
+                "herdr agent focus ${shellQuote(validPaneId)} && " +
+                    "herdr tab focus ${shellQuote(validTabId)}",
+            ),
+        )
         return output.lineSequence().mapNotNull { parseHerdrLine(it) }.any { (id, result) ->
             if (id != "cli:agent:focus") return@any false
             if (result["type"]?.jsonPrimitive?.contentOrNull != "agent_info") return@any false

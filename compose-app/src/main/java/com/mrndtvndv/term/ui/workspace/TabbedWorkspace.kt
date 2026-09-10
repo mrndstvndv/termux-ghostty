@@ -1,5 +1,6 @@
 package com.mrndtvndv.term.ui.workspace
 
+import android.content.ClipData
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.WindowInsets
@@ -49,6 +50,7 @@ fun TabbedWorkspace(
     terminalProgress: TerminalProgress?,
     onUploadMedia: () -> Unit,
     onUploadFile: () -> Unit,
+    onCommitContent: (ClipData) -> Boolean = { false },
     sftpViewModel: SftpViewModel?,
     reviewViewModel: ReviewViewModel?,
     extraKeysController: ExtraKeysController,
@@ -268,6 +270,7 @@ fun TabbedWorkspace(
                                     extraKeysController = extraKeysController,
                                     onUploadMedia = onUploadMedia,
                                     onUploadFile = onUploadFile,
+                                    onCommitContent = onCommitContent,
                                     isTerminalActive = activeTab == WorkspaceTab.Terminal,
                                     onBackendCreated = onBackendCreated,
                                     onBackendReleased = onBackendReleased,

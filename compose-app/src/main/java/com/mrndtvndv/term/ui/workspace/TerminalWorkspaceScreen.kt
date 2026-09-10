@@ -1,5 +1,6 @@
 package com.mrndtvndv.term.ui.workspace
 
+import android.content.ClipData
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import com.mrndtvndv.term.ui.keyboard.SoftKeyboardState
@@ -18,6 +19,7 @@ fun TerminalWorkspaceScreen(
     terminalProgress: TerminalProgress?,
     onUploadMedia: () -> Unit,
     onUploadFile: () -> Unit,
+    onCommitContent: (ClipData) -> Boolean = { false },
     sftpViewModel: SftpViewModel? = null,
     reviewViewModel: ReviewViewModel? = null,
     extraKeysEnabled: Boolean,
@@ -53,6 +55,7 @@ fun TerminalWorkspaceScreen(
         terminalProgress = terminalProgress,
         onUploadMedia = onUploadMedia,
         onUploadFile = onUploadFile,
+        onCommitContent = onCommitContent,
         sftpViewModel = sftpViewModel,
         reviewViewModel = reviewViewModel,
         extraKeysController = extraKeysController,

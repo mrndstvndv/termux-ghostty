@@ -178,14 +178,31 @@ class MainActivity : ComponentActivity(), SessionHost {
     private fun canUploadFile(config: ServerConfig?, server: Server?): Boolean =
         config?.isImagePasteActive == true && (config.isLocal || server != null)
 
+    private fun handleCommittedContent(
+        targetSession: TerminalSession,
+        clipData: ClipData,
+    ): Boolean {
+        val sessionContext = resolveActiveSessionContext(targetSession)
+        val request = resolveImagePasteRequest(sessionContext.config, clipData) ?: return false
+        if (!canUploadFile(request.config, sessionContext.server)) return false
+
+        return startClipboardImagePaste(
+            targetSession = targetSession,
+            clipData = clipData,
+            config = request.config,
+            server = sessionContext.server,
+            pasteClipboardTextOnFailure = false,
+        )
+    }
+
     private fun startClipboardImagePaste(
         targetSession: TerminalSession,
         clipData: ClipData,
         config: ServerConfig,
         server: Server?,
         pasteClipboardTextOnFailure: Boolean,
-    ) {
-        if (uploadInProgressState.value) return
+    ): Boolean {
+        if (uploadInProgressState.value) return false
         uploadInProgressState.value = true
         uploadJob = lifecycleScope.launch {
             try {
@@ -208,6 +225,7 @@ class MainActivity : ComponentActivity(), SessionHost {
                 uploadJob = null
             }
         }
+        return true
     }
 
     private fun startFileUpload(
@@ -337,6 +355,9 @@ class MainActivity : ComponentActivity(), SessionHost {
                 onBackendReleased = { _, _ -> },
                 onActiveTerminalSessionChanged = { session ->
                     updateFocusedTerminalSession(session)
+                },
+                onCommitContent = { session, content ->
+                    handleCommittedContent(session, content)
                 },
                 uploadInProgress = uploadInProgressState.value,
                 onCancelUpload = { cancelUpload() },

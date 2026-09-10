@@ -1,5 +1,6 @@
 package com.termux.terminal.compose
 
+import android.content.ClipData
 import android.graphics.Typeface
 import android.view.KeyEvent
 import android.view.MotionEvent
@@ -10,7 +11,7 @@ import androidx.compose.ui.graphics.Color
  *
  * The canvas never reads preferences, storage, or settings here; the consumer
  * owns persistence and policy. [onFontSizeChange], [onSingleTap], [onOpenUrl],
- * [onCopyRequest], [onPasteRequest], [onMoreSelectionRequest], and
+ * [onCopyRequest], [onPasteRequest], [onCommitContent], [onMoreSelectionRequest], and
  * [onDiagnostics] are callbacks so
  * clipboard, URL handling, and diagnostics policy stay app-owned.
  */
@@ -38,6 +39,8 @@ data class TerminalCanvasConfig(
     val onSelectionChanged: (TerminalSelectionInfo?) -> Unit = {},
     val onCopyRequest: (String) -> Unit = {},
     val onPasteRequest: () -> Unit = {},
+    /** Handles rich content committed by the platform IME; null disables rich-content support. */
+    val onCommitContent: ((ClipData) -> Boolean)? = null,
     /** Gives a host a chance to consume a hardware key before generic translation. */
     val onKeyDown: (KeyEvent) -> Boolean = { false },
     /** Gives a host a chance to consume a hardware key release. */

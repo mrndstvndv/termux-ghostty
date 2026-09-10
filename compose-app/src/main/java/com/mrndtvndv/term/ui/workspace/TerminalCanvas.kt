@@ -1,5 +1,6 @@
 package com.mrndtvndv.term.ui.workspace
 
+import android.content.ClipData
 import android.content.Context
 import android.content.SharedPreferences
 import android.graphics.Typeface
@@ -46,6 +47,7 @@ fun TerminalCanvas(
     extraKeysController: ExtraKeysController,
     onUploadMedia: () -> Unit,
     onUploadFile: () -> Unit,
+    onCommitContent: (ClipData) -> Boolean = { false },
     onOpenUrl: (String) -> Unit,
     onBackendCreated: (TerminalSession, TerminalBackend) -> Unit,
     onBackendReleased: (TerminalSession, TerminalBackend) -> Unit,
@@ -72,6 +74,7 @@ fun TerminalCanvas(
         session = session,
         preferences = preferences,
         onOpenUrl = onOpenUrl,
+        onCommitContent = onCommitContent,
         onOpenContextMenu = {
             showContextMenu = true
         }
@@ -104,6 +107,7 @@ private fun rememberTerminalCanvasConfig(
     session: TerminalSession,
     preferences: SharedPreferences,
     onOpenUrl: (String) -> Unit,
+    onCommitContent: (ClipData) -> Boolean,
     onOpenContextMenu: (String) -> Unit
 ): TerminalCanvasConfig {
     val context = LocalContext.current
@@ -135,6 +139,7 @@ private fun rememberTerminalCanvasConfig(
             accessibilityEnabled = accessibilityEnabled,
             session = session,
             onOpenUrl = onOpenUrl,
+            onCommitContent = onCommitContent,
             onMoreSelectionRequest = onOpenContextMenu,
             onCodePoint = { codePoint, controlDown, altDown ->
                 handleTerminalCodePoint(
@@ -226,6 +231,7 @@ private data class TerminalCanvasConfigInput(
     val accessibilityEnabled: Boolean,
     val session: TerminalSession,
     val onOpenUrl: (String) -> Unit,
+    val onCommitContent: (ClipData) -> Boolean,
     val onMoreSelectionRequest: (String) -> Unit,
     val onCodePoint: (Int, Boolean, Boolean) -> Boolean
 )
@@ -255,6 +261,7 @@ private fun createTerminalCanvasConfig(input: TerminalCanvasConfigInput): Termin
         onOpenUrl = input.onOpenUrl,
         onCopyRequest = input.session::onCopyTextToClipboard,
         onPasteRequest = input.session::onPasteTextFromClipboard,
+        onCommitContent = input.onCommitContent,
         onMoreSelectionRequest = input.onMoreSelectionRequest,
         onCodePoint = input.onCodePoint
     )

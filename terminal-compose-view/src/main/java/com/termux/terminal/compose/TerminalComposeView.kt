@@ -1,6 +1,7 @@
 package com.termux.terminal.compose
 
 import android.annotation.SuppressLint
+import android.content.ClipData
 import android.content.Context
 import android.graphics.Typeface
 import android.graphics.Rect
@@ -51,6 +52,10 @@ class TerminalComposeView @JvmOverloads constructor(
         fun onCopyRequest(selectedText: String) = Unit
 
         fun onPasteRequest() = Unit
+
+        fun supportsCommitContent(): Boolean = false
+
+        fun onCommitContent(content: ClipData): Boolean = false
 
         fun onMoreSelectionRequest(selectedText: String) = Unit
 
@@ -135,6 +140,9 @@ class TerminalComposeView @JvmOverloads constructor(
     override fun Content() {
         val backend = backendState
         if (backend != null) {
+            val commitContentCallback = listenerState
+                ?.takeIf { it.supportsCommitContent() }
+                ?.let { listener -> { content: ClipData -> listener.onCommitContent(content) } }
             val moreSelectionCallback = listenerState
                 ?.takeIf { it.shouldShowMoreSelectionAction() }
                 ?.let { listener ->
@@ -168,6 +176,7 @@ class TerminalComposeView @JvmOverloads constructor(
                     },
                     onCopyRequest = { text -> listenerState?.onCopyRequest(text) },
                     onPasteRequest = { listenerState?.onPasteRequest() },
+                    onCommitContent = commitContentCallback,
                     onKeyDown = { event -> listenerState?.onKeyDown(event) == true },
                     onKeyUp = { event -> listenerState?.onKeyUp(event) == true },
                     onCodePoint = { codePoint, controlDown, altDown ->

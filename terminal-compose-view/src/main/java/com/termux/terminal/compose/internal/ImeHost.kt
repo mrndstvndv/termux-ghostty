@@ -1,10 +1,14 @@
 package com.termux.terminal.compose.internal
 
+import android.content.ClipData
 import android.text.InputType
 import android.view.KeyEvent
 import android.view.View
 import android.view.inputmethod.BaseInputConnection
 import android.view.inputmethod.EditorInfo
+import androidx.core.view.inputmethod.EditorInfoCompat
+import androidx.core.view.inputmethod.InputConnectionCompat
+import androidx.core.view.inputmethod.InputContentInfoCompat
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -32,15 +36,19 @@ import kotlin.math.abs
 @Composable
 internal fun rememberImeHost(
     onEditCommands: (List<EditCommand>) -> Unit,
+    onCommitContent: ((ClipData) -> Boolean)? = null,
     onSessionStarted: () -> Unit = {},
     onSessionClosed: () -> Unit = {}
 ): ImeHost {
     val currentOnEditCommands = rememberUpdatedState(onEditCommands)
+    val currentOnCommitContent = rememberUpdatedState(onCommitContent)
     val currentOnSessionStarted = rememberUpdatedState(onSessionStarted)
     val currentOnSessionClosed = rememberUpdatedState(onSessionClosed)
     return remember {
         ImeHost(
             onEditCommands = { currentOnEditCommands.value(it) },
+            onCommitContent = { currentOnCommitContent.value?.invoke(it) == true },
+            acceptsCommitContent = { currentOnCommitContent.value != null },
             onSessionStarted = { currentOnSessionStarted.value() },
             onSessionClosed = { currentOnSessionClosed.value() }
         )
@@ -50,6 +58,8 @@ internal fun rememberImeHost(
 /** Owns the terminal's platform text-input session. */
 internal class ImeHost(
     internal val onEditCommands: (List<EditCommand>) -> Unit,
+    internal val onCommitContent: (ClipData) -> Boolean,
+    internal val acceptsCommitContent: () -> Boolean,
     internal val onSessionStarted: () -> Unit,
     internal val onSessionClosed: () -> Unit
 ) {
@@ -118,8 +128,20 @@ internal class ImeHostNode(
                 val hostView = view
                 startInputMethod(
                     PlatformTextInputMethodRequest { editorInfo ->
-                        editorInfo.configureForTerminal()
-                        TerminalInputConnection(hostView, imeHost.onEditCommands)
+                        editorInfo.configureForTerminal(imeHost.acceptsCommitContent())
+                        val inputConnection = TerminalInputConnection(hostView, imeHost.onEditCommands)
+                        @Suppress("DEPRECATION")
+                        InputConnectionCompat.createWrapper(
+                            inputConnection,
+                            editorInfo,
+                            InputConnectionCompat.OnCommitContentListener { content, flags, _ ->
+                                dispatchCommittedContent(
+                                    contentInfo = content,
+                                    flags = flags,
+                                    onCommitContent = imeHost.onCommitContent,
+                                )
+                            },
+                        )
                     }
                 )
             }
@@ -215,14 +237,40 @@ internal class TerminalInputConnection(
     }
 }
 
-private fun EditorInfo.configureForTerminal() {
+internal fun EditorInfo.configureForTerminal(acceptsCommitContent: Boolean) {
     inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
     imeOptions = EditorInfo.IME_ACTION_NONE or
         EditorInfo.IME_FLAG_FORCE_ASCII or
         EditorInfo.IME_FLAG_NO_FULLSCREEN
     initialSelStart = 0
     initialSelEnd = 0
+    if (acceptsCommitContent) {
+        EditorInfoCompat.setContentMimeTypes(this, arrayOf(ImageMimeType))
+    }
 }
+
+internal fun dispatchCommittedContent(
+    contentInfo: InputContentInfoCompat,
+    flags: Int,
+    onCommitContent: (ClipData) -> Boolean,
+): Boolean {
+    if (!contentInfo.description.hasMimeType(ImageMimeType)) return false
+
+    val requestsReadPermission =
+        flags and InputConnectionCompat.INPUT_CONTENT_GRANT_READ_URI_PERMISSION != 0
+    if (requestsReadPermission && runCatching { contentInfo.requestPermission() }.isFailure) {
+        return false
+    }
+
+    val content = ClipData(contentInfo.description, ClipData.Item(contentInfo.contentUri))
+    val accepted = onCommitContent(content)
+    if (!accepted && requestsReadPermission) {
+        contentInfo.releasePermission()
+    }
+    return accepted
+}
+
+private const val ImageMimeType = "image/*"
 
 private fun KeyEvent.toEditCommand(): EditCommand? = when (keyCode) {
     KeyEvent.KEYCODE_DEL -> BackspaceCommand()

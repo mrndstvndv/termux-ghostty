@@ -1,5 +1,6 @@
 package com.mrndtvndv.term.ui.workspace
 
+import android.content.ClipData
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import com.mrndtvndv.term.ui.keyboard.ExtraKeysController
@@ -14,6 +15,7 @@ fun TerminalWorkspaceContainer(
     extraKeysController: ExtraKeysController,
     onUploadMedia: () -> Unit,
     onUploadFile: () -> Unit,
+    onCommitContent: (ClipData) -> Boolean = { false },
     onBackendCreated: (TerminalSession, TerminalBackend) -> Unit,
     onBackendReleased: (TerminalSession, TerminalBackend) -> Unit,
     onOpenUrl: (String) -> Unit,
@@ -26,6 +28,7 @@ fun TerminalWorkspaceContainer(
         extraKeysController = extraKeysController,
         onUploadMedia = onUploadMedia,
         onUploadFile = onUploadFile,
+        onCommitContent = onCommitContent,
         onOpenUrl = onOpenUrl,
         onBackendCreated = onBackendCreated,
         onBackendReleased = onBackendReleased,

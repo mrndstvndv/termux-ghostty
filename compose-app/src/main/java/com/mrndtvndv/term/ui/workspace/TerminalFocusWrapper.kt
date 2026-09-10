@@ -1,5 +1,6 @@
 package com.mrndtvndv.term.ui.workspace
 
+import android.content.ClipData
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import com.mrndtvndv.term.ui.keyboard.ExtraKeysController
@@ -18,6 +19,7 @@ fun TerminalFocusWrapper(
     extraKeysController: ExtraKeysController,
     onUploadMedia: () -> Unit,
     onUploadFile: () -> Unit,
+    onCommitContent: (ClipData) -> Boolean = { false },
     isTerminalActive: Boolean,
     onBackendCreated: (TerminalSession, TerminalBackend) -> Unit,
     onBackendReleased: (TerminalSession, TerminalBackend) -> Unit,
@@ -30,6 +32,7 @@ fun TerminalFocusWrapper(
         extraKeysController = extraKeysController,
         onUploadMedia = onUploadMedia,
         onUploadFile = onUploadFile,
+        onCommitContent = onCommitContent,
         onBackendCreated = onBackendCreated,
         onBackendReleased = onBackendReleased,
         onOpenUrl = onOpenUrl,

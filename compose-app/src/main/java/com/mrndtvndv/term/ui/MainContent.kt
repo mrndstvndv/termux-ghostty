@@ -1,5 +1,6 @@
 package com.mrndtvndv.term.ui
 
+import android.content.ClipData
 import android.content.Context
 import android.content.SharedPreferences
 import android.net.Uri
@@ -55,6 +56,7 @@ fun MainContent(
     onBackendCreated: (TerminalSession, TerminalBackend) -> Unit,
     onBackendReleased: (TerminalSession, TerminalBackend) -> Unit,
     onActiveTerminalSessionChanged: (TerminalSession?) -> Unit,
+    onCommitContent: (TerminalSession, ClipData) -> Boolean,
     uploadInProgress: Boolean,
     onCancelUpload: () -> Unit,
     onRequestMediaUpload: (TerminalSession) -> Unit,
@@ -366,6 +368,9 @@ fun MainContent(
                                         },
                                         onUploadFile = {
                                             onRequestFileUpload(server.terminalSession)
+                                        },
+                                        onCommitContent = { content ->
+                                            onCommitContent(server.terminalSession, content)
                                         },
                                         sftpViewModel = sftpVM,
                                         reviewViewModel = reviewVM,

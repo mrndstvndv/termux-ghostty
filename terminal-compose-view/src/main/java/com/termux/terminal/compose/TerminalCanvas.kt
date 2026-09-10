@@ -2,6 +2,7 @@
 
 package com.termux.terminal.compose
 
+import android.content.ClipData
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -130,6 +131,7 @@ fun TerminalCanvas(
         controller = controller,
         modifierKeys = modifierKeys,
         onCodePoint = config.onCodePoint,
+        onCommitContent = config.onCommitContent,
         onImeSessionClosed = config.onImeSessionClosed
     )
     val imeVisible = WindowInsets.isImeVisible
@@ -408,6 +410,7 @@ private fun rememberInputPipeline(
     controller: TerminalController,
     modifierKeys: ModifierKeyReader,
     onCodePoint: ((Int, Boolean, Boolean) -> Boolean)?,
+    onCommitContent: ((ClipData) -> Boolean)?,
     onImeSessionClosed: () -> Unit
 ): Pair<TerminalInputTranslator, ImeHost> {
     val currentOnCodePoint = rememberUpdatedState(onCodePoint)
@@ -423,6 +426,7 @@ private fun rememberInputPipeline(
     }
     val imeHost = rememberImeHost(
         onEditCommands = imeProcessor::process,
+        onCommitContent = onCommitContent,
         onSessionStarted = imeProcessor::reset,
         onSessionClosed = {
             imeProcessor.reset()

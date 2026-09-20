@@ -48,7 +48,7 @@ public final class ScreenSnapshot {
     private int mImageCount;
     private long mImageStorageGeneration;
     private ImagePlacement[] mImagePlacements = new ImagePlacement[0];
-    private byte[] mImagePixelData = new byte[0];
+    private ByteBuffer mImagePixelBuffer = null;
 
     public ScreenSnapshot() {
         this(DEFAULT_CAPACITY_BYTES);
@@ -229,8 +229,19 @@ public final class ScreenSnapshot {
         return mImagePlacements[index];
     }
 
+    public ByteBuffer getImagePixelBuffer() {
+        return mImagePixelBuffer != null ? mImagePixelBuffer.duplicate() : null;
+    }
+
     public byte[] getImagePixelData() {
-        return mImagePixelData;
+        if (mImagePixelBuffer == null || mImagePixelBuffer.remaining() == 0) {
+            return new byte[0];
+        }
+        ByteBuffer dup = mImagePixelBuffer.duplicate();
+        dup.position(0);
+        byte[] data = new byte[dup.remaining()];
+        dup.get(data);
+        return data;
     }
 
     public boolean hasJavaBacking() {
@@ -378,12 +389,12 @@ public final class ScreenSnapshot {
             mImageStorageGeneration = source.mImageStorageGeneration;
             ensureImageCapacity(mImageCount);
             System.arraycopy(source.mImagePlacements, 0, mImagePlacements, 0, mImageCount);
-            mImagePixelData = source.mImagePixelData != null ? source.mImagePixelData.clone() : new byte[0];
+            mImagePixelBuffer = source.mImagePixelBuffer != null ? source.mImagePixelBuffer.duplicate() : null;
         } else {
             mImageCount = 0;
             mImageStorageGeneration = 0;
             mImagePlacements = new ImagePlacement[0];
-            mImagePixelData = new byte[0];
+            mImagePixelBuffer = null;
         }
     }
 
@@ -442,10 +453,10 @@ public final class ScreenSnapshot {
         ensureImageCapacity(mImageCount);
         if (mImageCount > 0) {
             System.arraycopy(source.mImagePlacements, 0, mImagePlacements, 0, mImageCount);
-            mImagePixelData = source.mImagePixelData != null ? source.mImagePixelData.clone() : new byte[0];
+            mImagePixelBuffer = source.mImagePixelBuffer != null ? source.mImagePixelBuffer.duplicate() : null;
         } else {
             mImagePlacements = new ImagePlacement[0];
-            mImagePixelData = new byte[0];
+            mImagePixelBuffer = null;
         }
     }
 
@@ -619,21 +630,23 @@ public final class ScreenSnapshot {
             }
             buffer.position((buffer.position() + 7) & ~7);
             int pixelBytesCount = buffer.remaining();
-            mImagePixelData = new byte[pixelBytesCount];
             if (pixelBytesCount > 0) {
-                buffer.get(mImagePixelData, 0, pixelBytesCount);
+                mImagePixelBuffer = buffer.slice().order(ByteOrder.nativeOrder());
+                buffer.position(buffer.position() + pixelBytesCount);
+            } else {
+                mImagePixelBuffer = null;
             }
             for (int i = 0; i < imageCount; i++) {
                 ImagePlacement p = mImagePlacements[i];
                 if (p.bufferOffset < 0 || p.bufferLen < 0 || p.bufferOffset + p.bufferLen > pixelBytesCount) {
-                    throw new IllegalStateException("Invalid image buffer range for placement " + i + ": offset=" + p.bufferOffset + " len=" + p.bufferLen + " total=" + pixelBytesCount);
+                    mImagePlacements[i] = new ImagePlacement(p.imageId, p.placementId, p.imageGeneration, p.viewportCol, p.viewportRow, p.colSpan, p.rowSpan, p.zIndex, p.srcX, p.srcY, p.srcWidth, p.srcHeight, p.destWidthPx, p.destHeightPx, p.imageWidth, p.imageHeight, p.pixelFormat, 0, 0);
                 }
             }
         } else {
             mImageCount = 0;
             mImageStorageGeneration = 0;
             mImagePlacements = new ImagePlacement[0];
-            mImagePixelData = new byte[0];
+            mImagePixelBuffer = null;
         }
     }
 

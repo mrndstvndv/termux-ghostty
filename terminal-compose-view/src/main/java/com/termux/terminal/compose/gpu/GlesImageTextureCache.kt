@@ -35,6 +35,8 @@ internal class GlesImageTextureCache {
             val width = placement.textureWidth
             val height = placement.textureHeight
             if (width <= 0 || height <= 0) continue
+            val bpp = if (placement.pixelFormat == 1) 3 else 4
+            if (buffer.remaining().toLong() < width.toLong() * height.toLong() * bpp) continue
             val textureId = existing?.textureId ?: run {
                 val ids = IntArray(1)
                 GLES30.glGenTextures(1, ids, 0)

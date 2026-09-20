@@ -105,11 +105,15 @@ class TerminalSessionFrameAdapter {
 
     private fun ScreenSnapshot.toImagePlacements(): List<TerminalImagePlacement> {
         if (!hasImageUpdate() || imageCount == 0) return emptyList()
-        val pixelData = imagePixelData
+        val pixelBuffer = imagePixelBuffer
         return List(imageCount) { index ->
             val src = getImagePlacement(index)
-            val buffer: ByteBuffer? = if (src.bufferLen > 0 && pixelData != null) {
-                ByteBuffer.wrap(pixelData, src.bufferOffset, src.bufferLen).slice().order(ByteOrder.nativeOrder())
+            val buffer: ByteBuffer? = if (src.bufferLen > 0 && pixelBuffer != null &&
+                src.bufferOffset >= 0 && src.bufferOffset.toLong() + src.bufferLen.toLong() <= pixelBuffer.capacity().toLong()) {
+                val dup = pixelBuffer.duplicate()
+                dup.position(src.bufferOffset)
+                dup.limit(src.bufferOffset + src.bufferLen)
+                dup.slice().order(ByteOrder.nativeOrder())
             } else {
                 null
             }

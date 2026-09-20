@@ -728,6 +728,7 @@ pub const Session = struct {
         self.scratch_kitty_pixel_data.clearRetainingCapacity();
         const storage = &self.terminal.screens.active.kitty_images;
         if (storage.generation == 0) return;
+        if (self.terminal.cols == 0 or self.terminal.rows == 0) return;
         if (storage.placements.count() == 0 and self.kitty_pinned_grid_spans.count() > 0) {
             self.kitty_pinned_grid_spans.clearRetainingCapacity();
         }
@@ -746,6 +747,7 @@ pub const Session = struct {
                 continue;
             }
             const image = storage.images.getPtr(key.image_id) orelse continue;
+            if (image.width == 0 or image.height == 0) continue;
             const render_data = image.renderData();
             const pixel_bytes = render_data.bytes() orelse continue;
             if (pixel_bytes.len == 0) continue;
@@ -828,6 +830,7 @@ pub const Session = struct {
             var virtual_it = ghostty.kitty.graphics.unicode.placementIterator(top, bot);
             while (virtual_it.next()) |virtual_placement| {
                 const image = storage.images.getPtr(virtual_placement.image_id) orelse continue;
+                if (image.width == 0 or image.height == 0) continue;
                 const render_data = image.renderData();
                 const pixel_bytes = render_data.bytes() orelse continue;
                 if (pixel_bytes.len == 0) continue;
@@ -2484,6 +2487,8 @@ fn fillSnapshotCurrentViewport(handle: *Session, out: []u8) i32 {
     var snapshot_metadata = handle.buildSnapshotMetadata(full_rebuild);
     handle.rebuildKittyPlacements() catch |err| {
         ghostty_log.warn("core fillSnapshot kitty rebuild failed session=0x{x} err={any}", .{ @intFromPtr(handle), err });
+        handle.scratch_kitty_placements.clearRetainingCapacity();
+        handle.scratch_kitty_pixel_data.clearRetainingCapacity();
     };
     if (handle.scratch_kitty_placements.items.len > 0) {
         snapshot_metadata.flags |= snapshot_metadata_images;

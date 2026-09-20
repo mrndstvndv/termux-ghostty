@@ -14,7 +14,7 @@ internal data class GlesTextureEntry(
 internal class GlesImageTextureCache {
     private val textures = mutableMapOf<Long, GlesTextureEntry>()
 
-    @Suppress("LongMethod", "LoopWithTooManyJumpStatements")
+    @Suppress("CyclomaticComplexMethod", "LongMethod", "LoopWithTooManyJumpStatements")
     fun update(placements: List<TerminalImagePlacement>) {
         if (placements.isEmpty() && textures.isEmpty()) return
         GLES30.glActiveTexture(GLES30.GL_TEXTURE0)

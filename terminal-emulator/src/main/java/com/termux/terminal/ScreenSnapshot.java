@@ -631,14 +631,17 @@ public final class ScreenSnapshot {
             buffer.position((buffer.position() + 7) & ~7);
             int pixelBytesCount = buffer.remaining();
             if (pixelBytesCount > 0) {
-                mImagePixelBuffer = buffer.slice().order(ByteOrder.nativeOrder());
+                mImagePixelBuffer = ByteBuffer.allocateDirect(pixelBytesCount).order(ByteOrder.nativeOrder());
+                ByteBuffer slice = buffer.slice();
+                mImagePixelBuffer.put(slice);
+                mImagePixelBuffer.flip();
                 buffer.position(buffer.position() + pixelBytesCount);
             } else {
                 mImagePixelBuffer = null;
             }
             for (int i = 0; i < imageCount; i++) {
                 ImagePlacement p = mImagePlacements[i];
-                if (p.bufferOffset < 0 || p.bufferLen < 0 || p.bufferOffset + p.bufferLen > pixelBytesCount) {
+                if (p.bufferOffset < 0 || p.bufferLen < 0 || (long) p.bufferOffset + p.bufferLen > pixelBytesCount) {
                     mImagePlacements[i] = new ImagePlacement(p.imageId, p.placementId, p.imageGeneration, p.viewportCol, p.viewportRow, p.colSpan, p.rowSpan, p.zIndex, p.srcX, p.srcY, p.srcWidth, p.srcHeight, p.destWidthPx, p.destHeightPx, p.imageWidth, p.imageHeight, p.pixelFormat, 0, 0);
                 }
             }

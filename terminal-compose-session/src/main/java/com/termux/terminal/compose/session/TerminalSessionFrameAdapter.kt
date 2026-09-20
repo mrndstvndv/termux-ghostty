@@ -108,14 +108,13 @@ class TerminalSessionFrameAdapter {
         val pixelBuffer = imagePixelBuffer
         return List(imageCount) { index ->
             val src = getImagePlacement(index)
-            val buffer: ByteBuffer? = if (src.bufferLen > 0 && pixelBuffer != null &&
-                src.bufferOffset >= 0 && src.bufferOffset.toLong() + src.bufferLen.toLong() <= pixelBuffer.capacity().toLong()) {
-                val dup = pixelBuffer.duplicate()
+            val buffer: ByteBuffer? = pixelBuffer?.takeIf {
+                isValidImageBuffer(it, src.bufferOffset, src.bufferLen)
+            }?.let { validBuffer ->
+                val dup = validBuffer.duplicate()
                 dup.position(src.bufferOffset)
                 dup.limit(src.bufferOffset + src.bufferLen)
                 dup.slice().order(ByteOrder.nativeOrder())
-            } else {
-                null
             }
             TerminalImagePlacement(
                 imageId = src.imageId.toLong() and 0xFFFFFFFFL,
@@ -134,10 +133,28 @@ class TerminalSessionFrameAdapter {
                 destHeightPx = src.destHeightPx,
                 pixelFormat = src.pixelFormat,
                 pixelBuffer = buffer,
-                textureWidth = if (src.imageWidth > 0) src.imageWidth else if (src.srcWidth > 0) src.srcWidth else src.destWidthPx,
-                textureHeight = if (src.imageHeight > 0) src.imageHeight else if (src.srcHeight > 0) src.srcHeight else src.destHeightPx
+                textureWidth = if (src.imageWidth > 0) {
+                    src.imageWidth
+                } else if (src.srcWidth > 0) {
+                    src.srcWidth
+                } else {
+                    src.destWidthPx
+                },
+                textureHeight = if (src.imageHeight > 0) {
+                    src.imageHeight
+                } else if (src.srcHeight > 0) {
+                    src.srcHeight
+                } else {
+                    src.destHeightPx
+                }
             )
         }
+    }
+
+    private fun isValidImageBuffer(buffer: ByteBuffer, offset: Int, length: Int): Boolean {
+        if (length <= 0) return false
+        if (offset < 0) return false
+        return offset.toLong() + length.toLong() <= buffer.capacity().toLong()
     }
 }
 

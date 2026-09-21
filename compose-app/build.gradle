@@ -48,8 +48,8 @@ android {
         applicationId "com.mrndtvndv.term"
         minSdk project.properties.minSdkVersion.toInteger()
         targetSdk project.properties.targetSdkVersion.toInteger()
-        versionCode 21
-        versionName "4.8.2"
+        versionCode 22
+        versionName "4.8.3"
     }
 
     compileOptions {

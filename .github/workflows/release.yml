@@ -37,6 +37,16 @@ jobs:
             exit 1
           fi
 
+      - name: Cache Gradle
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle', '**/*.gradle.kts', '**/gradle.properties', 'gradle/wrapper/gradle-wrapper.properties', 'gradle/libs.versions.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
       - name: Build Signed Release APK
         env:
           TERMUX_APP_VERSION_NAME: ${{ github.ref_name }} # v prefix stripped below

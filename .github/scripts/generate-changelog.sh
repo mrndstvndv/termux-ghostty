@@ -45,15 +45,24 @@ while IFS= read -r line; do
     # Determine files modified in this commit
     changed_files=$(git diff-tree --no-commit-id --name-only -r "$commit_hash" 2>/dev/null || echo "")
     
+    # Shared modules consumed by both :app and :compose-app
+    SHARED_MODULES='terminal-emulator/|terminal-compose-view/|terminal-compose-session/|termux-shared/'
+    # Legacy app-only module (no consumer in the repo)
+    KNOWN_MODULES="compose-app/|app/|terminal-view/|$SHARED_MODULES"
+
     # Check affected modules
     if echo "$changed_files" | grep -qE '^compose-app/'; then
         HAS_COMPOSE_CHANGES=true
     fi
-    if echo "$changed_files" | grep -qE '^(app/|terminal-view/|terminal-emulator/|termux-shared/)'; then
+    if echo "$changed_files" | grep -qE '^(app/|terminal-view/)'; then
         HAS_APP_CHANGES=true
     fi
+    if echo "$changed_files" | grep -qE "^($SHARED_MODULES)"; then
+        HAS_APP_CHANGES=true
+        HAS_COMPOSE_CHANGES=true
+    fi
     # If commit is project-wide or root Gradle/Nix changes without explicit folder scope, mark both
-    if ! echo "$changed_files" | grep -qE '^(compose-app/|app/|terminal-view/|terminal-emulator/|termux-shared/)'; then
+    if ! echo "$changed_files" | grep -qE "^($KNOWN_MODULES)"; then
         HAS_COMPOSE_CHANGES=true
         HAS_APP_CHANGES=true
     fi

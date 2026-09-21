@@ -92,11 +92,34 @@ def termuxGhosttyInputs = fileTree(termuxGhosttyZigProjectDir) {
     exclude '.zig-out/**'
     exclude 'zig-cache/**'
     exclude 'zig-out/**'
+    // Fetched dependencies are derived from build.zig.zon (an input below),
+    // and would otherwise churn the cache key as they materialise.
+    exclude 'zig-pkg/**'
+    // Machine-local / generated toolchain pointers.
+    exclude 'local.properties'
+    exclude '.android-sdk'
+    exclude '.android-sdk-root'
 }
 
 def resolveTermuxGhosttyZigExecutable = {
     def configuredExecutable = project.findProperty('termuxGhosttyZigExecutable') ?: System.getenv('ZIG_EXECUTABLE')
     return configuredExecutable ?: 'zig'
+}
+
+// Resolve to the real binary so toolchain upgrades (e.g. a new nix store path)
+// change the task's cache key instead of silently reusing a stale library.
+def resolveTermuxGhosttyZigExecutablePath = {
+    def executable = resolveTermuxGhosttyZigExecutable()
+    def executableFile = new File(executable)
+    if (!executableFile.isAbsolute()) {
+        def pathDirs = (System.getenv('PATH') ?: '').split(File.pathSeparator)
+        def onPath = pathDirs.findResult { dir ->
+            def candidate = new File(dir, executable)
+            candidate.canExecute() ? candidate : null
+        }
+        if (onPath != null) executableFile = onPath
+    }
+    return executableFile.getCanonicalPath()
 }
 
 def resolveHostTag = {
@@ -157,7 +180,12 @@ termuxGhosttyVariants.each { variantConfig ->
                 '--prefix', installDir.absolutePath
 
             inputs.files(termuxGhosttyInputs)
+            inputs.property('zigExecutable', project.providers.provider { resolveTermuxGhosttyZigExecutablePath() })
+            inputs.property('androidNdkHome', project.providers.provider { resolveTermuxGhosttyNdkHome() })
             outputs.file(stagedLibrary)
+            // Exec tasks are not cacheable by default; opt in so the compiled
+            // .so is reused across runs, keyed by Gradle on the inputs above.
+            outputs.cacheIf('libtermux-ghostty.so is reproducible for identical inputs') { true }
 
             doFirst {
                 installDir.mkdirs()

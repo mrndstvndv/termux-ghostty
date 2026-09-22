@@ -101,8 +101,11 @@ class MainViewModelNotificationFocusTest {
         assertEquals("workspace", preferences.value("last_screen"))
         assertEquals(targetServer.config.id, preferences.value("last_server_id"))
         assertEquals("Terminal", preferences.value("last_active_tab"))
-        assertEquals(1, targetSsh.commands.size)
-        assertTrue(targetSsh.commands.single().contains("herdr tab focus t_2_3"))
+        assertEquals(3, targetSsh.commands.size)
+        assertTrue(
+            targetSsh.commands[2].contains("herdr tab focus") &&
+                targetSsh.commands[2].contains("w0:t3")
+        )
     }
 
     @Test
@@ -362,7 +365,15 @@ class MainViewModelNotificationFocusTest {
 
         override suspend fun execCommand(command: String): String {
             commands += command
-            return ""
+            return when {
+                command.contains("herdr workspace list") ->
+                    """{"id":"cli:workspace:list","result":{"type":"workspace_list","workspaces":[""" +
+                        """{"workspace_id":"w0","label":"project","number":2,"focused":true}]}}"""
+                command.contains("herdr tab list") ->
+                    """{"id":"cli:tab:list","result":{"type":"tab_list","tabs":[""" +
+                        """{"tab_id":"w0:t3","workspace_id":"w0","number":3,"label":"3","focused":true}]}}"""
+                else -> ""
+            }
         }
 
         override fun disconnect() = Unit

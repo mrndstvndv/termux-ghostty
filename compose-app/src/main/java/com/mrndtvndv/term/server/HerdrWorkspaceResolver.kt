@@ -143,15 +143,49 @@ class HerdrWorkspaceResolver(
 
     /**
      * Focus the workspace (and tab, when identifiable) named in a notification body.
-     * `herdr workspace focus` and `herdr tab focus` accept the same 1-based numbers
-     * that appear in the OSC body, so no list lookup is needed for the common cases;
-     * a custom-named tab falls back to `herdr tab list` to resolve its id.
+     *
+     * A body is captured when herdr fires the notification, so its target may have
+     * been closed by the time the user taps it. Targets are resolved against the live
+     * workspace/tab list and focused by id, which turns a stale body into a no-op
+     * instead of a `*_not_found` error. Focus is best-effort: command failures never
+     * propagate.
      *
      * @return true when a focus command was issued
      */
     suspend fun focusFromBody(body: String?): Boolean {
         val target = parseFocusTarget(body) ?: return false
-        execCommand(herdrCommand(buildFocusCommand(target)))
+        return runCatching { focusTarget(target) }.getOrDefault(false)
+    }
+
+    private suspend fun focusTarget(target: HerdrFocusTarget): Boolean {
+        val workspaceId = resolveWorkspaceId(target.workspaceNumber) ?: return false
+        val tabLabel = target.tabLabel ?: return focusWorkspace(workspaceId)
+        // A vanished tab falls back to its (already validated) workspace.
+        val tabId = resolveTabId(workspaceId, tabLabel)
+        return if (tabId == null) {
+            focusWorkspace(workspaceId)
+        } else {
+            execCommand(herdrCommand("herdr tab focus ${shellQuote(tabId)}"))
+            true
+        }
+    }
+
+    private suspend fun resolveWorkspaceId(number: Int): String? {
+        val output = execCommand(herdrCommand("herdr workspace list"))
+        return parseWorkspaceEntries(output)
+            .firstOrNull { entry -> entry.number == number }
+            ?.workspaceId
+    }
+
+    private suspend fun resolveTabId(workspaceId: String, tabLabel: String): String? {
+        val output = execCommand(
+            herdrCommand("herdr tab list --workspace ${shellQuote(workspaceId)}"),
+        )
+        return findTabId(output, tabLabel)
+    }
+
+    private suspend fun focusWorkspace(workspaceId: String): Boolean {
+        execCommand(herdrCommand("herdr workspace focus ${shellQuote(workspaceId)}"))
         return true
     }
 
@@ -256,35 +290,22 @@ class HerdrWorkspaceResolver(
         }
     }
 
-    private suspend fun buildFocusCommand(target: HerdrFocusTarget): String {
-        val tabLabel = target.tabLabel
-        if (tabLabel == null) {
-            return "herdr workspace focus ${target.workspaceNumber}"
-        }
+    /** Resolves a tab id by its positional number (unnamed tab) or custom label. */
+    private fun findTabId(output: String, tabLabel: String): String? {
         val tabNumber = tabLabel.toIntOrNull()
-        if (tabNumber != null) {
-            // Unnamed tab: t_<ws>_<tab> is positional and accepts the numbers from the body.
-            return "herdr tab focus t_${target.workspaceNumber}_$tabNumber"
-        }
-        // Custom-named tab: resolve tab id via tab list.
-        val output = execCommand(
-            herdrCommand("herdr tab list --workspace ${target.workspaceNumber}")
-        )
-        val tabId = findTabIdByLabel(output, tabLabel)
-        return tabId?.let { "herdr tab focus $it" }
-            ?: "herdr workspace focus ${target.workspaceNumber}"
-    }
-
-    private fun findTabIdByLabel(output: String, label: String): String? {
         output.lines().forEach { line ->
             val parsed = parseHerdrLine(line) ?: return@forEach
             if (parsed.first != "cli:tab:list") return@forEach
             val tabArray = parsed.second["tabs"]?.jsonArray ?: return@forEach
             for (tab in tabArray) {
-                val tabObj = tab.jsonObject
-                if (tabObj["label"]?.jsonPrimitive?.contentOrNull == label) {
-                    return tabObj["tab_id"]?.jsonPrimitive?.contentOrNull
-                        ?.takeIf { it.isNotEmpty() }
+                val tabObj = runCatching { tab.jsonObject }.getOrNull() ?: continue
+                val matches = if (tabNumber != null) {
+                    jsonContent(tabObj, "number")?.toIntOrNull() == tabNumber
+                } else {
+                    jsonContent(tabObj, "label") == tabLabel
+                }
+                if (matches) {
+                    return jsonContent(tabObj, "tab_id")?.takeIf { it.isNotEmpty() }
                 }
             }
         }

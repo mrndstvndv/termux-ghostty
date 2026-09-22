@@ -43,14 +43,23 @@ class HerdrWorkspaceResolverFocusTest {
 
     // ── focusFromBody ────────────────────────────────────────────────
 
+    private val workspaceListJson =
+        """{"id":"cli:workspace:list","result":{"type":"workspace_list","workspaces":[""" +
+            """{"workspace_id":"w0","label":"proj","number":2,"focused":true}]}}"""
+
     @Test
-    fun `workspace-only body focuses workspace by number`() = runTest {
+    fun `workspace-only body focuses the live workspace by id`() = runTest {
         val commands = mutableListOf<String>()
-        val result = resolver { cmd -> commands += cmd; "" }.focusFromBody("myproj · 2")
+        val result = resolver { cmd -> commands += cmd; workspaceListJson }
+            .focusFromBody("myproj · 2")
 
         assertTrue(result)
-        assertEquals(1, commands.size)
-        assertTrue(commands[0].contains("herdr workspace focus 2"))
+        assertEquals(2, commands.size)
+        assertTrue(commands[0].contains("herdr workspace list"))
+        assertTrue(
+            commands[1].contains("herdr workspace focus") &&
+                commands[1].contains("w0")
+        )
         assertTrue(
             commands[0].startsWith(
                 "env PATH=\"\$PATH:\$HOME/.local/bin:\$HOME/.local/share/mise/shims:"
@@ -59,47 +68,107 @@ class HerdrWorkspaceResolverFocusTest {
     }
 
     @Test
-    fun `unnamed tab body focuses tab positionally`() = runTest {
+    fun `stale workspace body issues no focus command`() = runTest {
         val commands = mutableListOf<String>()
-        val result = resolver { cmd -> commands += cmd; "" }.focusFromBody("myproj · 2 · 3")
+        val emptyWorkspaceList =
+            """{"id":"cli:workspace:list","result":{"type":"workspace_list","workspaces":[]}}"""
+        val result = resolver { cmd -> commands += cmd; emptyWorkspaceList }
+            .focusFromBody("myproj · 3")
+
+        assertFalse(result)
+        assertEquals(1, commands.size)
+        assertTrue(commands[0].contains("herdr workspace list"))
+    }
+
+    @Test
+    fun `unnamed tab body focuses the resolved tab id`() = runTest {
+        val commands = mutableListOf<String>()
+        val result = resolver { cmd ->
+            commands += cmd
+            if (cmd.contains("herdr workspace list")) {
+                workspaceListJson
+            } else {
+                """{"id":"cli:tab:list","result":{"type":"tab_list","tabs":[""" +
+                    """{"tab_id":"w0:t3","workspace_id":"w0","number":3,""" +
+                    """"label":"3","focused":true}]}}"""
+            }
+        }.focusFromBody("myproj · 2 · 3")
 
         assertTrue(result)
-        assertEquals(1, commands.size)
-        assertTrue(commands[0].contains("herdr tab focus t_2_3"))
+        assertEquals(3, commands.size)
+        assertTrue(
+            commands[1].contains("herdr tab list --workspace") &&
+                commands[1].contains("w0")
+        )
+        assertTrue(
+            commands[2].contains("herdr tab focus") &&
+                commands[2].contains("w0:t3")
+        )
     }
 
     @Test
     fun `custom-named tab resolves tab id via tab list`() = runTest {
         val commands = mutableListOf<String>()
         val tabListJson =
-            """{"id":"cli:tab:list","result":{"type":"tab_list","tabs":""" +
-                """[{"tab_id":"w0:t1","workspace_id":"w0","number":1,"label":"1","focused":true},""" +
+            """{"id":"cli:tab:list","result":{"type":"tab_list","tabs":[""" +
+                """{"tab_id":"w0:t1","workspace_id":"w0","number":1,"label":"1","focused":true},""" +
                 """{"tab_id":"w0:t2","workspace_id":"w0","number":2,"label":"codex","focused":false}]}}"""
         val result = resolver { cmd ->
             commands += cmd
-            if (cmd.contains("herdr tab list")) tabListJson else ""
+            if (cmd.contains("herdr workspace list")) workspaceListJson else tabListJson
         }.focusFromBody("myproj · 2 · codex")
 
         assertTrue(result)
-        assertEquals(2, commands.size)
-        assertTrue(commands[0].contains("herdr tab list --workspace 2"))
-        assertTrue(commands[1].contains("herdr tab focus w0:t2"))
+        assertEquals(3, commands.size)
+        assertTrue(
+            commands[1].contains("herdr tab list --workspace") &&
+                commands[1].contains("w0")
+        )
+        assertTrue(
+            commands[2].contains("herdr tab focus") &&
+                commands[2].contains("w0:t2")
+        )
     }
 
     @Test
-    fun `custom-named tab missing from list falls back to workspace focus`() = runTest {
+    fun `missing tab falls back to its workspace`() = runTest {
         val commands = mutableListOf<String>()
         val tabListJson =
-            """{"id":"cli:tab:list","result":{"type":"tab_list","tabs":""" +
-                """[{"tab_id":"w0:t1","workspace_id":"w0","number":1,"label":"1","focused":true}]}}"""
+            """{"id":"cli:tab:list","result":{"type":"tab_list","tabs":[""" +
+                """{"tab_id":"w0:t1","workspace_id":"w0","number":1,"label":"1","focused":true}]}}"""
         val result = resolver { cmd ->
             commands += cmd
-            if (cmd.contains("herdr tab list")) tabListJson else ""
+            if (cmd.contains("herdr workspace list")) workspaceListJson else tabListJson
         }.focusFromBody("myproj · 2 · unknown-tab")
 
         assertTrue(result)
-        assertEquals(2, commands.size)
-        assertTrue(commands[1].contains("herdr workspace focus 2"))
+        assertEquals(3, commands.size)
+        assertTrue(
+            commands[2].contains("herdr workspace focus") &&
+                commands[2].contains("w0")
+        )
+    }
+
+    @Test
+    fun `focus command failures do not propagate`() = runTest {
+        val result = resolver { cmd ->
+            if (cmd.contains("herdr workspace list")) {
+                workspaceListJson
+            } else {
+                error("workspace not found")
+            }
+        }.focusFromBody("myproj · 2")
+
+        assertFalse(result)
+    }
+
+    @Test
+    fun `listing failures do not propagate`() = runTest {
+        val result = resolver {
+            error("remote command failed")
+        }.focusFromBody("myproj · 2")
+
+        assertFalse(result)
     }
 
     @Test

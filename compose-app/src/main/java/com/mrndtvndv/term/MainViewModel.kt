@@ -173,24 +173,32 @@ class MainViewModel(
     }
 
     fun focusHerdrTab(serverId: String, tab: HerdrWorkspaceResolver.HerdrTabNode) {
-        val resolver = herdrResolver(serverId) ?: return
-        viewModelScope.launch {
-            herdrFrameSynchronizer.focus(serverId) { resolver.focusTab(tab) }
-        }
+        focusHerdr(serverId) { focusTab(tab) }
     }
 
     fun focusHerdrPane(serverId: String, pane: HerdrWorkspaceResolver.HerdrPaneNode) {
-        val resolver = herdrResolver(serverId) ?: return
-        viewModelScope.launch {
-            herdrFrameSynchronizer.focus(serverId) { resolver.focusPane(pane) }
-        }
+        focusHerdr(serverId) { focusPane(pane) }
     }
 
     fun closeHerdrPane(serverId: String, pane: HerdrWorkspaceResolver.HerdrPaneNode) {
         val resolver = herdrResolver(serverId) ?: return
         viewModelScope.launch {
-            resolver.closePane(pane.paneId)
+            runCatching { resolver.closePane(pane.paneId) }
             loadHerdrAgents(serverId)
+        }
+    }
+
+    /**
+     * Runs a best-effort Herdr focus operation. UI nodes and notification bodies can
+     * outlive their workspace/pane, so a failed focus must never crash the app.
+     */
+    private fun focusHerdr(
+        serverId: String,
+        operation: suspend HerdrWorkspaceResolver.() -> Boolean,
+    ) {
+        val resolver = herdrResolver(serverId) ?: return
+        viewModelScope.launch {
+            runCatching { herdrFrameSynchronizer.focus(serverId) { resolver.operation() } }
         }
     }
 
@@ -211,10 +219,7 @@ class MainViewModel(
             connect(targetServerId)
         }
 
-        val resolver = herdrResolver(targetServerId) ?: return
-        viewModelScope.launch {
-            herdrFrameSynchronizer.focus(targetServerId) { resolver.focusFromBody(body) }
-        }
+        focusHerdr(targetServerId) { focusFromBody(body) }
     }
 
     private fun herdrResolver(serverId: String): HerdrWorkspaceResolver? {

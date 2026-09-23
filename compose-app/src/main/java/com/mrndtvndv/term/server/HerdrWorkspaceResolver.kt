@@ -1,5 +1,6 @@
 package com.mrndtvndv.term.server
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -8,7 +9,6 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-
 private const val HerdrCommandPrefix =
     "env PATH=\"\$PATH:\$HOME/.local/bin:\$HOME/.local/share/mise/shims:" +
         "/home/linuxbrew/.linuxbrew/bin:/opt/homebrew/bin:/usr/local/bin\" sh -c "
@@ -154,7 +154,7 @@ class HerdrWorkspaceResolver(
      */
     suspend fun focusFromBody(body: String?): Boolean {
         val target = parseFocusTarget(body) ?: return false
-        return runCatching { focusTarget(target) }.getOrDefault(false)
+        return focusBestEffort { focusTarget(target) }
     }
 
     private suspend fun focusTarget(target: HerdrFocusTarget): Boolean {
@@ -234,21 +234,35 @@ class HerdrWorkspaceResolver(
     }
 
     suspend fun focusAgent(agent: HerdrAgentInfo): Boolean =
-        focusAgentPane(agent.paneId, agent.tabId)
+        focusBestEffort { focusAgentPane(agent.paneId, agent.tabId) }
 
     suspend fun focusTab(tab: HerdrTabNode): Boolean =
-        if (tab.agent != null) {
-            focusAgentPane(tab.paneId, tab.tabId)
-        } else {
-            focusTabId(tab.tabId)
+        focusBestEffort {
+            if (tab.agent != null) {
+                focusAgentPane(tab.paneId, tab.tabId)
+            } else {
+                focusTabId(tab.tabId)
+            }
         }
 
     suspend fun focusPane(pane: HerdrPaneNode): Boolean =
-        if (pane.agent != null) {
-            focusAgentPane(pane.paneId, pane.tabId)
-        } else {
-            focusTabId(pane.tabId)
+        focusBestEffort {
+            if (pane.agent != null) {
+                focusAgentPane(pane.paneId, pane.tabId)
+            } else {
+                focusTabId(pane.tabId)
+            }
         }
+
+    private suspend fun focusBestEffort(operation: suspend () -> Boolean): Boolean {
+        return try {
+            operation()
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Exception) {
+            false
+        }
+    }
 
     /**
      * Close a pane's terminal. Herdr kills whatever runs inside the pane.

@@ -296,6 +296,28 @@ class HerdrWorkspaceResolverFocusTest {
         )
     }
 
+    @Test
+    fun `stale tab focus failure does not propagate`() = runTest {
+        val tab = HerdrWorkspaceResolver.HerdrTabNode(
+            tabId = "t_1_2",
+            title = "2",
+            agent = null,
+            agentStatus = "idle",
+            focused = false,
+            workspaceId = "w1",
+            paneId = "p1",
+        )
+
+        val result = resolver {
+            throw IllegalStateException(
+                "{\"error\":{\"code\":\"tab_not_found\",\"message\":" +
+                    "\"tab t_1_2 not found\"},\"id\":\"cli:tab:focus\"}",
+            )
+        }.focusTab(tab)
+
+        assertFalse(result)
+    }
+
     // ── process-info and pane titles ──────────────────────────────────
 
     private val paneListOutput = buildString {

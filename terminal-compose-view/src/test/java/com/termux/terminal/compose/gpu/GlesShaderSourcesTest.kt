@@ -12,7 +12,9 @@ class GlesShaderSourcesTest {
             "GlesShaderSources.CURSOR_VERTEX" to GlesShaderSources.CURSOR_VERTEX,
             "GlesShaderSources.CURSOR_FRAGMENT" to GlesShaderSources.CURSOR_FRAGMENT,
             "GlesImageShaderSources.VERTEX" to GlesImageShaderSources.VERTEX,
-            "GlesImageShaderSources.FRAGMENT" to GlesImageShaderSources.FRAGMENT
+            "GlesImageShaderSources.FRAGMENT" to GlesImageShaderSources.FRAGMENT,
+            "GlesWallpaperShaderSources.VERTEX" to GlesWallpaperShaderSources.VERTEX,
+            "GlesWallpaperShaderSources.FRAGMENT" to GlesWallpaperShaderSources.FRAGMENT
         )
 
         for ((name, source) in shaders) {
@@ -21,5 +23,19 @@ class GlesShaderSourcesTest {
                 source.startsWith("#version 300 es")
             )
         }
+    }
+
+    @Test
+    fun wallpaperFragmentShaderUsesSourceAlphaAsCoverage() {
+        val fragment = GlesWallpaperShaderSources.FRAGMENT.replace(Regex("\\s+"), " ")
+
+        assertTrue(
+            "wallpaper shader must fold source alpha into the coverage",
+            fragment.contains("sampled.a * uAlpha")
+        )
+        assertTrue(
+            "wallpaper shader must preserve premultiplied rgb for GL_ONE, GL_ONE_MINUS_SRC_ALPHA",
+            fragment.contains("fragColor = vec4(sampled.rgb * uAlpha, coverage)")
+        )
     }
 }

@@ -25,6 +25,7 @@ import com.termux.terminal.compose.TerminalCanvas as ComposeTerminalCanvas
 import com.termux.terminal.compose.TerminalCanvasConfig
 import com.termux.terminal.compose.TerminalBackend
 import com.termux.terminal.compose.TerminalImeController
+import com.termux.terminal.compose.TerminalWallpaperConfig
 import com.termux.terminal.compose.session.TerminalSessionBackend
 
 /** Default soft-keyboard resize debounce in milliseconds (0 = immediate). */
@@ -53,6 +54,7 @@ fun TerminalCanvas(
     onBackendReleased: (TerminalSession, TerminalBackend) -> Unit,
     isTerminalActive: Boolean,
     imeController: TerminalImeController,
+    wallpaperConfig: TerminalWallpaperConfig = TerminalWallpaperConfig(),
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -73,6 +75,7 @@ fun TerminalCanvas(
     val config = rememberTerminalCanvasConfig(
         session = session,
         preferences = preferences,
+        wallpaper = wallpaperConfig,
         onOpenUrl = onOpenUrl,
         onCommitContent = onCommitContent,
         onOpenContextMenu = {
@@ -106,6 +109,7 @@ fun TerminalCanvas(
 private fun rememberTerminalCanvasConfig(
     session: TerminalSession,
     preferences: SharedPreferences,
+    wallpaper: TerminalWallpaperConfig,
     onOpenUrl: (String) -> Unit,
     onCommitContent: (ClipData) -> Boolean,
     onOpenContextMenu: (String) -> Unit
@@ -135,6 +139,7 @@ private fun rememberTerminalCanvasConfig(
             maximumFontSize = maximumFontSize,
             typeface = typeface,
             cursorEffect = cursorEffect,
+            wallpaper = wallpaper,
             frameRate = frameRate,
             accessibilityEnabled = accessibilityEnabled,
             session = session,
@@ -227,6 +232,7 @@ private data class TerminalCanvasConfigInput(
     val maximumFontSize: Int,
     val typeface: Typeface,
     val cursorEffect: com.termux.terminal.compose.CursorEffect?,
+    val wallpaper: TerminalWallpaperConfig,
     val frameRate: VisualEffectFrameRate,
     val accessibilityEnabled: Boolean,
     val session: TerminalSession,
@@ -243,6 +249,7 @@ private fun createTerminalCanvasConfig(input: TerminalCanvasConfigInput): Termin
         maximumFontSize = input.maximumFontSize,
         typeface = input.typeface,
         cursorEffect = input.cursorEffect,
+        wallpaper = input.wallpaper,
         preferredFrameRate = input.frameRate.framesPerSecond,
         unconditionalKeyboardOnTap = input.preferences.getBoolean(
             "unconditional_soft_keyboard_on_tap",

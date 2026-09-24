@@ -87,6 +87,7 @@ class TerminalComposeView @JvmOverloads constructor(
     private var minimumFontSizeState by mutableIntStateOf(8)
     private var maximumFontSizeState by mutableIntStateOf(256)
     private var typefaceState by mutableStateOf<Typeface?>(Typeface.MONOSPACE)
+    private var wallpaperState by mutableStateOf(TerminalWallpaperConfig())
     private var accessibilityEnabledState by mutableStateOf(false)
     private var unconditionalKeyboardOnTapState by mutableStateOf(true)
     private var autoShowKeyboardOnTapState by mutableStateOf(true)
@@ -137,6 +138,7 @@ class TerminalComposeView @JvmOverloads constructor(
     }
 
     @Composable
+    @Suppress("LongMethod")
     override fun Content() {
         val backend = backendState
         if (backend != null) {
@@ -159,6 +161,7 @@ class TerminalComposeView @JvmOverloads constructor(
                     minimumFontSize = minimumFontSizeState,
                     maximumFontSize = maximumFontSizeState,
                     typeface = typefaceState,
+                    wallpaper = wallpaperState,
                     unconditionalKeyboardOnTap = unconditionalKeyboardOnTapState,
                     autoShowKeyboardOnTap = autoShowKeyboardOnTapState,
                     accessibilityEnabled = accessibilityEnabledState,
@@ -232,6 +235,26 @@ class TerminalComposeView @JvmOverloads constructor(
 
     fun setTypeface(typeface: Typeface?) {
         typefaceState = typeface ?: Typeface.MONOSPACE
+    }
+
+    /** Installs or replaces the wallpaper rendering policy. */
+    fun setWallpaperConfig(config: TerminalWallpaperConfig) {
+        wallpaperState = config
+    }
+
+    fun getWallpaperConfig(): TerminalWallpaperConfig = wallpaperState
+
+    /** Sets or clears the wallpaper while preserving scaling and opacity. */
+    fun setWallpaper(wallpaper: TerminalWallpaper?) {
+        wallpaperState = wallpaperState.copy(wallpaper = wallpaper)
+    }
+
+    fun setWallpaperScaling(scaling: WallpaperScaling) {
+        wallpaperState = wallpaperState.copy(scaling = scaling)
+    }
+
+    fun setWallpaperBackgroundOpacity(opacity: Float) {
+        wallpaperState = wallpaperState.copy(backgroundOpacity = opacity)
     }
 
     fun setAccessibilityEnabled(enabled: Boolean) {

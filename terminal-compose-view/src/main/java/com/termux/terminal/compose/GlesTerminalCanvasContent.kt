@@ -16,6 +16,7 @@ import java.util.concurrent.atomic.AtomicLong
 
 /** Publishes complete immutable frames to GLES while Compose continues to own interaction. */
 @Composable
+@Suppress("LongMethod")
 internal fun glesTerminalCanvasContent(
     controller: TerminalController,
     metrics: TerminalMetrics,
@@ -46,7 +47,8 @@ internal fun glesTerminalCanvasContent(
                     presentationRevision = presentationRevision.incrementAndGet(),
                     visual = GlesTerminalVisualConfig(
                         typeface = config.typeface,
-                        fontSizePx = fontSizePx
+                        fontSizePx = fontSizePx,
+                        wallpaper = config.wallpaper
                     )
                 )
             }
@@ -69,6 +71,7 @@ internal fun glesTerminalCanvasContent(
         metrics,
         fontSizePx,
         config.typeface,
+        config.wallpaper,
         config.cursorEffect
     ) {
         currentPublisher()

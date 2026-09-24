@@ -28,6 +28,7 @@ import com.mrndtvndv.term.ui.sftp.SftpViewModel
 import com.mrndtvndv.term.ui.keyboard.ExtraKeysToolbar
 import com.mrndtvndv.term.ui.keyboard.ExtraKeysController
 import com.termux.terminal.compose.TerminalBackend
+import com.termux.terminal.compose.TerminalWallpaperConfig
 import com.mrndtvndv.term.server.TerminalProgress
 import com.mrndtvndv.term.server.HerdrWorkspaceResolver
 import com.mrndtvndv.term.ui.review.ReviewViewModel
@@ -56,6 +57,7 @@ fun TabbedWorkspace(
     extraKeysController: ExtraKeysController,
     extraKeysEnabled: Boolean,
     extraKeysJson: String,
+    wallpaperConfig: TerminalWallpaperConfig = TerminalWallpaperConfig(),
     hideTabs: Boolean = false,
     herdrEnabled: Boolean = false,
     herdrWorkspaces: List<HerdrWorkspaceResolver.HerdrWorkspaceNode> = emptyList(),
@@ -275,7 +277,8 @@ fun TabbedWorkspace(
                                     onBackendCreated = onBackendCreated,
                                     onBackendReleased = onBackendReleased,
                                     onOpenUrl = onOpenUrl,
-                                    imeController = imeController
+                                    imeController = imeController,
+                                    wallpaperConfig = wallpaperConfig
                                 )
                                 if (showKeyboardFab || herdrEnabled) {
                                     Column(

@@ -18,6 +18,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
 import android.widget.Toast
 import com.mrndtvndv.term.NativeLogcatLogger
+import com.mrndtvndv.term.ui.prefs.DefaultWallpaperBackgroundOpacity
 import com.mrndtvndv.term.ui.keyboard.PresetArrowsOnly
 import com.mrndtvndv.term.ui.keyboard.PresetDoubleRow
 import com.mrndtvndv.term.ui.keyboard.PresetSingleRow
@@ -27,6 +28,8 @@ import com.mrndtvndv.term.ui.keyboard.ExtraKeysController
 import com.mrndtvndv.term.ui.keyboard.ExtraKeysToolbar
 import com.mrndtvndv.term.ui.workspace.CursorTrailEffect
 import com.mrndtvndv.term.ui.workspace.VisualEffectFrameRate
+import com.mrndtvndv.term.ui.workspace.label
+import com.termux.terminal.compose.WallpaperScaling
 
 
 @Suppress("LongParameterList", "LongMethod", "CyclomaticComplexMethod")
@@ -52,6 +55,15 @@ fun SettingsScreen(
     customFontName: String?,
     onSelectFont: () -> Unit,
     onClearFont: () -> Unit,
+    wallpaperEnabled: Boolean = false,
+    onWallpaperEnabledChange: (Boolean) -> Unit = {},
+    wallpaperName: String? = null,
+    onSelectWallpaper: () -> Unit = {},
+    onClearWallpaper: () -> Unit = {},
+    wallpaperBackgroundOpacity: Float = DefaultWallpaperBackgroundOpacity,
+    onWallpaperBackgroundOpacityChange: (Float) -> Unit = {},
+    wallpaperScaling: WallpaperScaling = WallpaperScaling.CENTER_CROP,
+    onWallpaperScalingChange: (WallpaperScaling) -> Unit = {},
     useCustomFontForWholeUi: Boolean,
     onUseCustomFontForWholeUiChange: (Boolean) -> Unit,
     unconditionalSoftKeyboardOnTap: Boolean = true,
@@ -574,6 +586,181 @@ fun SettingsScreen(
                                         onClick = {
                                             onVisualEffectFrameRateChange(frameRate.key)
                                             frameRateExpanded = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Terminal Wallpaper
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                )
+            ) {
+                Column(
+                    modifier = Modifier
+                        .padding(24.dp)
+                        .fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Text(
+                        text = "TERMINAL WALLPAPER",
+                        style = MaterialTheme.typography.headlineSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        textAlign = TextAlign.Center
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Enable Wallpaper", style = MaterialTheme.typography.bodyLarge)
+                            Text(
+                                text = "Draw an image behind default terminal backgrounds",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = wallpaperEnabled,
+                            onCheckedChange = onWallpaperEnabledChange,
+                            enabled = wallpaperName != null
+                        )
+                    }
+
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                            Text("Wallpaper Image", style = MaterialTheme.typography.bodyLarge)
+                            Text(
+                                text = wallpaperName ?: "None",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            if (wallpaperName == null) {
+                                Button(
+                                    onClick = onSelectWallpaper,
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                    ),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                                    modifier = Modifier.height(36.dp),
+                                    shape = RoundedCornerShape(18.dp)
+                                ) {
+                                    Text("Select Image", style = MaterialTheme.typography.bodyMedium)
+                                }
+                            } else {
+                                OutlinedButton(
+                                    onClick = onSelectWallpaper,
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                                    modifier = Modifier.height(36.dp),
+                                    shape = RoundedCornerShape(18.dp)
+                                ) {
+                                    Text("Change", style = MaterialTheme.typography.bodyMedium)
+                                }
+
+                                Button(
+                                    onClick = onClearWallpaper,
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = MaterialTheme.colorScheme.errorContainer,
+                                        contentColor = MaterialTheme.colorScheme.onErrorContainer
+                                    ),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                                    modifier = Modifier.height(36.dp),
+                                    shape = RoundedCornerShape(18.dp)
+                                ) {
+                                    Text("Remove", style = MaterialTheme.typography.bodyMedium)
+                                }
+                            }
+                        }
+                    }
+
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("Background Opacity", style = MaterialTheme.typography.bodyLarge)
+                            Text(
+                                text = "${(wallpaperBackgroundOpacity * 100).toInt()}%",
+                                style = MaterialTheme.typography.bodyLarge
+                            )
+                        }
+                        Text(
+                            text = "Higher values hide more of the wallpaper behind the terminal background",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Slider(
+                            value = wallpaperBackgroundOpacity.coerceIn(0f, 1f),
+                            onValueChange = onWallpaperBackgroundOpacityChange,
+                            valueRange = 0f..1f,
+                            steps = 19,
+                            enabled = wallpaperName != null && wallpaperEnabled
+                        )
+                    }
+
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Scaling", style = MaterialTheme.typography.bodyLarge)
+                            Text(
+                                text = "How the image is fitted to the terminal viewport",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        var scalingExpanded by remember { mutableStateOf(false) }
+                        Box {
+                            OutlinedButton(
+                                onClick = { scalingExpanded = true },
+                                enabled = wallpaperName != null && wallpaperEnabled,
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                                modifier = Modifier.height(36.dp),
+                                shape = RoundedCornerShape(18.dp)
+                            ) {
+                                Text(
+                                    text = wallpaperScaling.label(),
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                            }
+                            DropdownMenu(
+                                expanded = scalingExpanded,
+                                onDismissRequest = { scalingExpanded = false }
+                            ) {
+                                WallpaperScaling.entries.forEach { option ->
+                                    DropdownMenuItem(
+                                        text = { Text(option.label()) },
+                                        onClick = {
+                                            onWallpaperScalingChange(option)
+                                            scalingExpanded = false
                                         }
                                     )
                                 }

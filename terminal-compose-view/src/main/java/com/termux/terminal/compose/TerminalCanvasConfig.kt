@@ -21,6 +21,8 @@ data class TerminalCanvasConfig(
     val maximumFontSize: Int = 256,
     val typeface: Typeface? = null,
     val cursorEffect: CursorEffect? = null,
+    /** Optional wallpaper drawn behind default-background cells. */
+    val wallpaper: TerminalWallpaperConfig = TerminalWallpaperConfig(),
     val scrollbar: TerminalScrollbarConfig = TerminalScrollbarConfig(),
     /** Neutral frame-rate request in frames per second; null means display rate. */
     val preferredFrameRate: Float? = null,

@@ -20,13 +20,16 @@ import com.termux.terminal.compose.CursorEffectSnapshot
 import com.termux.terminal.compose.TerminalFrame
 import com.termux.terminal.compose.TerminalMetrics
 import com.termux.terminal.compose.TerminalSelection
+import com.termux.terminal.compose.TerminalWallpaperConfig
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
 /** Immutable visual inputs that are not part of a terminal frame. */
 data class GlesTerminalVisualConfig(
     val typeface: android.graphics.Typeface? = null,
-    val fontSizePx: Float = 14f
+    val fontSizePx: Float = 14f,
+    /** Presentation-only wallpaper. It never invalidates retained row plans. */
+    val wallpaper: TerminalWallpaperConfig = TerminalWallpaperConfig()
 ) {
     init {
         require(fontSizePx > 0f) { "fontSizePx must be positive" }

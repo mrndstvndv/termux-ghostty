@@ -23,6 +23,14 @@ class TerminalCanvasConfigTest {
     }
 
     @Test
+    fun `wallpaper defaults are inert`() {
+        val config = TerminalCanvasConfig()
+
+        assertEquals(null, config.wallpaper.wallpaper)
+        assertEquals(0.7f, config.wallpaper.backgroundOpacity, 0f)
+    }
+
+    @Test
     fun `scrollbar config defaults and custom overrides`() {
         val defaultConfig = TerminalCanvasConfig()
         assertEquals(true, defaultConfig.scrollbar.enabled)

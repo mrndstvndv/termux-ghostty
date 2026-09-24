@@ -34,17 +34,29 @@ import com.mrndtvndv.term.ui.settings.SettingsScreen
 import com.mrndtvndv.term.ui.sftp.SftpFileViewerScreen
 import com.mrndtvndv.term.ui.theme.TerminalThemeSync
 import com.mrndtvndv.term.ui.theme.TermuxGhosttyTheme
+import com.mrndtvndv.term.ui.workspace.ContentResolverWallpaperGrantStore
 import com.mrndtvndv.term.ui.workspace.CursorTrailEffect
 import com.mrndtvndv.term.ui.workspace.DebugHud
 import com.mrndtvndv.term.ui.workspace.DefaultKeyboardResizeDebounceMillis
 import com.mrndtvndv.term.ui.workspace.MaxKeyboardResizeDebounceMillis
 import com.mrndtvndv.term.ui.workspace.TerminalWorkspaceScreen
+import com.mrndtvndv.term.ui.workspace.WallpaperSelectionCoordinator
+import com.mrndtvndv.term.ui.workspace.WallpaperSelectionOutcome
 import com.mrndtvndv.term.ui.workspace.WorkspaceTab
+import com.mrndtvndv.term.ui.workspace.decodeTerminalWallpaper
+import com.mrndtvndv.term.ui.workspace.rememberTerminalWallpaperConfig
+import com.mrndtvndv.term.ui.workspace.retainedPredecodedWallpaper
+import com.mrndtvndv.term.ui.workspace.wallpaperScalingFromPref
 import com.mrndtvndv.term.ui.workspace.VisualEffectFrameRate
 import com.mrndtvndv.term.ui.workspace.FileUploadBlockingOverlay
 import com.termux.terminal.compose.TerminalBackend
+import com.termux.terminal.compose.TerminalWallpaper
 import com.termux.terminal.TerminalSession
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
+import java.util.concurrent.atomic.AtomicLong
 
 @Suppress("LongParameterList", "LongMethod", "CyclomaticComplexMethod")
 @OptIn(ExperimentalMaterial3Api::class)
@@ -84,6 +96,12 @@ fun MainContent(
     val showKeyboardFab by viewModel.userPrefs.showKeyboardFab.collectAsState()
     val hideKeyboardFabWhileTyping by viewModel.userPrefs.hideKeyboardFabWhileTyping.collectAsState()
     val herdrAgentFabOpacity by viewModel.userPrefs.herdrAgentFabOpacity.collectAsState()
+    val wallpaperUri by viewModel.userPrefs.wallpaperUri.collectAsState()
+    val wallpaperName by viewModel.userPrefs.wallpaperName.collectAsState()
+    val wallpaperEnabled by viewModel.userPrefs.wallpaperEnabled.collectAsState()
+    val wallpaperOpacity by viewModel.userPrefs.wallpaperBackgroundOpacity.collectAsState()
+    val wallpaperScalingKey by viewModel.userPrefs.wallpaperScaling.collectAsState()
+    val wallpaperId by viewModel.userPrefs.wallpaperId.collectAsState()
     val context = LocalContext.current
     val notification by viewModel.notificationState.notification.collectAsState()
     val navigator = rememberAppNavigator(
@@ -151,6 +169,78 @@ fun MainContent(
             ) { uri: Uri? ->
                 uri?.let { copyFontFile(it) }
             }
+
+            val wallpaperSelectionCoordinator = remember(context) {
+                WallpaperSelectionCoordinator<TerminalWallpaper>(
+                    ContentResolverWallpaperGrantStore(context.contentResolver)
+                )
+            }
+            val wallpaperSelectionScope = rememberCoroutineScope()
+            val wallpaperIdGenerator = remember { AtomicLong(System.currentTimeMillis()) }
+            var pendingWallpaper by remember { mutableStateOf<TerminalWallpaper?>(null) }
+
+            val pickWallpaperLauncher = rememberLauncherForActivityResult(
+                contract = ActivityResultContracts.OpenDocument()
+            ) { uri: Uri? ->
+                if (uri != null) {
+                    val newUri = uri.toString()
+                    val newWallpaperId = wallpaperIdGenerator.incrementAndGet()
+                    val newWallpaperName = getFileName(uri) ?: uri.lastPathSegment
+                    wallpaperSelectionScope.launch {
+                        val outcome = wallpaperSelectionCoordinator.select(
+                            previousUri = viewModel.userPrefs.wallpaperUri.value,
+                            newUri = newUri,
+                            decode = {
+                                withContext(Dispatchers.IO) {
+                                    decodeTerminalWallpaper(context, newUri, newWallpaperId)
+                                }
+                            },
+                            commit = { wallpaper ->
+                                pendingWallpaper = retainedPredecodedWallpaper(
+                                    wallpaper,
+                                    enabled = viewModel.userPrefs.wallpaperEnabled.value,
+                                )
+                                viewModel.userPrefs.setWallpaper(
+                                    uri = newUri,
+                                    name = newWallpaperName,
+                                    id = newWallpaperId,
+                                    prefs = sharedPreferences
+                                )
+                            }
+                        )
+                        when (outcome) {
+                            WallpaperSelectionOutcome.GrantDenied -> viewModel.notificationState.post(
+                                title = "Wallpaper",
+                                body = "Couldn't access that image. The current wallpaper was kept."
+                            )
+                            WallpaperSelectionOutcome.ImageUnreadable -> viewModel.notificationState.post(
+                                title = "Wallpaper",
+                                body = "That image couldn't be read. The current wallpaper was kept."
+                            )
+                            WallpaperSelectionOutcome.Committed,
+                            WallpaperSelectionOutcome.Superseded -> Unit
+                        }
+                    }
+                }
+            }
+
+            // Drop the in-memory decoded wallpaper once wallpapering is disabled so its
+            // bitmap can be reclaimed. The saved URI/name/id and its persisted grant stay
+            // intact, so re-enabling reloads from the saved URI.
+            LaunchedEffect(wallpaperEnabled) {
+                if (!wallpaperEnabled) {
+                    pendingWallpaper = retainedPredecodedWallpaper(pendingWallpaper, enabled = false)
+                }
+            }
+
+            val wallpaperConfig = rememberTerminalWallpaperConfig(
+                uri = wallpaperUri,
+                id = wallpaperId,
+                enabled = wallpaperEnabled,
+                backgroundOpacity = wallpaperOpacity,
+                scaling = wallpaperScalingFromPref(wallpaperScalingKey),
+                predecoded = pendingWallpaper,
+            )
 
             val onClearFontInternal: () -> Unit = {
                 deleteFontFile()
@@ -269,6 +359,27 @@ fun MainContent(
                                 customFontName = customFontName,
                                 onSelectFont = { pickFontLauncher.launch("*/*") },
                                 onClearFont = onClearFontInternal,
+                                wallpaperEnabled = wallpaperEnabled,
+                                onWallpaperEnabledChange = { enabled ->
+                                    viewModel.userPrefs.setWallpaperEnabled(enabled, sharedPreferences)
+                                },
+                                wallpaperName = wallpaperName,
+                                onSelectWallpaper = { pickWallpaperLauncher.launch(arrayOf("image/*")) },
+                                onClearWallpaper = {
+                                    pendingWallpaper = null
+                                    wallpaperSelectionCoordinator.clear(
+                                        viewModel.userPrefs.wallpaperUri.value
+                                    )
+                                    viewModel.userPrefs.clearWallpaper(sharedPreferences)
+                                },
+                                wallpaperBackgroundOpacity = wallpaperOpacity,
+                                onWallpaperBackgroundOpacityChange = { opacity ->
+                                    viewModel.userPrefs.setWallpaperBackgroundOpacity(opacity, sharedPreferences)
+                                },
+                                wallpaperScaling = wallpaperScalingFromPref(wallpaperScalingKey),
+                                onWallpaperScalingChange = { scaling ->
+                                    viewModel.userPrefs.setWallpaperScaling(scaling.name, sharedPreferences)
+                                },
                                 useCustomFontForWholeUi = useCustomFontForWholeUi,
                                 onUseCustomFontForWholeUiChange = { enabled ->
                                     viewModel.userPrefs.setUseCustomFontForWholeUi(enabled, sharedPreferences)
@@ -363,6 +474,7 @@ fun MainContent(
                                     TerminalWorkspaceScreen(
                                         session = server.terminalSession,
                                         terminalProgress = terminalProgress,
+                                        wallpaperConfig = wallpaperConfig,
                                         onUploadMedia = {
                                             onRequestMediaUpload(server.terminalSession)
                                         },

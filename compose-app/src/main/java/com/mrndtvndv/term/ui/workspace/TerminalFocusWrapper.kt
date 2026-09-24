@@ -7,6 +7,7 @@ import com.mrndtvndv.term.ui.keyboard.ExtraKeysController
 import com.termux.terminal.TerminalSession
 import com.termux.terminal.compose.TerminalBackend
 import com.termux.terminal.compose.TerminalImeController
+import com.termux.terminal.compose.TerminalWallpaperConfig
 
 /**
  * Compatibility boundary for the workspace pager. Focus and key dispatch are
@@ -25,6 +26,7 @@ fun TerminalFocusWrapper(
     onBackendReleased: (TerminalSession, TerminalBackend) -> Unit,
     onOpenUrl: (String) -> Unit,
     imeController: TerminalImeController,
+    wallpaperConfig: TerminalWallpaperConfig = TerminalWallpaperConfig(),
     modifier: Modifier = Modifier
 ) {
     TerminalWorkspaceContainer(
@@ -38,6 +40,7 @@ fun TerminalFocusWrapper(
         onOpenUrl = onOpenUrl,
         imeController = imeController,
         isTerminalActive = isTerminalActive,
+        wallpaperConfig = wallpaperConfig,
         modifier = modifier
     )
 }

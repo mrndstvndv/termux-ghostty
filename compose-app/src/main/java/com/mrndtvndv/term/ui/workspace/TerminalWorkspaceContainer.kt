@@ -7,6 +7,7 @@ import com.mrndtvndv.term.ui.keyboard.ExtraKeysController
 import com.termux.terminal.TerminalSession
 import com.termux.terminal.compose.TerminalBackend
 import com.termux.terminal.compose.TerminalImeController
+import com.termux.terminal.compose.TerminalWallpaperConfig
 
 @Composable
 @Suppress("LongParameterList")
@@ -21,6 +22,7 @@ fun TerminalWorkspaceContainer(
     onOpenUrl: (String) -> Unit,
     isTerminalActive: Boolean,
     imeController: TerminalImeController,
+    wallpaperConfig: TerminalWallpaperConfig = TerminalWallpaperConfig(),
     modifier: Modifier = Modifier
 ) {
     TerminalCanvas(
@@ -34,6 +36,7 @@ fun TerminalWorkspaceContainer(
         onBackendReleased = onBackendReleased,
         isTerminalActive = isTerminalActive,
         imeController = imeController,
+        wallpaperConfig = wallpaperConfig,
         modifier = modifier
     )
 }

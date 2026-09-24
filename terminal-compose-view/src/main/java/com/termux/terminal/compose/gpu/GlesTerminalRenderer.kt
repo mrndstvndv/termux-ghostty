@@ -62,6 +62,7 @@ internal class GlesTerminalRenderer(
     private var lastAnimationTime = Float.NaN
     private var viewportWidth = 1
     private var viewportHeight = 1
+    private var maxTextureSize = 0
     private var generation = 0L
     private var drawCount = 0L
     private var skippedDrawCount = 0L
@@ -98,6 +99,7 @@ internal class GlesTerminalRenderer(
             reportError("context", "GL_MAX_TEXTURE_SIZE is too small: $maxTextureSize")
             return
         }
+        this.maxTextureSize = maxTextureSize
         val limits = GlyphAtlasLimits.forGlMaxTextureSize(maxTextureSize)
         resources = try {
             createResources(limits)
@@ -183,6 +185,9 @@ internal class GlesTerminalRenderer(
 
         try {
             clear(backgroundColor(snapshot))
+            traceSection("EctoGles.wallpaper") {
+                drawWallpaper(snapshot = snapshot, resources = currentResources.wallpaper)
+            }
             if (imageProgram != null) {
                 imageTextureCache.update(snapshot.frame.imagePlacements)
             }
@@ -325,22 +330,31 @@ internal class GlesTerminalRenderer(
             program.release()
             throw error
         }
+        val wallpaperProgram = try {
+            GlesWallpaperProgram.create()
+        } catch (error: RuntimeException) {
+            reportError("wallpaper-program", error.message ?: "GLES wallpaper program unavailable")
+            null
+        }
         return try {
             GlesResources(
                 program = program,
                 imageProgram = imageProgram,
                 cursorEffects = cursorEffects,
+                wallpaper = GlesWallpaperResources(wallpaperProgram, GlesWallpaperTexture()),
                 dirtyBuffers = GlesDirtyInstanceStore(),
                 glyphRows = GlesGlyphRowBuffer(),
                 atlas = GlesGlyphAtlas(limits),
                 palette = GlesPaletteTexture()
             )
         } catch (error: GlesRendererException) {
+            wallpaperProgram?.release()
             cursorEffects.release()
             imageProgram?.release()
             program.release()
             throw error
         } catch (error: RuntimeException) {
+            wallpaperProgram?.release()
             cursorEffects.release()
             imageProgram?.release()
             program.release()
@@ -527,6 +541,27 @@ internal class GlesTerminalRenderer(
             GLES30.glDrawArrays(GLES30.GL_TRIANGLE_STRIP, 0, 4)
             GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, 0)
         }
+    }
+
+    /** Draws the optional wallpaper behind default-background cells. Never mutates terminal state. */
+    @Suppress("ReturnCount")
+    private fun drawWallpaper(snapshot: GlesTerminalSnapshot, resources: GlesWallpaperResources) {
+        val config = snapshot.visual.wallpaper
+        val wallpaper = resources.texture.releaseIfAbsent(config.wallpaper) ?: return
+        val program = resources.program ?: return
+        val alpha = 1f - config.backgroundOpacity
+        if (alpha <= 0f) return
+        val plan = planWallpaperRect(
+            viewportWidthPx = viewportWidth,
+            viewportHeightPx = viewportHeight,
+            imageWidth = wallpaper.width,
+            imageHeight = wallpaper.height,
+            scaling = config.scaling
+        ) ?: return
+        val textureId = resources.texture.textureId(wallpaper, maxTextureSize) ?: return
+        program.bind(viewportWidth, viewportHeight, textureId, plan, alpha)
+        GLES30.glDrawArrays(GLES30.GL_TRIANGLE_STRIP, 0, 4)
+        GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, 0)
     }
 
     private fun bindStyledInstanceAttributes() {
@@ -794,10 +829,11 @@ internal class GlesTerminalRenderer(
     }
 
     @Suppress("NestedBlockDepth")
-    private class GlesResources(
+    private class GlesResources @Suppress("LongParameterList") constructor(
         val program: GlesProgram,
         val imageProgram: GlesImageProgram?,
         val cursorEffects: GlesCursorEffectRenderer,
+        val wallpaper: GlesWallpaperResources,
         val dirtyBuffers: GlesDirtyInstanceStore,
         val glyphRows: GlesGlyphRowBuffer,
         val atlas: GlesGlyphAtlas,
@@ -822,7 +858,11 @@ internal class GlesTerminalRenderer(
                                 try {
                                     imageProgram?.release()
                                 } finally {
-                                    program.release()
+                                    try {
+                                        wallpaper.release()
+                                    } finally {
+                                        program.release()
+                                    }
                                 }
                             }
                         }

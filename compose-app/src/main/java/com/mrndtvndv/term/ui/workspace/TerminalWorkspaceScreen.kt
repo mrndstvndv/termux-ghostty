@@ -7,6 +7,7 @@ import com.mrndtvndv.term.ui.keyboard.SoftKeyboardState
 import com.termux.terminal.TerminalSession
 import com.mrndtvndv.term.ui.sftp.SftpViewModel
 import com.termux.terminal.compose.TerminalBackend
+import com.termux.terminal.compose.TerminalWallpaperConfig
 import com.mrndtvndv.term.ui.review.ReviewViewModel
 import com.mrndtvndv.term.server.HerdrWorkspaceResolver
 import com.mrndtvndv.term.server.TerminalProgress
@@ -24,6 +25,7 @@ fun TerminalWorkspaceScreen(
     reviewViewModel: ReviewViewModel? = null,
     extraKeysEnabled: Boolean,
     extraKeysJson: String,
+    wallpaperConfig: TerminalWallpaperConfig = TerminalWallpaperConfig(),
     hideWorkspaceTabs: Boolean = false,
     herdrEnabled: Boolean = false,
     herdrWorkspaces: List<HerdrWorkspaceResolver.HerdrWorkspaceNode> = emptyList(),
@@ -61,6 +63,7 @@ fun TerminalWorkspaceScreen(
         extraKeysController = extraKeysController,
         extraKeysEnabled = extraKeysEnabled,
         extraKeysJson = extraKeysJson,
+        wallpaperConfig = wallpaperConfig,
         hideTabs = hideWorkspaceTabs,
         herdrEnabled = herdrEnabled,
         herdrWorkspaces = herdrWorkspaces,

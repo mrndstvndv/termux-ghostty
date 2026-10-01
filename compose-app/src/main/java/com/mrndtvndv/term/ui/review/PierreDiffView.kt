@@ -76,8 +76,18 @@ internal data class DiffSearchState(
 private class DiffBridge(
     private val onRenderFinished: () -> Unit = {}
 ) {
-    @Volatile var canScrollLeft: Boolean = false
-    @Volatile var canScrollRight: Boolean = false
+    /**
+     * Horizontal scroll capability of the code container under the active
+     * touch, reported asynchronously by JS. Packed into one int so a reader
+     * never sees a torn left/right pair. [SCROLL_STATE_UNKNOWN] means JS has
+     * not yet reported for the current gesture; callers must not treat that
+     * as "cannot scroll".
+     */
+    @Volatile var horizontalScrollState: Int = SCROLL_STATE_UNKNOWN
+
+    fun resetHorizontalScrollState() {
+        horizontalScrollState = SCROLL_STATE_UNKNOWN
+    }
 
     @JavascriptInterface
     fun onRenderComplete(fileCount: Int, hunkCount: Int) {
@@ -91,10 +101,20 @@ private class DiffBridge(
 
     @JavascriptInterface
     fun onHorizontalScrollState(canLeft: Boolean, canRight: Boolean) {
-        canScrollLeft = canLeft
-        canScrollRight = canRight
+        horizontalScrollState =
+            (if (canLeft) SCROLL_STATE_CAN_LEFT else 0) or
+            (if (canRight) SCROLL_STATE_CAN_RIGHT else 0)
+    }
+
+    companion object {
+        const val SCROLL_STATE_UNKNOWN = -1
+        const val SCROLL_STATE_CAN_LEFT = 1
+        const val SCROLL_STATE_CAN_RIGHT = 2
     }
 }
+
+/** Max time to wait for JS to report scroll bounds before assuming none. */
+private const val ScrollStateWaitMs = 120L
 
 /**
  * Android WebView host for rendering code diffs using `@pierre/diffs`.
@@ -345,6 +365,9 @@ private class ScrollableDiffWebView(
     private var lastY = 0
     private var isDraggingX = false
     private var isDraggingY = false
+    private var dragDirX = 0
+    private var dirAnchorX = 0
+    private var downTime = 0L
     private val scrollConsumed = IntArray(2)
     private val scrollOffset = IntArray(2)
     private var nestedOffsetX = 0
@@ -481,6 +504,10 @@ private class ScrollableDiffWebView(
         lastY = startY
         isDraggingX = false
         isDraggingY = false
+        dragDirX = 0
+        downTime = event.eventTime
+        // Drop the previous gesture's bounds; JS reports fresh ones on touchstart.
+        diffBridge?.resetHorizontalScrollState()
         startNestedScroll(
             ViewCompat.SCROLL_AXIS_VERTICAL or ViewCompat.SCROLL_AXIS_HORIZONTAL,
             ViewCompat.TYPE_TOUCH
@@ -538,16 +565,57 @@ private class ScrollableDiffWebView(
         return result
     }
 
-    private fun handleHorizontalMove(rawX: Int, rawY: Int, motionEvent: MotionEvent): Boolean {
-        // dx > 0: finger moving left, content should scroll right.
-        // dx < 0: finger moving right, content should scroll left.
-        var dx = lastX - rawX
-        val canScrollInDirection = if (dx < 0) {
-            diffBridge?.canScrollLeft ?: false
+    /**
+     * Tracks the finger's horizontal travel direction with hysteresis: a
+     * single jittery opposite-direction event must not flip it, otherwise the
+     * wrong edge is consulted and the pager steals a gesture that should be
+     * scrolling code. Returns +1 (finger moving left, content scrolls right)
+     * or -1 (finger moving right, content scrolls left).
+     */
+    private fun updateDragDirX(rawX: Int): Int {
+        if (dragDirX == 0) {
+            dragDirX = if (rawX < startX) 1 else -1
+            dirAnchorX = rawX
+        } else if (dragDirX > 0) {
+            if (rawX < dirAnchorX) {
+                dirAnchorX = rawX
+            } else if (rawX - dirAnchorX > touchSlop) {
+                dragDirX = -1
+                dirAnchorX = rawX
+            }
         } else {
-            diffBridge?.canScrollRight ?: false
+            if (rawX > dirAnchorX) {
+                dirAnchorX = rawX
+            } else if (dirAnchorX - rawX > touchSlop) {
+                dragDirX = 1
+                dirAnchorX = rawX
+            }
         }
+        return dragDirX
+    }
+
+    private fun canScrollCodeInDirection(dirX: Int, eventTime: Long): Boolean {
+        val state = diffBridge?.horizontalScrollState ?: return false
+        if (state == DiffBridge.SCROLL_STATE_UNKNOWN) {
+            // JS has not reported bounds for this gesture yet. Hold the
+            // gesture rather than letting the pager steal it on stale data.
+            return eventTime - downTime < ScrollStateWaitMs
+        }
+        val flag = if (dirX < 0) DiffBridge.SCROLL_STATE_CAN_LEFT else DiffBridge.SCROLL_STATE_CAN_RIGHT
+        return state and flag != 0
+    }
+
+    private fun handleHorizontalMove(rawX: Int, rawY: Int, motionEvent: MotionEvent): Boolean {
+        val canScrollInDirection = canScrollCodeInDirection(updateDragDirX(rawX), motionEvent.eventTime)
         parent?.requestDisallowInterceptTouchEvent(canScrollInDirection)
+        if (canScrollInDirection) {
+            // The web content owns this gesture; keep the parent out of the
+            // nested-scroll chain so the pager's pre-scroll cannot eat deltas.
+            lastX = rawX
+            lastY = rawY
+            return super.onTouchEvent(motionEvent)
+        }
+        var dx = lastX - rawX
         if (dispatchNestedPreScroll(dx, 0, scrollConsumed, scrollOffset, ViewCompat.TYPE_TOUCH)) {
             dx -= scrollConsumed[0]
             motionEvent.offsetLocation(-scrollConsumed[0].toFloat(), 0f)
@@ -556,15 +624,13 @@ private class ScrollableDiffWebView(
         lastX = rawX - scrollOffset[0]
         lastY = rawY - scrollOffset[1]
         val result = super.onTouchEvent(motionEvent)
-        if (!canScrollInDirection) {
-            // At the scroll edge (or no overflow): hand the remainder to the
-            // parent pager for a tab swipe. Flows via
-            // rememberNestedScrollInteropConnection into
-            // TabbedWorkspace.pageNestedScrollConnection.
-            dispatchNestedScroll(
-                scrollConsumed[0], 0, dx, 0, scrollOffset, ViewCompat.TYPE_TOUCH
-            )
-        }
+        // At the scroll edge (or no overflow): hand the remainder to the
+        // parent pager for a tab swipe. Flows via
+        // rememberNestedScrollInteropConnection into
+        // TabbedWorkspace.pageNestedScrollConnection.
+        dispatchNestedScroll(
+            scrollConsumed[0], 0, dx, 0, scrollOffset, ViewCompat.TYPE_TOUCH
+        )
         return result
     }
 

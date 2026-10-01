@@ -60,37 +60,6 @@ let lastFilename: string = '';
 
 const rootElement = document.getElementById('diff-root') || document.body;
 
-/** Last background color pushed by the host app (Material surface). */
-let lastChromeBackground: string | null = null;
-
-/**
- * Paints the page chrome (body / #diff-root empty area below the last file)
- * with the actually-rendered code background. The code background is owned by
- * the shiki theme inside @pierre/diffs' shadow DOM (e.g. pierre-dark's
- * #0a0a0a) and does not necessarily equal the host Material surface (e.g.
- * pure black), so painting the body with the surface color leaves a visible
- * seam once the diff content ends. Falls back to the host color when no code
- * is rendered yet (empty / message states).
- */
-function syncPageBackground(isDark: boolean) {
-  let bg: string | null = null;
-  const container = rootElement.querySelector('diffs-container');
-  const pre = container?.shadowRoot?.querySelector('pre') ?? rootElement.querySelector('pre');
-  if (pre) {
-    try {
-      const computed = getComputedStyle(pre).backgroundColor;
-      if (computed && computed !== 'rgba(0, 0, 0, 0)') {
-        bg = computed;
-      }
-    } catch {
-      // ignore; fall through to fallback below
-    }
-  }
-  const resolved = bg ?? lastChromeBackground ?? (isDark ? '#121212' : '#ffffff');
-  document.body.style.backgroundColor = resolved;
-  rootElement.style.backgroundColor = resolved;
-}
-
 function setCustomFont(enabled: boolean, fontUrl?: string) {
   currentOptions.useCustomFont = enabled;
   if (fontUrl !== undefined) {
@@ -321,7 +290,13 @@ function findHorizontalScrollable(target: EventTarget | null): HTMLElement | nul
 
 let currentScrollable: HTMLElement | null = null;
 
+// Only report while a touch is active. Reporting after touchend (e.g. from
+// momentum scroll events) would race the next gesture's reset on the native
+// side and hand it stale bounds.
+let touchActive = false;
+
 function updateHorizontalScrollState() {
+  if (!touchActive) return;
   if (!currentScrollable) {
     window.AndroidDiffBridge?.onHorizontalScrollState?.(false, false);
     return;
@@ -337,6 +312,7 @@ function installHorizontalScrollState() {
   window.addEventListener('touchstart', (e: TouchEvent) => {
     const path = typeof e.composedPath === 'function' ? e.composedPath() : [];
     const target = (path.length > 0 ? path[0] : e.target) as EventTarget | null;
+    touchActive = true;
     currentScrollable = findHorizontalScrollable(target);
     updateHorizontalScrollState();
   }, { passive: true });
@@ -348,6 +324,7 @@ function installHorizontalScrollState() {
   }, { capture: true, passive: true });
 
   const clearScrollable = () => {
+    touchActive = false;
     currentScrollable = null;
   };
   window.addEventListener('touchend', clearScrollable, { passive: true });
@@ -555,7 +532,6 @@ async function renderPatch(patchString: string, optionsJson?: string) {
     }
 
     applyLineNumbersToDOM(currentOptions.showLineNumbers !== false);
-    syncPageBackground(currentOptions.isDark ?? true);
     window.AndroidDiffBridge?.onRenderComplete?.(totalFiles, totalHunks);
   } catch (err: any) {
     console.error('Failed to parse or render patch:', err);
@@ -625,7 +601,6 @@ async function renderFiles(
     setupCollapsible(instance, container);
 
     applyLineNumbersToDOM(currentOptions.showLineNumbers !== false);
-    syncPageBackground(currentOptions.isDark ?? true);
     window.AndroidDiffBridge?.onRenderComplete?.(1, fileDiff.hunks?.length || 0);
   } catch (err: any) {
     console.error('Failed to render files diff:', err);
@@ -640,7 +615,6 @@ function updateTheme(isDark: boolean, bgColor?: string, fgColor?: string) {
   document.documentElement.style.colorScheme = isDark ? 'dark' : 'light';
 
   if (bgColor) {
-    lastChromeBackground = bgColor;
     document.documentElement.style.setProperty('--diffs-bg', bgColor);
   }
 
@@ -658,8 +632,6 @@ function updateTheme(isDark: boolean, bgColor?: string, fgColor?: string) {
       // ignore
     }
   }
-
-  syncPageBackground(isDark);
 }
 
 function applyLineNumbersToDOM(show: boolean) {

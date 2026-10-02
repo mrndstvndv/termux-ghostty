@@ -26,6 +26,7 @@ data class AppSettings(
     val nativeLogcatLoggingEnabled: Boolean,
     val debugHudEnabled: Boolean,
     val hideWorkspaceTabs: Boolean,
+    val animationsEnabled: Boolean,
     val rememberSoftKeyboardState: Boolean,
     val lastSoftKeyboardState: SoftKeyboardState,
     val showKeyboardFab: Boolean,

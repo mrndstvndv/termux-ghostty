@@ -20,7 +20,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
@@ -29,8 +28,8 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Velocity
 import com.mrndtvndv.term.CrashBreadcrumbs
+import com.mrndtvndv.term.navigation.LocalAnimationsEnabled
 import kotlin.math.abs
-import kotlinx.coroutines.launch
 
 /**
  * Pages [tabs] horizontally. [currentTab] is the source of truth; the pager is a view of it
@@ -53,7 +52,6 @@ fun WorkspacePager(
         state = pagerState,
         pagerSnapDistance = PagerSnapDistance.atMost(1),
     )
-    val coroutineScope = rememberCoroutineScope()
 
     // On non-Terminal pages, rightward swipes near the left screen edge would be
     // captured by the system back gesture (predictive back, API 29+) instead of the
@@ -68,7 +66,7 @@ fun WorkspacePager(
 
     val pageNestedScrollConnection = rememberHorizontalDominantConnection(pagerState)
 
-    PagerSyncEffects(pagerState, tabs, currentTab, onSelectTab)
+    PagerSyncEffects(pagerState, tabs, currentTab, onSelectTab, LocalAnimationsEnabled.current)
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -78,16 +76,7 @@ fun WorkspacePager(
                 WorkspaceTabRow(
                     tabs = tabs,
                     selectedIndex = pagerState.currentPage,
-                    onTabClick = { index ->
-                        onSelectTab(tabs[index])
-                        // Skip no-op animations: re-animating to the current page
-                        // replaces pager nodes mid-layout for no visible effect.
-                        if (pagerState.currentPage != index) {
-                            coroutineScope.launch {
-                                pagerState.animateScrollToPage(index)
-                            }
-                        }
-                    },
+                    onTabClick = { index -> onSelectTab(tabs[index]) },
                 )
             }
         }
@@ -142,16 +131,15 @@ private fun PagerSyncEffects(
     tabs: List<WorkspaceTab>,
     currentTab: WorkspaceTab,
     onSelectTab: (WorkspaceTab) -> Unit,
+    animate: Boolean,
 ) {
-    // External changes (in-app notifications, back press, restore) snap immediately
-    // to avoid mid-transition focus and layout races aborting the scroll. Tab taps
-    // already animate the pager themselves, so they are skipped via targetPage and
-    // the two paths never run competing animations that replace pages mid-layout.
+    // The only place that moves the pager to currentTab (tab taps, back, notifications).
+    // Skipping when already at/heading to the page avoids re-animating, which replaces
+    // pager nodes mid-layout for no visible effect.
     LaunchedEffect(currentTab, tabs) {
         val index = tabs.indexOf(currentTab)
-        if (index >= 0 && pagerState.targetPage != index) {
-            pagerState.scrollToPage(index)
-        }
+        if (index < 0 || pagerState.targetPage == index) return@LaunchedEffect
+        if (animate) pagerState.animateScrollToPage(index) else pagerState.scrollToPage(index)
     }
 
     // The tab list can shrink while the pager sits on a now-removed page (e.g. the

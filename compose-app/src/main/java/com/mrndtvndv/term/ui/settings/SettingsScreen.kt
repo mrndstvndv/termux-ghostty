@@ -760,6 +760,27 @@ fun SettingsScreen(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
+                            Text("Animations", style = MaterialTheme.typography.bodyLarge)
+                            Text(
+                                text = "Animate screen changes, Git and SFTP navigation, and tab switches.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = settings.animationsEnabled,
+                            onCheckedChange = { enabled -> onUpdate { it.copy(animationsEnabled = enabled) } }
+                        )
+                    }
+
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
                             Text("Show Keyboard Button", style = MaterialTheme.typography.bodyLarge)
                             Text(
                                 text = "Show a keyboard toggle button above the agents button " +

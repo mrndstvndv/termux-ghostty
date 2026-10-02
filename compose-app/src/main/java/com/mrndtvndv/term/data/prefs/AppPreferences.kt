@@ -31,6 +31,7 @@ private object Key {
     const val NativeLogcatLoggingEnabled = "native_logcat_logging_enabled"
     const val DebugHudEnabled = "debug_hud_enabled"
     const val HideWorkspaceTabs = "hide_workspace_tabs"
+    const val AnimationsEnabled = "animations_enabled"
     const val RememberSoftKeyboardState = "remember_soft_keyboard_state"
     const val LastSoftKeyboardState = "last_soft_keyboard_state"
     const val ShowKeyboardFab = "show_keyboard_fab"
@@ -60,6 +61,7 @@ private fun SharedPreferences.Editor.write(settings: AppSettings) {
     putBoolean(Key.NativeLogcatLoggingEnabled, settings.nativeLogcatLoggingEnabled)
     putBoolean(Key.DebugHudEnabled, settings.debugHudEnabled)
     putBoolean(Key.HideWorkspaceTabs, settings.hideWorkspaceTabs)
+    putBoolean(Key.AnimationsEnabled, settings.animationsEnabled)
     putBoolean(Key.RememberSoftKeyboardState, settings.rememberSoftKeyboardState)
     if (settings.lastSoftKeyboardState == SoftKeyboardState.UNKNOWN) {
         remove(Key.LastSoftKeyboardState)
@@ -114,6 +116,7 @@ class AppPreferences(
             nativeLogcatLoggingEnabled = prefs.getBoolean(Key.NativeLogcatLoggingEnabled, false),
             debugHudEnabled = prefs.getBoolean(Key.DebugHudEnabled, true),
             hideWorkspaceTabs = prefs.getBoolean(Key.HideWorkspaceTabs, false),
+            animationsEnabled = prefs.getBoolean(Key.AnimationsEnabled, true),
             rememberSoftKeyboardState = prefs.getBoolean(Key.RememberSoftKeyboardState, false),
             lastSoftKeyboardState = SoftKeyboardState.fromPreference(prefs.getString(Key.LastSoftKeyboardState, null)),
             showKeyboardFab = prefs.getBoolean(Key.ShowKeyboardFab, false),

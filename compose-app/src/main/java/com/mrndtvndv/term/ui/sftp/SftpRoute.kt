@@ -32,8 +32,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation3.runtime.NavBackStack
 import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.entryProvider
-import androidx.navigation3.ui.NavDisplay
 import com.mrndtvndv.term.domain.SftpFile
+import com.mrndtvndv.term.navigation.AppNavDisplay
 import com.mrndtvndv.term.navigation.SftpFolder
 import com.mrndtvndv.term.ui.sftp.transfer.TransferType
 import kotlinx.coroutines.Dispatchers
@@ -140,7 +140,7 @@ fun SftpScreenRoute(
         if (currentPath != viewModel.currentPath) viewModel.navigateTo(currentPath)
     }
 
-    NavDisplay(
+    AppNavDisplay(
         backStack = backStack,
         onBack = onBack,
         entryProvider = entryProvider<NavKey> {

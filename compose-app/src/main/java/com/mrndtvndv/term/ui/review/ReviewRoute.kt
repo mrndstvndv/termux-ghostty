@@ -12,7 +12,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation3.runtime.NavBackStack
 import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.entryProvider
-import androidx.navigation3.ui.NavDisplay
+import com.mrndtvndv.term.navigation.AppNavDisplay
 import com.mrndtvndv.term.navigation.ReviewRoute
 
 @Suppress("LongMethod")
@@ -62,7 +62,7 @@ fun ReviewScreenRoute(
         }
     }
 
-    NavDisplay(
+    AppNavDisplay(
         backStack = backStack,
         onBack = onBack,
         entryProvider = entryProvider<NavKey> {

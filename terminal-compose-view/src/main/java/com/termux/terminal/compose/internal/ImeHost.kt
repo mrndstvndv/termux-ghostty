@@ -6,6 +6,7 @@ import android.view.KeyEvent
 import android.view.View
 import android.view.inputmethod.BaseInputConnection
 import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputMethodManager
 import androidx.core.view.inputmethod.EditorInfoCompat
 import androidx.core.view.inputmethod.InputConnectionCompat
 import androidx.core.view.inputmethod.InputContentInfoCompat
@@ -14,6 +15,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.node.ModifierNodeElement
+import androidx.compose.ui.node.requireView
 import androidx.compose.ui.platform.InspectorInfo
 import androidx.compose.ui.platform.PlatformTextInputMethodRequest
 import androidx.compose.ui.platform.PlatformTextInputModifierNode
@@ -121,6 +123,13 @@ internal class ImeHostNode(
     }
 
     fun open() {
+        if (sessionJob?.isActive == true) {
+            // Restarting a live session tears the IME down and brings it back,
+            // so a tap with the keyboard already up would flicker it. Re-request
+            // visibility instead; this also reopens a keyboard dismissed by Back.
+            showSoftInput()
+            return
+        }
         sessionJob?.cancel()
         imeHost.onSessionStarted()
         sessionJob = coroutineScope.launch {
@@ -146,6 +155,12 @@ internal class ImeHostNode(
                 )
             }
         }
+    }
+
+    private fun showSoftInput() {
+        val hostView = requireView()
+        hostView.context.getSystemService(InputMethodManager::class.java)
+            ?.showSoftInput(hostView, 0)
     }
 
     fun close() {

@@ -13,7 +13,6 @@ import androidx.lifecycle.Lifecycle
 import com.mrndtvndv.term.R
 import com.mrndtvndv.term.data.prefs.SharedPreferencesWorkspacePersistence
 import com.mrndtvndv.term.service.SshSessionService
-import com.mrndtvndv.term.ui.sftp.transfer.SftpTransferManager
 import com.termux.shared.termux.TermuxConstants
 import com.termux.shared.termux.terminal.TermuxTerminalSessionClientBase
 import com.termux.terminal.TerminalSession
@@ -51,7 +50,6 @@ class AppSessionManager private constructor(context: Context) : AppSessionManage
         ServerCoordinator(
             serverManager = serverManager,
             serverRepository = serverRepository,
-            transferManager = SftpTransferManager.getInstance(appContext),
         )
     }
 

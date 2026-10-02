@@ -2,14 +2,16 @@ package com.mrndtvndv.term
 
 import android.app.Application
 import android.util.Log
-import com.mrndtvndv.term.server.AppSessionManager
 import com.mrndtvndv.term.ui.sftp.transfer.SftpTransferManager
 
 class TermApplication : Application() {
 
+    lateinit var container: AppContainer
+        private set
+
     override fun onCreate() {
         super.onCreate()
-        AppSessionManager.init(this)
+        container = AppContainer(this)
         SftpTransferManager.init(this)
 
         val previousHandler = Thread.getDefaultUncaughtExceptionHandler()
@@ -18,10 +20,6 @@ class TermApplication : Application() {
             crashReporter.report(thread, throwable)
             previousHandler?.uncaughtException(thread, throwable)
                 ?: Log.e(TAG, "Uncaught exception", throwable)
-        }
-        val prefs = getSharedPreferences("ssh_prefs", MODE_PRIVATE)
-        if (prefs.getBoolean("native_logcat_logging_enabled", false)) {
-            NativeLogcatLogger.start(this)
         }
     }
 

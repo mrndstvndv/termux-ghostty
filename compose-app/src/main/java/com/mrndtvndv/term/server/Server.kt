@@ -19,6 +19,9 @@ class Server(
     val sftpClient: SftpClient? = null,
     val workspaceState: WorkspaceState = WorkspaceState.Untracked,
 ) {
+    val tracker: WorkspaceTracker?
+        get() = (workspaceState as? WorkspaceState.Tracked)?.tracker
+
     /**
      * Clean up all native resources for this connection.
      * Safe to call multiple times.
@@ -31,3 +34,8 @@ class Server(
         try { sshSession?.disconnect() } catch (_: Exception) { }
     }
 }
+
+fun SshSession.herdrResolver() = HerdrWorkspaceResolver { command -> execCommand(command) }
+
+fun Server.herdrResolver(): HerdrWorkspaceResolver? =
+    sshSession?.takeIf { config.herdrEnabled }?.herdrResolver()

@@ -63,7 +63,7 @@ class ServerFactory(
 
         // 5. Build workspace state
         val workspaceState = if (config.herdrEnabled) {
-            val resolver = HerdrWorkspaceResolver { cmd -> session.execCommand(cmd) }
+            val resolver = session.herdrResolver()
             val tracker = WorkspaceTracker(
                 host = config.host,
                 username = config.username,

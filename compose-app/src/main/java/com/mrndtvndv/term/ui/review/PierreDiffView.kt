@@ -627,7 +627,7 @@ private class ScrollableDiffWebView(
         // At the scroll edge (or no overflow): hand the remainder to the
         // parent pager for a tab swipe. Flows via
         // rememberNestedScrollInteropConnection into
-        // TabbedWorkspace.pageNestedScrollConnection.
+        // WorkspacePager's page nested-scroll connection.
         dispatchNestedScroll(
             scrollConsumed[0], 0, dx, 0, scrollOffset, ViewCompat.TYPE_TOUCH
         )

@@ -1,4 +1,4 @@
-package com.mrndtvndv.term
+package com.mrndtvndv.term.server
 
 /**
  * Turns an out-of-band Herdr focus command into an explicit terminal-frame

@@ -1,8 +1,6 @@
 package com.mrndtvndv.term.server
 
 import com.mrndtvndv.term.domain.ServerConfig
-import com.mrndtvndv.term.ui.review.ReviewViewModel
-import com.mrndtvndv.term.ui.sftp.SftpViewModel
 import com.termux.terminal.TerminalSession
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
@@ -12,15 +10,13 @@ interface ServerCoordinatorAccess {
 
     fun getServer(id: String): Server?
 
-    fun getSftpViewModel(id: String): SftpViewModel?
-
-    fun getReviewViewModel(id: String): ReviewViewModel?
-
     fun disconnect(id: String)
 
     suspend fun refreshWorkspace(serverId: String): ServerCoordinator.WorkspaceChange?
 
     fun onDirectoryChanged(serverId: String, path: String)
+
+    suspend fun focusHerdr(serverId: String, operation: suspend HerdrWorkspaceResolver.() -> Boolean)
 }
 
 interface ServerRepositoryAccess {

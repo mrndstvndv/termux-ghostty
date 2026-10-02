@@ -18,11 +18,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
 import android.widget.Toast
 import com.mrndtvndv.term.NativeLogcatLogger
-import com.mrndtvndv.term.ui.prefs.DefaultWallpaperBackgroundOpacity
-import com.mrndtvndv.term.ui.keyboard.PresetArrowsOnly
-import com.mrndtvndv.term.ui.keyboard.PresetDoubleRow
-import com.mrndtvndv.term.ui.keyboard.PresetSingleRow
-import com.mrndtvndv.term.ui.keyboard.PresetTmux
+import com.mrndtvndv.term.data.prefs.AppSettings
 import com.mrndtvndv.term.ui.keyboard.validateExtraKeysJson
 import com.mrndtvndv.term.ui.keyboard.ExtraKeysController
 import com.mrndtvndv.term.ui.keyboard.ExtraKeysToolbar
@@ -36,62 +32,15 @@ import com.termux.terminal.compose.WallpaperScaling
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
-    extraKeysEnabled: Boolean,
-    onExtraKeysEnabledChange: (Boolean) -> Unit,
-    extraKeysPreset: String,
-    onExtraKeysPresetChange: (String) -> Unit,
-    extraKeysCustomJson: String,
-    onExtraKeysCustomJsonChange: (String) -> Unit,
-    fontSize: Int,
-    onFontSizeChange: (Int) -> Unit,
-    keyboardResizeDebounceMs: Int,
-    onKeyboardResizeDebounceMsChange: (Int) -> Unit,
-    appTheme: String,
-    onThemeChange: (String) -> Unit,
-    @Suppress("UNUSED_PARAMETER") // kept for future API compatibility when herdr integration is wired
-    herdrIntegration: Boolean = false,
-    @Suppress("UNUSED_PARAMETER") // kept for future API compatibility when herdr integration is wired
-    onHerdrIntegrationChange: (Boolean) -> Unit = {},
-    customFontName: String?,
+    settings: AppSettings,
+    onUpdate: ((AppSettings) -> AppSettings) -> Unit,
     onSelectFont: () -> Unit,
     onClearFont: () -> Unit,
-    wallpaperEnabled: Boolean = false,
-    onWallpaperEnabledChange: (Boolean) -> Unit = {},
-    wallpaperName: String? = null,
-    onSelectWallpaper: () -> Unit = {},
-    onClearWallpaper: () -> Unit = {},
-    wallpaperBackgroundOpacity: Float = DefaultWallpaperBackgroundOpacity,
-    onWallpaperBackgroundOpacityChange: (Float) -> Unit = {},
-    wallpaperScaling: WallpaperScaling = WallpaperScaling.CENTER_CROP,
-    onWallpaperScalingChange: (WallpaperScaling) -> Unit = {},
-    useCustomFontForWholeUi: Boolean,
-    onUseCustomFontForWholeUiChange: (Boolean) -> Unit,
-    unconditionalSoftKeyboardOnTap: Boolean = true,
-    onUnconditionalSoftKeyboardOnTapChange: (Boolean) -> Unit = {},
-    autoShowKeyboardOnTap: Boolean = true,
-    onAutoShowKeyboardOnTapChange: (Boolean) -> Unit = {},
-    rememberSoftKeyboardState: Boolean = false,
-    onRememberSoftKeyboardStateChange: (Boolean) -> Unit = {},
-    nativeLogcatLoggingEnabled: Boolean = false,
-    onNativeLogcatLoggingEnabledChange: (Boolean) -> Unit = {},
-    debugHudEnabled: Boolean = false,
-    onDebugHudEnabledChange: (Boolean) -> Unit = {},
-    cursorTrail: String = CursorTrailEffect.WARP.key,
-    onCursorTrailChange: (String) -> Unit = {},
-    visualEffectFrameRate: String = VisualEffectFrameRate.VSYNC.key,
-    onVisualEffectFrameRateChange: (String) -> Unit = {},
-    hideWorkspaceTabs: Boolean = false,
-    onHideWorkspaceTabsChange: (Boolean) -> Unit = {},
-    showKeyboardFab: Boolean = false,
-    onShowKeyboardFabChange: (Boolean) -> Unit = {},
-    hideKeyboardFabWhileTyping: Boolean = true,
-    onHideKeyboardFabWhileTypingChange: (Boolean) -> Unit = {},
-    herdrAgentFabOpacity: Float = 0.7f,
-    onHerdrAgentFabOpacityChange: (Float) -> Unit = {},
+    onSelectWallpaper: () -> Unit,
+    onClearWallpaper: () -> Unit,
     onBack: () -> Unit
 ) {
     val scrollState = rememberScrollState()
-    val selectedVisualEffectFrameRate = VisualEffectFrameRate.fromPref(visualEffectFrameRate)
 
     Scaffold(
         topBar = {
@@ -144,12 +93,12 @@ fun SettingsScreen(
                     ) {
                         Text("Enable Extra Keys Toolbar", style = MaterialTheme.typography.bodyLarge)
                         Switch(
-                            checked = extraKeysEnabled,
-                            onCheckedChange = onExtraKeysEnabledChange
+                            checked = settings.extraKeysEnabled,
+                            onCheckedChange = { enabled -> onUpdate { it.copy(extraKeysEnabled = enabled) } }
                         )
                     }
 
-                    if (extraKeysEnabled) {
+                    if (settings.extraKeysEnabled) {
                         Text(
                             text = "Toolbar Preset Layout",
                             style = MaterialTheme.typography.bodyMedium,
@@ -164,7 +113,7 @@ fun SettingsScreen(
                                 onClick = { expanded = true },
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                Text(extraKeysPreset)
+                                Text(settings.extraKeysPreset)
                             }
                             DropdownMenu(
                                 expanded = expanded,
@@ -175,7 +124,7 @@ fun SettingsScreen(
                                     DropdownMenuItem(
                                         text = { Text(presetName) },
                                         onClick = {
-                                            onExtraKeysPresetChange(presetName)
+                                            onUpdate { it.copy(extraKeysPreset = presetName) }
                                             expanded = false
                                         }
                                     )
@@ -183,24 +132,16 @@ fun SettingsScreen(
                             }
                         }
 
-                        val resolvedJson = when (extraKeysPreset) {
-                            "Double Row" -> PresetDoubleRow
-                            "Tmux" -> PresetTmux
-                            "Single Row" -> PresetSingleRow
-                            "Arrows Only" -> PresetArrowsOnly
-                            else -> extraKeysCustomJson
-                        }
-
-                        if (extraKeysPreset == "Custom") {
-                            var jsonError by remember(extraKeysCustomJson) {
-                                mutableStateOf(validateExtraKeysJson(extraKeysCustomJson))
+                        if (settings.extraKeysPreset == "Custom") {
+                            var jsonError by remember(settings.extraKeysCustomJson) {
+                                mutableStateOf(validateExtraKeysJson(settings.extraKeysCustomJson))
                             }
 
                             OutlinedTextField(
-                                value = extraKeysCustomJson,
-                                onValueChange = {
-                                    onExtraKeysCustomJsonChange(it)
-                                    jsonError = validateExtraKeysJson(it)
+                                value = settings.extraKeysCustomJson,
+                                onValueChange = { json ->
+                                    onUpdate { it.copy(extraKeysCustomJson = json) }
+                                    jsonError = validateExtraKeysJson(json)
                                 },
                                 label = { Text("Custom Layout JSON") },
                                 isError = jsonError != null,
@@ -240,7 +181,7 @@ fun SettingsScreen(
                             ExtraKeysToolbar(
                                 extraKeysController = previewController,
                                 session = null,
-                                extraKeysJson = resolvedJson
+                                extraKeysJson = settings.extraKeysJson
                             )
                         }
                     }
@@ -288,17 +229,17 @@ fun SettingsScreen(
                         ) {
                             IconButton(
                                 onClick = {
-                                    if (fontSize > minFontSize) {
-                                        onFontSizeChange(fontSize - 2)
+                                    if (settings.fontSize > minFontSize) {
+                                        onUpdate { it.copy(fontSize = it.fontSize - 2) }
                                     }
                                 },
-                                enabled = fontSize > minFontSize
+                                enabled = settings.fontSize > minFontSize
                             ) {
                                 Text("-", style = MaterialTheme.typography.titleLarge)
                             }
 
                             Text(
-                                text = "$fontSize",
+                                text = "${settings.fontSize}",
                                 style = MaterialTheme.typography.bodyLarge,
                                 modifier = Modifier.width(32.dp),
                                 textAlign = TextAlign.Center
@@ -306,11 +247,11 @@ fun SettingsScreen(
 
                             IconButton(
                                 onClick = {
-                                    if (fontSize < maxFontSize) {
-                                        onFontSizeChange(fontSize + 2)
+                                    if (settings.fontSize < maxFontSize) {
+                                        onUpdate { it.copy(fontSize = it.fontSize + 2) }
                                     }
                                 },
-                                enabled = fontSize < maxFontSize
+                                enabled = settings.fontSize < maxFontSize
                             ) {
                                 Text("+", style = MaterialTheme.typography.titleLarge)
                             }
@@ -330,7 +271,7 @@ fun SettingsScreen(
                                 style = MaterialTheme.typography.bodyLarge
                             )
                             Text(
-                                text = if (keyboardResizeDebounceMs == 0) {
+                                text = if (settings.keyboardResizeDebounceMs == 0) {
                                     "0 = resize immediately (no debounce)"
                                 } else {
                                     "Coalesce soft-keyboard resize by N ms before reflow"
@@ -346,17 +287,17 @@ fun SettingsScreen(
                         ) {
                             IconButton(
                                 onClick = {
-                                    if (keyboardResizeDebounceMs > 0) {
-                                        onKeyboardResizeDebounceMsChange(keyboardResizeDebounceMs - 5)
+                                    if (settings.keyboardResizeDebounceMs > 0) {
+                                        onUpdate { it.copy(keyboardResizeDebounceMs = it.keyboardResizeDebounceMs - 5) }
                                     }
                                 },
-                                enabled = keyboardResizeDebounceMs > 0
+                                enabled = settings.keyboardResizeDebounceMs > 0
                             ) {
                                 Text("-", style = MaterialTheme.typography.titleLarge)
                             }
 
                             Text(
-                                text = "$keyboardResizeDebounceMs",
+                                text = "${settings.keyboardResizeDebounceMs}",
                                 style = MaterialTheme.typography.bodyLarge,
                                 modifier = Modifier.width(40.dp),
                                 textAlign = TextAlign.Center
@@ -364,11 +305,11 @@ fun SettingsScreen(
 
                             IconButton(
                                 onClick = {
-                                    if (keyboardResizeDebounceMs < 100) {
-                                        onKeyboardResizeDebounceMsChange(keyboardResizeDebounceMs + 5)
+                                    if (settings.keyboardResizeDebounceMs < 100) {
+                                        onUpdate { it.copy(keyboardResizeDebounceMs = it.keyboardResizeDebounceMs + 5) }
                                     }
                                 },
-                                enabled = keyboardResizeDebounceMs < 100
+                                enabled = settings.keyboardResizeDebounceMs < 100
                             ) {
                                 Text("+", style = MaterialTheme.typography.titleLarge)
                             }
@@ -385,7 +326,7 @@ fun SettingsScreen(
                         Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
                             Text("Terminal Font", style = MaterialTheme.typography.bodyLarge)
                             Text(
-                                text = customFontName ?: "Default (Monospace)",
+                                text = settings.customFontName ?: "Default (Monospace)",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1,
@@ -396,7 +337,7 @@ fun SettingsScreen(
                         Row(
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            if (customFontName == null) {
+                            if (settings.customFontName == null) {
                                 Button(
                                     onClick = onSelectFont,
                                     colors = ButtonDefaults.buttonColors(
@@ -435,7 +376,7 @@ fun SettingsScreen(
                         }
                     }
 
-                    if (customFontName != null) {
+                    if (settings.customFontName != null) {
                         HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
 
                         Row(
@@ -452,8 +393,8 @@ fun SettingsScreen(
                                 )
                             }
                             Switch(
-                                checked = useCustomFontForWholeUi,
-                                onCheckedChange = onUseCustomFontForWholeUiChange
+                                checked = settings.useCustomFontForWholeUi,
+                                onCheckedChange = { enabled -> onUpdate { it.copy(useCustomFontForWholeUi = enabled) } }
                             )
                         }
                     }
@@ -472,7 +413,7 @@ fun SettingsScreen(
                         ) {
                             val themes = listOf("Light", "Dark", "Black")
                             themes.forEach { themeName ->
-                                val isSelected = appTheme == themeName
+                                val isSelected = settings.theme == themeName
                                 val containerColor = if (isSelected) {
                                     MaterialTheme.colorScheme.primaryContainer
                                 } else {
@@ -485,7 +426,7 @@ fun SettingsScreen(
                                 }
                                 
                                 Button(
-                                    onClick = { onThemeChange(themeName) },
+                                    onClick = { onUpdate { it.copy(theme = themeName) } },
                                     colors = ButtonDefaults.buttonColors(
                                         containerColor = containerColor,
                                         contentColor = contentColor
@@ -527,7 +468,7 @@ fun SettingsScreen(
                                 shape = RoundedCornerShape(18.dp)
                             ) {
                                 Text(
-                                    text = CursorTrailEffect.fromPref(cursorTrail).label,
+                                    text = settings.cursorTrail.label,
                                     style = MaterialTheme.typography.bodyMedium
                                 )
                             }
@@ -539,7 +480,7 @@ fun SettingsScreen(
                                     DropdownMenuItem(
                                         text = { Text(effect.label) },
                                         onClick = {
-                                            onCursorTrailChange(effect.key)
+                                            onUpdate { it.copy(cursorTrail = effect) }
                                             trailExpanded = false
                                         }
                                     )
@@ -572,7 +513,7 @@ fun SettingsScreen(
                                 shape = RoundedCornerShape(18.dp)
                             ) {
                                 Text(
-                                    text = selectedVisualEffectFrameRate.label,
+                                    text = settings.visualEffectFrameRate.label,
                                     style = MaterialTheme.typography.bodyMedium
                                 )
                             }
@@ -584,7 +525,7 @@ fun SettingsScreen(
                                     DropdownMenuItem(
                                         text = { Text(frameRate.label) },
                                         onClick = {
-                                            onVisualEffectFrameRateChange(frameRate.key)
+                                            onUpdate { it.copy(visualEffectFrameRate = frameRate) }
                                             frameRateExpanded = false
                                         }
                                     )
@@ -630,9 +571,9 @@ fun SettingsScreen(
                             )
                         }
                         Switch(
-                            checked = wallpaperEnabled,
-                            onCheckedChange = onWallpaperEnabledChange,
-                            enabled = wallpaperName != null
+                            checked = settings.wallpaperEnabled,
+                            onCheckedChange = { enabled -> onUpdate { it.copy(wallpaperEnabled = enabled) } },
+                            enabled = settings.wallpaperName != null
                         )
                     }
 
@@ -646,7 +587,7 @@ fun SettingsScreen(
                         Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
                             Text("Wallpaper Image", style = MaterialTheme.typography.bodyLarge)
                             Text(
-                                text = wallpaperName ?: "None",
+                                text = settings.wallpaperName ?: "None",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1,
@@ -655,7 +596,7 @@ fun SettingsScreen(
                         }
 
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            if (wallpaperName == null) {
+                            if (settings.wallpaperName == null) {
                                 Button(
                                     onClick = onSelectWallpaper,
                                     colors = ButtonDefaults.buttonColors(
@@ -704,7 +645,7 @@ fun SettingsScreen(
                         ) {
                             Text("Background Opacity", style = MaterialTheme.typography.bodyLarge)
                             Text(
-                                text = "${(wallpaperBackgroundOpacity * 100).toInt()}%",
+                                text = "${(settings.wallpaperOpacity * 100).toInt()}%",
                                 style = MaterialTheme.typography.bodyLarge
                             )
                         }
@@ -714,11 +655,11 @@ fun SettingsScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         val wallpaperOpacityState = remember { SliderState(steps = 19, trackRange = 0f..1f) }
-                        wallpaperOpacityState.value = wallpaperBackgroundOpacity.coerceIn(0f, 1f)
+                        wallpaperOpacityState.value = settings.wallpaperOpacity.coerceIn(0f, 1f)
                         Slider(
                             state = wallpaperOpacityState,
-                            onValueChange = onWallpaperBackgroundOpacityChange,
-                            enabled = wallpaperName != null && wallpaperEnabled
+                            onValueChange = { opacity -> onUpdate { it.copy(wallpaperOpacity = opacity) } },
+                            enabled = settings.wallpaperName != null && settings.wallpaperEnabled
                         )
                     }
 
@@ -741,13 +682,13 @@ fun SettingsScreen(
                         Box {
                             OutlinedButton(
                                 onClick = { scalingExpanded = true },
-                                enabled = wallpaperName != null && wallpaperEnabled,
+                                enabled = settings.wallpaperName != null && settings.wallpaperEnabled,
                                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
                                 modifier = Modifier.height(36.dp),
                                 shape = RoundedCornerShape(18.dp)
                             ) {
                                 Text(
-                                    text = wallpaperScaling.label(),
+                                    text = settings.wallpaperScaling.label(),
                                     style = MaterialTheme.typography.bodyMedium
                                 )
                             }
@@ -759,7 +700,7 @@ fun SettingsScreen(
                                     DropdownMenuItem(
                                         text = { Text(option.label()) },
                                         onClick = {
-                                            onWallpaperScalingChange(option)
+                                            onUpdate { it.copy(wallpaperScaling = option) }
                                             scalingExpanded = false
                                         }
                                     )
@@ -806,8 +747,8 @@ fun SettingsScreen(
                             )
                         }
                         Switch(
-                            checked = hideWorkspaceTabs,
-                            onCheckedChange = onHideWorkspaceTabsChange
+                            checked = settings.hideWorkspaceTabs,
+                            onCheckedChange = { enabled -> onUpdate { it.copy(hideWorkspaceTabs = enabled) } }
                         )
                     }
 
@@ -828,8 +769,8 @@ fun SettingsScreen(
                             )
                         }
                         Switch(
-                            checked = showKeyboardFab,
-                            onCheckedChange = onShowKeyboardFabChange
+                            checked = settings.showKeyboardFab,
+                            onCheckedChange = { enabled -> onUpdate { it.copy(showKeyboardFab = enabled) } }
                         )
                     }
 
@@ -850,9 +791,9 @@ fun SettingsScreen(
                             )
                         }
                         Switch(
-                            checked = hideKeyboardFabWhileTyping,
-                            onCheckedChange = onHideKeyboardFabWhileTypingChange,
-                            enabled = showKeyboardFab
+                            checked = settings.hideKeyboardFabWhileTyping,
+                            onCheckedChange = { enabled -> onUpdate { it.copy(hideKeyboardFabWhileTyping = enabled) } },
+                            enabled = settings.showKeyboardFab
                         )
                     }
 
@@ -873,15 +814,15 @@ fun SettingsScreen(
                                 )
                             }
                             Text(
-                                text = "${(herdrAgentFabOpacity * 100).toInt()}%",
+                                text = "${(settings.herdrAgentFabOpacity * 100).toInt()}%",
                                 style = MaterialTheme.typography.bodyLarge,
                             )
                         }
                         val fabOpacityState = remember { SliderState(steps = 14, trackRange = 0.25f..1f) }
-                        fabOpacityState.value = herdrAgentFabOpacity.coerceIn(0.25f, 1f)
+                        fabOpacityState.value = settings.herdrAgentFabOpacity.coerceIn(0.25f, 1f)
                         Slider(
                             state = fabOpacityState,
-                            onValueChange = onHerdrAgentFabOpacityChange,
+                            onValueChange = { opacity -> onUpdate { it.copy(herdrAgentFabOpacity = opacity) } },
                         )
                     }
                 }
@@ -922,8 +863,8 @@ fun SettingsScreen(
                             )
                         }
                         Switch(
-                            checked = autoShowKeyboardOnTap,
-                            onCheckedChange = onAutoShowKeyboardOnTapChange
+                            checked = settings.autoShowKeyboardOnTap,
+                            onCheckedChange = { enabled -> onUpdate { it.copy(autoShowKeyboardOnTap = enabled) } }
                         )
                     }
 
@@ -943,8 +884,8 @@ fun SettingsScreen(
                             )
                         }
                         Switch(
-                            checked = rememberSoftKeyboardState,
-                            onCheckedChange = onRememberSoftKeyboardStateChange
+                            checked = settings.rememberSoftKeyboardState,
+                            onCheckedChange = { enabled -> onUpdate { it.copy(rememberSoftKeyboardState = enabled) } }
                         )
                     }
 
@@ -974,9 +915,11 @@ fun SettingsScreen(
                             )
                         }
                         Switch(
-                            checked = unconditionalSoftKeyboardOnTap,
-                            onCheckedChange = onUnconditionalSoftKeyboardOnTapChange,
-                            enabled = autoShowKeyboardOnTap
+                            checked = settings.unconditionalSoftKeyboardOnTap,
+                            onCheckedChange = { enabled ->
+                                onUpdate { it.copy(unconditionalSoftKeyboardOnTap = enabled) }
+                            },
+                            enabled = settings.autoShowKeyboardOnTap
                         )
                     }
                 }
@@ -1021,8 +964,8 @@ fun SettingsScreen(
                             )
                         }
                         Switch(
-                            checked = debugHudEnabled,
-                            onCheckedChange = onDebugHudEnabledChange
+                            checked = settings.debugHudEnabled,
+                            onCheckedChange = { enabled -> onUpdate { it.copy(debugHudEnabled = enabled) } }
                         )
                     }
 
@@ -1043,9 +986,9 @@ fun SettingsScreen(
                             )
                         }
                         Switch(
-                            checked = nativeLogcatLoggingEnabled,
+                            checked = settings.nativeLogcatLoggingEnabled,
                             onCheckedChange = { enabled ->
-                                onNativeLogcatLoggingEnabledChange(enabled)
+                                onUpdate { it.copy(nativeLogcatLoggingEnabled = enabled) }
                                 logSizeText = NativeLogcatLogger.getLogFileSizeMb(context)
                                 crashDetected = NativeLogcatLogger.hasDetectedNativeCrash(context)
                             }

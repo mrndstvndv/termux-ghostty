@@ -1,6 +1,5 @@
 package com.mrndtvndv.term.ui.sftp
 
-import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.mrndtvndv.term.domain.SftpClient
@@ -35,23 +34,20 @@ data class SftpDownloadState(
     val fileName: String,
     val bytesDownloaded: Long,
     val totalBytes: Long,
-    val isDownloading: Boolean = false
 )
 
 data class SftpUploadState(
     val fileName: String,
     val bytesUploaded: Long,
     val totalBytes: Long,
-    val isUploading: Boolean = false
 )
 
 class SftpViewModel(
     private val client: SftpClient,
-    private val savedStateHandle: SavedStateHandle,
-    private val initialPath: String = "/",
-    private val execCommand: (suspend (String) -> String)? = null,
-    private val transferManager: SftpTransferManager? = SftpTransferManager.current,
-    private val ownerKey: String? = null,
+    private val execCommand: suspend (String) -> String,
+    private val transferManager: SftpTransferManager?,
+    private val ownerKey: String,
+    private val onDirectoryChanged: (String) -> Unit,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow<SftpUiState>(SftpUiState.Loading)
     val uiState = _uiState.asStateFlow()
@@ -75,7 +71,7 @@ class SftpViewModel(
         _fallbackTransfers.asStateFlow()
     }
 
-    val activeDownload: StateFlow<SftpTransfer?> = transfers
+    private val activeDownload: StateFlow<SftpTransfer?> = transfers
         .map { list -> list.firstOrNull { it.type == TransferType.DOWNLOAD && it.isRunning } }
         .stateIn(
             scope = viewModelScope,
@@ -83,7 +79,7 @@ class SftpViewModel(
             initialValue = null
         )
 
-    val activeUpload: StateFlow<SftpTransfer?> = transfers
+    private val activeUpload: StateFlow<SftpTransfer?> = transfers
         .map { list -> list.firstOrNull { it.type == TransferType.UPLOAD && it.isRunning } }
         .stateIn(
             scope = viewModelScope,
@@ -106,7 +102,6 @@ class SftpViewModel(
                 fileName = active.fileName,
                 bytesDownloaded = active.transferredBytes,
                 totalBytes = active.totalBytes,
-                isDownloading = true
             )
         }.stateIn(
             scope = viewModelScope,
@@ -132,7 +127,6 @@ class SftpViewModel(
                 fileName = active.fileName,
                 bytesUploaded = active.transferredBytes,
                 totalBytes = active.totalBytes,
-                isUploading = true
             )
         }.stateIn(
             scope = viewModelScope,
@@ -146,11 +140,8 @@ class SftpViewModel(
     private var downloadJob: Job? = null
     private var uploadJob: Job? = null
 
-    var onPathChanged: ((String) -> Unit)? = null
-
-    var currentPath: String
-        get() = savedStateHandle["current_path"] ?: initialPath
-        set(value) { savedStateHandle["current_path"] = value }
+    var currentPath: String? = null
+        private set
 
     private fun isPathPrefix(prefix: String, fullPath: String): Boolean {
         if (prefix == fullPath || prefix == "/" || prefix.isEmpty()) return true
@@ -158,21 +149,13 @@ class SftpViewModel(
         return fullPath.startsWith(formattedPrefix)
     }
 
-    private val _trailPath = MutableStateFlow(
-        savedStateHandle["trail_path"] ?: currentPath
-    )
+    private val _trailPath = MutableStateFlow("")
     val trailPath = _trailPath.asStateFlow()
-
-    init {
-        savedStateHandle["trail_path"] = _trailPath.value
-        navigateTo(currentPath)
-    }
 
     fun navigateTo(path: String) {
         currentPath = path
         if (!isPathPrefix(path, _trailPath.value)) {
             _trailPath.value = path
-            savedStateHandle["trail_path"] = path
         }
         viewModelScope.launch {
             if (_uiState.value !is SftpUiState.Success) {
@@ -186,8 +169,8 @@ class SftpViewModel(
                 )
                 val gitStatuses = mutableMapOf<String, String>()
                 try {
-                    val statusOutput = execCommand?.invoke("git -C \"$path\" status --porcelain --ignored=no .")
-                    statusOutput?.lines()?.forEach { line ->
+                    val statusOutput = execCommand("git -C \"$path\" status --porcelain --ignored=no .")
+                    statusOutput.lines().forEach { line ->
                         if (line.length >= 4) { // Status (2 chars), space, then filename
                             val status = line.substring(0, 2)
                             val file = line.substring(3).removeSurrounding("\"")
@@ -206,7 +189,7 @@ class SftpViewModel(
                     // Ignore git errors (e.g. not a git repo or git not installed)
                 }
                 _uiState.value = SftpUiState.Success(path, list, gitStatuses)
-                onPathChanged?.invoke(path)
+                onDirectoryChanged(path)
             } catch (e: Exception) {
                 if (_uiState.value !is SftpUiState.Success) {
                     _uiState.value = SftpUiState.Error(e.localizedMessage ?: "Failed to load directory")
@@ -251,13 +234,13 @@ class SftpViewModel(
 
         downloadJob?.cancel()
         downloadJob = viewModelScope.launch {
-            _fallbackDownloadState.value = SftpDownloadState(file.name, 0L, file.size, true)
+            _fallbackDownloadState.value = SftpDownloadState(file.name, 0L, file.size)
             try {
                 val tempDir = File(cacheDir, "sftp_cache").apply { mkdirs() }
                 val localFile = File(tempDir, file.name)
                 client.downloadFile(file.path, localFile) { progress ->
                     if (isActive) {
-                        _fallbackDownloadState.value = SftpDownloadState(file.name, progress, file.size, true)
+                        _fallbackDownloadState.value = SftpDownloadState(file.name, progress, file.size)
                     }
                 }
                 if (isActive) {
@@ -326,11 +309,11 @@ class SftpViewModel(
 
         uploadJob?.cancel()
         uploadJob = viewModelScope.launch {
-            _fallbackUploadState.value = SftpUploadState(fileName, 0L, source.length(), true)
+            _fallbackUploadState.value = SftpUploadState(fileName, 0L, source.length())
             try {
                 client.uploadFile(source, remotePath) { progress ->
                     if (isActive) {
-                        _fallbackUploadState.value = SftpUploadState(fileName, progress, source.length(), true)
+                        _fallbackUploadState.value = SftpUploadState(fileName, progress, source.length())
                     }
                 }
                 if (isActive) {
@@ -390,24 +373,8 @@ class SftpViewModel(
         if (_activeUploadId.value == id) _activeUploadId.value = null
     }
 
-    fun dismissTransfer(id: String) {
-        transferManager?.dismiss(id)
-        if (_activeDownloadId.value == id) _activeDownloadId.value = null
-        if (_activeUploadId.value == id) _activeUploadId.value = null
-    }
-
-    fun getActiveTransferId(): String? {
-        val activeId = _activeDownloadId.value ?: _activeUploadId.value
-        if (activeId != null && transferManager?.getTransfer(activeId)?.isRunning == true) {
-            return activeId
-        }
-        return activeDownload.value?.id
-            ?: activeUpload.value?.id
-            ?: transferManager?.active?.value?.takeIf { it.ownerKey == ownerKey }?.id
-    }
-
     fun refresh() {
-        navigateTo(currentPath)
+        currentPath?.let(::navigateTo)
     }
 
     @Suppress("TooGenericExceptionCaught")
@@ -449,17 +416,9 @@ class SftpViewModel(
         }
     }
 
-    fun navigateUp() {
-        val path = currentPath
-        if (path == "/" || path.isEmpty()) return
-        val normalized = if (path.endsWith("/")) path.dropLast(1) else path
-        val parent = normalized.substringBeforeLast('/').ifEmpty { "/" }
-        navigateTo(parent)
-    }
-
     private val currentDirectory: String
         get() {
             val path = currentPath
-            return if (path.isBlank()) "/" else path
+            return if (path.isNullOrBlank()) "/" else path
         }
 }

@@ -1,7 +1,6 @@
 package com.mrndtvndv.term.data.prefs
 
 import android.content.SharedPreferences
-import com.mrndtvndv.term.ScreenState
 import com.mrndtvndv.term.ui.workspace.WorkspaceTab
 
 /**
@@ -23,11 +22,11 @@ class LastSessionStore(
         private const val SCREEN_WORKSPACE = "workspace"
     }
 
-    fun save(screen: ScreenState, activeTab: WorkspaceTab) {
+    fun save(serverId: String?, tab: WorkspaceTab) {
         prefs.edit()
-            .putString(KEY_SCREEN, screenKey(screen))
-            .putString(KEY_SERVER_ID, (screen as? ScreenState.TerminalWorkspace)?.serverId)
-            .putString(KEY_ACTIVE_TAB, activeTab.title)
+            .putString(KEY_SCREEN, if (serverId != null) SCREEN_WORKSPACE else SCREEN_SERVER_LIST)
+            .putString(KEY_SERVER_ID, serverId)
+            .putString(KEY_ACTIVE_TAB, tab.title)
             .apply()
     }
 
@@ -40,15 +39,9 @@ class LastSessionStore(
         )
     }
 
-    private fun screenKey(screen: ScreenState): String = when (screen) {
-        ScreenState.ServerList -> SCREEN_SERVER_LIST
-        is ScreenState.TerminalWorkspace -> SCREEN_WORKSPACE
-    }
-
-    private fun loadActiveTab(): WorkspaceTab = when (prefs.getString(KEY_ACTIVE_TAB, null)) {
-        "SFTP" -> WorkspaceTab.Sftp
-        "Git" -> WorkspaceTab.Review
-        else -> WorkspaceTab.Terminal
+    private fun loadActiveTab(): WorkspaceTab {
+        val title = prefs.getString(KEY_ACTIVE_TAB, null)
+        return WorkspaceTab.entries.firstOrNull { it.title == title } ?: WorkspaceTab.Terminal
     }
 }
 

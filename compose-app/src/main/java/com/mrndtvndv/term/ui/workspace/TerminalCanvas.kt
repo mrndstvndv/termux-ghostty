@@ -2,7 +2,6 @@ package com.mrndtvndv.term.ui.workspace
 
 import android.content.ClipData
 import android.content.Context
-import android.content.SharedPreferences
 import android.graphics.Typeface
 import android.view.accessibility.AccessibilityManager
 import androidx.compose.runtime.Composable
@@ -10,20 +9,18 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import com.mrndtvndv.term.data.prefs.AppSettings
 import com.mrndtvndv.term.ui.keyboard.ExtraKeysController
-import com.termux.shared.termux.settings.preferences.TermuxAppSharedPreferences
 import com.termux.terminal.TerminalSession
 import com.termux.terminal.compose.ModifierKeyReader
 import com.termux.terminal.compose.TerminalCanvas as ComposeTerminalCanvas
 import com.termux.terminal.compose.TerminalCanvasConfig
-import com.termux.terminal.compose.TerminalBackend
 import com.termux.terminal.compose.TerminalImeController
 import com.termux.terminal.compose.TerminalWallpaperConfig
 import com.termux.terminal.compose.session.TerminalSessionBackend
@@ -43,7 +40,7 @@ const val MaxKeyboardResizeDebounceMillis = 100
 /**
  * App integration for the reusable compose terminal library.
  *
- * Preferences, cursor effects, and the Ghostty session adapter stay in this
+ * Settings, cursor effects, and the Ghostty session adapter stay in this
  * module. Rendering, input, IME, selection, and frame scheduling
  * are provided by [ComposeTerminalCanvas].
  */
@@ -51,36 +48,32 @@ const val MaxKeyboardResizeDebounceMillis = 100
 @Suppress("LongParameterList")
 fun TerminalCanvas(
     session: TerminalSession,
+    settings: AppSettings,
+    typeface: Typeface,
+    fontSizeRange: IntRange,
+    onFontSizeChange: (Int) -> Unit,
     extraKeysController: ExtraKeysController,
     onUploadMedia: () -> Unit,
     onUploadFile: () -> Unit,
     onCommitContent: (ClipData) -> Boolean = { false },
     onOpenUrl: (String) -> Unit,
-    onBackendCreated: (TerminalSession, TerminalBackend) -> Unit,
-    onBackendReleased: (TerminalSession, TerminalBackend) -> Unit,
     isTerminalActive: Boolean,
     imeController: TerminalImeController,
     wallpaperConfig: TerminalWallpaperConfig = TerminalWallpaperConfig(),
     modifier: Modifier = Modifier
 ) {
-    val context = LocalContext.current
-    val preferences = remember(context) { context.getSharedPreferences("ssh_prefs", Context.MODE_PRIVATE) }
-    val resizeDebounceMillis = remember(session) {
-        preferences.getInt("keyboard_resize_debounce_ms", DefaultKeyboardResizeDebounceMillis)
-            .coerceIn(0, MaxKeyboardResizeDebounceMillis)
-            .toLong()
-    }
     val backend = rememberTerminalBackend(
         session = session,
-        resizeDebounceMillis = resizeDebounceMillis,
-        onBackendCreated = onBackendCreated,
-        onBackendReleased = onBackendReleased
+        resizeDebounceMillis = settings.keyboardResizeDebounceMs.toLong()
     )
     val modifierKeys = rememberModifierKeys(extraKeysController)
     var showContextMenu by remember { mutableStateOf(false) }
     val config = rememberTerminalCanvasConfig(
         session = session,
-        preferences = preferences,
+        settings = settings,
+        typeface = typeface,
+        fontSizeRange = fontSizeRange,
+        onFontSizeChange = onFontSizeChange,
         wallpaper = wallpaperConfig,
         onOpenUrl = onOpenUrl,
         onCommitContent = onCommitContent,
@@ -112,41 +105,29 @@ fun TerminalCanvas(
 }
 
 @Composable
+@Suppress("LongParameterList")
 private fun rememberTerminalCanvasConfig(
     session: TerminalSession,
-    preferences: SharedPreferences,
+    settings: AppSettings,
+    typeface: Typeface,
+    fontSizeRange: IntRange,
+    onFontSizeChange: (Int) -> Unit,
     wallpaper: TerminalWallpaperConfig,
     onOpenUrl: (String) -> Unit,
     onCommitContent: (ClipData) -> Boolean,
     onOpenContextMenu: (String) -> Unit
 ): TerminalCanvasConfig {
     val context = LocalContext.current
-    val fontSizes = remember(context) { TermuxAppSharedPreferences.getDefaultFontSizes(context) }
-    val minimumFontSize = fontSizes.getOrElse(1) { 8 }
-    val maximumFontSize = fontSizes.getOrElse(2) { 256 }
-    val fontSize = remember(session) {
-        mutableIntStateOf(
-            preferences.getInt("font_size", fontSizes.firstOrNull() ?: minimumFontSize)
-                .coerceIn(minimumFontSize, maximumFontSize)
-        )
-    }
-    val typeface = remember(context) { loadTerminalTypeface(context) }
-    val cursorTrail = CursorTrailEffect.fromPref(preferences.getString("cursor_trail_effect", null))
-    val cursorEffect = remember(cursorTrail) { cursorTrail.toCursorEffect() }
-    val frameRate = VisualEffectFrameRate.fromPref(
-        preferences.getString("visual_effect_frame_rate", null)
-    )
+    val cursorEffect = remember(settings.cursorTrail) { settings.cursorTrail.toCursorEffect() }
     val accessibilityEnabled by rememberAccessibilityEnabled(context)
     return createTerminalCanvasConfig(
         TerminalCanvasConfigInput(
-            preferences = preferences,
-            fontSize = fontSize,
-            minimumFontSize = minimumFontSize,
-            maximumFontSize = maximumFontSize,
+            settings = settings,
+            fontSizeRange = fontSizeRange,
             typeface = typeface,
             cursorEffect = cursorEffect,
             wallpaper = wallpaper,
-            frameRate = frameRate,
+            onFontSizeChange = onFontSizeChange,
             accessibilityEnabled = accessibilityEnabled,
             session = session,
             onOpenUrl = onOpenUrl,
@@ -184,13 +165,10 @@ private fun TerminalCanvasSurface(
     )
 }
 
-@Suppress("LongParameterList")
 @Composable
 private fun rememberTerminalBackend(
     session: TerminalSession,
-    resizeDebounceMillis: Long,
-    onBackendCreated: (TerminalSession, TerminalBackend) -> Unit,
-    onBackendReleased: (TerminalSession, TerminalBackend) -> Unit
+    resizeDebounceMillis: Long
 ): TerminalSessionBackend {
     val backend = remember(session) {
         TerminalSessionBackend(
@@ -199,12 +177,10 @@ private fun rememberTerminalBackend(
         )
     }
     DisposableEffect(backend) {
-        onBackendCreated(session, backend)
         onDispose {
             // This effect is keyed to the session backend, not the UI controller. A
             // controller can be recreated while this session-scoped backend remains alive.
             backend.release()
-            onBackendReleased(session, backend)
         }
     }
     LaunchedEffect(backend, resizeDebounceMillis) {
@@ -232,14 +208,12 @@ private fun rememberModifierKeys(controller: ExtraKeysController): ModifierKeyRe
 
 @Suppress("LongParameterList")
 private data class TerminalCanvasConfigInput(
-    val preferences: SharedPreferences,
-    val fontSize: androidx.compose.runtime.MutableIntState,
-    val minimumFontSize: Int,
-    val maximumFontSize: Int,
+    val settings: AppSettings,
+    val fontSizeRange: IntRange,
     val typeface: Typeface,
     val cursorEffect: com.termux.terminal.compose.CursorEffect?,
     val wallpaper: TerminalWallpaperConfig,
-    val frameRate: VisualEffectFrameRate,
+    val onFontSizeChange: (Int) -> Unit,
     val accessibilityEnabled: Boolean,
     val session: TerminalSession,
     val onOpenUrl: (String) -> Unit,
@@ -250,27 +224,17 @@ private data class TerminalCanvasConfigInput(
 
 private fun createTerminalCanvasConfig(input: TerminalCanvasConfigInput): TerminalCanvasConfig =
     TerminalCanvasConfig(
-        fontSize = input.fontSize.intValue,
-        minimumFontSize = input.minimumFontSize,
-        maximumFontSize = input.maximumFontSize,
+        fontSize = input.settings.fontSize,
+        minimumFontSize = input.fontSizeRange.first,
+        maximumFontSize = input.fontSizeRange.last,
         typeface = input.typeface,
         cursorEffect = input.cursorEffect,
         wallpaper = input.wallpaper,
-        preferredFrameRate = input.frameRate.framesPerSecond,
-        unconditionalKeyboardOnTap = input.preferences.getBoolean(
-            "unconditional_soft_keyboard_on_tap",
-            true
-        ),
-        autoShowKeyboardOnTap = input.preferences.getBoolean(
-            "auto_show_soft_keyboard_on_tap",
-            true
-        ),
+        preferredFrameRate = input.settings.visualEffectFrameRate.framesPerSecond,
+        unconditionalKeyboardOnTap = input.settings.unconditionalSoftKeyboardOnTap,
+        autoShowKeyboardOnTap = input.settings.autoShowKeyboardOnTap,
         accessibilityEnabled = input.accessibilityEnabled,
-        onFontSizeChange = { requestedSize ->
-            val nextSize = requestedSize.coerceIn(input.minimumFontSize, input.maximumFontSize)
-            input.fontSize.intValue = nextSize
-            input.preferences.edit().putInt("font_size", nextSize).apply()
-        },
+        onFontSizeChange = input.onFontSizeChange,
         onOpenUrl = input.onOpenUrl,
         onCopyRequest = input.session::onCopyTextToClipboard,
         onPasteRequest = input.session::onPasteTextFromClipboard,
@@ -301,16 +265,6 @@ private fun handleTerminalCodePoint(
     return false
 }
 
-
-private fun loadTerminalTypeface(context: Context): Typeface {
-    val customFontFile = context.getFileStreamPath("font.ttf")
-    if (!customFontFile.isFile || customFontFile.length() <= 0L) return Typeface.MONOSPACE
-    return try {
-        Typeface.createFromFile(customFontFile)
-    } catch (_: RuntimeException) {
-        Typeface.MONOSPACE
-    }
-}
 
 @Composable
 private fun rememberAccessibilityEnabled(context: Context): State<Boolean> {

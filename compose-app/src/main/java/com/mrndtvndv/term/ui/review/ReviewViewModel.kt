@@ -2,14 +2,12 @@ package com.mrndtvndv.term.ui.review
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import kotlinx.coroutines.CoroutineDispatcher
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 sealed interface ReviewUiState {
     object Loading : ReviewUiState
@@ -47,31 +45,34 @@ data class GitCommit(
     val subject: String
 )
 
-/**
- * Parsed diff state for the viewer. Computation happens on a background
- * dispatcher so a large diff never stalls the UI thread.
- */
 internal sealed interface DiffContentState {
     object Loading : DiffContentState
-    data class Ready(
-        val sections: List<DiffSectionView>,
-        val rawDiff: String = ""
-    ) : DiffContentState
+    data class Ready(val rawDiff: String) : DiffContentState
     data class Error(val message: String) : DiffContentState
 }
 
-internal data class DiffSectionView(
-    val filePath: String,
-    val lines: List<ParsedDiffLine>,
-    /** Word-diff grouped rows (pairs when both sides exist). */
-    val groups: List<DiffRowGroup>
+internal data class ReviewScreenState(
+    val content: ReviewUiState = ReviewUiState.Loading,
+    val selectedFile: GitFileStatus? = null,
+    val selectedCommit: GitCommit? = null,
+    val diffContent: DiffContentState? = null,
+    val errorMessage: String? = null,
+    val isFullFileMode: Boolean = false,
+    val showLineNumbers: Boolean = true,
+    val isWordDiffEnabled: Boolean = true,
+    val isCommitInProgress: Boolean = false,
+    val isBranchOperationInProgress: Boolean = false,
+    val isSyncInProgress: Boolean = false,
+    val isRefreshing: Boolean = false,
+    val isStagedExpanded: Boolean = true,
+    val isUnstagedExpanded: Boolean = true,
+    val isCommitsExpanded: Boolean = true
 )
 
 @Suppress("LargeClass", "TooManyFunctions")
 class ReviewViewModel(
     private val execCommand: suspend (String) -> String,
-    private val workspaceDir: StateFlow<String>,
-    private val diffDispatcher: CoroutineDispatcher = Dispatchers.Default
+    private val workspaceDir: StateFlow<String>
 ) : ViewModel() {
 
     private data class BranchSyncStatus(
@@ -79,64 +80,22 @@ class ReviewViewModel(
         val behindCount: Int = 0
     )
 
-    private val _uiState = MutableStateFlow<ReviewUiState>(ReviewUiState.Loading)
-    val uiState = _uiState.asStateFlow()
-
-    private val _selectedFile = MutableStateFlow<GitFileStatus?>(null)
-    val selectedFile = _selectedFile.asStateFlow()
-
-    private val _selectedCommit = MutableStateFlow<GitCommit?>(null)
-    val selectedCommit = _selectedCommit.asStateFlow()
-
-    private val _diffContent = MutableStateFlow<DiffContentState?>(null)
-    internal val diffContent = _diffContent.asStateFlow()
+    private val _uiState = MutableStateFlow(ReviewScreenState())
+    internal val uiState = _uiState.asStateFlow()
 
     /** Cancels an in-flight diff load when a new file/commit is selected. */
     private var diffLoadJob: Job? = null
 
-    private val _errorMessage = MutableStateFlow<String?>(null)
-    val errorMessage = _errorMessage.asStateFlow()
-
-    private val _isFullFileMode = MutableStateFlow(false)
-    val isFullFileMode = _isFullFileMode.asStateFlow()
-
-    private val _showLineNumbers = MutableStateFlow(true)
-    val showLineNumbers = _showLineNumbers.asStateFlow()
-
-    private val _isWordDiffEnabled = MutableStateFlow(true)
-    val isWordDiffEnabled = _isWordDiffEnabled.asStateFlow()
-
-    private val _isCommitInProgress = MutableStateFlow(false)
-    val isCommitInProgress = _isCommitInProgress.asStateFlow()
-
-    private val _isBranchOperationInProgress = MutableStateFlow(false)
-    val isBranchOperationInProgress = _isBranchOperationInProgress.asStateFlow()
-
-    private val _isSyncInProgress = MutableStateFlow(false)
-    val isSyncInProgress = _isSyncInProgress.asStateFlow()
-
-    private val _isRefreshing = MutableStateFlow(false)
-    val isRefreshing = _isRefreshing.asStateFlow()
-
-    private val _isStagedExpanded = MutableStateFlow(true)
-    val isStagedExpanded = _isStagedExpanded.asStateFlow()
-
-    private val _isUnstagedExpanded = MutableStateFlow(true)
-    val isUnstagedExpanded = _isUnstagedExpanded.asStateFlow()
-
-    private val _isCommitsExpanded = MutableStateFlow(true)
-    val isCommitsExpanded = _isCommitsExpanded.asStateFlow()
-
     fun toggleStagedExpanded() {
-        _isStagedExpanded.value = !_isStagedExpanded.value
+        _uiState.update { it.copy(isStagedExpanded = !it.isStagedExpanded) }
     }
 
     fun toggleUnstagedExpanded() {
-        _isUnstagedExpanded.value = !_isUnstagedExpanded.value
+        _uiState.update { it.copy(isUnstagedExpanded = !it.isUnstagedExpanded) }
     }
 
     fun toggleCommitsExpanded() {
-        _isCommitsExpanded.value = !_isCommitsExpanded.value
+        _uiState.update { it.copy(isCommitsExpanded = !it.isCommitsExpanded) }
     }
 
     private companion object {
@@ -154,18 +113,18 @@ class ReviewViewModel(
     }
 
     fun toggleFullFileMode() {
-        _isFullFileMode.value = !_isFullFileMode.value
-        _selectedFile.value?.let { file ->
+        _uiState.update { it.copy(isFullFileMode = !it.isFullFileMode) }
+        _uiState.value.selectedFile?.let { file ->
             loadDiff(file)
         }
     }
 
     fun toggleLineNumbers() {
-        _showLineNumbers.value = !_showLineNumbers.value
+        _uiState.update { it.copy(showLineNumbers = !it.showLineNumbers) }
     }
 
     fun toggleWordDiff() {
-        _isWordDiffEnabled.value = !_isWordDiffEnabled.value
+        _uiState.update { it.copy(isWordDiffEnabled = !it.isWordDiffEnabled) }
     }
 
     private suspend fun fetchCommits(repoRoot: String, limit: Int = 15, skip: Int = 0): List<GitCommit> {
@@ -194,16 +153,18 @@ class ReviewViewModel(
     }
 
     fun loadMoreCommits() {
-        val currentState = _uiState.value as? ReviewUiState.Success ?: return
+        val currentState = _uiState.value.content as? ReviewUiState.Success ?: return
         val currentCommits = currentState.recentCommits
         viewModelScope.launch {
             val dir = workspaceDir.value
             val repoRoot = getRepoRoot(execCommand, dir)
             val nextCommits = fetchCommits(repoRoot, limit = 15, skip = currentCommits.size)
             val updatedList = currentCommits + nextCommits
-            _uiState.value = currentState.copy(
-                recentCommits = updatedList,
-                hasMoreCommits = nextCommits.size == 15
+            setContent(
+                currentState.copy(
+                    recentCommits = updatedList,
+                    hasMoreCommits = nextCommits.size == 15
+                )
             )
         }
     }
@@ -283,10 +244,10 @@ class ReviewViewModel(
 
     fun refresh() {
         viewModelScope.launch {
-            if (_uiState.value !is ReviewUiState.Success) {
-                _uiState.value = ReviewUiState.Loading
+            if (_uiState.value.content !is ReviewUiState.Success) {
+                setContent(ReviewUiState.Loading)
             } else {
-                _isRefreshing.value = true
+                _uiState.update { it.copy(isRefreshing = true) }
             }
 
             val dir = workspaceDir.value
@@ -297,40 +258,41 @@ class ReviewViewModel(
                 val output = execCommand(command)
                 val (staged, unstaged) = parseStatusOutput(output)
 
-                val currentSelFile = _selectedFile.value
+                val currentSelFile = _uiState.value.selectedFile
                 if (currentSelFile != null) {
                     val matchingFile = (staged + unstaged).find {
                         it.path == currentSelFile.path && it.isStaged == currentSelFile.isStaged
                     }
                     if (matchingFile != null) {
-                        _selectedFile.value = matchingFile
+                        _uiState.update { it.copy(selectedFile = matchingFile) }
                     } else {
-                        _selectedFile.value = null
-                        _diffContent.value = null
+                        _uiState.update { it.copy(selectedFile = null, diffContent = null) }
                     }
                 }
                 
                 val initialCommits = fetchCommits(repoRoot, limit = 15, skip = 0)
                 val (currentBranch, branches) = fetchBranchInfo(repoRoot)
                 val branchSyncStatus = fetchBranchSyncStatus(repoRoot)
-                _uiState.value = ReviewUiState.Success(
-                    stagedFiles = staged,
-                    unstagedFiles = unstaged,
-                    recentCommits = initialCommits,
-                    hasMoreCommits = initialCommits.size == 15,
-                    currentBranch = currentBranch,
-                    branches = branches,
-                    aheadCount = branchSyncStatus.aheadCount,
-                    behindCount = branchSyncStatus.behindCount
+                setContent(
+                    ReviewUiState.Success(
+                        stagedFiles = staged,
+                        unstagedFiles = unstaged,
+                        recentCommits = initialCommits,
+                        hasMoreCommits = initialCommits.size == 15,
+                        currentBranch = currentBranch,
+                        branches = branches,
+                        aheadCount = branchSyncStatus.aheadCount,
+                        behindCount = branchSyncStatus.behindCount
+                    )
                 )
             } catch (e: Exception) {
-                if (_uiState.value !is ReviewUiState.Success) {
-                    _uiState.value = ReviewUiState.Error(e.localizedMessage ?: "Failed to get git status")
+                if (_uiState.value.content !is ReviewUiState.Success) {
+                    setContent(ReviewUiState.Error(e.localizedMessage ?: "Failed to get git status"))
                 } else {
-                    _errorMessage.value = e.localizedMessage ?: "Failed to update git status"
+                    _uiState.update { it.copy(errorMessage = e.localizedMessage ?: "Failed to update git status") }
                 }
             } finally {
-                _isRefreshing.value = false
+                _uiState.update { it.copy(isRefreshing = false) }
             }
         }
     }
@@ -378,36 +340,39 @@ class ReviewViewModel(
     }
 
     fun selectFile(file: GitFileStatus) {
-        _selectedFile.value = file
-        _selectedCommit.value = null
+        _uiState.update { it.copy(selectedFile = file, selectedCommit = null) }
         loadDiff(file)
     }
 
     fun selectCommit(commit: GitCommit) {
-        _selectedCommit.value = commit
-        _selectedFile.value = null
+        _uiState.update { it.copy(selectedFile = null, selectedCommit = commit) }
         loadCommitDiff(commit)
     }
 
     fun deselectFile() {
-        _selectedFile.value = null
-        _selectedCommit.value = null
-        _diffContent.value = null
+        _uiState.update { it.copy(selectedFile = null, selectedCommit = null, diffContent = null) }
+    }
+
+    private fun setContent(content: ReviewUiState) {
+        _uiState.update { it.copy(content = content) }
+    }
+
+    private fun setDiffContent(diffContent: DiffContentState?) {
+        _uiState.update { it.copy(diffContent = diffContent) }
     }
 
     private fun loadCommitDiff(commit: GitCommit) {
         diffLoadJob?.cancel()
         diffLoadJob = viewModelScope.launch {
-            _diffContent.value = DiffContentState.Loading
+            setDiffContent(DiffContentState.Loading)
             val dir = workspaceDir.value
             try {
                 val repoRoot = getRepoRoot(execCommand, dir)
                 val command = buildCommitDiffCommand(repoRoot, commit.hash)
                 val diffOutput = execCommand(command)
-                _diffContent.value = buildDiffContent(diffOutput)
+                setDiffContent(DiffContentState.Ready(diffOutput))
             } catch (e: Exception) {
-                _diffContent.value =
-                    DiffContentState.Error("Failed to load commit diff: ${e.localizedMessage}")
+                setDiffContent(DiffContentState.Error("Failed to load commit diff: ${e.localizedMessage}"))
             }
         }
     }
@@ -415,39 +380,19 @@ class ReviewViewModel(
     private fun loadDiff(file: GitFileStatus) {
         diffLoadJob?.cancel()
         diffLoadJob = viewModelScope.launch {
-            _diffContent.value = DiffContentState.Loading
+            setDiffContent(DiffContentState.Loading)
             val dir = workspaceDir.value
-            val contextFlag = if (_isFullFileMode.value) "-U999999 " else ""
+            val contextFlag = if (_uiState.value.isFullFileMode) "-U999999 " else ""
             try {
                 val repoRoot = getRepoRoot(execCommand, dir)
                 val command = buildDiffCommand(repoRoot, file, contextFlag)
                 val diffOutput = execCommand(command)
-                _diffContent.value = buildDiffContent(diffOutput)
+                setDiffContent(DiffContentState.Ready(diffOutput))
             } catch (e: Exception) {
-                _diffContent.value =
-                    DiffContentState.Error("Failed to load diff: ${e.localizedMessage}")
+                setDiffContent(DiffContentState.Error("Failed to load diff: ${e.localizedMessage}"))
             }
         }
     }
-
-    /**
-     * Parses and groups the raw git output on a background dispatcher: line
-     * classification, syntax-highlight token ranges, and the word-diff LCS
-     * never touch the main thread.
-     */
-    private suspend fun buildDiffContent(diffOutput: String): DiffContentState.Ready =
-        withContext(diffDispatcher) {
-            DiffContentState.Ready(
-                sections = parseFileDiffSections(diffOutput).map { section ->
-                    DiffSectionView(
-                        filePath = section.filePath,
-                        lines = section.lines,
-                        groups = groupDiffRows(section.lines)
-                    )
-                },
-                rawDiff = diffOutput
-            )
-        }
 
     fun stageFiles(files: List<GitFileStatus>) {
         if (files.isEmpty()) return
@@ -461,7 +406,7 @@ class ReviewViewModel(
                 execCommand(command)
                 refresh()
             } catch (e: Exception) {
-                _errorMessage.value = "Failed to stage files: ${e.localizedMessage}"
+                _uiState.update { it.copy(errorMessage = "Failed to stage files: ${e.localizedMessage}") }
             }
         }
     }
@@ -478,7 +423,7 @@ class ReviewViewModel(
                 execCommand(command)
                 refresh()
             } catch (e: Exception) {
-                _errorMessage.value = "Failed to unstage files: ${e.localizedMessage}"
+                _uiState.update { it.copy(errorMessage = "Failed to unstage files: ${e.localizedMessage}") }
             }
         }
     }
@@ -515,7 +460,7 @@ class ReviewViewModel(
                 }
                 refresh()
             } catch (e: Exception) {
-                _errorMessage.value = "Failed to discard files: ${e.localizedMessage}"
+                _uiState.update { it.copy(errorMessage = "Failed to discard files: ${e.localizedMessage}") }
             }
         }
     }
@@ -525,20 +470,20 @@ class ReviewViewModel(
     fun discardFileChanges(file: GitFileStatus) = discardFiles(listOf(file))
 
     fun commit(message: String) {
-        if (_isCommitInProgress.value) return
+        if (_uiState.value.isCommitInProgress) return
         val commitMessage = message.trim()
-        val stagedFiles = (_uiState.value as? ReviewUiState.Success)?.stagedFiles.orEmpty()
+        val stagedFiles = (_uiState.value.content as? ReviewUiState.Success)?.stagedFiles.orEmpty()
         if (commitMessage.isEmpty()) {
-            _errorMessage.value = "Commit message cannot be empty"
+            _uiState.update { it.copy(errorMessage = "Commit message cannot be empty") }
             return
         }
         if (stagedFiles.isEmpty()) {
-            _errorMessage.value = "Stage at least one file before committing"
+            _uiState.update { it.copy(errorMessage = "Stage at least one file before committing") }
             return
         }
 
         viewModelScope.launch {
-            _isCommitInProgress.value = true
+            _uiState.update { it.copy(isCommitInProgress = true) }
             val dir = workspaceDir.value
             try {
                 val repoRoot = getRepoRoot(execCommand, dir)
@@ -548,33 +493,19 @@ class ReviewViewModel(
                     "commitExitCode=\$?; " +
                     "printf '\\n$COMMIT_EXIT_MARKER%s\\n' \"\$commitExitCode\""
                 val output = execCommand(command)
-                val markerIndex = output.lastIndexOf(COMMIT_EXIT_MARKER)
-                val exitCode = if (markerIndex >= 0) {
-                    output.substring(markerIndex + COMMIT_EXIT_MARKER.length)
-                        .lineSequence()
-                        .firstOrNull()
-                        ?.trim()
-                        ?.toIntOrNull()
-                } else {
-                    null
-                }
-                val details = if (markerIndex >= 0) {
-                    output.substring(0, markerIndex).trim()
-                } else {
-                    output.trim()
-                }
+                val (exitCode, details) = parseExitMarker(output, COMMIT_EXIT_MARKER)
 
                 if (exitCode == 0) {
-                    _errorMessage.value = null
+                    _uiState.update { it.copy(errorMessage = null) }
                     refresh()
                 } else {
                     val suffix = details.takeIf { it.isNotEmpty() }?.let { ": $it" }.orEmpty()
-                    _errorMessage.value = "Commit failed$suffix"
+                    _uiState.update { it.copy(errorMessage = "Commit failed$suffix") }
                 }
             } catch (e: Exception) {
-                _errorMessage.value = "Failed to commit changes: ${e.localizedMessage}"
+                _uiState.update { it.copy(errorMessage = "Failed to commit changes: ${e.localizedMessage}") }
             } finally {
-                _isCommitInProgress.value = false
+                _uiState.update { it.copy(isCommitInProgress = false) }
             }
         }
     }
@@ -582,7 +513,7 @@ class ReviewViewModel(
     @Suppress("LongMethod")
     fun renameCommit(commit: GitCommit, newSubject: String) {
         viewModelScope.launch {
-            _isCommitInProgress.value = true
+            _uiState.update { it.copy(isCommitInProgress = true) }
             val dir = workspaceDir.value
             try {
                 val repoRoot = getRepoRoot(execCommand, dir)
@@ -609,9 +540,9 @@ class ReviewViewModel(
                 execCommand(command)
                 refresh()
             } catch (e: Exception) {
-                _errorMessage.value = "Failed to rename commit: ${e.localizedMessage}"
+                _uiState.update { it.copy(errorMessage = "Failed to rename commit: ${e.localizedMessage}") }
             } finally {
-                _isCommitInProgress.value = false
+                _uiState.update { it.copy(isCommitInProgress = false) }
             }
         }
     }
@@ -625,30 +556,30 @@ class ReviewViewModel(
     }
 
     private fun runReset(commit: GitCommit, operation: suspend (GitCommit) -> String?) {
-        if (_isCommitInProgress.value) return
+        if (_uiState.value.isCommitInProgress) return
         viewModelScope.launch {
-            _isCommitInProgress.value = true
+            _uiState.update { it.copy(isCommitInProgress = true) }
             try {
                 val error = operation(commit)
                 if (error == null) {
-                    _errorMessage.value = null
+                    _uiState.update { it.copy(errorMessage = null) }
                     refresh()
                 } else {
-                    _errorMessage.value = error
+                    _uiState.update { it.copy(errorMessage = error) }
                 }
             } catch (e: Exception) {
-                _errorMessage.value = "Failed to reset: ${e.localizedMessage}"
+                _uiState.update { it.copy(errorMessage = "Failed to reset: ${e.localizedMessage}") }
             } finally {
-                _isCommitInProgress.value = false
+                _uiState.update { it.copy(isCommitInProgress = false) }
             }
         }
     }
 
     @Suppress("LongMethod", "CyclomaticComplexMethod")
     fun checkoutBranch(branch: GitBranch) {
-        if (_isBranchOperationInProgress.value) return
+        if (_uiState.value.isBranchOperationInProgress) return
         viewModelScope.launch {
-            _isBranchOperationInProgress.value = true
+            _uiState.update { it.copy(isBranchOperationInProgress = true) }
             val dir = workspaceDir.value
             try {
                 val repoRoot = getRepoRoot(execCommand, dir)
@@ -669,47 +600,33 @@ class ReviewViewModel(
                 }
 
                 val output = execCommand(command)
-                val markerIndex = output.lastIndexOf(BRANCH_EXIT_MARKER)
-                val exitCode = if (markerIndex >= 0) {
-                    output.substring(markerIndex + BRANCH_EXIT_MARKER.length)
-                        .lineSequence()
-                        .firstOrNull()
-                        ?.trim()
-                        ?.toIntOrNull()
-                } else {
-                    null
-                }
-                val details = if (markerIndex >= 0) {
-                    output.substring(0, markerIndex).trim()
-                } else {
-                    output.trim()
-                }
+                val (exitCode, details) = parseExitMarker(output, BRANCH_EXIT_MARKER)
 
                 if (exitCode == 0) {
-                    _errorMessage.value = null
+                    _uiState.update { it.copy(errorMessage = null) }
                     refresh()
                 } else {
                     val suffix = details.takeIf { it.isNotEmpty() }?.let { ": $it" }.orEmpty()
-                    _errorMessage.value = "Failed to switch branch$suffix"
+                    _uiState.update { it.copy(errorMessage = "Failed to switch branch$suffix") }
                 }
             } catch (e: Exception) {
-                _errorMessage.value = "Failed to switch branch: ${e.localizedMessage}"
+                _uiState.update { it.copy(errorMessage = "Failed to switch branch: ${e.localizedMessage}") }
             } finally {
-                _isBranchOperationInProgress.value = false
+                _uiState.update { it.copy(isBranchOperationInProgress = false) }
             }
         }
     }
 
     @Suppress("LongMethod")
     fun createAndCheckoutBranch(newBranchName: String) {
-        if (_isBranchOperationInProgress.value) return
+        if (_uiState.value.isBranchOperationInProgress) return
         val name = newBranchName.trim()
         if (name.isEmpty()) {
-            _errorMessage.value = "Branch name cannot be empty"
+            _uiState.update { it.copy(errorMessage = "Branch name cannot be empty") }
             return
         }
         viewModelScope.launch {
-            _isBranchOperationInProgress.value = true
+            _uiState.update { it.copy(isBranchOperationInProgress = true) }
             val dir = workspaceDir.value
             try {
                 val repoRoot = getRepoRoot(execCommand, dir)
@@ -720,39 +637,25 @@ class ReviewViewModel(
                     "printf '\\n$BRANCH_EXIT_MARKER%s\\n' \"\$branchExitCode\""
 
                 val output = execCommand(command)
-                val markerIndex = output.lastIndexOf(BRANCH_EXIT_MARKER)
-                val exitCode = if (markerIndex >= 0) {
-                    output.substring(markerIndex + BRANCH_EXIT_MARKER.length)
-                        .lineSequence()
-                        .firstOrNull()
-                        ?.trim()
-                        ?.toIntOrNull()
-                } else {
-                    null
-                }
-                val details = if (markerIndex >= 0) {
-                    output.substring(0, markerIndex).trim()
-                } else {
-                    output.trim()
-                }
+                val (exitCode, details) = parseExitMarker(output, BRANCH_EXIT_MARKER)
 
                 if (exitCode == 0) {
-                    _errorMessage.value = null
+                    _uiState.update { it.copy(errorMessage = null) }
                     refresh()
                 } else {
                     val suffix = details.takeIf { it.isNotEmpty() }?.let { ": $it" }.orEmpty()
-                    _errorMessage.value = "Failed to create branch$suffix"
+                    _uiState.update { it.copy(errorMessage = "Failed to create branch$suffix") }
                 }
             } catch (e: Exception) {
-                _errorMessage.value = "Failed to create branch: ${e.localizedMessage}"
+                _uiState.update { it.copy(errorMessage = "Failed to create branch: ${e.localizedMessage}") }
             } finally {
-                _isBranchOperationInProgress.value = false
+                _uiState.update { it.copy(isBranchOperationInProgress = false) }
             }
         }
     }
 
     fun clearErrorMessage() {
-        _errorMessage.value = null
+        _uiState.update { it.copy(errorMessage = null) }
     }
 
     fun fetchRemote() {
@@ -768,9 +671,9 @@ class ReviewViewModel(
     }
 
     private fun runSyncOperation(label: String, gitCommand: String) {
-        if (_isSyncInProgress.value) return
+        if (_uiState.value.isSyncInProgress) return
         viewModelScope.launch {
-            _isSyncInProgress.value = true
+            _uiState.update { it.copy(isSyncInProgress = true) }
             try {
                 val dir = workspaceDir.value
                 val repoRoot = getRepoRoot(execCommand, dir)
@@ -781,36 +684,33 @@ class ReviewViewModel(
                     "printf '\\n$SYNC_EXIT_MARKER%s\\n' \"\$syncExitCode\""
 
                 val output = execCommand(command)
-                val markerIndex = output.lastIndexOf(SYNC_EXIT_MARKER)
-                val exitCode = if (markerIndex >= 0) {
-                    output.substring(markerIndex + SYNC_EXIT_MARKER.length)
-                        .lineSequence()
-                        .firstOrNull()
-                        ?.trim()
-                        ?.toIntOrNull()
-                } else {
-                    null
-                }
-                val details = if (markerIndex >= 0) {
-                    output.substring(0, markerIndex).trim()
-                } else {
-                    output.trim()
-                }
+                val (exitCode, details) = parseExitMarker(output, SYNC_EXIT_MARKER)
 
                 if (exitCode == 0) {
-                    _errorMessage.value = null
+                    _uiState.update { it.copy(errorMessage = null) }
                     refresh()
                 } else {
                     val suffix = details.takeIf { it.isNotEmpty() }?.let { ": $it" }.orEmpty()
-                    _errorMessage.value = "$label failed$suffix"
+                    _uiState.update { it.copy(errorMessage = "$label failed$suffix") }
                 }
             } catch (e: Exception) {
-                _errorMessage.value = "$label failed: ${e.localizedMessage}"
+                _uiState.update { it.copy(errorMessage = "$label failed: ${e.localizedMessage}") }
             } finally {
-                _isSyncInProgress.value = false
+                _uiState.update { it.copy(isSyncInProgress = false) }
             }
         }
     }
+}
+
+private fun parseExitMarker(output: String, marker: String): Pair<Int?, String> {
+    val markerIndex = output.lastIndexOf(marker)
+    if (markerIndex < 0) return null to output.trim()
+    val exitCode = output.substring(markerIndex + marker.length)
+        .lineSequence()
+        .firstOrNull()
+        ?.trim()
+        ?.toIntOrNull()
+    return exitCode to output.substring(0, markerIndex).trim()
 }
 
 internal fun buildCommitDiffCommand(repoRoot: String, commitHash: String): String {

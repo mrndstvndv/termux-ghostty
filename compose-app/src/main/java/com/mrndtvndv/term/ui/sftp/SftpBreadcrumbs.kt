@@ -18,7 +18,10 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -53,14 +56,18 @@ fun SftpBreadcrumbs(
     val scrollState = rememberScrollState()
     val activeSegmentRequester = remember { BringIntoViewRequester() }
     val activeSegmentIndex = segments.indexOfFirst { it.fullPath == currentPath }
+    var revealedPath by remember { mutableStateOf<String?>(null) }
 
     // BringIntoView propagates to ALL ancestors including HorizontalPager: an offscreen
     // SFTP page requesting it yanks the pager Terminal->Git overshooting onto SFTP.
     // Only request when this tab is active (pager already settled on SFTP), so the
     // request scopes to the breadcrumb Row's own horizontalScroll.
+    // Reveal once per path: isTabActive flickers when a breadcrumb fling hands its
+    // leftover velocity to the pager, which would snap a manual scroll back.
     LaunchedEffect(currentPath, effectivePath, isTabActive) {
-        if (!isTabActive || activeSegmentIndex < 0) return@LaunchedEffect
+        if (!isTabActive || activeSegmentIndex < 0 || revealedPath == currentPath) return@LaunchedEffect
         activeSegmentRequester.bringIntoView()
+        revealedPath = currentPath
     }
 
     Surface(

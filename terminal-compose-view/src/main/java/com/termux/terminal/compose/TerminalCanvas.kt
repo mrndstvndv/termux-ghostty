@@ -40,6 +40,10 @@ import androidx.compose.ui.semantics.text
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.zIndex
+import androidx.navigationevent.NavigationEventInfo
+import androidx.navigationevent.compose.LocalNavigationEventDispatcherOwner
+import androidx.navigationevent.compose.NavigationBackHandler
+import androidx.navigationevent.compose.rememberNavigationEventState
 import com.termux.terminal.compose.gpu.GlesTerminalSurface
 import com.termux.terminal.compose.internal.CommandTerminalInput
 import com.termux.terminal.compose.internal.ImeEditCommandProcessor
@@ -94,6 +98,7 @@ fun TerminalCanvas(
     modifier: Modifier = Modifier
 ) {
     val selectionState = remember(backend) { TerminalSelectionState() }
+    SelectionBackHandler(selectionState)
     // Stable for the lifetime of this canvas, so the GLES surface outlives session switches.
     val surfaceKey = remember { Any() }
     val hapticFeedback = LocalHapticFeedback.current
@@ -524,6 +529,18 @@ private fun Modifier.preferredFrameRateOrNone(config: TerminalCanvasConfig): Mod
     } else {
         this
     }
+
+// Hosts with predictive back deliver back as a navigation event, not KEYCODE_BACK.
+// Hosts without a dispatcher keep the key path in terminalKeyHandling.
+@Composable
+private fun SelectionBackHandler(selectionState: TerminalSelectionState) {
+    if (LocalNavigationEventDispatcherOwner.current == null) return
+    NavigationBackHandler(
+        state = rememberNavigationEventState(NavigationEventInfo.None),
+        isBackEnabled = selectionState.isSelecting,
+        onBackCompleted = selectionState::clear,
+    )
+}
 
 private fun Modifier.terminalKeyHandling(
     translator: TerminalInputTranslator,

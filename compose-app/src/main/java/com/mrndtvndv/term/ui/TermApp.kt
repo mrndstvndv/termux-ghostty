@@ -3,6 +3,9 @@
 package com.mrndtvndv.term.ui
 
 import android.graphics.Typeface
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
@@ -182,7 +185,7 @@ fun TermApp(
                             )
                         }
 
-                        entry<AppRoute.Workspace> { route ->
+                        entry<AppRoute.Workspace>(metadata = SurfaceSafeTransitions) { route ->
                             WorkspaceRoute(
                                 serverId = route.serverId,
                                 appViewModel = appViewModel,
@@ -231,3 +234,14 @@ fun TermApp(
         }
     }
 }
+
+// The terminal draws into a GLSurfaceView, which ignores alpha: the default cross-fade
+// leaves it opaque on top until the transition ends. Slides move the surface with the page.
+private val SurfaceSafeTransitions =
+    NavDisplay.transitionSpec {
+        slideInHorizontally { it } togetherWith slideOutHorizontally { -it }
+    } + NavDisplay.popTransitionSpec {
+        slideInHorizontally { -it } togetherWith slideOutHorizontally { it }
+    } + NavDisplay.predictivePopTransitionSpec {
+        slideInHorizontally { -it } togetherWith slideOutHorizontally { it }
+    }

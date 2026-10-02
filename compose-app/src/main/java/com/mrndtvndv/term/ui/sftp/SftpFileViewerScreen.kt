@@ -1,4 +1,5 @@
 @file:Suppress("MaxLineLength")
+@file:OptIn(ExperimentalMaterial3ExpressiveApi::class)
 
 package com.mrndtvndv.term.ui.sftp
 
@@ -67,7 +68,7 @@ fun SftpFileViewerScreen(file: File, onClose: () -> Unit) {
                     CodeViewer(code = content!!)
                 }
                 else -> {
-                    CircularProgressIndicator(modifier = Modifier.padding(16.dp))
+                    LoadingIndicator(modifier = Modifier.padding(16.dp))
                 }
             }
         }
@@ -78,7 +79,7 @@ fun SftpFileViewerScreen(file: File, onClose: () -> Unit) {
 @Composable
 private fun CodeViewer(code: String) {
     var fontScale by remember { mutableFloatStateOf(1f) }
-    val transformState = rememberTransformableState { zoomChange, _, _ ->
+    val transformState = rememberTransformableState { _, zoomChange, _, _ ->
         fontScale = (fontScale * zoomChange).coerceIn(0.6f, 3.0f)
     }
 

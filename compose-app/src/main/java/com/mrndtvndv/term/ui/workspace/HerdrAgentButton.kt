@@ -1,5 +1,8 @@
+@file:OptIn(ExperimentalMaterial3ExpressiveApi::class)
+
 package com.mrndtvndv.term.ui.workspace
 
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import android.view.View
 import android.view.Window
 import android.view.WindowManager
@@ -25,10 +28,12 @@ import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.SheetValue
+import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -36,7 +41,6 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -86,7 +90,10 @@ fun HerdrAgentButton(
 ) {
     var showAgents by remember { mutableStateOf(false) }
     val expandedWorkspaceIds = remember { mutableStateMapOf<String, Boolean>() }
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val sheetState = rememberBottomSheetState(
+        initialValue = SheetValue.Hidden,
+        enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded),
+    )
     val coroutineScope = rememberCoroutineScope()
     var pendingClosePane by remember { mutableStateOf<HerdrPaneNode?>(null) }
 
@@ -139,7 +146,7 @@ fun HerdrAgentButton(
                                 .padding(32.dp),
                             contentAlignment = Alignment.Center,
                         ) {
-                            CircularProgressIndicator()
+                            LoadingIndicator()
                         }
                     }
                     error != null -> {

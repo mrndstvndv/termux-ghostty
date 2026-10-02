@@ -1,4 +1,5 @@
 @file:Suppress("MatchingDeclarationName")
+@file:OptIn(ExperimentalMaterial3ExpressiveApi::class)
 
 package com.mrndtvndv.term.ui.sftp
 
@@ -21,6 +22,8 @@ import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.material3.*
@@ -402,8 +405,17 @@ fun SftpFileBrowser(
                         }
                     )
 
+                    val pullToRefreshState = rememberPullToRefreshState()
                     PullToRefreshBox(
                         isRefreshing = isRefreshing,
+                        state = pullToRefreshState,
+                        indicator = {
+                            PullToRefreshDefaults.LoadingIndicator(
+                                state = pullToRefreshState,
+                                isRefreshing = isRefreshing,
+                                modifier = Modifier.align(Alignment.TopCenter),
+                            )
+                        },
                         onRefresh = { viewModel.refresh() },
                         modifier = Modifier.fillMaxSize().weight(1f)
                     ) {
@@ -413,7 +425,7 @@ fun SftpFileBrowser(
                                     modifier = Modifier.fillMaxSize(),
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    CircularProgressIndicator()
+                                    LoadingIndicator()
                                 }
                             }
                             is SftpUiState.Success -> {
@@ -428,7 +440,7 @@ fun SftpFileBrowser(
                                 ) {
                                     items(state.files) { file ->
                                         ListItem(
-                                            headlineContent = {
+                                            content = {
                                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                                     Text(
                                                         text = file.name,

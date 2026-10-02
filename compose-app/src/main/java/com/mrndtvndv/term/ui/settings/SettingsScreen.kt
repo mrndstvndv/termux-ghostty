@@ -713,11 +713,11 @@ fun SettingsScreen(
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                        val wallpaperOpacityState = remember { SliderState(steps = 19, trackRange = 0f..1f) }
+                        wallpaperOpacityState.value = wallpaperBackgroundOpacity.coerceIn(0f, 1f)
                         Slider(
-                            value = wallpaperBackgroundOpacity.coerceIn(0f, 1f),
+                            state = wallpaperOpacityState,
                             onValueChange = onWallpaperBackgroundOpacityChange,
-                            valueRange = 0f..1f,
-                            steps = 19,
                             enabled = wallpaperName != null && wallpaperEnabled
                         )
                     }
@@ -877,11 +877,11 @@ fun SettingsScreen(
                                 style = MaterialTheme.typography.bodyLarge,
                             )
                         }
+                        val fabOpacityState = remember { SliderState(steps = 14, trackRange = 0.25f..1f) }
+                        fabOpacityState.value = herdrAgentFabOpacity.coerceIn(0.25f, 1f)
                         Slider(
-                            value = herdrAgentFabOpacity.coerceIn(0.25f, 1f),
+                            state = fabOpacityState,
                             onValueChange = onHerdrAgentFabOpacityChange,
-                            valueRange = 0.25f..1f,
-                            steps = 14,
                         )
                     }
                 }

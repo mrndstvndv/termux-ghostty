@@ -1,5 +1,8 @@
+@file:OptIn(ExperimentalMaterial3ExpressiveApi::class)
+
 package com.mrndtvndv.term.ui.workspace
 
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -10,7 +13,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -55,10 +58,9 @@ fun FileUploadBlockingOverlay(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,
             ) {
-                CircularProgressIndicator(
+                LoadingIndicator(
                     modifier = Modifier.size(64.dp),
                     color = MaterialTheme.colorScheme.primary,
-                    strokeWidth = 5.dp,
                 )
                 Spacer(modifier = Modifier.size(16.dp))
                 Text(

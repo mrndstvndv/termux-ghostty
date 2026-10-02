@@ -1,5 +1,9 @@
+@file:OptIn(ExperimentalMaterial3ExpressiveApi::class)
+
 package com.mrndtvndv.term.ui
 
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.LoadingIndicator
 import android.content.ClipData
 import android.content.Context
 import android.content.SharedPreferences
@@ -535,14 +539,14 @@ fun MainContent(
                                     // A dead session can be removed before the finish event is collected.
                                     SideEffect { viewModel.navigateBack() }
                                     Box(modifier = Modifier.fillMaxSize()) {
-                                        androidx.compose.material3.CircularProgressIndicator(
+                                        LoadingIndicator(
                                             modifier = Modifier.align(Alignment.Center)
                                         )
                                     }
                                 }
                             } else {
                                 Box(modifier = Modifier.fillMaxSize()) {
-                                    androidx.compose.material3.CircularProgressIndicator(
+                                    LoadingIndicator(
                                         modifier = Modifier.align(Alignment.Center)
                                     )
                                 }

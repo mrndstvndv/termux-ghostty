@@ -1,4 +1,5 @@
 @file:Suppress("TooManyFunctions")
+@file:OptIn(ExperimentalMaterial3ExpressiveApi::class)
 
 package com.mrndtvndv.term.ui.review
 
@@ -47,12 +48,15 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.CompareArrows
 import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
 import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -173,9 +177,8 @@ fun GitReviewScreen(
                     enabled = renameCommitSubject.isNotBlank() && !isCommitInProgress
                 ) {
                     if (isCommitInProgress) {
-                        CircularProgressIndicator(
+                        LoadingIndicator(
                             modifier = Modifier.size(18.dp),
-                            strokeWidth = 2.dp
                         )
                     } else {
                         Text("Save")
@@ -220,9 +223,8 @@ fun GitReviewScreen(
                     enabled = !isCommitInProgress
                 ) {
                     if (isCommitInProgress) {
-                        CircularProgressIndicator(
+                        LoadingIndicator(
                             modifier = Modifier.size(18.dp),
-                            strokeWidth = 2.dp
                         )
                     } else {
                         Text("Reset")
@@ -271,9 +273,8 @@ fun GitReviewScreen(
                     )
                 ) {
                     if (isCommitInProgress) {
-                        CircularProgressIndicator(
+                        LoadingIndicator(
                             modifier = Modifier.size(18.dp),
-                            strokeWidth = 2.dp
                         )
                     } else {
                         Text("Delete & Reset")
@@ -320,9 +321,8 @@ fun GitReviewScreen(
                     enabled = commitMessage.isNotBlank() && !isCommitInProgress
                 ) {
                     if (isCommitInProgress) {
-                        CircularProgressIndicator(
+                        LoadingIndicator(
                             modifier = Modifier.size(18.dp),
-                            strokeWidth = 2.dp
                         )
                     } else {
                         Text("Commit")
@@ -909,9 +909,8 @@ fun FileChangesList(
                     modifier = Modifier.navigationBarsPadding(),
                 ) {
                     if (isCommitInProgress) {
-                        CircularProgressIndicator(
+                        LoadingIndicator(
                             modifier = Modifier.size(24.dp),
-                            strokeWidth = 2.dp
                         )
                     } else {
                         Icon(
@@ -924,15 +923,24 @@ fun FileChangesList(
         }
     ) { contentPadding ->
         Box(modifier = Modifier.fillMaxSize()) {
+            val pullToRefreshState = rememberPullToRefreshState()
             PullToRefreshBox(
                 isRefreshing = isRefreshing,
+                state = pullToRefreshState,
+                indicator = {
+                    PullToRefreshDefaults.LoadingIndicator(
+                        state = pullToRefreshState,
+                        isRefreshing = isRefreshing,
+                        modifier = Modifier.align(Alignment.TopCenter),
+                    )
+                },
                 onRefresh = onRefresh,
                 modifier = Modifier.fillMaxSize().padding(contentPadding)
             ) {
                 when (uiState) {
                     is ReviewUiState.Loading -> {
                         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            CircularProgressIndicator()
+                            LoadingIndicator()
                         }
                     }
                     is ReviewUiState.Error -> {
@@ -1582,7 +1590,7 @@ private fun WordDiffToggle(
             onCheckedChange = { onToggle() }
         ) {
             Icon(
-                imageVector = Icons.Default.CompareArrows,
+                imageVector = Icons.AutoMirrored.Filled.CompareArrows,
                 contentDescription = if (isEnabled) {
                     "Disable word-level diff"
                 } else {
@@ -1754,7 +1762,7 @@ internal fun DiffViewer(
                 null -> EmptyDiffMessage("No diff details loaded.")
                 is DiffContentState.Loading -> {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator()
+                        LoadingIndicator()
                     }
                 }
                 is DiffContentState.Error -> EmptyDiffMessage(content.message)
@@ -2555,11 +2563,10 @@ fun BranchHeader(
                 behindCount = behindCount
             )
             if (isSyncInProgress) {
-                CircularProgressIndicator(
+                LoadingIndicator(
                     modifier = Modifier
                         .padding(12.dp)
                         .size(24.dp),
-                    strokeWidth = 2.dp
                 )
             } else {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -2680,9 +2687,8 @@ fun BranchSelectorDialog(
             ) {
                 Text("Switch Branch")
                 if (isOperationInProgress) {
-                    CircularProgressIndicator(
+                    LoadingIndicator(
                         modifier = Modifier.size(20.dp),
-                        strokeWidth = 2.dp
                     )
                 }
             }
@@ -2912,9 +2918,8 @@ fun CreateBranchDialog(
                 enabled = branchName.isNotBlank() && !isOperationInProgress
             ) {
                 if (isOperationInProgress) {
-                    CircularProgressIndicator(
+                    LoadingIndicator(
                         modifier = Modifier.size(18.dp),
-                        strokeWidth = 2.dp
                     )
                 } else {
                     Text("Create & Checkout")

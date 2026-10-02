@@ -1,3 +1,5 @@
+@file:OptIn(ExperimentalMaterial3ExpressiveApi::class)
+
 package com.mrndtvndv.term.ui.serverlist
 
 import androidx.compose.foundation.clickable
@@ -9,7 +11,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Delete
@@ -355,17 +357,15 @@ private fun ServerCard(
                 }
             }
             if (isConnecting) {
-                CircularProgressIndicator(
+                LoadingIndicator(
                     modifier = Modifier.size(24.dp),
-                    strokeWidth = 2.dp,
                 )
                 Spacer(Modifier.width(4.dp))
             }
             if (isActive) {
                 if (isDisconnecting) {
-                    CircularProgressIndicator(
+                    LoadingIndicator(
                         modifier = Modifier.size(24.dp),
-                        strokeWidth = 2.dp,
                     )
                 } else {
                     IconButton(onClick = onDisconnect) {

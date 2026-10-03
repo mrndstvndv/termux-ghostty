@@ -165,6 +165,8 @@ dependencies {
     implementation 'androidx.lifecycle:lifecycle-viewmodel-compose:2.11.0'
     implementation 'androidx.lifecycle:lifecycle-runtime-compose:2.11.0'
     implementation 'androidx.webkit:webkit:1.14.0'
+    implementation 'com.mikepenz:multiplatform-markdown-renderer-m3:0.45.0'
+    implementation 'com.mikepenz:multiplatform-markdown-renderer-code:0.45.0'
 
     // Navigation 3
     implementation 'androidx.navigation3:navigation3-runtime:1.1.4'

@@ -14,7 +14,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Article
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Code
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -33,6 +35,8 @@ import java.io.File
 fun SftpFileViewerScreen(file: File, onClose: () -> Unit) {
     var content by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
+    val isMarkdown = file.extension.lowercase() in MarkdownExtensions
+    var showSource by remember { mutableStateOf(false) }
 
     LaunchedEffect(file) {
         try {
@@ -51,6 +55,16 @@ fun SftpFileViewerScreen(file: File, onClose: () -> Unit) {
                     IconButton(onClick = onClose) {
                         Icon(Icons.Default.Close, contentDescription = "Close")
                     }
+                },
+                actions = {
+                    if (isMarkdown) {
+                        IconButton(onClick = { showSource = !showSource }) {
+                            Icon(
+                                imageVector = if (showSource) Icons.AutoMirrored.Filled.Article else Icons.Default.Code,
+                                contentDescription = if (showSource) "Show rendered" else "Show source"
+                            )
+                        }
+                    }
                 }
             )
         }
@@ -63,6 +77,9 @@ fun SftpFileViewerScreen(file: File, onClose: () -> Unit) {
             when {
                 error != null -> {
                     Text(text = error!!, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(16.dp))
+                }
+                content != null && isMarkdown && !showSource -> {
+                    SftpMarkdownViewer(markdown = content!!)
                 }
                 content != null -> {
                     CodeViewer(code = content!!)
@@ -191,6 +208,8 @@ private fun CodeViewer(code: String) {
         }
     }
 }
+
+private val MarkdownExtensions = setOf("md", "markdown")
 
 private data class ViewerDimensions(
     val numWidth: Dp,

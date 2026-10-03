@@ -8,7 +8,7 @@ import androidx.core.content.FileProvider
 import java.io.File
 
 private val SourceCodeExtensions = setOf(
-    "kt", "java", "py", "js", "md", "rs", "zig", "c", "cpp",
+    "kt", "java", "py", "js", "md", "markdown", "rs", "zig", "c", "cpp",
     "h", "hpp", "sh", "txt", "xml", "json", "yml", "yaml", "gradle", "kts", "go",
 )
 

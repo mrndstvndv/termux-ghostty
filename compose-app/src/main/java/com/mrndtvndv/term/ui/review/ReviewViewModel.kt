@@ -42,7 +42,9 @@ data class GitCommit(
     val shortHash: String,
     val author: String,
     val relativeDate: String,
-    val subject: String
+    val subject: String,
+    val parents: List<String> = emptyList(),
+    val refs: List<String> = emptyList()
 )
 
 internal sealed interface DiffContentState {
@@ -130,18 +132,20 @@ class ReviewViewModel(
     private suspend fun fetchCommits(repoRoot: String, limit: Int = 15, skip: Int = 0): List<GitCommit> {
         return try {
             val command = "export PATH=\$PATH:/opt/homebrew/bin:/usr/local/bin; cd \"$repoRoot\" && " +
-                "git log --skip=$skip -n $limit --pretty=format:\"%H|%h|%an|%ar|%s\""
+                "git log --topo-order --skip=$skip -n $limit " +
+                "--pretty=format:\"%H%x1f%h%x1f%an%x1f%ar%x1f%P%x1f%D%x1f%s\""
             val output = execCommand(command)
             output.lines().filter { it.isNotBlank() }.mapNotNull { line ->
-                val parts = line.split('|')
-                if (parts.size >= 5) {
-                    val subject = parts.drop(4).joinToString("|")
+                val parts = line.split('\u001f')
+                if (parts.size >= 7) {
                     GitCommit(
                         hash = parts[0],
                         shortHash = parts[1],
                         author = parts[2],
                         relativeDate = parts[3],
-                        subject = subject
+                        subject = parts[6],
+                        parents = parts[4].split(' ').filter { it.isNotEmpty() },
+                        refs = parts[5].split(", ").filter { it.isNotEmpty() && !it.endsWith("/HEAD") }
                     )
                 } else {
                     null

@@ -19,11 +19,13 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -35,6 +37,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Undo
@@ -76,6 +79,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.mrndtvndv.term.ui.theme.codeFontFamily
+
+private const val MaxRefChips = 2
 
 @Composable
 private fun StatusBadge(status: String) {
@@ -225,6 +230,7 @@ internal fun FileChangesList(
                         }
                     }
                     is ReviewUiState.Success -> {
+                        val graph = remember(content.recentCommits) { layoutGraph(content.recentCommits) }
                         LazyColumn(
                             modifier = Modifier.fillMaxSize(),
                             contentPadding = PaddingValues(
@@ -260,9 +266,11 @@ internal fun FileChangesList(
                                     )
                                 }
                                 if (state.isCommitsExpanded) {
-                                    items(content.recentCommits) { commit ->
+                                    itemsIndexed(content.recentCommits) { index, commit ->
                                         CommitItem(
                                             commit = commit,
+                                            graphRow = graph.rows[index],
+                                            graphLaneCount = graph.laneCount,
                                             onClick = { onCommitSelected(commit) },
                                             onRenameClick = { onRenameCommitClick(commit) },
                                             onSoftResetClick = { onSoftResetClick(commit) },
@@ -514,6 +522,8 @@ private fun FileItem(
 @Composable
 private fun CommitItem(
     commit: GitCommit,
+    graphRow: GraphRow,
+    graphLaneCount: Int,
     onClick: () -> Unit,
     onRenameClick: () -> Unit,
     onSoftResetClick: () -> Unit,
@@ -522,22 +532,29 @@ private fun CommitItem(
     var showMenu by remember { mutableStateOf(false) }
 
     Box(modifier = Modifier.fillMaxWidth()) {
-        Column(
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .height(IntrinsicSize.Min)
                 .combinedClickable(
                     onClick = onClick,
                     onLongClick = { showMenu = true }
                 )
-                .padding(vertical = 6.dp, horizontal = 16.dp)
+                .padding(horizontal = 16.dp)
         ) {
-            Column(modifier = Modifier.fillMaxWidth()) {
-                Text(
-                    text = commit.subject,
-                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+            CommitGraph(graphRow, graphLaneCount, Modifier.fillMaxHeight())
+            Spacer(modifier = Modifier.width(8.dp))
+            Column(modifier = Modifier.weight(1f).padding(top = 6.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = commit.subject,
+                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
+                    commit.refs.take(MaxRefChips).forEach { RefChip(it) }
+                }
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.fillMaxWidth()
@@ -568,9 +585,9 @@ private fun CommitItem(
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
                     )
                 }
+                Spacer(modifier = Modifier.height(4.dp))
+                HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
             }
-            Spacer(modifier = Modifier.height(4.dp))
-            HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
         }
 
         DropdownMenu(
@@ -618,5 +635,28 @@ private fun CommitItem(
                 }
             )
         }
+    }
+}
+
+@Composable
+private fun RefChip(ref: String) {
+    val isHead = ref.startsWith("HEAD")
+    Surface(
+        shape = RoundedCornerShape(4.dp),
+        color = if (isHead) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+        modifier = Modifier.padding(start = 6.dp)
+    ) {
+        Text(
+            text = ref.removePrefix("HEAD -> ").removePrefix("tag: "),
+            style = MaterialTheme.typography.labelSmall,
+            color = if (isHead) {
+                MaterialTheme.colorScheme.onPrimaryContainer
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            },
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+        )
     }
 }

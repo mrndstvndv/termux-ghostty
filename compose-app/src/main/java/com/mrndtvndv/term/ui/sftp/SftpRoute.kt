@@ -58,6 +58,7 @@ fun SftpScreenRoute(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val isRefreshing by viewModel.isRefreshing.collectAsStateWithLifecycle()
+    val tree by viewModel.tree.collectAsStateWithLifecycle()
     val trailPath by viewModel.trailPath.collectAsStateWithLifecycle()
     val downloadState by viewModel.downloadState.collectAsStateWithLifecycle()
     val uploadState by viewModel.uploadState.collectAsStateWithLifecycle()
@@ -68,6 +69,7 @@ fun SftpScreenRoute(
     var dialog by remember { mutableStateOf<SftpDialog?>(null) }
     var isSearchActive by rememberSaveable { mutableStateOf(false) }
     var searchQuery by rememberSaveable { mutableStateOf("") }
+    var treeMode by rememberSaveable { mutableStateOf(false) }
 
     fun showMessage(message: String) {
         scope.launch { snackbarHostState.showSnackbar(message) }
@@ -208,6 +210,9 @@ fun SftpScreenRoute(
                                 onDelete = { dialog = SftpDialog.Delete(it) },
                                 searchQuery = searchQuery,
                                 onClearSearch = { searchQuery = "" },
+                                treeMode = treeMode,
+                                tree = tree,
+                                onToggleFolder = viewModel::toggleExpanded,
                                 modifier = Modifier.weight(1f)
                             )
                         }
@@ -216,12 +221,14 @@ fun SftpScreenRoute(
                         SftpBottomActionBar(
                             isSearchActive = isSearchActive,
                             searchQuery = searchQuery,
+                            treeMode = treeMode,
                             onSearchClick = { isSearchActive = true },
                             onCloseSearch = {
                                 isSearchActive = false
                                 searchQuery = ""
                             },
                             onSearchQueryChange = { searchQuery = it },
+                            onToggleTree = { treeMode = !treeMode },
                             onUploadClick = { uploadPicker.launch("*/*") },
                             modifier = Modifier
                                 .align(Alignment.BottomCenter)

@@ -13,6 +13,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.AccountTree
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.Search
@@ -36,14 +37,17 @@ import com.mrndtvndv.term.ui.components.PillActions
 import com.mrndtvndv.term.ui.components.PillDivider
 import com.mrndtvndv.term.ui.components.PillIconButton
 
-/** SFTP pill: search and upload actions that morph into an inline search field. */
+/** SFTP pill: search, tree toggle and upload actions that morph into an inline search field. */
+@Suppress("LongParameterList")
 @Composable
 fun SftpBottomActionBar(
     isSearchActive: Boolean,
     searchQuery: String,
+    treeMode: Boolean,
     onSearchClick: () -> Unit,
     onCloseSearch: () -> Unit,
     onSearchQueryChange: (String) -> Unit,
+    onToggleTree: () -> Unit,
     onUploadClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -61,6 +65,17 @@ fun SftpBottomActionBar(
         } else {
             PillActions {
                 PillIconButton(Icons.Default.Search, "Search files", onSearchClick)
+                PillDivider()
+                PillIconButton(
+                    Icons.Default.AccountTree,
+                    "Toggle tree view",
+                    onToggleTree,
+                    tint = if (treeMode) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    }
+                )
                 PillDivider()
                 PillIconButton(Icons.Default.FileUpload, "Upload file", onUploadClick)
             }

@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.io.File
@@ -30,6 +31,12 @@ sealed interface SftpUiState {
     data class Error(val message: String) : SftpUiState
 }
 
+data class SftpTreeState(
+    val expanded: Set<String> = emptySet(),
+    val children: Map<String, List<SftpFile>> = emptyMap(),
+    val loading: Set<String> = emptySet(),
+)
+
 data class SftpDownloadState(
     val fileName: String,
     val bytesDownloaded: Long,
@@ -42,6 +49,9 @@ data class SftpUploadState(
     val totalBytes: Long,
 )
 
+private fun List<SftpFile>.sortedForDisplay() =
+    sortedWith(compareBy<SftpFile> { !it.isDirectory }.thenBy { it.name.lowercase() })
+
 class SftpViewModel(
     private val client: SftpClient,
     private val execCommand: suspend (String) -> String,
@@ -51,6 +61,9 @@ class SftpViewModel(
 ) : ViewModel() {
     private val _uiState = MutableStateFlow<SftpUiState>(SftpUiState.Loading)
     val uiState = _uiState.asStateFlow()
+
+    private val _tree = MutableStateFlow(SftpTreeState())
+    val tree = _tree.asStateFlow()
 
     private val _isRefreshing = MutableStateFlow(false)
     val isRefreshing = _isRefreshing.asStateFlow()
@@ -153,6 +166,7 @@ class SftpViewModel(
     val trailPath = _trailPath.asStateFlow()
 
     fun navigateTo(path: String) {
+        if (path != currentPath) _tree.value = SftpTreeState()
         currentPath = path
         if (!isPathPrefix(path, _trailPath.value)) {
             _trailPath.value = path
@@ -164,24 +178,17 @@ class SftpViewModel(
                 _isRefreshing.value = true
             }
             try {
-                val list = client.listFiles(path).sortedWith(
-                    compareBy<SftpFile> { !it.isDirectory }.thenBy { it.name.lowercase() }
-                )
+                val list = client.listFiles(path).sortedForDisplay()
                 val gitStatuses = mutableMapOf<String, String>()
                 try {
                     val statusOutput = execCommand("git -C \"$path\" status --porcelain --ignored=no .")
                     statusOutput.lines().forEach { line ->
                         if (line.length >= 4) { // Status (2 chars), space, then filename
-                            val status = line.substring(0, 2)
                             val file = line.substring(3).removeSurrounding("\"")
                             val parts = file.split("/")
-                            if (parts.isNotEmpty()) {
-                                val topLevelName = parts[0]
-                                if (parts.size == 1) {
-                                    gitStatuses[topLevelName] = status
-                                } else {
-                                    gitStatuses[topLevelName] = "M"
-                                }
+                            gitStatuses[file] = line.substring(0, 2)
+                            for (depth in 1 until parts.size) {
+                                gitStatuses[parts.take(depth).joinToString("/")] = "M"
                             }
                         }
                     }
@@ -190,12 +197,64 @@ class SftpViewModel(
                 }
                 _uiState.value = SftpUiState.Success(path, list, gitStatuses)
                 onDirectoryChanged(path)
+                reloadExpanded()
             } catch (e: Exception) {
                 if (_uiState.value !is SftpUiState.Success) {
                     _uiState.value = SftpUiState.Error(e.localizedMessage ?: "Failed to load directory")
                 }
             } finally {
                 _isRefreshing.value = false
+            }
+        }
+    }
+
+    fun toggleExpanded(dir: SftpFile) {
+        val state = _tree.value
+        if (dir.path in state.expanded) {
+            _tree.value = state.copy(expanded = state.expanded - dir.path)
+            return
+        }
+        _tree.value = state.copy(expanded = state.expanded + dir.path)
+        if (dir.path in state.children) return
+        viewModelScope.launch { expandChain(dir.path) }
+    }
+
+    private suspend fun expandChain(start: String) {
+        var next: String? = start
+        while (next != null) {
+            val path: String = next
+            _tree.update { it.copy(loading = it.loading + path) }
+            val children = fetchChildren(path)
+            applyChildren(path, children)
+            val onlyDir = children?.singleOrNull()?.takeIf { it.isDirectory }
+            if (onlyDir != null) _tree.update { it.copy(expanded = it.expanded + onlyDir.path) }
+            next = onlyDir?.path
+        }
+    }
+
+    private suspend fun reloadExpanded() {
+        for (path in _tree.value.expanded) {
+            applyChildren(path, fetchChildren(path))
+        }
+    }
+
+    @Suppress("TooGenericExceptionCaught", "SwallowedException")
+    private suspend fun fetchChildren(path: String): List<SftpFile>? =
+        try {
+            client.listFiles(path).sortedForDisplay()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            null
+        }
+
+    private fun applyChildren(path: String, children: List<SftpFile>?) {
+        _tree.update { state ->
+            val loading = state.loading - path
+            if (children == null) {
+                state.copy(expanded = state.expanded - path, children = state.children - path, loading = loading)
+            } else {
+                state.copy(children = state.children + (path to children), loading = loading)
             }
         }
     }

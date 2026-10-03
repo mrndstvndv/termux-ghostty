@@ -8,22 +8,28 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -58,6 +64,47 @@ import java.util.TimeZone
 import kotlin.math.log10
 import kotlin.math.pow
 
+private val TREE_INDENT = 16.dp
+
+private data class SftpRow(
+    val file: SftpFile,
+    val top: SftpFile = file,
+    val label: String = file.name,
+    val depth: Int = 0,
+    val isExpanded: Boolean = false,
+    val isLoading: Boolean = false
+)
+
+private fun compactTail(top: SftpFile, tree: SftpTreeState): SftpFile {
+    var tail = top
+    while (tail.path in tree.expanded) {
+        tail = tree.children[tail.path]
+            ?.singleOrNull()
+            ?.takeIf { it.isDirectory && it.path in tree.expanded }
+            ?: break
+    }
+    return tail
+}
+
+private fun flattenTree(files: List<SftpFile>, tree: SftpTreeState, depth: Int = 0): List<SftpRow> =
+    files.flatMap { top ->
+        val tail = compactTail(top, tree)
+        val isExpanded = top.path in tree.expanded
+        val row = SftpRow(
+            file = tail,
+            top = top,
+            label = if (tail === top) top.name else top.name + "/" + tail.path.removePrefix(top.path + "/"),
+            depth = depth,
+            isExpanded = isExpanded,
+            isLoading = tail.path in tree.loading
+        )
+        if (isExpanded) {
+            listOf(row) + flattenTree(tree.children[tail.path].orEmpty(), tree, depth + 1)
+        } else {
+            listOf(row)
+        }
+    }
+
 @Suppress("LongParameterList")
 @Composable
 fun SftpDirectory(
@@ -69,6 +116,9 @@ fun SftpDirectory(
     onRename: (SftpFile) -> Unit,
     onDelete: (SftpFile) -> Unit,
     modifier: Modifier = Modifier,
+    treeMode: Boolean = false,
+    tree: SftpTreeState = SftpTreeState(),
+    onToggleFolder: (SftpFile) -> Unit = {},
     searchQuery: String = "",
     onClearSearch: () -> Unit = {}
 ) {
@@ -97,8 +147,11 @@ fun SftpDirectory(
             }
             is SftpUiState.Success -> SftpFileList(
                 state = state,
+                treeMode = treeMode,
+                tree = tree,
                 searchQuery = searchQuery,
                 onClearSearch = onClearSearch,
+                onToggleFolder = onToggleFolder,
                 onOpenFolder = onOpenFolder,
                 onOpenFile = onOpenFile,
                 onRename = onRename,
@@ -122,11 +175,15 @@ fun SftpDirectory(
     }
 }
 
+@Suppress("LongParameterList")
 @Composable
 private fun SftpFileList(
     state: SftpUiState.Success,
+    treeMode: Boolean,
+    tree: SftpTreeState,
     searchQuery: String,
     onClearSearch: () -> Unit,
+    onToggleFolder: (SftpFile) -> Unit,
     onOpenFolder: (String) -> Unit,
     onOpenFile: (SftpFile) -> Unit,
     onRename: (SftpFile) -> Unit,
@@ -141,15 +198,23 @@ private fun SftpFileList(
         }
     }
 
-    if (filteredFiles.isEmpty()) {
+    val showTree = treeMode && searchQuery.isBlank()
+    val rows = remember(filteredFiles, tree, showTree) {
+        if (showTree) flattenTree(filteredFiles, tree) else filteredFiles.map { SftpRow(it) }
+    }
+
+    if (rows.isEmpty()) {
         SftpEmptyList(
             searchQuery = searchQuery,
             onClearSearch = onClearSearch
         )
     } else {
         SftpFileItems(
-            files = filteredFiles,
+            rows = rows,
+            rootPath = state.currentPath,
+            showTree = showTree,
             gitStatuses = state.gitStatuses,
+            onToggleFolder = onToggleFolder,
             onOpenFolder = onOpenFolder,
             onOpenFile = onOpenFile,
             onRename = onRename,
@@ -205,10 +270,14 @@ private fun SftpEmptyList(
     }
 }
 
+@Suppress("LongParameterList")
 @Composable
 private fun SftpFileItems(
-    files: List<SftpFile>,
+    rows: List<SftpRow>,
+    rootPath: String,
+    showTree: Boolean,
     gitStatuses: Map<String, String>,
+    onToggleFolder: (SftpFile) -> Unit,
     onOpenFolder: (String) -> Unit,
     onOpenFile: (SftpFile) -> Unit,
     onRename: (SftpFile) -> Unit,
@@ -224,13 +293,22 @@ private fun SftpFileItems(
                 .calculateBottomPadding()
         )
     ) {
-        items(files, key = { it.path }) { file ->
+        items(rows, key = { it.top.path }) { row ->
+            val file = row.file
             SftpFileRow(
-                file = file,
-                gitStatus = gitStatuses[file.name]?.trim(),
+                row = row,
+                showTree = showTree,
+                gitStatus = gitStatuses[file.path.removePrefix(rootPath.trimEnd('/') + "/")]?.trim(),
                 menuExpanded = menuTargetPath == file.path,
                 onMenuExpandedChange = { expanded -> menuTargetPath = if (expanded) file.path else null },
-                onClick = { if (file.isDirectory) onOpenFolder(file.path) else onOpenFile(file) },
+                onClick = {
+                    when {
+                        !file.isDirectory -> onOpenFile(file)
+                        showTree -> onToggleFolder(row.top)
+                        else -> onOpenFolder(file.path)
+                    }
+                },
+                onOpenFolder = { onOpenFolder(file.path) },
                 onRename = { onRename(file) },
                 onDelete = { onDelete(file) }
             )
@@ -242,21 +320,25 @@ private fun SftpFileItems(
     }
 }
 
+@Suppress("LongParameterList")
 @Composable
 private fun SftpFileRow(
-    file: SftpFile,
+    row: SftpRow,
+    showTree: Boolean,
     gitStatus: String?,
     menuExpanded: Boolean,
     onMenuExpandedChange: (Boolean) -> Unit,
     onClick: () -> Unit,
+    onOpenFolder: () -> Unit,
     onRename: () -> Unit,
     onDelete: () -> Unit
 ) {
+    val file = row.file
     ListItem(
         content = {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = file.name,
+                    text = row.label,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -273,21 +355,7 @@ private fun SftpFileRow(
                 )
             }
         },
-        leadingContent = {
-            Icon(
-                imageVector = if (file.isDirectory) {
-                    Icons.Default.Folder
-                } else {
-                    Icons.AutoMirrored.Filled.InsertDriveFile
-                },
-                contentDescription = null,
-                tint = if (file.isDirectory) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.secondary
-                }
-            )
-        },
+        leadingContent = { SftpRowIcon(row, showTree) },
         trailingContent = {
             Box {
                 IconButton(onClick = { onMenuExpandedChange(true) }) {
@@ -300,6 +368,7 @@ private fun SftpFileRow(
                 SftpFileMenu(
                     expanded = menuExpanded,
                     onDismiss = { onMenuExpandedChange(false) },
+                    onOpenFolder = onOpenFolder.takeIf { showTree && file.isDirectory },
                     onRename = onRename,
                     onDelete = onDelete
                 )
@@ -313,6 +382,7 @@ private fun SftpFileRow(
 private fun SftpFileMenu(
     expanded: Boolean,
     onDismiss: () -> Unit,
+    onOpenFolder: (() -> Unit)?,
     onRename: () -> Unit,
     onDelete: () -> Unit
 ) {
@@ -320,6 +390,21 @@ private fun SftpFileMenu(
         expanded = expanded,
         onDismissRequest = onDismiss
     ) {
+        if (onOpenFolder != null) {
+            DropdownMenuItem(
+                text = { Text("Open folder") },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.FolderOpen,
+                        contentDescription = null
+                    )
+                },
+                onClick = {
+                    onDismiss()
+                    onOpenFolder()
+                }
+            )
+        }
         DropdownMenuItem(
             text = { Text("Rename") },
             leadingIcon = {
@@ -347,6 +432,50 @@ private fun SftpFileMenu(
                 onDelete()
             }
         )
+    }
+}
+
+@Composable
+private fun SftpRowIcon(row: SftpRow, showTree: Boolean) {
+    val file = row.file
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        if (showTree) {
+            Spacer(Modifier.width(TREE_INDENT * row.depth))
+            TreeChevron(row)
+        }
+        Icon(
+            imageVector = when {
+                !file.isDirectory -> Icons.AutoMirrored.Filled.InsertDriveFile
+                row.isExpanded -> Icons.Default.FolderOpen
+                else -> Icons.Default.Folder
+            },
+            contentDescription = null,
+            tint = if (file.isDirectory) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                MaterialTheme.colorScheme.secondary
+            }
+        )
+    }
+}
+
+@Composable
+private fun TreeChevron(row: SftpRow) {
+    Box(modifier = Modifier.size(24.dp), contentAlignment = Alignment.Center) {
+        when {
+            !row.file.isDirectory -> Unit
+            row.isLoading -> CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+            else -> Icon(
+                imageVector = if (row.isExpanded) {
+                    Icons.Default.KeyboardArrowDown
+                } else {
+                    Icons.AutoMirrored.Filled.KeyboardArrowRight
+                },
+                contentDescription = if (row.isExpanded) "Collapse" else "Expand",
+                modifier = Modifier.size(20.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
 }
 

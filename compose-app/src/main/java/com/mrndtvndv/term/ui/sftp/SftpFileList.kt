@@ -3,7 +3,9 @@
 package com.mrndtvndv.term.ui.sftp
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
@@ -11,6 +13,7 @@ import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -20,6 +23,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -32,6 +36,7 @@ import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
@@ -63,7 +68,9 @@ fun SftpDirectory(
     onOpenFile: (SftpFile) -> Unit,
     onRename: (SftpFile) -> Unit,
     onDelete: (SftpFile) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    searchQuery: String = "",
+    onClearSearch: () -> Unit = {}
 ) {
     val pullToRefreshState = rememberPullToRefreshState()
     PullToRefreshBox(
@@ -90,6 +97,8 @@ fun SftpDirectory(
             }
             is SftpUiState.Success -> SftpFileList(
                 state = state,
+                searchQuery = searchQuery,
+                onClearSearch = onClearSearch,
                 onOpenFolder = onOpenFolder,
                 onOpenFile = onOpenFile,
                 onRename = onRename,
@@ -116,6 +125,90 @@ fun SftpDirectory(
 @Composable
 private fun SftpFileList(
     state: SftpUiState.Success,
+    searchQuery: String,
+    onClearSearch: () -> Unit,
+    onOpenFolder: (String) -> Unit,
+    onOpenFile: (SftpFile) -> Unit,
+    onRename: (SftpFile) -> Unit,
+    onDelete: (SftpFile) -> Unit
+) {
+    val filteredFiles = remember(state.files, searchQuery) {
+        if (searchQuery.isBlank()) {
+            state.files
+        } else {
+            val query = searchQuery.trim()
+            state.files.filter { it.name.contains(query, ignoreCase = true) }
+        }
+    }
+
+    if (filteredFiles.isEmpty()) {
+        SftpEmptyList(
+            searchQuery = searchQuery,
+            onClearSearch = onClearSearch
+        )
+    } else {
+        SftpFileItems(
+            files = filteredFiles,
+            gitStatuses = state.gitStatuses,
+            onOpenFolder = onOpenFolder,
+            onOpenFile = onOpenFile,
+            onRename = onRename,
+            onDelete = onDelete
+        )
+    }
+}
+
+@Composable
+private fun SftpEmptyList(
+    searchQuery: String,
+    onClearSearch: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(32.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            if (searchQuery.isNotBlank()) {
+                Icon(
+                    imageVector = Icons.Default.Search,
+                    contentDescription = null,
+                    modifier = Modifier.size(48.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                )
+                Text(
+                    text = "No matching files",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = "No files match \"$searchQuery\"",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                )
+                TextButton(onClick = onClearSearch) {
+                    Text("Clear search")
+                }
+            } else {
+                Text(
+                    text = "Empty folder",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SftpFileItems(
+    files: List<SftpFile>,
+    gitStatuses: Map<String, String>,
     onOpenFolder: (String) -> Unit,
     onOpenFile: (SftpFile) -> Unit,
     onRename: (SftpFile) -> Unit,
@@ -126,15 +219,15 @@ private fun SftpFileList(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(
             top = 8.dp,
-            bottom = 88.dp + WindowInsets.navigationBars
+            bottom = 96.dp + WindowInsets.navigationBars
                 .asPaddingValues()
                 .calculateBottomPadding()
         )
     ) {
-        items(state.files) { file ->
+        items(files, key = { it.path }) { file ->
             SftpFileRow(
                 file = file,
-                gitStatus = state.gitStatuses[file.name]?.trim(),
+                gitStatus = gitStatuses[file.name]?.trim(),
                 menuExpanded = menuTargetPath == file.path,
                 onMenuExpandedChange = { expanded -> menuTargetPath = if (expanded) file.path else null },
                 onClick = { if (file.isDirectory) onOpenFolder(file.path) else onOpenFile(file) },

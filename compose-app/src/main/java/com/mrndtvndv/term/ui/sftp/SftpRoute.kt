@@ -5,15 +5,12 @@ import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.FileUpload
-import androidx.compose.material3.FloatingActionButton
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -23,7 +20,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -67,6 +66,8 @@ fun SftpScreenRoute(
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     var dialog by remember { mutableStateOf<SftpDialog?>(null) }
+    var isSearchActive by rememberSaveable { mutableStateOf(false) }
+    var searchQuery by rememberSaveable { mutableStateOf("") }
 
     fun showMessage(message: String) {
         scope.launch { snackbarHostState.showSnackbar(message) }
@@ -137,7 +138,11 @@ fun SftpScreenRoute(
 
     val currentPath = (backStack.last() as SftpFolder).path
     LaunchedEffect(currentPath) {
-        if (currentPath != viewModel.currentPath) viewModel.navigateTo(currentPath)
+        if (currentPath != viewModel.currentPath) {
+            viewModel.navigateTo(currentPath)
+            isSearchActive = false
+            searchQuery = ""
+        }
     }
 
     AppNavDisplay(
@@ -150,17 +155,6 @@ fun SftpScreenRoute(
                     containerColor = Color.Transparent,
                     contentWindowInsets = WindowInsets(0.dp),
                     snackbarHost = { SnackbarHost(snackbarHostState) },
-                    floatingActionButton = {
-                        FloatingActionButton(
-                            onClick = { uploadPicker.launch("*/*") },
-                            modifier = Modifier.navigationBarsPadding(),
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.FileUpload,
-                                contentDescription = "Upload file"
-                            )
-                        }
-                    },
                     bottomBar = {
                         SftpMinimizedTransferBanner(
                             transfers = transfers,
@@ -175,33 +169,70 @@ fun SftpScreenRoute(
                         )
                     }
                 ) { innerPadding ->
-                    Column(
+                    Box(
                         modifier = Modifier
                             .fillMaxSize()
                             .padding(innerPadding)
                     ) {
-                        SftpBreadcrumbs(
-                            currentPath = currentPath,
-                            trailPath = trailPath,
-                            isTabActive = isTabActive,
-                            onSegmentClick = onOpenFolder
-                        )
-                        SftpDirectory(
-                            state = uiState,
-                            isRefreshing = isRefreshing,
-                            onRefresh = viewModel::refresh,
-                            onOpenFolder = onOpenFolder,
-                            onOpenFile = { file ->
-                                viewModel.downloadAndOpenFile(
-                                    file = file,
-                                    cacheDir = context.cacheDir,
-                                    onFileReady = onOpenFile,
-                                    onError = onOpenFileError
-                                )
+                        Column(
+                            modifier = Modifier.fillMaxSize()
+                        ) {
+                            SftpBreadcrumbs(
+                                currentPath = currentPath,
+                                trailPath = trailPath,
+                                isTabActive = isTabActive,
+                                onSegmentClick = { path ->
+                                    isSearchActive = false
+                                    searchQuery = ""
+                                    onOpenFolder(path)
+                                }
+                            )
+                            SftpDirectory(
+                                state = uiState,
+                                isRefreshing = isRefreshing,
+                                onRefresh = viewModel::refresh,
+                                onOpenFolder = { path ->
+                                    isSearchActive = false
+                                    searchQuery = ""
+                                    onOpenFolder(path)
+                                },
+                                onOpenFile = { file ->
+                                    viewModel.downloadAndOpenFile(
+                                        file = file,
+                                        cacheDir = context.cacheDir,
+                                        onFileReady = onOpenFile,
+                                        onError = onOpenFileError
+                                    )
+                                },
+                                onRename = { dialog = SftpDialog.Rename(it) },
+                                onDelete = { dialog = SftpDialog.Delete(it) },
+                                searchQuery = searchQuery,
+                                onClearSearch = { searchQuery = "" },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+
+                        val hasBottomBanner = innerPadding.calculateBottomPadding() > 0.dp
+                        SftpBottomActionBar(
+                            isSearchActive = isSearchActive,
+                            searchQuery = searchQuery,
+                            onSearchClick = { isSearchActive = true },
+                            onCloseSearch = {
+                                isSearchActive = false
+                                searchQuery = ""
                             },
-                            onRename = { dialog = SftpDialog.Rename(it) },
-                            onDelete = { dialog = SftpDialog.Delete(it) },
-                            modifier = Modifier.weight(1f)
+                            onSearchQueryChange = { searchQuery = it },
+                            onUploadClick = { uploadPicker.launch("*/*") },
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .then(
+                                    if (hasBottomBanner) {
+                                        Modifier
+                                    } else {
+                                        Modifier.navigationBarsPadding()
+                                    }
+                                )
+                                .padding(bottom = 16.dp)
                         )
                     }
                 }

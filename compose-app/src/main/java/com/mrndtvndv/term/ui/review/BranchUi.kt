@@ -2,8 +2,6 @@
 
 package com.mrndtvndv.term.ui.review
 
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,10 +22,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Cloud
-import androidx.compose.material.icons.filled.CloudDownload
-import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -38,14 +33,9 @@ import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TooltipAnchorPosition
-import androidx.compose.material3.TooltipBox
-import androidx.compose.material3.TooltipDefaults
-import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -54,168 +44,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-
-@Suppress("LongMethod", "LongParameterList")
-@Composable
-fun BranchHeader(
-    currentBranch: String,
-    onBranchClick: () -> Unit,
-    aheadCount: Int = 0,
-    behindCount: Int = 0,
-    isSyncInProgress: Boolean = false,
-    onFetch: () -> Unit = {},
-    onPull: () -> Unit = {},
-    onPush: () -> Unit = {},
-    modifier: Modifier = Modifier
-) {
-    Surface(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(start = 16.dp, end = 16.dp, bottom = 6.dp),
-        shape = RoundedCornerShape(12.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                modifier = Modifier
-                    .weight(1f)
-                    .clickable(onClick = onBranchClick)
-                    .padding(vertical = 4.dp)
-            ) {
-                Surface(
-                    color = MaterialTheme.colorScheme.primaryContainer,
-                    shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier.size(32.dp)
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = Icons.Default.AccountTree,
-                            contentDescription = "Current branch",
-                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-                }
-                Column(modifier = Modifier.weight(1f, fill = false)) {
-                    Text(
-                        text = "Current Branch",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        text = currentBranch.ifBlank { "HEAD" },
-                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-            }
-            BranchSyncIndicators(
-                aheadCount = aheadCount,
-                behindCount = behindCount
-            )
-            if (isSyncInProgress) {
-                LoadingIndicator(
-                    modifier = Modifier
-                        .padding(12.dp)
-                        .size(24.dp),
-                )
-            } else {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    SyncActionButton(
-                        icon = Icons.Default.Sync,
-                        tooltip = "Fetch from remote",
-                        onClick = onFetch
-                    )
-                    SyncActionButton(
-                        icon = Icons.Default.CloudDownload,
-                        tooltip = "Pull from remote",
-                        onClick = onPull
-                    )
-                    SyncActionButton(
-                        icon = Icons.Default.CloudUpload,
-                        tooltip = "Push to remote",
-                        onClick = onPush
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun SyncActionButton(
-    icon: ImageVector,
-    tooltip: String,
-    onClick: () -> Unit
-) {
-    TooltipBox(
-        positionProvider = TooltipDefaults.rememberTooltipPositionProvider(
-            positioning = TooltipAnchorPosition.Above
-        ),
-        tooltip = { PlainTooltip { Text(tooltip) } },
-        state = rememberTooltipState()
-    ) {
-        IconButton(onClick = onClick) {
-            Icon(
-                imageVector = icon,
-                contentDescription = tooltip,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-    }
-}
-
-@Composable
-private fun BranchSyncIndicators(
-    aheadCount: Int,
-    behindCount: Int
-) {
-    if (aheadCount <= 0 && behindCount <= 0) return
-
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        if (aheadCount > 0) {
-            BranchSyncIndicator(
-                arrow = "↑",
-                count = aheadCount,
-                tint = MaterialTheme.colorScheme.primary
-            )
-        }
-        if (behindCount > 0) {
-            BranchSyncIndicator(
-                arrow = "↓",
-                count = behindCount,
-                tint = MaterialTheme.colorScheme.secondary
-            )
-        }
-    }
-}
-
-@Composable
-private fun BranchSyncIndicator(
-    arrow: String,
-    count: Int,
-    tint: Color
-) {
-    Text(
-        text = "$arrow $count",
-        style = MaterialTheme.typography.labelMedium,
-        color = tint
-    )
-}
 
 @Suppress("LongMethod", "CyclomaticComplexMethod")
 @Composable

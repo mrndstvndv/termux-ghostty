@@ -1,4 +1,8 @@
-@file:OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3ExpressiveApi::class)
+@file:OptIn(
+    ExperimentalFoundationApi::class,
+    ExperimentalMaterial3Api::class,
+    ExperimentalMaterial3ExpressiveApi::class
+)
 
 package com.mrndtvndv.term.ui.review
 
@@ -7,11 +11,7 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
 import androidx.compose.animation.shrinkHorizontally
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -40,30 +40,25 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.AddCircleOutline
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Commit
 import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.RemoveCircleOutline
 import androidx.compose.material.icons.filled.Restore
-import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.VerticalDivider
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
@@ -75,7 +70,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.font.FontWeight
@@ -201,35 +195,8 @@ internal fun FileChangesList(
         )
     }
 
-    Scaffold(
-        modifier = modifier.fillMaxSize(),
-        contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        floatingActionButton = {
-            AnimatedVisibility(
-                visible = stagedFiles.isNotEmpty() && !inSelectionMode,
-                enter = scaleIn(initialScale = 0.6f) + fadeIn(),
-                exit = scaleOut(targetScale = 0.6f) + fadeOut()
-            ) {
-                FloatingActionButton(
-                    onClick = { if (!state.isCommitInProgress) onCommit() },
-                    modifier = Modifier.navigationBarsPadding(),
-                ) {
-                    if (state.isCommitInProgress) {
-                        LoadingIndicator(
-                            modifier = Modifier.size(24.dp),
-                        )
-                    } else {
-                        Icon(
-                            imageVector = Icons.Default.Commit,
-                            contentDescription = "Commit staged changes"
-                        )
-                    }
-                }
-            }
-        }
-    ) { contentPadding ->
-        Box(modifier = Modifier.fillMaxSize()) {
-            val pullToRefreshState = rememberPullToRefreshState()
+    Box(modifier = modifier.fillMaxSize()) {
+        val pullToRefreshState = rememberPullToRefreshState()
             PullToRefreshBox(
                 isRefreshing = state.isRefreshing,
                 state = pullToRefreshState,
@@ -241,7 +208,7 @@ internal fun FileChangesList(
                     )
                 },
                 onRefresh = onRefresh,
-                modifier = Modifier.fillMaxSize().padding(contentPadding)
+                modifier = Modifier.fillMaxSize()
             ) {
                 when (content) {
                     is ReviewUiState.Loading -> {
@@ -267,18 +234,6 @@ internal fun FileChangesList(
                                     .calculateBottomPadding()
                             )
                         ) {
-                            item {
-                                BranchHeader(
-                                    currentBranch = content.currentBranch,
-                                    aheadCount = content.aheadCount,
-                                    behindCount = content.behindCount,
-                                    isSyncInProgress = state.isSyncInProgress,
-                                    onBranchClick = onBranchHeaderClick,
-                                    onFetch = onFetch,
-                                    onPull = onPull,
-                                    onPush = onPush
-                                )
-                            }
                             if (content.stagedFiles.isEmpty() && content.unstagedFiles.isEmpty()) {
                                 item { WorkingTreeClean() }
                             } else {
@@ -335,50 +290,44 @@ internal fun FileChangesList(
                 }
             }
 
-            AnimatedVisibility(
-                visible = inSelectionMode,
-                enter = slideInVertically { it } + fadeIn(),
-                exit = slideOutVertically { it } + fadeOut(),
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .navigationBarsPadding()
-                    .padding(bottom = 16.dp)
-            ) {
-                val selectedList = checkedFiles.toList()
-                val selectedStaged = selectedList.filter { it.isStaged }
-                val selectedUnstaged = selectedList.filter { !it.isStaged }
+            if (content is ReviewUiState.Success) {
+                val selectedStaged = checkedFiles.filter { it.isStaged }
+                val selectedUnstaged = checkedFiles.filter { !it.isStaged }
 
-                M3FloatingToolbar(
-                    stagedCount = selectedStaged.size,
-                    unstagedCount = selectedUnstaged.size,
+                GitActionBar(
+                    currentBranch = content.currentBranch,
+                    aheadCount = content.aheadCount,
+                    behindCount = content.behindCount,
+                    onBranchClick = onBranchHeaderClick,
+                    isSelecting = inSelectionMode,
+                    canCommit = stagedFiles.isNotEmpty(),
+                    isCommitInProgress = state.isCommitInProgress,
+                    isSyncInProgress = state.isSyncInProgress,
+                    selectedStagedCount = selectedStaged.size,
+                    selectedUnstagedCount = selectedUnstaged.size,
+                    onFetch = onFetch,
+                    onPull = onPull,
+                    onPush = onPush,
+                    onCommit = onCommit,
                     onStageSelected = {
-                        if (selectedUnstaged.isNotEmpty()) {
-                            onStageBatch(selectedUnstaged)
-                            checkedFiles = emptySet()
-                        }
+                        onStageBatch(selectedUnstaged)
+                        checkedFiles = emptySet()
                     },
                     onUnstageSelected = {
-                        if (selectedStaged.isNotEmpty()) {
-                            onUnstageBatch(selectedStaged)
-                            checkedFiles = emptySet()
-                        }
-                    },
-                    onDiscardSelected = {
-                        showBatchDiscardDialog = true
-                    },
-                    onSelectAll = {
-                        checkedFiles = if (checkedFiles.size == allFiles.size) {
-                            emptySet()
-                        } else {
-                            allFiles.toSet()
-                        }
-                    },
-                    onClearSelection = {
+                        onUnstageBatch(selectedStaged)
                         checkedFiles = emptySet()
-                    }
+                    },
+                    onDiscardSelected = { showBatchDiscardDialog = true },
+                    onSelectAll = {
+                        checkedFiles = if (checkedFiles.size == allFiles.size) emptySet() else allFiles.toSet()
+                    },
+                    onClearSelection = { checkedFiles = emptySet() },
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .navigationBarsPadding()
+                        .padding(bottom = 16.dp)
                 )
             }
-        }
     }
 }
 
@@ -428,85 +377,6 @@ private fun WorkingTreeClean() {
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
             )
-        }
-    }
-}
-
-@Suppress("LongParameterList", "LongMethod")
-@Composable
-private fun M3FloatingToolbar(
-    stagedCount: Int,
-    unstagedCount: Int,
-    onStageSelected: () -> Unit,
-    onUnstageSelected: () -> Unit,
-    onDiscardSelected: () -> Unit,
-    onSelectAll: () -> Unit,
-    onClearSelection: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Surface(
-        modifier = modifier
-            .shadow(elevation = 8.dp, shape = RoundedCornerShape(28.dp)),
-        shape = RoundedCornerShape(28.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHighest,
-        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-        tonalElevation = 6.dp
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            if (unstagedCount > 0) {
-                IconButton(onClick = onStageSelected) {
-                    Icon(
-                        imageVector = Icons.Default.AddCircleOutline,
-                        contentDescription = "Stage selected",
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                }
-            }
-
-            if (stagedCount > 0) {
-                IconButton(onClick = onUnstageSelected) {
-                    Icon(
-                        imageVector = Icons.Default.RemoveCircleOutline,
-                        contentDescription = "Unstage selected",
-                        tint = MaterialTheme.colorScheme.error
-                    )
-                }
-            }
-
-            IconButton(onClick = onDiscardSelected) {
-                Icon(
-                    imageVector = Icons.Default.Restore,
-                    contentDescription = "Discard selected",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
-            VerticalDivider(
-                modifier = Modifier
-                    .height(20.dp)
-                    .padding(horizontal = 2.dp),
-                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
-            )
-
-            IconButton(onClick = onSelectAll) {
-                Icon(
-                    imageVector = Icons.Default.SelectAll,
-                    contentDescription = "Select all",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
-            IconButton(onClick = onClearSelection) {
-                Icon(
-                    imageVector = Icons.Default.Close,
-                    contentDescription = "Clear selection",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
         }
     }
 }

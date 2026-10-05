@@ -384,6 +384,8 @@ private fun rememberConfiguredController(
 ): TerminalController {
     val controller = rememberTerminalController(
         backend = backend,
+        config = config,
+        fontSize = fontSizeState.intValue,
         onInvalidated = onInvalidated
     )
     SideEffect {
@@ -395,9 +397,15 @@ private fun rememberConfiguredController(
 @Composable
 private fun rememberTerminalController(
     backend: TerminalBackend,
+    config: TerminalCanvasConfig,
+    fontSize: Int,
     onInvalidated: () -> Unit
 ): TerminalController {
-    val controller = remember(backend) { TerminalController(backend) }
+    // Configured before any effect runs: effects precede SideEffect, so a default-configured
+    // controller would resize the session to the wrong grid on every backend switch.
+    val controller = remember(backend) {
+        TerminalController(backend).also { it.configure(config, fontSize) }
+    }
     // Wire the callback before attach and keep it current as overlay policy changes.
     val currentOnInvalidated by rememberUpdatedState(onInvalidated)
     DisposableEffect(controller) {

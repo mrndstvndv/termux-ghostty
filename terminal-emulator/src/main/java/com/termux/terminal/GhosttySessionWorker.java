@@ -336,7 +336,11 @@ final class GhosttySessionWorker extends Thread {
             try {
                 mSession.notifyFrameAvailable();
             } finally {
-                mFramePublicationGate.completeUIUpdate();
+                // A build skipped while this replay was pending must be rescheduled, or an idle
+                // session stays on the stale frame until its next output.
+                if (mFramePublicationGate.completeUIUpdate()) {
+                    getWorkerHandler().post(() -> scheduleSnapshotBuild());
+                }
             }
         });
     }

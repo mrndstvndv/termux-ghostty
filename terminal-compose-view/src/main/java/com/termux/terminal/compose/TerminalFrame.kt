@@ -76,6 +76,28 @@ class TerminalFrame(
     /** Row at the given viewport index, or null when out of range. */
     fun row(index: Int): TerminalRow? = rows.getOrNull(index)
 
+    /**
+     * Replaces presentation-only cursor state while sharing all terminal content.
+     *
+     * Cursor blinking changes no transport content, so the frame keeps its sequence and
+     * row/palette/link identity; only the cursor row has to be replanned.
+     */
+    fun withCursor(cursor: TerminalCursor): TerminalFrame =
+        if (cursor == this.cursor) {
+            this
+        } else {
+            TerminalFrame(
+                sequence = sequence,
+                viewport = viewport,
+                cursor = cursor,
+                modes = modes,
+                palette = palette,
+                rows = rows,
+                linkLayout = linkLayout,
+                imagePlacements = imagePlacements
+            )
+        }
+
     /** Absolute row to viewport index, or -1 when outside the viewport. */
     fun viewportRow(absoluteRow: Int): Int = absoluteRow - viewport.topRow
 

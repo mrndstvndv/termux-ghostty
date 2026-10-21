@@ -39,6 +39,12 @@ public final class TerminalCursorBlinker {
     }
 
     public void setState(boolean start, boolean startOnlyIfCursorEnabled) {
+        if (start && mRunnable != null) {
+            // Already blinking for this session. Restarting would stop() the timer,
+            // re-enable blinking and toggle immediately, resetting the blink phase on
+            // every redundant onResume()/onTerminalReady() call.
+            return;
+        }
         stop();
         TerminalSession session = mSession;
         if (session == null || !session.hasActiveTerminalBackend()) return;
@@ -74,7 +80,9 @@ public final class TerminalCursorBlinker {
             mRunnable = null;
         }
         if (mSession != null && mSession.hasActiveTerminalBackend()) {
+            boolean wasBlinking = mSession.isGhosttyCursorBlinkingEnabled();
             mSession.setCursorBlinkingEnabled(false);
+            if (wasBlinking) mOnStateChanged.run();
         }
     }
 

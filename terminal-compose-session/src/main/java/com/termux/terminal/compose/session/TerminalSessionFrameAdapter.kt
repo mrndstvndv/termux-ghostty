@@ -40,21 +40,48 @@ class TerminalSessionFrameStore {
         frameDelta: com.termux.terminal.FrameDelta,
         state: TerminalFrameSessionState
     ): ApplyResult = when (val result = renderCache.apply(frameDelta)) {
-        RenderFrameCache.ApplyResult.APPLIED -> {
-            val snapshot = renderCache.getSnapshotForRender(
-                state.cursorBlinkingEnabled,
-                state.cursorBlinkState
-            ) ?: return ApplyResult.NEEDS_FULL_REFRESH
-            frame = frameAdapter.build(snapshot, frameDelta.viewportLinkSnapshot, state)
-            ApplyResult.UPDATED
-        }
-        RenderFrameCache.ApplyResult.IGNORED_OLDER_OR_DUPLICATE -> ApplyResult.IGNORED
+        RenderFrameCache.ApplyResult.APPLIED ->
+            publishFrame(frameDelta, state)
+        RenderFrameCache.ApplyResult.IGNORED_OLDER_OR_DUPLICATE ->
+            refreshPresentationState(state)
         else -> if (result.requiresFullRefresh()) {
             ApplyResult.NEEDS_FULL_REFRESH
         } else {
             ApplyResult.IGNORED
         }
     }
+
+    private fun publishFrame(
+        frameDelta: com.termux.terminal.FrameDelta,
+        state: TerminalFrameSessionState
+    ): ApplyResult {
+        val snapshot = currentRenderSnapshot(state) ?: return ApplyResult.NEEDS_FULL_REFRESH
+        frame = frameAdapter.build(snapshot, frameDelta.viewportLinkSnapshot, state)
+        return ApplyResult.UPDATED
+    }
+
+    /**
+     * Re-publishes the current frame for presentation-only session state.
+     *
+     * Cursor blinking changes no terminal content, so it never advances the transport
+     * sequence. The blink driver refreshes this backend directly; without rebuilding the
+     * frame here the renderer keeps drawing the previous cursor visibility.
+     */
+    private fun refreshPresentationState(state: TerminalFrameSessionState): ApplyResult {
+        val current = frame ?: return ApplyResult.IGNORED
+        val cursor = currentRenderSnapshot(state)?.let {
+            current.cursor.copy(visible = it.isCursorVisible)
+        }
+        if (cursor == null || cursor == current.cursor) return ApplyResult.IGNORED
+        frame = current.withCursor(cursor)
+        return ApplyResult.UPDATED
+    }
+
+    private fun currentRenderSnapshot(state: TerminalFrameSessionState): ScreenSnapshot? =
+        renderCache.getSnapshotForRender(
+            state.cursorBlinkingEnabled,
+            state.cursorBlinkState
+        )
 
     fun currentFrame(): TerminalFrame? = frame
 

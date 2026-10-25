@@ -3,9 +3,7 @@ const builtin = @import("builtin");
 const build_options = @import("termux_ghostty_build_options");
 
 const is_android = builtin.target.abi.isAndroid();
-const c = if (is_android) @cImport({
-    @cInclude("android/log.h");
-}) else struct {};
+const c = if (is_android) @import("android_log_c") else struct {};
 
 const Level = enum {
     debug,
@@ -41,7 +39,7 @@ pub fn err(comptime fmt: []const u8, args: anytype) void {
 
 fn log(comptime level: Level, comptime fmt: []const u8, args: anytype) void {
     var buffer: [buffer_size]u8 = undefined;
-    const message = std.fmt.bufPrintZ(&buffer, fmt, args) catch return;
+    const message = std.fmt.bufPrintSentinel(&buffer, fmt, args, 0) catch return;
 
     if (is_android) {
         _ = c.__android_log_write(androidPriority(level), log_tag.ptr, message.ptr);

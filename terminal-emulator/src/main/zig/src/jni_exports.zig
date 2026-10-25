@@ -3,8 +3,8 @@ const ghostty_log = @import("android_log.zig");
 const core = @import("termux_ghostty.zig");
 const ssh = @import("ssh_native_session.zig");
 const ssh_shell_exit = @import("ssh_shell_exit.zig");
-// Shared cImport: zig 0.16 gives each @cImport call its own type namespace, so
-// JNIEnv/JavaVM/etc. passed to ssh would otherwise be distinct types.
+// Shared C module (ssh_c): one translated copy, so JNIEnv/JavaVM/etc. passed
+// to ssh are the same type here and there.
 const c = ssh.c;
 
 // Android Scudo rejects the 8-byte pointers returned by c_allocator's posix_memalign path.
@@ -780,7 +780,7 @@ fn newJStringFromUtf8(env: *c.JNIEnv, utf8: []const u8) c.jstring {
 fn throwJavaRuntimeException(env: *c.JNIEnv, message: []const u8) void {
     const exception_class = env.*.*.FindClass.?(env, "java/lang/IllegalStateException") orelse return;
     defer env.*.*.DeleteLocalRef.?(env, exception_class);
-    const message_c = native_allocator.dupeZ(u8, message) catch return;
+    const message_c = native_allocator.dupeSentinel(u8, message, 0) catch return;
     defer native_allocator.free(message_c);
     _ = env.*.*.ThrowNew.?(env, exception_class, message_c.ptr);
 }

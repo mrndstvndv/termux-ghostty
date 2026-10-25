@@ -4,27 +4,7 @@ const ssh_stream_buffer = @import("ssh_stream_buffer.zig");
 const ssh_open_queue = @import("ssh_open_queue.zig");
 const ssh_shell_exit = @import("ssh_shell_exit.zig");
 
-pub const c = @cImport({
-    // NDK 29 bionic headers use clang nullability keywords in array
-    // parameter position and an overloadable ioctl; zig 0.16's translate-c
-    // (clang 21) rejects both. Neutralize for translation.
-    @cDefine("_Nullable", "");
-    @cDefine("_Nonnull", "");
-    @cDefine("_Null_unspecified", "");
-    @cDefine("BIONIC_IOCTL_NO_SIGNEDNESS_OVERLOAD", "");
-    @cInclude("jni.h");
-    @cInclude("libssh2.h");
-    @cInclude("libssh2_sftp.h");
-    @cInclude("unistd.h");
-    @cInclude("poll.h");
-    @cInclude("fcntl.h");
-    @cInclude("netinet/in.h");
-    @cInclude("netinet/tcp.h");
-    @cInclude("pthread.h");
-    @cInclude("semaphore.h");
-    @cInclude("sys/socket.h");
-    @cInclude("time.h");
-});
+pub const c = @import("ssh_c");
 
 pub const SshNativeSession = struct {
     // zig 0.16 removed std.Thread.Mutex in favor of std.Io.Mutex, which
@@ -311,7 +291,7 @@ pub const SshNativeSession = struct {
 
         fn create(owner: *SshNativeSession, socket_path: []const u8) !*StreamChannel {
             const allocator = owner.allocator;
-            const path = try allocator.dupeZ(u8, socket_path);
+            const path = try allocator.dupeSentinel(u8, socket_path, 0);
             errdefer allocator.free(path);
             var inbound = try ssh_stream_buffer.Ring.init(queue_allocator, stream_buffer_capacity);
             errdefer inbound.deinit(queue_allocator);
@@ -610,9 +590,9 @@ pub const SshNativeSession = struct {
 
         fn create(owner: *SshNativeSession, kind: Kind, term_type: []const u8, command: ?[]const u8, cols: c_int, rows: c_int) !*ChannelOp {
             const allocator = owner.allocator;
-            const term = try allocator.dupeZ(u8, term_type);
+            const term = try allocator.dupeSentinel(u8, term_type, 0);
             errdefer allocator.free(term);
-            const cmd = try allocator.dupeZ(u8, command orelse "");
+            const cmd = try allocator.dupeSentinel(u8, command orelse "", 0);
             errdefer allocator.free(cmd);
             const op = try allocator.create(ChannelOp);
             op.* = .{
@@ -957,7 +937,7 @@ pub const SshNativeSession = struct {
         }
 
         if (is_password) {
-            const password_c = try allocator.dupeZ(u8, password_or_key);
+            const password_c = try allocator.dupeSentinel(u8, password_or_key, 0);
             defer allocator.free(password_c);
             while (true) {
                 const rc = c.libssh2_userauth_password_ex(

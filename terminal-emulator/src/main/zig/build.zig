@@ -1,10 +1,11 @@
 const std = @import("std");
 const builtin = @import("builtin");
+const translate_c = @import("translate_c");
 
 pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
-    const enable_logging = b.option(bool, "ghostty-log", "Enable verbose Ghostty JNI logging") orelse (optimize == .Debug);
+    const enable_logging = b.option(bool, "ghostty-log", "Enable verbose Ghostty JNI logging") orelse (optimize == .debug);
     const test_filters = b.option(
         [][]const u8,
         "test-filter",
@@ -18,7 +19,7 @@ pub fn build(b: *std.Build) !void {
         .root_source_file = b.path("src/jni_exports.zig"),
         .target = target,
         .optimize = optimize,
-        .strip = optimize != .Debug,
+        .strip = optimize != .debug,
         .link_libc = true,
     });
 
@@ -115,6 +116,7 @@ pub fn build(b: *std.Build) !void {
         if (test_module_opt) |tm| tm.linkLibrary(spng_lib);
     }
 
+    var libssh2_lib: ?*std.Build.Step.Compile = null;
     if (b.lazyDependency("libssh2", .{
         .target = target,
         .optimize = optimize,
@@ -123,6 +125,7 @@ pub fn build(b: *std.Build) !void {
         .@"zlib" = true,
     })) |libssh2_dep| {
         const lib_dep = libssh2_dep.artifact("ssh2");
+        libssh2_lib = lib_dep;
         if (lib_dep.rootModuleTarget().abi.isAndroid()) {
             try addAndroidNdkPaths(b, lib_dep);
         }
@@ -144,6 +147,10 @@ pub fn build(b: *std.Build) !void {
         lib.link_z_max_page_size = 16384;
         lib.root_module.linkSystemLibrary("log", .{});
         try addAndroidNdkPaths(b, lib);
+        try addAndroidCImport(b, lib, "android_log_c", "src/c/android_log.h", &.{});
+        if (libssh2_lib) |ssh2| {
+            try addAndroidCImport(b, lib, "ssh_c", "src/c/ssh.h", &.{ssh2.getEmittedIncludeTree()});
+        }
     }
 
     lib.installHeadersDirectory(
@@ -155,8 +162,67 @@ pub fn build(b: *std.Build) !void {
     b.installArtifact(lib);
 }
 
+const AndroidNdkPaths = struct {
+    include_dir: []const u8,
+    sys_include_dir: []const u8,
+    cpp_include_dir: []const u8,
+    c_runtime_dir: []const u8,
+    lib_dir: []const u8,
+};
+
 fn addAndroidNdkPaths(b: *std.Build, step: *std.Build.Step.Compile) !void {
-    const target = step.rootModuleTarget();
+    const paths = try androidNdkPaths(b, step.rootModuleTarget());
+
+    step.setLibCFile(androidLibcFile(b, paths));
+    step.root_module.addSystemIncludePath(.{ .cwd_relative = paths.include_dir });
+    step.root_module.addSystemIncludePath(.{ .cwd_relative = paths.cpp_include_dir });
+    step.root_module.addLibraryPath(.{ .cwd_relative = paths.c_runtime_dir });
+    step.root_module.addLibraryPath(.{ .cwd_relative = paths.lib_dir });
+}
+
+fn androidLibcFile(b: *std.Build, paths: AndroidNdkPaths) std.Build.LazyPath {
+    const libc_txt = b.fmt(
+        \\include_dir={s}
+        \\sys_include_dir={s}
+        \\crt_dir={s}
+        \\msvc_lib_dir=
+        \\kernel32_lib_dir=
+        \\gcc_dir={s}
+        \\darwin_sdk_dir=
+    , .{ paths.include_dir, paths.sys_include_dir, paths.c_runtime_dir, paths.c_runtime_dir });
+
+    const write_files = b.addWriteFiles();
+    return write_files.add("libc.txt", libc_txt);
+}
+
+/// Zig 0.17 removed @cImport. Translates one of the wrapper headers in src/c for the Android
+/// target and makes it importable as `name` from the step's root module.
+///
+/// This mirrors the `Translator.init` path of Ghostty's pkg/translate-c wrapper (`initTranslator`
+/// in the pinned Ghostty), using the same upstream translate_c 2.0.0 package. The NDK libc file is
+/// passed directly, so translate-c uses the NDK headers and not the host SDK. Revisit this when
+/// bumping the Ghostty pin.
+fn addAndroidCImport(
+    b: *std.Build,
+    step: *std.Build.Step.Compile,
+    name: []const u8,
+    header: []const u8,
+    include_paths: []const std.Build.LazyPath,
+) !void {
+    const paths = try androidNdkPaths(b, step.rootModuleTarget());
+    const translated = translate_c.Translator.init(b.dependency("translate_c", .{}), .{
+        .c_source_file = b.path(header),
+        .target = step.root_module.resolved_target.?,
+        .optimize = step.root_module.optimize.?,
+        // translate-c only takes include dirs from the libc file when libc is linked.
+        .link_libc = true,
+        .libc_file = androidLibcFile(b, paths),
+    });
+    for (include_paths) |path| translated.addIncludePath(path);
+    step.root_module.addImport(name, translated.mod);
+}
+
+fn androidNdkPaths(b: *std.Build, target: std.Target) !AndroidNdkPaths {
     const ndk_path = findAndroidNdkPath(b) orelse return error.AndroidNDKNotFound;
     const ndk_triple = ndkTriple(target) orelse return error.AndroidNDKUnsupportedTarget;
     const host = hostTag() orelse return error.AndroidNDKUnsupportedHost;
@@ -201,23 +267,13 @@ fn addAndroidNdkPaths(b: *std.Build, step: *std.Build.Step.Compile) !void {
         "v1",
     });
 
-    const libc_txt = b.fmt(
-        \\include_dir={s}
-        \\sys_include_dir={s}
-        \\crt_dir={s}
-        \\msvc_lib_dir=
-        \\kernel32_lib_dir=
-        \\gcc_dir=
-    , .{ include_dir, sys_include_dir, c_runtime_dir });
-
-    const write_files = b.addWriteFiles();
-    const libc_path = write_files.add("libc.txt", libc_txt);
-
-    step.setLibCFile(libc_path);
-    step.root_module.addSystemIncludePath(.{ .cwd_relative = include_dir });
-    step.root_module.addSystemIncludePath(.{ .cwd_relative = cpp_include_dir });
-    step.root_module.addLibraryPath(.{ .cwd_relative = c_runtime_dir });
-    step.root_module.addLibraryPath(.{ .cwd_relative = lib_dir });
+    return .{
+        .include_dir = include_dir,
+        .sys_include_dir = sys_include_dir,
+        .cpp_include_dir = cpp_include_dir,
+        .c_runtime_dir = c_runtime_dir,
+        .lib_dir = lib_dir,
+    };
 }
 
 fn findAndroidNdkPath(b: *std.Build) ?[]const u8 {

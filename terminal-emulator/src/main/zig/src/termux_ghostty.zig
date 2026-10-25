@@ -206,7 +206,7 @@ const SnapshotMetadata = struct {
         .reverse_video = false,
     },
     mode_bits: u32 = 0,
-    palette: [termux_palette_len]u32 = [_]u32{0} ** termux_palette_len,
+    palette: [termux_palette_len]u32 = @splat(0),
 };
 
 const ViewportLinkRecord = struct {
@@ -302,7 +302,7 @@ pub const Session = struct {
         .reverse_video = false,
     },
     last_serialized_mode_bits: u32 = 0,
-    last_serialized_palette: [termux_palette_len]u32 = [_]u32{0} ** termux_palette_len,
+    last_serialized_palette: [termux_palette_len]u32 = @splat(0),
     frame_perf: FramePerfCounters = .{},
     mouse_pressed_buttons: u16 = 0,
     mouse_last_cell: ghostty.Coordinate = .{ .x = 0, .y = 0 },
@@ -775,15 +775,11 @@ pub const Session = struct {
         var image_offsets: std.AutoHashMapUnmanaged(u32, ImageBufferLoc) = .empty;
         defer image_offsets.deinit(self.alloc);
 
-        var has_virtual = false;
         var it = storage.placements.iterator();
         while (it.next()) |entry| {
             const key = entry.key_ptr;
             const placement = entry.value_ptr;
-            if (placement.location == .virtual) {
-                has_virtual = true;
-                continue;
-            }
+            if (placement.location == .virtual) continue;
             const image = storage.images.getPtr(key.image_id) orelse continue;
             if (image.width == 0 or image.height == 0) continue;
             const render_data = image.renderData();
@@ -861,74 +857,58 @@ pub const Session = struct {
             });
         }
 
-        if (has_virtual) {
-            const pages = &self.terminal.screens.active.pages;
-            const top = pages.getTopLeft(.viewport);
-            const bot = pages.getBottomRight(.viewport);
-            var virtual_it = ghostty.kitty.graphics.unicode.placementIterator(top, bot);
-            while (virtual_it.next()) |virtual_placement| {
-                const image = storage.images.getPtr(virtual_placement.image_id) orelse continue;
-                if (image.width == 0 or image.height == 0) continue;
-                const render_data = image.renderData();
-                const pixel_bytes = render_data.bytes() orelse continue;
-                if (pixel_bytes.len == 0) continue;
+        // Virtual placements (unicode placeholders) come from the render state, which
+        // was updated before this runs and has their position in the captured rows.
+        const viewport_rows = self.render_state.rows;
+        var render_it = self.render_state.imagePlacementIterator();
+        while (render_it.next()) |p| {
+            if (p.protocol.kitty.kind != .virtual) continue;
+            if (p.y < 0 or @as(usize, @intCast(p.y)) >= viewport_rows) continue;
+            if (p.width == 0 or p.height == 0) continue;
+            const image = storage.images.getPtr(p.image_id) orelse continue;
+            if (image.width == 0 or image.height == 0) continue;
+            const render_data = image.renderData();
+            const pixel_bytes = render_data.bytes() orelse continue;
+            if (pixel_bytes.len == 0) continue;
 
-                const cell_w = @max(1, self.terminal.width_px / self.terminal.cols);
-                const cell_h = @max(1, self.terminal.height_px / self.terminal.rows);
-                const rendered = virtual_placement.renderPlacement(
-                    storage,
-                    image,
-                    cell_w,
-                    cell_h,
-                ) catch continue;
-                if (rendered.dest_width == 0 or rendered.dest_height == 0) continue;
+            const pixel_format: u32 = switch (image.format) {
+                .rgb => 1,
+                .rgba => 0,
+                else => 0,
+            };
 
-                const vp_point = pages.pointFromPin(.viewport, rendered.top_left) orelse continue;
-                const vp_coord = vp_point.coord();
-                const vp_col: i32 = @intCast(vp_coord.x);
-                const vp_row: i32 = @intCast(vp_coord.y);
+            const img_buf = if (image_offsets.get(p.image_id)) |cached|
+                cached
+            else blk: {
+                const buffer_offset: u32 = std.math.cast(u32, self.scratch_kitty_pixel_data.items.len) orelse continue;
+                const buffer_len: u32 = std.math.cast(u32, pixel_bytes.len) orelse continue;
+                try self.scratch_kitty_pixel_data.appendSlice(self.alloc, pixel_bytes);
+                const info = ImageBufferLoc{ .offset = buffer_offset, .len = buffer_len };
+                try image_offsets.put(self.alloc, p.image_id, info);
+                break :blk info;
+            };
 
-                const col_span = virtual_placement.width;
-                const row_span = virtual_placement.height;
-                const pixel_format: u32 = switch (image.format) {
-                    .rgb => 1,
-                    .rgba => 0,
-                    else => 0,
-                };
-
-                const img_buf = if (image_offsets.get(virtual_placement.image_id)) |cached|
-                    cached
-                else blk: {
-                    const buffer_offset: u32 = std.math.cast(u32, self.scratch_kitty_pixel_data.items.len) orelse continue;
-                    const buffer_len: u32 = std.math.cast(u32, pixel_bytes.len) orelse continue;
-                    try self.scratch_kitty_pixel_data.appendSlice(self.alloc, pixel_bytes);
-                    const info = ImageBufferLoc{ .offset = buffer_offset, .len = buffer_len };
-                    try image_offsets.put(self.alloc, virtual_placement.image_id, info);
-                    break :blk info;
-                };
-
-                try self.scratch_kitty_placements.append(self.alloc, .{
-                    .image_id = virtual_placement.image_id,
-                    .placement_id = virtual_placement.placement_id,
-                    .image_generation = image.generation,
-                    .viewport_col = vp_col,
-                    .viewport_row = vp_row,
-                    .col_span = col_span,
-                    .row_span = row_span,
-                    .z_index = 0,
-                    .src_x = rendered.source_x,
-                    .src_y = rendered.source_y,
-                    .src_width = rendered.source_width,
-                    .src_height = rendered.source_height,
-                    .dest_width_px = rendered.dest_width,
-                    .dest_height_px = rendered.dest_height,
-                    .image_width = image.width,
-                    .image_height = image.height,
-                    .pixel_format = pixel_format,
-                    .buffer_offset = img_buf.offset,
-                    .buffer_len = img_buf.len,
-                });
-            }
+            try self.scratch_kitty_placements.append(self.alloc, .{
+                .image_id = p.image_id,
+                .placement_id = p.protocol.kitty.placement_id,
+                .image_generation = p.image_generation,
+                .viewport_col = p.x,
+                .viewport_row = p.y,
+                .col_span = p.cols,
+                .row_span = p.rows,
+                .z_index = p.z,
+                .src_x = p.source_x,
+                .src_y = p.source_y,
+                .src_width = p.source_width,
+                .src_height = p.source_height,
+                .dest_width_px = p.width,
+                .dest_height_px = p.height,
+                .image_width = image.width,
+                .image_height = image.height,
+                .pixel_format = pixel_format,
+                .buffer_offset = img_buf.offset,
+                .buffer_len = img_buf.len,
+            });
         }
     }
 
@@ -1743,6 +1723,7 @@ const Handler = struct {
                 self.session.terminal.fullReset();
                 self.session.clearProgramRecords(null);
             },
+            .soft_reset => self.session.terminal.softReset(),
             .set_mode => try self.setMode(value.mode, true),
             .reset_mode => try self.setMode(value.mode, false),
             .save_mode => self.session.terminal.modes.save(value.mode),
@@ -1970,6 +1951,14 @@ const Handler = struct {
                 const response = try std.fmt.bufPrint(&small, "\x1B[{};{}R", .{ row, col });
                 try self.session.appendPendingOutput(response);
             },
+            // DECXCPR: Ghostty has no page memory, so the page is always 1.
+            .cursor_position_extended => {
+                const row = self.session.terminal.screens.active.cursor.y + 1;
+                const col = self.session.terminal.screens.active.cursor.x + 1;
+                var small: [32]u8 = undefined;
+                const response = try std.fmt.bufPrint(&small, "\x1B[?{};{};1R", .{ row, col });
+                try self.session.appendPendingOutput(response);
+            },
             .color_scheme => {},
             .visibility => {},
         }
@@ -1980,6 +1969,15 @@ const Handler = struct {
             .csi_18_t => {
                 var small: [32]u8 = undefined;
                 const response = try std.fmt.bufPrint(&small, "\x1B[8;{};{}t", .{
+                    self.session.terminal.rows,
+                    self.session.terminal.cols,
+                });
+                try self.session.appendPendingOutput(response);
+            },
+            // XTWINOPS 19: the text area in characters, as Ghostty reports it (no physical size).
+            .csi_19_t => {
+                var small: [32]u8 = undefined;
+                const response = try std.fmt.bufPrint(&small, "\x1B[9;{};{}t", .{
                     self.session.terminal.rows,
                     self.session.terminal.cols,
                 });
@@ -2269,7 +2267,7 @@ pub export fn termux_ghostty_session_create(
         .reverse_video = false,
     };
     session.last_serialized_mode_bits = 0;
-    session.last_serialized_palette = [_]u32{0} ** termux_palette_len;
+    session.last_serialized_palette = @splat(0);
     session.frame_perf = .{};
     session.mouse_pressed_buttons = 0;
     session.mouse_last_cell = .{ .x = 0, .y = 0 };

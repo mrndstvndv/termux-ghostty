@@ -1,12 +1,12 @@
 .{
     .name = .termux_ghostty,
     .version = "0.0.0",
-    .minimum_zig_version = "0.16.0",
+    .minimum_zig_version = "0.17.0",
     .fingerprint = 0x4ca483afd33c8f1f,
     .dependencies = .{
         .ghostty = .{
-            .url = "https://github.com/ghostty-org/ghostty/archive/a60e9e2a57f73e1eef2bd1cf2995a467f69e7fb0.tar.gz",
-            .hash = "ghostty-1.3.2-dev-5UdBC7yxeQV776Ve5J7y-odz0IyGalU3ITG5EXsMSnUW",
+            .url = "https://github.com/ghostty-org/ghostty/archive/bcfe5775454aebe2103e4dde906177b54fe61a94.tar.gz",
+            .hash = "ghostty-1.3.2-dev-5UdBC1zahQVPJl9KoHsfTM5ZfR0nMQJs1BOx_-q_bLp9",
         },
         .mbedtls = .{
             .url = "git+https://github.com/allyourcodebase/mbedtls.git#55f2af148634945e9508a3a50de2ccfe65eb971f",
@@ -24,6 +24,10 @@
         .libspng = .{
             .path = "vendor/libspng",
             .lazy = true,
+        },
+        .translate_c = .{
+            .url = "https://deps.files.ghostty.org/translate_c-02ff0c523fb92a38939b04d0145c4a9602a74d56.tar.gz",
+            .hash = "translate_c-2.0.0-Q_BUWltOBwBYABF84EUL208pIFeUIwbBs29FmVBaafN5",
         },
     },
     .paths = .{

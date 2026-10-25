@@ -83,8 +83,8 @@ test "a signal wins over a status the server also sent" {
 
 test "long signal names are truncated to the fixed capacity" {
     var exit: Exit = .{};
-    const long_name = "X" ** 40;
-    exit.recordRemoteClose(long_name, 0);
+    const long_name: [40]u8 = @splat('X');
+    exit.recordRemoteClose(&long_name, 0);
     try std.testing.expectEqual(signal_name_capacity, exit.signalName().len);
     try std.testing.expectEqualStrings(long_name[0..signal_name_capacity], exit.signalName());
 }

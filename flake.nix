@@ -67,7 +67,7 @@
           packages = pkgs.lib.optionals (!useLocalAndroidSdk) (with pkgs; [
             jdk17
             androidSdk
-            zigpkgs."0.16.0"
+            zigpkgs."0.17.0"
             bun
           ]);
 
@@ -79,8 +79,8 @@
             if [ "$(uname -s)" = "Darwin" ] && [ -z "''${DEVELOPER_DIR+x}" ]; then
               active_developer_dir="$(xcode-select -p 2>/dev/null || true)"
               if [ "$active_developer_dir" = "/Library/Developer/CommandLineTools" ]; then
-                if [ -n "''${ZIG_0_16_0_DEVELOPER_DIR:-}" ]; then
-                  export DEVELOPER_DIR="$ZIG_0_16_0_DEVELOPER_DIR"
+                if [ -n "''${ZIG_0_17_0_DEVELOPER_DIR:-}" ]; then
+                  export DEVELOPER_DIR="$ZIG_0_17_0_DEVELOPER_DIR"
                 fi
               fi
             fi
@@ -114,9 +114,9 @@
             export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/29.0.14206865"
             export ANDROID_USER_HOME="$PWD/.android"
 
-            if [ -x "$HOME/.nix-profile/bin/zig" ] && [ "$("$HOME/.nix-profile/bin/zig" version 2>/dev/null || true)" = "0.16.0" ]; then
+            if [ -x "$HOME/.nix-profile/bin/zig" ] && [ "$("$HOME/.nix-profile/bin/zig" version 2>/dev/null || true)" = "0.17.0" ]; then
               export ZIG_EXECUTABLE="$HOME/.nix-profile/bin/zig"
-              export ZIG_0_16_0_EXECUTABLE="$ZIG_EXECUTABLE"
+              export ZIG_0_17_0_EXECUTABLE="$ZIG_EXECUTABLE"
             fi
 
             mkdir -p "$ANDROID_USER_HOME"

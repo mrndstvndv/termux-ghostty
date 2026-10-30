@@ -263,9 +263,14 @@ class GlesTerminalSurface(
         }
     }
 
-    private companion object {
+    companion object {
         @Volatile
-        var lastSeenBackgroundColor: Int? = null
+        internal var lastSeenBackgroundColor: Int? = null
+
+        /** Read-only: background of the last drawn snapshot of any surface in this process, if known. */
+        @JvmStatic
+        val lastSnapshotBackgroundColor: Int?
+            get() = lastSeenBackgroundColor
     }
 
     /** Publishes one complete frame without blocking the caller. */

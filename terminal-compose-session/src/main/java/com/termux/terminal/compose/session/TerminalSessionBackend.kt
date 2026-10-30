@@ -154,9 +154,11 @@ class TerminalSessionBackend @JvmOverloads constructor(
 
     override fun resize(size: TerminalSize) {
         if (released) return
+        val resizeBurstPending = pendingResize != null
         pendingResize = size
         resizeHandler.removeCallbacks(resizeRunnable)
-        if (resizeCoalescer.shouldApplyNow()) {
+        // Once a burst starts, wait for it to settle instead of reflowing every debounce interval.
+        if (resizeCoalescer.debounceMillis == 0L || (!resizeBurstPending && resizeCoalescer.shouldApplyNow())) {
             applyPendingResize()
         } else {
             resizeHandler.postDelayed(resizeRunnable, resizeCoalescer.debounceMillis)

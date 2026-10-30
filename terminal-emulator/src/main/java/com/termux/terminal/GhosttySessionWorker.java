@@ -5,6 +5,7 @@ import android.os.Looper;
 import android.os.Message;
 import android.os.Process;
 import android.os.SystemClock;
+import android.util.Log;
 import android.view.KeyEvent;
 
 import androidx.annotation.NonNull;
@@ -63,6 +64,13 @@ final class GhosttySessionWorker extends Thread {
     private static final long PROGRESS_TIMEOUT_MILLIS = 15_000L;
     private static final long COMPRESSION_IDLE_MILLIS = 250L;
     private static final long COMPRESSION_STEP_MILLIS = 1L;
+    private static final String TRACE_TAG = "TylTerminalTrace";
+    private static final long VERIFY_INTERVAL_MILLIS = 100L;
+    private static final long VERIFY_MISMATCH_LOG_INTERVAL_MILLIS = 250L;
+    private static final long VERIFY_STATS_INTERVAL_MILLIS = 5_000L;
+    private static final int VERIFY_MAX_LOGGED_ROWS = 10;
+    private static final int VERIFY_MAX_LOGGED_DIRTY_ROWS = 20;
+    private static final int VERIFY_MAX_TEXT_CHARS = 60;
 
     private final TerminalSession mSession;
     private final GhosttyTerminalContent mContent;
@@ -105,6 +113,16 @@ final class GhosttySessionWorker extends Thread {
     private long mCoalescedUiWakeupCount;
     private long mCompressionActivity;
     private boolean mCompressionSupported = true;
+
+    // Tracing-only delta verification, see verifyPublishedFrame(). Worker thread only.
+    private RenderFrameCache mVerifyShadow;
+    private ScreenSnapshot mVerifyFull;
+    private long mVerifyLastMillis;
+    private long mVerifyMismatchLogMillis;
+    private long mVerifyStatsMillis;
+    private long mVerifyChecks;
+    private long mVerifyMismatches;
+    private long mVerifyResets;
 
     GhosttySessionWorker(
         TerminalSession session,
@@ -261,6 +279,25 @@ final class GhosttySessionWorker extends Thread {
 
     void sendInput(TerminalInputItem[] items) {
         getWorkerHandler().obtainMessage(MSG_INPUT, items).sendToTarget();
+    }
+
+    CompletableFuture<byte[]> encodeInputSequence(TerminalInputItem[] items) {
+        CompletableFuture<byte[]> future = new CompletableFuture<>();
+        boolean queued = getWorkerHandler().post(() -> {
+            boolean appendedOutput = appendQueuedOutputBeforeInput();
+            try {
+                byte[] bytes = encodeInput(items, mContent.isCursorKeysApplicationMode(),
+                    mContent.isKeypadApplicationMode(), mContent.getKittyKeyboardFlags());
+                if (bytes == null) throw new IllegalArgumentException("Input sequence has a key with no encoding");
+                future.complete(bytes);
+            } catch (RuntimeException error) {
+                future.completeExceptionally(error);
+            } finally {
+                publishPredrainedOutput(appendedOutput);
+            }
+        });
+        if (!queued) future.completeExceptionally(new IllegalStateException("Terminal worker is stopped"));
+        return future;
     }
 
     void sendMouseEvent(GhosttyMouseEvent event) {
@@ -907,12 +944,17 @@ final class GhosttySessionWorker extends Thread {
         logSnapshotBuildPerfIfNeeded(stagingSnapshot, buildDurationNanos);
 
         mPublishedSnapshot.set(stagingSnapshot);
-        mPublishedFrameDelta.set(new FrameDelta(
+        FrameDelta publishedDelta = new FrameDelta(
             mPublishedFrameCount,
             mPendingFrameReasonFlags.getAndSet(0),
             stagingSnapshot,
             stagingViewportLinks
-        ));
+        );
+        mPublishedFrameDelta.set(publishedDelta);
+        // Tracing only. Checked once per published frame, so the disabled path costs one isLoggable call.
+        if (Log.isLoggable(TRACE_TAG, Log.DEBUG)) {
+            verifyPublishedFrame(publishedDelta);
+        }
 
         // Swap staging buffers.
         mCurrentStaging = (stagingSnapshot == mSnapshotA) ? mSnapshotB : mSnapshotA;
@@ -933,6 +975,151 @@ final class GhosttySessionWorker extends Thread {
         }
 
         mCoalescedUiWakeupCount++;
+    }
+
+    /**
+     * Tracing-only check that the partial frame chain rebuilds the same rows as a full native fill.
+     *
+     * <p>Every published delta is applied to a private {@link RenderFrameCache}, the way the UI applies
+     * them. A shadow with no state is seeded from a full fill of the same native state, so checking never
+     * waits for a real full frame. At most every 100 ms the shadow rows are compared with a full fill.
+     * A mismatch means a partial publication dropped a changed row.</p>
+     */
+    private void verifyPublishedFrame(FrameDelta delta) {
+        if (mVerifyShadow == null) {
+            mVerifyShadow = new RenderFrameCache();
+            mVerifyFull = new ScreenSnapshot();
+            mVerifyStatsMillis = SystemClock.uptimeMillis();
+        }
+
+        long now = SystemClock.uptimeMillis();
+        if (now - mVerifyStatsMillis >= VERIFY_STATS_INTERVAL_MILLIS) {
+            mVerifyStatsMillis = now;
+            Log.d(TRACE_TAG, "verify stats checks=" + mVerifyChecks
+                + " mismatches=" + mVerifyMismatches + " resets=" + mVerifyResets);
+        }
+
+        // An uninitialized shadow (first use, or dropped by a mismatch) is seeded from this frame now. Seeding
+        // does not wait for the compare throttle, and it only runs on (re)initialization.
+        if (!mVerifyShadow.isInitialized()) {
+            seedShadow(delta);
+            return;
+        }
+        // Every delta must reach the shadow, not only sampled ones, or the next one looks like a sequence gap.
+        if (mVerifyShadow.apply(delta) != RenderFrameCache.ApplyResult.APPLIED) {
+            // A rejected delta drops the live shadow and re-seeds it from this frame.
+            dropShadow();
+            seedShadow(delta);
+            return;
+        }
+        if (now - mVerifyLastMillis < VERIFY_INTERVAL_MILLIS) {
+            return;
+        }
+        mVerifyLastMillis = now;
+
+        // Truth is a full fill of the same native state. The real fill just cleared the dirty flags and nothing
+        // has changed since, so this fill consumes no pending changes.
+        fillTruth();
+        ScreenSnapshot shadow = mVerifyShadow.getSnapshotForRender(false, false);
+        mVerifyChecks++;
+
+        if (shadow.getTopRow() != mVerifyFull.getTopRow()
+            || shadow.getRows() != mVerifyFull.getRows()
+            || shadow.getColumns() != mVerifyFull.getColumns()) {
+            mVerifyMismatches++;
+            Log.d(TRACE_TAG, "verify SHAPE_MISMATCH seq=" + delta.getFrameSequence()
+                + " shadowTopRow=" + shadow.getTopRow() + " shadowRows=" + shadow.getRows()
+                + " shadowColumns=" + shadow.getColumns() + " truthTopRow=" + mVerifyFull.getTopRow()
+                + " truthRows=" + mVerifyFull.getRows() + " truthColumns=" + mVerifyFull.getColumns());
+            dropShadow();
+            seedFromTruth(delta);
+            return;
+        }
+
+        StringBuilder mismatchRows = new StringBuilder();
+        int mismatchCount = 0;
+        int firstMismatchRow = -1;
+        for (int row = 0; row < shadow.getRows(); row++) {
+            if (shadow.getRow(row).getContentHash() == mVerifyFull.getRow(row).getContentHash()) {
+                continue;
+            }
+            if (mismatchCount == 0) {
+                firstMismatchRow = row;
+            }
+            if (mismatchCount < VERIFY_MAX_LOGGED_ROWS) {
+                if (mismatchCount > 0) mismatchRows.append(',');
+                mismatchRows.append(row);
+            }
+            mismatchCount++;
+        }
+        if (mismatchCount == 0) {
+            return;
+        }
+
+        // Every mismatch is counted. Only the log line is rate limited.
+        mVerifyMismatches++;
+        if (now - mVerifyMismatchLogMillis >= VERIFY_MISMATCH_LOG_INTERVAL_MILLIS) {
+            mVerifyMismatchLogMillis = now;
+            StringBuilder dirtyRows = new StringBuilder();
+            int dirtyCount = Math.min(delta.getDirtyRowCount(), VERIFY_MAX_LOGGED_DIRTY_ROWS);
+            for (int index = 0; index < dirtyCount; index++) {
+                if (index > 0) dirtyRows.append(',');
+                dirtyRows.append(delta.getDirtyRow(index));
+            }
+            Log.d(TRACE_TAG, "verify MISMATCH seq=" + delta.getFrameSequence()
+                + " topRow=" + delta.getTopRow()
+                + " rows=" + mismatchRows
+                + " total=" + mismatchCount
+                + " reason=" + delta.getReasonFlags()
+                + " dirty=" + dirtyRows
+                + " cursorRow=" + mVerifyFull.getCursorRow()
+                + " cursorCol=" + mVerifyFull.getCursorCol());
+            Log.d(TRACE_TAG, "verify MISMATCH row=" + firstMismatchRow
+                + " shadow=\"" + excerpt(shadow.getRow(firstMismatchRow)) + "\""
+                + " truth=\"" + excerpt(mVerifyFull.getRow(firstMismatchRow)) + "\"");
+        }
+
+        // Re-seed from this frame's truth, so later divergences are caught instead of this one repeating.
+        // Nothing is requested from the real pipeline.
+        dropShadow();
+        seedFromTruth(delta);
+    }
+
+    /** Drops a live shadow. Only called while it is initialized, so the resets count matches real drops. */
+    private void dropShadow() {
+        mVerifyShadow.reset();
+        mVerifyResets++;
+    }
+
+    /** Seeds an uninitialized shadow from a fresh full fill of this frame's native state. */
+    private void seedShadow(FrameDelta delta) {
+        fillTruth();
+        seedFromTruth(delta);
+    }
+
+    /**
+     * Applies mVerifyFull, which must hold a full fill of this frame's native state, as a full rebuild with
+     * the same sequence. The next real partial frame is then contiguous with the shadow.
+     */
+    private void seedFromTruth(FrameDelta delta) {
+        FrameDelta seed = new FrameDelta(delta.getFrameSequence(), delta.getReasonFlags(),
+            mVerifyFull, delta.getViewportLinkSnapshot());
+        RenderFrameCache.ApplyResult result = mVerifyShadow.apply(seed);
+        if (result != RenderFrameCache.ApplyResult.APPLIED) {
+            // A forced fill is always a full rebuild, so this would be an invariant violation. Logged, not silent.
+            Log.d(TRACE_TAG, "verify SEED_REJECTED seq=" + delta.getFrameSequence() + " result=" + result);
+        }
+    }
+
+    /** Forces a full fill of the current native state into mVerifyFull, the truth for this frame. */
+    private void fillTruth() {
+        mContent.requestFullSnapshotRefresh();
+        mContent.fillSnapshot(mVerifyFull);
+    }
+
+    private static String excerpt(ScreenSnapshot.RowSnapshot row) {
+        int length = Math.min(Math.min(row.getCharsUsed(), row.getText().length), VERIFY_MAX_TEXT_CHARS);
+        return new String(row.getText(), 0, length);
     }
 
     void setTopRow(int topRow) {

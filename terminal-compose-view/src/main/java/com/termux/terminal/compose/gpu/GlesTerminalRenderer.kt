@@ -3,6 +3,7 @@ package com.termux.terminal.compose.gpu
 import android.opengl.GLES30
 import android.opengl.GLSurfaceView
 import android.os.Trace
+import android.util.Log
 import com.termux.terminal.compose.TerminalImagePlacement
 import com.termux.terminal.compose.internal.CursorEffectRenderPlan
 import com.termux.terminal.compose.internal.planCursorEffect
@@ -19,6 +20,7 @@ private const val StyledInstanceStrideBytes = StyledInstanceStrideFloats * Float
 private const val GlyphInstanceStrideBytes = GlyphInstanceStrideFloats * Float.SIZE_BYTES
 private const val InstanceBufferBytes = MaxInstancesPerBatch * GlyphInstanceStrideBytes
 private const val DiagnosticFrameInterval = 16L
+private const val TERMINAL_TRACE_TAG = "TylTerminalTrace"
 private val EmptyTerminalQuads = emptyList<TerminalQuad>()
 private val EmptyTerminalGlyphs = emptyList<TerminalGlyphPlacement>()
 
@@ -83,6 +85,12 @@ internal class GlesTerminalRenderer(
         if (surface.isReleased()) return
         releasedOnGlThread = false
         generation++
+        if (Log.isLoggable(TERMINAL_TRACE_TAG, Log.DEBUG)) {
+            Log.d(
+                TERMINAL_TRACE_TAG,
+                "surface=${System.identityHashCode(surface)} renderer=surface_created generation=$generation",
+            )
+        }
         vendor = GLES30.glGetString(GL10.GL_VENDOR) ?: "unknown"
         renderer = GLES30.glGetString(GL10.GL_RENDERER) ?: "unknown"
         version = GLES30.glGetString(GL10.GL_VERSION) ?: "unknown"
@@ -129,6 +137,13 @@ internal class GlesTerminalRenderer(
         if (surface.isReleased()) return
         viewportWidth = width.coerceAtLeast(1)
         viewportHeight = height.coerceAtLeast(1)
+        if (Log.isLoggable(TERMINAL_TRACE_TAG, Log.DEBUG)) {
+            Log.d(
+                TERMINAL_TRACE_TAG,
+                "surface=${System.identityHashCode(surface)} renderer=surface_changed " +
+                    "generation=$generation width=$viewportWidth height=$viewportHeight",
+            )
+        }
         GLES30.glViewport(0, 0, viewportWidth, viewportHeight)
         GLES30.glEnable(GLES30.GL_SCISSOR_TEST)
         GLES30.glScissor(0, 0, viewportWidth, viewportHeight)
@@ -294,7 +309,7 @@ internal class GlesTerminalRenderer(
         drawCount++
         presentedSnapshot = snapshot
         lastAnimationTime = animationTime
-        surface.notifyFramePresented()
+        surface.notifyFramePresented(snapshot)
         reportState(
             force = atlasReset || drawCount == 1L || drawCount % DiagnosticFrameInterval == 0L
         )

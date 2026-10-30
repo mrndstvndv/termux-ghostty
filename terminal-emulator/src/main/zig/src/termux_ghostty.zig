@@ -312,6 +312,7 @@ pub const Session = struct {
     kitty_pinned_grid_spans: std.AutoHashMapUnmanaged(u64, PinnedGridSpan) = .empty,
     scratch_kitty_placements: std.ArrayListUnmanaged(SnapshotImagePlacement) = .empty,
     scratch_kitty_pixel_data: std.ArrayListUnmanaged(u8) = .empty,
+    serialized_kitty_images: std.AutoHashMapUnmanaged(u32, u64) = .empty,
 
     fn deinit(self: *Session) void {
         self.render_state.deinit(self.alloc);
@@ -332,6 +333,7 @@ pub const Session = struct {
         self.scratch_viewport_link_strings.deinit(self.alloc);
         self.scratch_kitty_placements.deinit(self.alloc);
         self.scratch_kitty_pixel_data.deinit(self.alloc);
+        self.serialized_kitty_images.deinit(self.alloc);
         self.kitty_pinned_grid_spans.deinit(self.alloc);
         self.clearProgramRecords(null);
         self.program_records.deinit(self.alloc);
@@ -353,6 +355,7 @@ pub const Session = struct {
         if (self.kitty_pinned_grid_spans.capacity() > 0) {
             self.kitty_pinned_grid_spans.clearRetainingCapacity();
         }
+        self.serialized_kitty_images.clearRetainingCapacity();
     }
 
     fn captureStateSnapshot(self: *Session) ![]u8 {
@@ -382,7 +385,10 @@ pub const Session = struct {
             self.alloc,
             std.Io.Threaded.global_single_threaded.io(),
             &reader,
-            .{ .max_continuation_bytes = state_snapshot_continuation_max_bytes },
+            .{
+                .max_continuation_bytes = state_snapshot_continuation_max_bytes,
+                .kitty_image_storage_limit = kitty_image_storage_limit,
+            },
         );
         defer decoded.deinit(self.alloc);
 
@@ -523,6 +529,7 @@ pub const Session = struct {
     fn requestFullSnapshotRefresh(self: *Session) void {
         self.render_state.dirty = .full;
         self.serialized_metadata_valid = false;
+        self.serialized_kitty_images.clearRetainingCapacity();
     }
 
     fn updateRenderStateIfNeeded(self: *Session) !RenderStateTiming {
@@ -688,6 +695,10 @@ pub const Session = struct {
             self.last_serialized_palette = metadata.palette;
         }
         if ((metadata.flags & snapshot_metadata_images) != 0) {
+            self.serialized_kitty_images.clearRetainingCapacity();
+            for (self.scratch_kitty_placements.items) |placement| {
+                self.serialized_kitty_images.put(self.alloc, placement.image_id, placement.image_generation) catch {};
+            }
             self.last_kitty_generation = self.kittyGeneration();
             self.last_kitty_viewport_top_row = self.viewport_top_row;
         }
@@ -761,7 +772,7 @@ pub const Session = struct {
         return self.terminal.screens.active.kitty_images.generation;
     }
 
-    fn rebuildKittyPlacements(self: *Session) !void {
+    fn rebuildKittyPlacements(self: *Session, full_rebuild: bool) !void {
         self.scratch_kitty_placements.clearRetainingCapacity();
         self.scratch_kitty_pixel_data.clearRetainingCapacity();
         const storage = &self.terminal.screens.active.kitty_images;
@@ -770,10 +781,6 @@ pub const Session = struct {
         if (storage.placements.count() == 0 and self.kitty_pinned_grid_spans.count() > 0) {
             self.kitty_pinned_grid_spans.clearRetainingCapacity();
         }
-
-        const ImageBufferLoc = struct { offset: u32, len: u32 };
-        var image_offsets: std.AutoHashMapUnmanaged(u32, ImageBufferLoc) = .empty;
-        defer image_offsets.deinit(self.alloc);
 
         var it = storage.placements.iterator();
         while (it.next()) |entry| {
@@ -823,17 +830,6 @@ pub const Session = struct {
                 else => 0,
             };
 
-            const img_buf = if (image_offsets.get(key.image_id)) |cached|
-                cached
-            else blk: {
-                const buffer_offset: u32 = std.math.cast(u32, self.scratch_kitty_pixel_data.items.len) orelse continue;
-                const buffer_len: u32 = std.math.cast(u32, pixel_bytes.len) orelse continue;
-                try self.scratch_kitty_pixel_data.appendSlice(self.alloc, pixel_bytes);
-                const info = ImageBufferLoc{ .offset = buffer_offset, .len = buffer_len };
-                try image_offsets.put(self.alloc, key.image_id, info);
-                break :blk info;
-            };
-
             try self.scratch_kitty_placements.append(self.alloc, .{
                 .image_id = key.image_id,
                 .placement_id = key.placement_id.id,
@@ -852,8 +848,8 @@ pub const Session = struct {
                 .image_width = image.width,
                 .image_height = image.height,
                 .pixel_format = pixel_format,
-                .buffer_offset = img_buf.offset,
-                .buffer_len = img_buf.len,
+                .buffer_offset = 0,
+                .buffer_len = 0,
             });
         }
 
@@ -877,17 +873,6 @@ pub const Session = struct {
                 else => 0,
             };
 
-            const img_buf = if (image_offsets.get(p.image_id)) |cached|
-                cached
-            else blk: {
-                const buffer_offset: u32 = std.math.cast(u32, self.scratch_kitty_pixel_data.items.len) orelse continue;
-                const buffer_len: u32 = std.math.cast(u32, pixel_bytes.len) orelse continue;
-                try self.scratch_kitty_pixel_data.appendSlice(self.alloc, pixel_bytes);
-                const info = ImageBufferLoc{ .offset = buffer_offset, .len = buffer_len };
-                try image_offsets.put(self.alloc, p.image_id, info);
-                break :blk info;
-            };
-
             try self.scratch_kitty_placements.append(self.alloc, .{
                 .image_id = p.image_id,
                 .placement_id = p.protocol.kitty.placement_id,
@@ -906,9 +891,48 @@ pub const Session = struct {
                 .image_width = image.width,
                 .image_height = image.height,
                 .pixel_format = pixel_format,
-                .buffer_offset = img_buf.offset,
-                .buffer_len = img_buf.len,
+                .buffer_offset = 0,
+                .buffer_len = 0,
             });
+        }
+
+        const can_skip_pixels = !full_rebuild and self.serialized_metadata_valid and blk: {
+            if (self.scratch_kitty_placements.items.len == 0) break :blk true;
+            for (self.scratch_kitty_placements.items) |placement| {
+                const recorded_gen = self.serialized_kitty_images.get(placement.image_id) orelse {
+                    break :blk false;
+                };
+                if (recorded_gen != placement.image_generation) {
+                    break :blk false;
+                }
+            }
+            break :blk true;
+        };
+
+        if (can_skip_pixels) {
+            return;
+        }
+
+        const ImageBufferLoc = struct { offset: u32, len: u32 };
+        var image_offsets: std.AutoHashMapUnmanaged(u32, ImageBufferLoc) = .empty;
+        defer image_offsets.deinit(self.alloc);
+
+        for (self.scratch_kitty_placements.items) |*placement| {
+            if (image_offsets.get(placement.image_id)) |cached| {
+                placement.buffer_offset = cached.offset;
+                placement.buffer_len = cached.len;
+            } else {
+                const image = storage.images.getPtr(placement.image_id) orelse continue;
+                const render_data = image.renderData();
+                const pixel_bytes = render_data.bytes() orelse continue;
+                const buffer_offset: u32 = std.math.cast(u32, self.scratch_kitty_pixel_data.items.len) orelse continue;
+                const buffer_len: u32 = std.math.cast(u32, pixel_bytes.len) orelse continue;
+                try self.scratch_kitty_pixel_data.appendSlice(self.alloc, pixel_bytes);
+                const info = ImageBufferLoc{ .offset = buffer_offset, .len = buffer_len };
+                try image_offsets.put(self.alloc, placement.image_id, info);
+                placement.buffer_offset = buffer_offset;
+                placement.buffer_len = buffer_len;
+            }
         }
     }
 
@@ -946,7 +970,6 @@ pub const Session = struct {
     }
 
     fn kittyImagesRequiredBytes(self: *const Session) usize {
-        if (self.scratch_kitty_placements.items.len == 0) return 0;
         var total: usize = snapshot_images_header_bytes;
         total += self.scratch_kitty_placements.items.len * snapshot_image_placement_bytes;
         // Align pixel data to 8 bytes? Keep 8-byte aligned for buffer start
@@ -2246,6 +2269,7 @@ pub export fn termux_ghostty_session_create(
     session.scratch_viewport_link_strings = .empty;
     session.scratch_kitty_placements = .empty;
     session.scratch_kitty_pixel_data = .empty;
+    session.serialized_kitty_images = .empty;
     session.kitty_pinned_grid_spans = .empty;
     session.colors_changed = false;
     session.bell_pending = false;
@@ -2309,6 +2333,7 @@ pub export fn termux_ghostty_session_reset(session: ?*Session) void {
     handle.viewport_top_row = 0;
     handle.markRenderStateDirty();
     handle.resetTransientState();
+    handle.serialized_kitty_images.clearRetainingCapacity();
 }
 
 pub export fn termux_ghostty_session_program_status_snapshot(session: ?*Session) ?[*:0]u8 {
@@ -2736,14 +2761,15 @@ fn fillSnapshotCurrentViewport(handle: *Session, out: []u8) i32 {
         });
     }
 
-    const full_rebuild = handle.render_state.dirty == .full;
-    var snapshot_metadata = handle.buildSnapshotMetadata(full_rebuild);
-    handle.rebuildKittyPlacements() catch |err| {
+    const full_render_rebuild = handle.render_state.dirty == .full;
+    const full_rebuild = !handle.serialized_metadata_valid;
+    var snapshot_metadata = handle.buildSnapshotMetadata(full_render_rebuild);
+    handle.rebuildKittyPlacements(full_rebuild) catch |err| {
         ghostty_log.warn("core fillSnapshot kitty rebuild failed session=0x{x} err={any}", .{ @intFromPtr(handle), err });
         handle.scratch_kitty_placements.clearRetainingCapacity();
         handle.scratch_kitty_pixel_data.clearRetainingCapacity();
     };
-    if (handle.scratch_kitty_placements.items.len > 0) {
+    if (full_rebuild or handle.scratch_kitty_placements.items.len > 0 or handle.serialized_kitty_images.count() > 0) {
         snapshot_metadata.flags |= snapshot_metadata_images;
     }
     const required_bytes = handle.snapshotRequiredBytes(&snapshot_metadata) catch |err| {
@@ -3834,4 +3860,206 @@ test "state snapshot restore rejects malformed bytes transactionally" {
         return error.OutOfMemory;
     defer native_allocator.free(transcript);
     try testing.expectEqualStrings("preserved", transcript);
+}
+
+test "kitty image deduplicates pixel buffer on scroll and re-serializes on full refresh" {
+    const session = termux_ghostty_session_create(10, 10, 100, 10, 20) orelse return error.OutOfMemory;
+    defer termux_ghostty_session_destroy(session);
+
+    const img_payload =
+        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" ++
+        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" ++
+        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" ++
+        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+    _ = appendTestBytes(
+        session,
+        "line1\r\nline2\r\n\x1b_Ga=T,f=24,s=8,v=8,c=1,r=1;" ++ img_payload ++ "\x1b\\\r\nline4\r\nline5\r\nline6\r\nline7\r\nline8\r\nline9\r\nline10\r\nline11\r\n",
+    );
+
+    var snapshot_buf: [16384]u8 = undefined;
+
+    // 1. Initial snapshot (full rebuild)
+    const size1 = termux_ghostty_session_fill_snapshot_current_viewport(session, snapshot_buf[0..].ptr, snapshot_buf.len);
+    try testing.expect(size1 > 0);
+    try testing.expectEqual(@as(usize, 1), session.scratch_kitty_placements.items.len);
+    const initial_row = session.scratch_kitty_placements.items[0].viewport_row;
+    try testing.expect(session.scratch_kitty_placements.items[0].buffer_len > 0);
+    try testing.expect(session.scratch_kitty_pixel_data.items.len > 0);
+
+    // 2. Scroll viewport up by 1 row (-1)
+    const new_top = termux_ghostty_session_set_viewport_top_row(session, -1);
+    try testing.expectEqual(@as(i32, -1), new_top);
+
+    // Subsequent partial viewport scroll frame
+    const size2 = termux_ghostty_session_fill_snapshot_current_viewport(session, snapshot_buf[0..].ptr, snapshot_buf.len);
+    try testing.expect(size2 > 0);
+    try testing.expectEqual(@as(usize, 1), session.scratch_kitty_placements.items.len);
+    // Viewport row updated (shifted by +1)
+    try testing.expectEqual(initial_row + 1, session.scratch_kitty_placements.items[0].viewport_row);
+    // Pixel bytes omitted (deduplicated)
+    try testing.expectEqual(@as(u32, 0), session.scratch_kitty_placements.items[0].buffer_len);
+    try testing.expectEqual(@as(u32, 0), session.scratch_kitty_placements.items[0].buffer_offset);
+    try testing.expectEqual(@as(usize, 0), session.scratch_kitty_pixel_data.items.len);
+    try testing.expect(size2 < size1);
+
+    // 3. Request full snapshot refresh
+    termux_ghostty_session_request_full_snapshot_refresh(session);
+
+    // Full snapshot re-serializes pixel data
+    const size3 = termux_ghostty_session_fill_snapshot_current_viewport(session, snapshot_buf[0..].ptr, snapshot_buf.len);
+    try testing.expect(size3 > 0);
+    try testing.expectEqual(@as(usize, 1), session.scratch_kitty_placements.items.len);
+    try testing.expect(session.scratch_kitty_placements.items[0].buffer_len > 0);
+    try testing.expect(session.scratch_kitty_pixel_data.items.len > 0);
+}
+
+fn repeatComptime(comptime s: []const u8, comptime n: usize) *const [s.len * n]u8 {
+    comptime {
+        var buf: [s.len * n]u8 = undefined;
+        for (0..n) |i| @memcpy(buf[i * s.len ..][0..s.len], s);
+        const final = buf;
+        return &final;
+    }
+}
+
+fn expectKittyPlacementsInBounds(session: *Session) !void {
+    for (session.scratch_kitty_placements.items) |p| {
+        try testing.expect(@as(usize, p.buffer_offset) + @as(usize, p.buffer_len) <= session.scratch_kitty_pixel_data.items.len);
+    }
+}
+
+fn findKittyPlacement(session: *Session, image_id: u32) ?SnapshotImagePlacement {
+    for (session.scratch_kitty_placements.items) |p| {
+        if (p.image_id == image_id) return p;
+    }
+    return null;
+}
+
+test "kitty two images: both serialized, then both deduped on scroll, then new image resends" {
+    const session = termux_ghostty_session_create(10, 10, 100, 10, 20) orelse return error.OutOfMemory;
+    defer termux_ghostty_session_destroy(session);
+
+    const payload_a = comptime repeatComptime("A", 256);
+    const payload_b = comptime repeatComptime("/w8P", 64);
+    const payload_c = comptime repeatComptime("Q1ND", 64);
+    _ = appendTestBytes(
+        session,
+        "l1\r\nl2\r\n\x1b_Ga=T,i=11,f=24,s=8,v=8,c=1,r=1;" ++ payload_a ++ "\x1b\\\r\nl4\r\n" ++
+            "\x1b_Ga=T,i=12,f=24,s=8,v=8,c=1,r=1;" ++ payload_b ++ "\x1b\\\r\nl6\r\nl7\r\nl8\r\nl9\r\nl10\r\nl11\r\n",
+    );
+
+    var snapshot_buf: [32768]u8 = undefined;
+
+    // 1. Full snapshot: both images serialized with distinct in-bounds ranges.
+    try testing.expect(termux_ghostty_session_fill_snapshot_current_viewport(session, snapshot_buf[0..].ptr, snapshot_buf.len) > 0);
+    try testing.expectEqual(@as(usize, 2), session.scratch_kitty_placements.items.len);
+    const a1 = findKittyPlacement(session, 11) orelse return error.TestUnexpectedResult;
+    const b1 = findKittyPlacement(session, 12) orelse return error.TestUnexpectedResult;
+    try testing.expect(a1.buffer_len > 0);
+    try testing.expect(b1.buffer_len > 0);
+    try testing.expect(a1.buffer_offset != b1.buffer_offset);
+    try expectKittyPlacementsInBounds(session);
+
+    // 2. Scroll by -1: both still present, both deduped.
+    try testing.expectEqual(@as(i32, -1), termux_ghostty_session_set_viewport_top_row(session, -1));
+    try testing.expect(termux_ghostty_session_fill_snapshot_current_viewport(session, snapshot_buf[0..].ptr, snapshot_buf.len) > 0);
+    try testing.expectEqual(@as(usize, 2), session.scratch_kitty_placements.items.len);
+    try testing.expectEqual(@as(u32, 0), (findKittyPlacement(session, 11) orelse return error.TestUnexpectedResult).buffer_len);
+    try testing.expectEqual(@as(u32, 0), (findKittyPlacement(session, 12) orelse return error.TestUnexpectedResult).buffer_len);
+    try testing.expectEqual(@as(usize, 0), session.scratch_kitty_pixel_data.items.len);
+
+    // 3. Transmit a third image while A and B are still visible.
+    _ = appendTestBytes(
+        session,
+        "\x1b_Ga=T,i=13,f=24,s=8,v=8,c=1,r=1;" ++ payload_c ++ "\x1b\\\r\n",
+    );
+    _ = termux_ghostty_session_set_viewport_top_row(session, -1);
+    try testing.expect(termux_ghostty_session_fill_snapshot_current_viewport(session, snapshot_buf[0..].ptr, snapshot_buf.len) > 0);
+    try testing.expectEqual(@as(usize, 3), session.scratch_kitty_placements.items.len);
+    for (session.scratch_kitty_placements.items) |p| {
+        try testing.expect(p.buffer_len > 0);
+    }
+    try expectKittyPlacementsInBounds(session);
+}
+
+test "kitty two images: image re-entering viewport after being scrolled out is resent" {
+    const session = termux_ghostty_session_create(10, 10, 100, 10, 20) orelse return error.OutOfMemory;
+    defer termux_ghostty_session_destroy(session);
+
+    const payload_a = comptime repeatComptime("A", 256);
+    const payload_b = comptime repeatComptime("/w8P", 64);
+    _ = appendTestBytes(
+        session,
+        "l1\r\nl2\r\nl3\r\n\x1b_Ga=T,i=11,f=24,s=8,v=8,c=1,r=1;" ++ payload_a ++ "\x1b\\\r\nl5\r\n" ++
+            "\x1b_Ga=T,i=12,f=24,s=8,v=8,c=1,r=1;" ++ payload_b ++ "\x1b\\\r\n",
+    );
+    var i: usize = 0;
+    while (i < 30) : (i += 1) _ = appendTestBytes(session, "x\r\n");
+
+    var snapshot_buf: [32768]u8 = undefined;
+    try testing.expect(termux_ghostty_session_fill_snapshot_current_viewport(session, snapshot_buf[0..].ptr, snapshot_buf.len) > 0);
+    try testing.expectEqual(@as(usize, 0), session.scratch_kitty_placements.items.len);
+
+    // Scroll up one row at a time until only B is visible, then until A re-enters.
+    var k: i32 = 0;
+    var saw_b_only = false;
+    var a_entered = false;
+    while (k > -60) {
+        k -= 1;
+        _ = termux_ghostty_session_set_viewport_top_row(session, k);
+        try testing.expect(termux_ghostty_session_fill_snapshot_current_viewport(session, snapshot_buf[0..].ptr, snapshot_buf.len) > 0);
+        try expectKittyPlacementsInBounds(session);
+        const a = findKittyPlacement(session, 11);
+        const b = findKittyPlacement(session, 12);
+        if (a == null and b != null) saw_b_only = true;
+        if (a) |p| {
+            try testing.expect(saw_b_only);
+            try testing.expect(p.buffer_len > 0);
+            a_entered = true;
+            break;
+        }
+    }
+    try testing.expect(saw_b_only);
+    try testing.expect(a_entered);
+}
+
+fn transmitBlankKittyImage(session: *Session, id: u32, w: u32, h: u32, cols: u32, rows: u32) !void {
+    const b64_len = (@as(usize, w) * h * 4 / 3) * 4;
+    const payload = try native_allocator.alloc(u8, b64_len);
+    defer native_allocator.free(payload);
+    @memset(payload, 'A');
+    var hdr_buf: [128]u8 = undefined;
+    var off: usize = 0;
+    while (off < b64_len) {
+        const end = @min(off + 4096, b64_len);
+        const more: u8 = if (end < b64_len) '1' else '0';
+        const hdr = if (off == 0)
+            try std.fmt.bufPrint(&hdr_buf, "\x1b_Ga=T,f=32,s={},v={},i={},c={},r={},q=2,m={c};", .{ w, h, id, cols, rows, more })
+        else
+            try std.fmt.bufPrint(&hdr_buf, "\x1b_Gm={c};", .{more});
+        _ = appendTestBytes(session, hdr);
+        _ = appendTestBytes(session, payload[off..end]);
+        _ = appendTestBytes(session, "\x1b\\");
+        off = end;
+    }
+    _ = appendTestBytes(session, "\r\n");
+}
+
+test "state snapshot restore keeps multiple large kitty images" {
+    const source = termux_ghostty_session_create(71, 65, 2000, 10, 20) orelse return error.OutOfMemory;
+    defer termux_ghostty_session_destroy(source);
+    try transmitBlankKittyImage(source, 101, 900, 2000, 27, 30);
+    try transmitBlankKittyImage(source, 102, 900, 2000, 27, 30);
+    try testing.expectEqual(@as(usize, 2), source.terminal.screens.active.kitty_images.images.count());
+
+    const snapshot = try source.captureStateSnapshot();
+    defer native_allocator.free(snapshot);
+
+    const restored = termux_ghostty_session_create(71, 65, 2000, 10, 20) orelse return error.OutOfMemory;
+    defer termux_ghostty_session_destroy(restored);
+    try restored.restoreStateSnapshot(snapshot);
+
+    const storage = &restored.terminal.screens.active.kitty_images;
+    try testing.expectEqual(@as(usize, 2), storage.images.count());
+    try testing.expectEqual(@as(usize, 2), storage.placements.count());
 }

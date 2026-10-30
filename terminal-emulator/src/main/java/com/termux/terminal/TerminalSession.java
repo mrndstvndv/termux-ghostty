@@ -696,6 +696,18 @@ public final class TerminalSession extends TerminalOutput implements AutoCloseab
         return true;
     }
 
+    /**
+     * Encodes input on the native-state owner thread without writing it. Remote transports can reserve an ordered
+     * input slot before awaiting this result, keeping text and structured keys in the same transport queue.
+     */
+    public CompletableFuture<byte[]> encodeInputSequence(List<TerminalInputItem> items) {
+        GhosttySessionWorker worker = mGhosttySessionWorker;
+        if (worker != null) return worker.encodeInputSequence(items.toArray(new TerminalInputItem[0]));
+        CompletableFuture<byte[]> future = new CompletableFuture<>();
+        future.completeExceptionally(new IllegalStateException("Terminal backend is unavailable"));
+        return future;
+    }
+
     public void setGhosttyTopRow(int topRow) {
         if (mGhosttySessionWorker != null) {
             mGhosttySessionWorker.setTopRow(topRow);

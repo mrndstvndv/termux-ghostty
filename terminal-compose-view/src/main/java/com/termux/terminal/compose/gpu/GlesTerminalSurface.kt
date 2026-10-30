@@ -2,6 +2,8 @@ package com.termux.terminal.compose.gpu
 
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
+import android.util.Log
 import android.view.View
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -25,6 +27,7 @@ import com.termux.terminal.compose.TerminalMetrics
 import com.termux.terminal.compose.TerminalSelection
 import com.termux.terminal.compose.TerminalWallpaperConfig
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 
 /** Immutable visual inputs that are not part of a terminal frame. */
@@ -205,12 +208,41 @@ class GlesTerminalSurface(
     private val selectionMagnifierView = AtomicReference<GlesTerminalSurfaceView?>(null)
     private val selectionMagnifierRequest = AtomicReference<SelectionMagnifierRequest?>(null)
     private val magnifierUpdatePosted = AtomicBoolean(false)
+    private val tracePublishAttempts = AtomicLong(0L)
+    private val traceAcceptedPublications = AtomicLong(0L)
+    private val traceDrawCount = AtomicLong(0L)
+    private val traceDrawnSequence = AtomicLong(Long.MIN_VALUE)
+    private val traceLastDrawAtMillis = AtomicLong(0L)
+    private val traceHeartbeat = object : Runnable {
+        override fun run() {
+            if (released.get() || selectionMagnifierView.get() == null || !isTerminalTraceEnabled()) return
+            val nowMillis = SystemClock.elapsedRealtime()
+            val lastDrawMillis = traceLastDrawAtMillis.get()
+            val snapshot = lastPublishedSnapshot.get()
+            Log.d(
+                TERMINAL_TRACE_TAG,
+                "surface=${System.identityHashCode(this@GlesTerminalSurface)} " +
+                    "active=${lifecycleActive.get()} publishAttempts=${tracePublishAttempts.get()} " +
+                    "accepted=${traceAcceptedPublications.get()} " +
+                    "publishedSequence=${snapshot?.frame?.sequence ?: Long.MIN_VALUE} " +
+                    "topRow=${snapshot?.frame?.topRow ?: Int.MIN_VALUE} " +
+                    "mouseTracking=${snapshot?.frame?.mouseTrackingActive ?: false} " +
+                    "drawCount=${traceDrawCount.get()} drawnSequence=${traceDrawnSequence.get()} " +
+                    "lastDrawAgeMs=${if (lastDrawMillis == 0L) -1L else nowMillis - lastDrawMillis}",
+            )
+            mainHandler.postDelayed(this, TERMINAL_TRACE_INTERVAL_MILLIS)
+        }
+    }
 
     /** Publishes one complete frame without blocking the caller. */
     fun publish(snapshot: GlesTerminalSnapshot): Boolean {
         if (released.get()) return false
+        if (isTerminalTraceEnabled()) tracePublishAttempts.incrementAndGet()
         lastPublishedSnapshot.set(snapshot)
         if (!handoff.publish(snapshot)) return false
+        if (isTerminalTraceEnabled()) {
+            traceAcceptedPublications.incrementAndGet()
+        }
         val cursorEffect = snapshot.cursorEffect
         val cursorDeadline = cursorEffect?.let {
             it.changeSeconds + it.effect.maxDurationSeconds
@@ -312,6 +344,7 @@ class GlesTerminalSurface(
             // The AndroidView release path performs an idempotent pause as well.
         }
         selectionMagnifierRequest.set(null)
+        mainHandler.removeCallbacks(traceHeartbeat)
         val magnifierView = selectionMagnifierView.getAndSet(null)
         if (magnifierView != null) {
             mainHandler.post(magnifierView::dismissSelectionMagnifier)
@@ -344,7 +377,12 @@ class GlesTerminalSurface(
     }
 
     /** Schedules a main-thread content refresh after a complete GL frame is presented. */
-    internal fun notifyFramePresented() {
+    internal fun notifyFramePresented(snapshot: GlesTerminalSnapshot) {
+        if (isTerminalTraceEnabled()) {
+            traceDrawCount.incrementAndGet()
+            traceDrawnSequence.set(snapshot.frame.sequence)
+            traceLastDrawAtMillis.set(SystemClock.elapsedRealtime())
+        }
         if (released.get() || selectionMagnifierRequest.get() == null) return
         if (!magnifierUpdatePosted.compareAndSet(false, true)) return
         mainHandler.post {
@@ -380,6 +418,8 @@ class GlesTerminalSurface(
         requestRender.set(request)
         releaseGlResources.set(releaseResources)
         lifecycleDecision.set(lifecycleActive)
+        mainHandler.removeCallbacks(traceHeartbeat)
+        if (isTerminalTraceEnabled()) mainHandler.post(traceHeartbeat)
         lifecycleActive(this.lifecycleActive.get())
         selectionMagnifierRequest.get()?.let { pending ->
             view.showSelectionMagnifier(pending.sourceCenterX, pending.sourceCenterY)
@@ -391,6 +431,7 @@ class GlesTerminalSurface(
 
     internal fun detachView(view: GlesTerminalSurfaceView) {
         if (!selectionMagnifierView.compareAndSet(view, null)) return
+        mainHandler.removeCallbacks(traceHeartbeat)
         view.dismissSelectionMagnifier()
         requestRender.set(null)
         releaseGlResources.set(null)
@@ -398,13 +439,26 @@ class GlesTerminalSurface(
     }
 
     internal fun setLifecycleActive(active: Boolean) {
-        lifecycleActive.set(active)
+        val previous = lifecycleActive.getAndSet(active)
         if (released.get()) return
+        if (previous != active && isTerminalTraceEnabled()) {
+            Log.d(
+                TERMINAL_TRACE_TAG,
+                "surface=${System.identityHashCode(this)} lifecycle active=$active",
+            )
+        }
         lifecycleDecision.get()?.invoke(active)
     }
 
     internal fun reportDiagnostic(diagnostic: GlesTerminalDiagnostic) {
         if (released.get()) return
+        if (diagnostic is GlesTerminalDiagnostic.Error && isTerminalTraceEnabled()) {
+            Log.d(
+                TERMINAL_TRACE_TAG,
+                "surface=${System.identityHashCode(this)} glError stage=${diagnostic.stage} " +
+                    "generation=${diagnostic.state.generation}",
+            )
+        }
         pendingDiagnostic.set(diagnostic)
         if (!diagnosticPosted.compareAndSet(false, true)) return
         mainHandler.post(::deliverLatestDiagnostic)
@@ -423,6 +477,11 @@ class GlesTerminalSurface(
         }
     }
 }
+
+private fun isTerminalTraceEnabled(): Boolean = Log.isLoggable(TERMINAL_TRACE_TAG, Log.DEBUG)
+
+private const val TERMINAL_TRACE_TAG = "TylTerminalTrace"
+private const val TERMINAL_TRACE_INTERVAL_MILLIS = 1_000L
 
 private data class SelectionMagnifierRequest(
     val sourceCenterX: Float,

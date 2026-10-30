@@ -385,16 +385,58 @@ public final class ScreenSnapshot {
             mModeBits = source.mModeBits;
         }
         if ((source.mMetadataFlags & SNAPSHOT_METADATA_IMAGES) != 0) {
+            copyImagesFrom(source);
+        } else if (mImageCount > 0) {
+            mMetadataFlags |= SNAPSHOT_METADATA_IMAGES;
+        }
+    }
+
+    private void copyImagesFrom(ScreenSnapshot source) {
+        if (source.mImageCount > 0 && source.mImagePixelBuffer == null && this.mImagePixelBuffer != null) {
+            int previousImageCount = mImageCount;
+            ImagePlacement[] previousPlacements = previousImageCount > 0 ? mImagePlacements.clone() : null;
             mImageCount = source.mImageCount;
             mImageStorageGeneration = source.mImageStorageGeneration;
             ensureImageCapacity(mImageCount);
-            System.arraycopy(source.mImagePlacements, 0, mImagePlacements, 0, mImageCount);
-            mImagePixelBuffer = source.mImagePixelBuffer != null ? source.mImagePixelBuffer.duplicate() : null;
+            for (int i = 0; i < source.mImageCount; i++) {
+                ImagePlacement srcP = source.mImagePlacements[i];
+                if (srcP != null && srcP.bufferLen == 0) {
+                    ImagePlacement matched = null;
+                    if (previousPlacements != null) {
+                        for (int j = 0; j < previousImageCount && j < previousPlacements.length; j++) {
+                            ImagePlacement prevP = previousPlacements[j];
+                            if (prevP != null && prevP.imageId == srcP.imageId && prevP.imageGeneration == srcP.imageGeneration && prevP.bufferLen > 0) {
+                                matched = prevP;
+                                break;
+                            }
+                        }
+                    }
+                    if (matched != null) {
+                        mImagePlacements[i] = new ImagePlacement(
+                            srcP.imageId, srcP.placementId, srcP.imageGeneration,
+                            srcP.viewportCol, srcP.viewportRow, srcP.colSpan, srcP.rowSpan,
+                            srcP.zIndex, srcP.srcX, srcP.srcY, srcP.srcWidth, srcP.srcHeight,
+                            srcP.destWidthPx, srcP.destHeightPx, srcP.imageWidth, srcP.imageHeight,
+                            srcP.pixelFormat, matched.bufferOffset, matched.bufferLen
+                        );
+                    } else {
+                        mImagePlacements[i] = srcP;
+                    }
+                } else {
+                    mImagePlacements[i] = srcP;
+                }
+            }
         } else {
-            mImageCount = 0;
-            mImageStorageGeneration = 0;
-            mImagePlacements = new ImagePlacement[0];
-            mImagePixelBuffer = null;
+            mImageCount = source.mImageCount;
+            mImageStorageGeneration = source.mImageStorageGeneration;
+            ensureImageCapacity(mImageCount);
+            if (mImageCount > 0) {
+                System.arraycopy(source.mImagePlacements, 0, mImagePlacements, 0, mImageCount);
+                mImagePixelBuffer = source.mImagePixelBuffer != null ? source.mImagePixelBuffer.duplicate() : null;
+            } else {
+                mImagePlacements = new ImagePlacement[0];
+                mImagePixelBuffer = null;
+            }
         }
     }
 
@@ -448,13 +490,11 @@ public final class ScreenSnapshot {
         mRequiredBytes = 0;
         mFrameSequence = source.mFrameSequence;
         mMetadataFlags = source.mMetadataFlags;
-        mImageCount = source.mImageCount;
-        mImageStorageGeneration = source.mImageStorageGeneration;
-        ensureImageCapacity(mImageCount);
-        if (mImageCount > 0) {
-            System.arraycopy(source.mImagePlacements, 0, mImagePlacements, 0, mImageCount);
-            mImagePixelBuffer = source.mImagePixelBuffer != null ? source.mImagePixelBuffer.duplicate() : null;
+        if ((source.mMetadataFlags & SNAPSHOT_METADATA_IMAGES) != 0) {
+            copyImagesFrom(source);
         } else {
+            mImageCount = 0;
+            mImageStorageGeneration = 0;
             mImagePlacements = new ImagePlacement[0];
             mImagePixelBuffer = null;
         }

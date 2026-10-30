@@ -49,7 +49,8 @@ internal fun TerminalSelectionActionUpdater(
             canvasPositionInWindow,
             config.onCopyRequest,
             config.onPasteRequest,
-            config.onMoreSelectionRequest
+            config.onMoreSelectionRequest,
+            config.onSelectedTextChanged
         ) {
             snapshotFlow { contentVersionState.intValue }.collect {
                 selectionActionMode.update(

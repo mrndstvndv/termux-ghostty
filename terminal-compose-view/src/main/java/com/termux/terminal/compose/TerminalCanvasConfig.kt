@@ -42,11 +42,15 @@ data class TerminalCanvasConfig(
     val selectionHandleColor: Color = Color.Unspecified,
     /** Increment to clear the current selection after a consumer action. */
     val selectionResetKey: Long = 0L,
+    /** Use Android's native floating action mode for selection actions. */
+    val nativeSelectionToolbarEnabled: Boolean = true,
     val onFontSizeChange: (Int) -> Unit = {},
     /** Gives a host first chance to apply app-specific tap and keyboard policy. */
     val onSingleTap: (MotionEvent) -> Boolean = { false },
     val onOpenUrl: (String) -> Unit = {},
     val onSelectionChanged: (TerminalSelectionInfo?) -> Unit = {},
+    /** Reports selected text separately so hosts can render their own selection toolbar. */
+    val onSelectedTextChanged: (String?) -> Unit = {},
     val onCopyRequest: (String) -> Unit = {},
     val onPasteRequest: () -> Unit = {},
     /** Handles rich content committed by the platform IME; null disables rich-content support. */

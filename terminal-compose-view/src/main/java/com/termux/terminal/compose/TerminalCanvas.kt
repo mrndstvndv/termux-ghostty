@@ -520,10 +520,16 @@ private fun reportSelectionChanges(
     controller: TerminalController,
     metrics: TerminalMetrics
 ) {
-    LaunchedEffect(selectionState.selection, metrics) {
+    LaunchedEffect(
+        selectionState.selection,
+        metrics,
+        config.onSelectionChanged,
+        config.onSelectedTextChanged
+    ) {
         val selection = selectionState.selection
         if (selection.isEmpty) {
             config.onSelectionChanged(null)
+            config.onSelectedTextChanged(null)
         } else {
             val frame = controller.currentFrame()
             if (frame != null) {
@@ -538,6 +544,7 @@ private fun reportSelectionChanges(
                         cellHeightPx = metrics.cellHeightPx
                     )
                 )
+                config.onSelectedTextChanged(controller.selectedText(selection))
             }
         }
     }

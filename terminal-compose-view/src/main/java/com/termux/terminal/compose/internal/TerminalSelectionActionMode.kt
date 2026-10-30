@@ -131,6 +131,10 @@ internal class TerminalSelectionActionMode(
         this.config = config
         this.clearSelection = clearSelection
 
+        if (!config.nativeSelectionToolbarEnabled) {
+            finishActionMode()
+            return
+        }
         if (selection.isEmpty) {
             finishActionMode()
             return

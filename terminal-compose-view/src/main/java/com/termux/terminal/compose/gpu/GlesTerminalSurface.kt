@@ -192,6 +192,35 @@ class GlesTerminalSurface(
     onDiagnostic: (GlesTerminalDiagnostic) -> Unit = {}
 ) {
     private val handoff = TerminalSnapshotHandoff()
+
+    /**
+     * Background painted before the first snapshot arrives (opaque black by default). Hosts that
+     * know their theme background should set this so a new surface never flashes black.
+     */
+    @Volatile
+    var initialBackgroundColor: Int = 0xFF000000.toInt()
+        set(value) {
+            field = value
+            requestRender.get()?.invoke()
+        }
+
+    /** Wallpaper painted with [initialBackgroundColor] before the first snapshot arrives. */
+    @Volatile
+    var initialWallpaper: TerminalWallpaperConfig = TerminalWallpaperConfig()
+        set(value) {
+            field = value
+            requestRender.get()?.invoke()
+        }
+
+    /**
+     * Background of the last drawn snapshot of any surface in this process; empty frames of new or
+     * re-created surfaces reuse it instead of [initialBackgroundColor].
+     */
+    internal var lastSnapshotBackgroundColor: Int?
+        get() = lastSeenBackgroundColor
+        set(value) {
+            lastSeenBackgroundColor = value
+        }
     private val lastPublishedSnapshot = AtomicReference<GlesTerminalSnapshot?>(null)
     private val released = AtomicBoolean(false)
     private val diagnosticListener = AtomicReference<(GlesTerminalDiagnostic) -> Unit>(onDiagnostic)
@@ -232,6 +261,11 @@ class GlesTerminalSurface(
             )
             mainHandler.postDelayed(this, TERMINAL_TRACE_INTERVAL_MILLIS)
         }
+    }
+
+    private companion object {
+        @Volatile
+        var lastSeenBackgroundColor: Int? = null
     }
 
     /** Publishes one complete frame without blocking the caller. */

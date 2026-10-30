@@ -3,6 +3,7 @@ package com.termux.terminal.compose
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -30,6 +31,10 @@ internal fun glesTerminalCanvasContent(
     // the same surface, so its EGL context, glyph atlas and textures survive the switch instead
     // of being torn down and rebuilt per tab.
     val surface = rememberGlesTerminalSurface(surfaceKey = surfaceKey)
+    SideEffect {
+        surface.initialBackgroundColor = config.initialBackgroundColor
+        surface.initialWallpaper = config.wallpaper
+    }
     val presentationRevision = remember(surface) { AtomicLong(0L) }
     val publishLatestFrame = {
         if (metrics.viewportWidthPx > 0 && metrics.viewportHeightPx > 0) {

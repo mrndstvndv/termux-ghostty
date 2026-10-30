@@ -5,6 +5,7 @@ import android.opengl.GLSurfaceView
 import android.os.Trace
 import android.util.Log
 import com.termux.terminal.compose.TerminalImagePlacement
+import com.termux.terminal.compose.TerminalWallpaperConfig
 import com.termux.terminal.compose.internal.CursorEffectRenderPlan
 import com.termux.terminal.compose.internal.planCursorEffect
 import java.nio.ByteBuffer
@@ -47,6 +48,10 @@ internal fun glesPresentationDecision(
         redundant = redundant
     )
 }
+
+/** Colour for a frame drawn before any snapshot: the last snapshot's background wins over the host's initial one. */
+internal fun emptyFrameBackgroundColor(lastSnapshotBackground: Int?, initialBackground: Int): Int =
+    lastSnapshotBackground ?: initialBackground
 
 /** All GLES calls and mutable GL resources are confined to this renderer thread. */
 @Suppress("TooManyFunctions", "LargeClass")
@@ -161,12 +166,28 @@ internal class GlesTerminalRenderer(
         GLES30.glEnable(GLES30.GL_SCISSOR_TEST)
         GLES30.glScissor(0, 0, viewportWidth, viewportHeight)
         val nextSnapshot = surface.acquireSnapshot()
-        if (nextSnapshot != null) lastSnapshot = nextSnapshot
+        if (nextSnapshot != null) {
+            lastSnapshot = nextSnapshot
+            surface.lastSnapshotBackgroundColor = backgroundColor(nextSnapshot)
+        }
         val snapshot = lastSnapshot
         val currentResources = resources
         if (snapshot == null || currentResources == null) {
             skippedDrawCount++
-            clear(snapshot?.let(::backgroundColor) ?: 0xFF000000.toInt())
+            if (snapshot != null) {
+                clear(backgroundColor(snapshot))
+            } else {
+                // No snapshot yet: paint the empty terminal (background + wallpaper) instead of black.
+                clear(
+                    emptyFrameBackgroundColor(
+                        surface.lastSnapshotBackgroundColor,
+                        surface.initialBackgroundColor
+                    )
+                )
+                if (currentResources != null) {
+                    drawWallpaper(surface.initialWallpaper, currentResources.wallpaper)
+                }
+            }
             return
         }
         val imageProgram = currentResources.imageProgram
@@ -203,7 +224,7 @@ internal class GlesTerminalRenderer(
         try {
             clear(backgroundColor(snapshot))
             traceSection("EctoGles.wallpaper") {
-                drawWallpaper(snapshot = snapshot, resources = currentResources.wallpaper)
+                drawWallpaper(config = snapshot.visual.wallpaper, resources = currentResources.wallpaper)
             }
             if (imageProgram != null) {
                 imageTextureCache.update(snapshot.frame.imagePlacements)
@@ -570,8 +591,7 @@ internal class GlesTerminalRenderer(
 
     /** Draws the optional wallpaper behind default-background cells. Never mutates terminal state. */
     @Suppress("ReturnCount")
-    private fun drawWallpaper(snapshot: GlesTerminalSnapshot, resources: GlesWallpaperResources) {
-        val config = snapshot.visual.wallpaper
+    private fun drawWallpaper(config: TerminalWallpaperConfig, resources: GlesWallpaperResources) {
         val wallpaper = resources.texture.releaseIfAbsent(config.wallpaper) ?: return
         val program = resources.program ?: return
         val alpha = 1f - config.backgroundOpacity

@@ -21,6 +21,8 @@ data class TerminalCanvasConfig(
     val maximumFontSize: Int = 256,
     val typeface: Typeface? = null,
     val cursorEffect: CursorEffect? = null,
+    /** ARGB background painted before the first frame arrives; avoids a black flash on new surfaces. */
+    val initialBackgroundColor: Int = 0xFF000000.toInt(),
     /** Optional wallpaper drawn behind default-background cells. */
     val wallpaper: TerminalWallpaperConfig = TerminalWallpaperConfig(),
     /** Regions the renderer blurs as a backdrop for host overlays. */
